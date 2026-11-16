@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { cfgNames } from './cfg-names.ts';
 
-export const MANIFEST_FORMAT = 'momonga-tla-manifest/1';
+export const MANIFEST_FORMAT = 'momonga-tla-manifest/2';
 
 export type Tier = 'every-run' | 'deep';
 
@@ -23,8 +23,16 @@ export type ManifestEntry = {
   readonly budgetCpuSeconds: number;
 };
 
+export type ModuleLimits = {
+  readonly module: string;
+  readonly abstractions: readonly string[];
+  readonly notProved: readonly string[];
+  readonly header?: readonly string[];
+};
+
 export type Manifest = {
   readonly format: typeof MANIFEST_FORMAT;
+  readonly modules: readonly ModuleLimits[];
   readonly unitSuiteSeconds: number;
   readonly startupCpuSeconds: number;
   readonly entries: readonly ManifestEntry[];
@@ -105,6 +113,29 @@ const entryOf = (value: unknown, index: number, startupCpuSeconds: number): Mani
   };
 };
 
+const textsOf = (value: unknown, where: string): string[] => {
+  if (!Array.isArray(value)) return fail(where, 'an array');
+  if (value.length === 0) return refuse(where, 'must not be empty');
+  return value.map((text, index) => textOf(text, `${where}[${index}]`));
+};
+
+const modulesOf = (value: unknown): ModuleLimits[] => {
+  if (!Array.isArray(value)) return fail('modules', 'an array');
+  const seen = new Set<string>();
+  return value.map((entry, index) => {
+    const where = `modules[${index}]`;
+    if (!isRecord(entry)) return fail(where, 'an object');
+    const module = configNameOf(entry['module'], `${where}.module`);
+    if (seen.has(module)) return refuse(`${where}.module`, `${module} is listed more than once`);
+    seen.add(module);
+    const limits = { module, abstractions: textsOf(entry['abstractions'], `${where}.abstractions`), notProved: textsOf(entry['notProved'], `${where}.notProved`) };
+    if (entry['header'] === undefined) return limits;
+    const header = entry['header'];
+    if (!Array.isArray(header) || header.length === 0 || header.some((line) => typeof line !== 'string')) return fail(`${where}.header`, 'a non-empty array of lines');
+    return { ...limits, header: header as string[] };
+  });
+};
+
 export const readManifest = (file: string): Manifest => {
   const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!isRecord(parsed)) return fail('the document', 'an object');
@@ -113,8 +144,10 @@ export const readManifest = (file: string): Manifest => {
   if (!Array.isArray(entries)) return fail('entries', 'an array');
   if (entries.length === 0) return refuse('entries', 'must not be empty');
   const startupCpuSeconds = positiveNumber(parsed['startupCpuSeconds'], 'startupCpuSeconds');
+  const modules = modulesOf(parsed['modules']);
   return {
     format: MANIFEST_FORMAT,
+    modules,
     unitSuiteSeconds: positiveNumber(parsed['unitSuiteSeconds'], 'unitSuiteSeconds'),
     startupCpuSeconds,
     entries: entries.map((entry, index) => entryOf(entry, index, startupCpuSeconds)),
@@ -143,6 +176,9 @@ export const discoveryProblems = (specDir: string, manifest: Manifest): string[]
   for (const config of new Set(listed)) if (!onDisk.includes(config)) problems.push(`${config} is listed in the manifest but ${config}.cfg is not on disk`);
   for (const config of onDisk) if (!modules.has(moduleOf(config))) problems.push(`${config}.cfg names the module ${moduleOf(config)}, but ${moduleOf(config)}.tla is not on disk`);
   for (const module of modules) if (!onDisk.some((config) => moduleOf(config) === module)) problems.push(`${module}.tla has no configuration`);
+  const described = manifest.modules.map((entry) => entry.module);
+  for (const module of modules) if (!described.includes(module)) problems.push(`${module}.tla has no entry in the manifest's modules`);
+  for (const module of described) if (!modules.has(module)) problems.push(`the manifest's modules list ${module}, but ${module}.tla is not on disk`);
   for (const config of onDisk) problems.push(...cfgProblems(specDir, config));
   return problems;
 };

@@ -1,14 +1,6 @@
 ---------------------------- MODULE CredentialKey ----------------------------
 EXTENDS Naturals, Sequences, FiniteSets
 
-\* Actors derived from packages/foundation/src/encrypted-credential-store.ts: readNamedKey is called from keyForWriting (point "fast"),
-\* createKey step read_marker_again (point "locked") and keyForReading (the Readers point); store.write only in createKey step write_os_item
-\* (point "creating"). The marker, the OS item and the key-creation lock are written only by createKey. Readers change no modelled variable.
-\* Not modelled, with the reason: the per-record file lock and in-process queue (credential-store.ts, file-lock.ts) are held by the caller of
-\* encode/decode around these steps and only remove interleavings of writers of the same record key; the key-creation lock never waits on
-\* them (no lock cycle), so every safety property proved without them holds with them. Record removal and plain record reads only shrink or
-\* observe records. The readiness probe reads and changes nothing. momonga secret set refuses credential-key- names, so it cannot touch the key.
-
 CONSTANTS Writers, Readers, MaxNames, MaxCrash, Attempts, Toggles, CanRemove, OsStore, Variant
 
 ASSUME Variant \in {"decided", "noLock", "recordBeforeKey", "markerBeforeKey", "recreateOnReadFailure", "plaintextFallback", "noExit", "failWritesMarker", "failWritesRecord"}

@@ -502,7 +502,7 @@ describe('the summary under a real vitest run', () => {
         path.join(project, 'tier.test.ts'),
         [
           `import { describeTier } from ${JSON.stringify(path.join(realRoot, 'test', 'formal', 'tier.ts'))};`,
-          `describeTier({ tier: 'every-run', entries: ${JSON.stringify(entries)}, manifestConfigs: ['Tiny', 'Tiny.broken'], script: ${JSON.stringify(script)}, repoRoot: ${JSON.stringify(repoRoot)}, env: process.env });`,
+          `describeTier({ tier: 'every-run', entries: ${JSON.stringify(entries)}, modules: [{ module: 'Tiny', abstractions: ['time'], notProved: ['liveness of Tiny'] }], manifestConfigs: ['Tiny', 'Tiny.broken'], script: ${JSON.stringify(script)}, repoRoot: ${JSON.stringify(repoRoot)}, env: process.env });`,
           '',
         ].join('\n'),
       );
@@ -522,6 +522,8 @@ describe('the summary under a real vitest run', () => {
       expect(first.code).toBe(0);
       expect(first.stderr).toContain('TLC every-run: 2 configurations, 0 reused, 2 ran');
       expect(first.stderr).toContain('ran (no record): 2: Tiny, Tiny.broken');
+      expect(first.stderr).toContain('Tiny: what the Tiny model does not prove:\n  - liveness of Tiny');
+      expect(first.stderr).toContain('Tiny.broken: what the Tiny model does not prove:\n  - liveness of Tiny');
       expect(fs.existsSync(path.join(storeDir, 'Old'))).toBe(false);
       expect(recordFiles(storeDir, 'Tiny').length + recordFiles(storeDir, 'Tiny.broken').length).toBe(2);
       const callsAfterFirst = fs.readFileSync(counter, 'utf8');
@@ -566,7 +568,7 @@ describe('the summary under a real vitest run', () => {
       path.join(project, 'tier.test.ts'),
       [
         `import { describeTier } from ${JSON.stringify(path.join(realRoot, 'test', 'formal', 'tier.ts'))};`,
-        `describeTier({ tier: 'every-run', entries: ${entriesSource}, manifestConfigs: ${JSON.stringify(manifestConfigs)}, script: ${JSON.stringify(script)}, repoRoot: ${JSON.stringify(repoRoot)}, env: process.env });`,
+        `describeTier({ tier: 'every-run', entries: ${entriesSource}, modules: [{ module: 'Tiny', abstractions: ['time'], notProved: ['liveness of Tiny'] }], manifestConfigs: ${JSON.stringify(manifestConfigs)}, script: ${JSON.stringify(script)}, repoRoot: ${JSON.stringify(repoRoot)}, env: process.env });`,
         '',
       ].join('\n'),
     );

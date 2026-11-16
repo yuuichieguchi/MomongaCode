@@ -11,9 +11,11 @@ import { recordProbe, targetProbingError } from '../src/probe/auto-probe.ts';
 import type { ProbeLockKey, ProbeSubject } from '../src/probe/auto-probe.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { cfgNames } from '../../../test/formal/cfg-names.ts';
+import { moduleHeaderOf } from '../../../test/formal/manifest.ts';
 
 const specDir = path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'AutoProbe.tla'), 'utf8');
+const modelText = `${spec}\n${moduleHeaderOf('AutoProbe')}`;
 const config = cfgNames(specDir, 'AutoProbe');
 const invariantTests = ['auto-probe.test.ts', 'auto-probe-endpoints.test.ts'].map((file) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')).join('\n');
 const cliProbe = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'cli', 'src', 'commands', 'gateway.ts'), 'utf8');
@@ -117,7 +119,7 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
   });
 
   it('names the code sources of the built design in the model header, not the cached record, the key at start or a lockless CLI', () => {
-    const header = spec.slice(0, spec.indexOf('EXTENDS'));
+    const header = moduleHeaderOf('AutoProbe');
 
     expect(header).toContain('gateway/src/probe/auto-probe.ts');
     expect(header).not.toMatch(/a cache that only|computed once at gateway start|It takes no lock/);
@@ -128,9 +130,9 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
 
     expect(endpoint.constants.HostKeyed).toBe('FALSE');
     expect(endpoint.constants.SaveLock).toBe('TRUE');
-    expect(spec).toContain('file identity');
-    expect(spec).toContain('gateway/src/probe/auto-probe.ts (createAutoProbe');
-    expect(spec).toContain('packages/gateway/src/probe/probe-endpoint.ts');
+    expect(modelText).toContain('file identity');
+    expect(modelText).toContain('gateway/src/probe/auto-probe.ts (createAutoProbe');
+    expect(modelText).toContain('packages/gateway/src/probe/probe-endpoint.ts');
   });
 
   it('decides a record of another key by one comparison for every adapter, and keeps the evidence that a 412 for the mismatch breaks P6', () => {
@@ -139,7 +141,7 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
 
     expect(rejectStale.constants.RejectStale).toBe('TRUE');
     expect(rejectStale.invariants).toContain('RecordMatchesKey');
-    expect(spec).toContain('probe/record.ts (recordForIdentity)');
+    expect(modelText).toContain('probe/record.ts (recordForIdentity)');
     for (const file of ['probe/record.ts', 'probe/endpoint-target.ts', 'probe/ollama-target.ts']) {
       expect(sourceOf(file)).toContain('recordForIdentity(');
     }

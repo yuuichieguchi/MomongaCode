@@ -18,7 +18,7 @@ const entry = (config: string, tier: ManifestEntry['tier'], measuredSeconds: num
   budgetCpuSeconds: 5,
 });
 
-const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[]): Manifest => ({ format: MANIFEST_FORMAT, unitSuiteSeconds, startupCpuSeconds: 3, entries });
+const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[]): Manifest => ({ format: MANIFEST_FORMAT, modules: [], unitSuiteSeconds, startupCpuSeconds: 3, entries });
 
 const sample = manifestOf(20, [entry('A', 'every-run', 4.5), entry('A.deep', 'deep', 500), entry('B', 'every-run', 12), entry('C', 'every-run', 3.5)]);
 

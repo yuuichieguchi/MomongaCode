@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TEST_SETUP_COMMAND, requireTlaJar } from '../../scripts/fetch-tla.ts';
 import { systemTempRoot, tempDirPrefixFor, testRunToken } from '../../packages/testkit/src/test-support.ts';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
-import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
+import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, moduleOf, readManifest, runTlc, verdictProblems } from './manifest.ts';
 import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
 import { groupKiller, killGroup } from './runner.ts';
 import { LIVENESS_ARGS, actionPropertyViolationOutput, cfgFor, completedOutput, endlessSpec, holdsEntry, invariantEntry, invariantViolationOutput, runOf, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
@@ -43,6 +43,7 @@ const discoveryManifest = (configs: readonly string[]): Manifest => ({
   format: MANIFEST_FORMAT,
   unitSuiteSeconds: 100,
   startupCpuSeconds: 3,
+  modules: [...new Set(configs.map(moduleOf))].map((module) => ({ module, abstractions: ['the fixture leaves out time'], notProved: ['the fixture proves nothing'] })),
   entries: configs.map((config) => ({ ...holdsEntry, config })),
 });
 
@@ -551,4 +552,4 @@ describe('killing a process group', () => {
   });
 });
 
-describeTier({ tier: selectedTier, entries: tierEntries, manifestConfigs, script: tlcScript, repoRoot, env: process.env });
+describeTier({ tier: selectedTier, entries: tierEntries, modules: 'manifest' in loaded ? loaded.manifest.modules : [], manifestConfigs, script: tlcScript, repoRoot, env: process.env });
