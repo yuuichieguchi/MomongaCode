@@ -4,6 +4,7 @@ import type { StreamEvent } from '@momonga/protocol';
 import { STORE_QUEUE_LENGTH, StoreWorkerError, openGatewayStore } from '../../src/core/store.ts';
 import { STORE_WORKER_CODE } from '../../src/core/store-worker-code.generated.ts';
 import { makeDir } from '../gateway-helpers.ts';
+import { sleep, systemWaitTiming } from '@momonga/foundation';
 
 const OPENS_THEN_SILENT = [
   "const { parentPort } = require('node:worker_threads');",
@@ -25,7 +26,7 @@ const ticksUntil = async (work: Promise<unknown>): Promise<number> => {
     settled = true;
   });
   while (!settled) {
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await sleep(systemWaitTiming, 0);
     ticks += 1;
   }
   await watched;

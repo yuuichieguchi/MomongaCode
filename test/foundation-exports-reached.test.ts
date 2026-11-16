@@ -73,7 +73,6 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'LogFields',
   'LoopbackRedirect',
   'MARKER_KINDS',
-  'MARKER_STATES',
   'MAX_SYMLINK_HOPS',
   'MINIMAL_CHILD_PATH',
   'ManagedInstance',

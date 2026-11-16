@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { bannedVariantsIn } from '../../packages/protocol/src/vocabulary.ts';
-import { ROOT, lineOf, parsedProductSource, productSources, relativeOf } from './source-scan.ts';
-import type { Counts, ParsedSource, SourceNode } from './source-scan.ts';
+import { ROOT, lineOf, parsedProductSource, productSources, relativeOf, stringPartsOf } from './source-scan.ts';
+import type { Counts, ParsedSource } from './source-scan.ts';
 
 export type BannedUseSite = { readonly file: string; readonly line: number; readonly variant: string; readonly word: string; readonly text: string };
 
@@ -10,22 +10,9 @@ const PROSE = /[A-Za-z]\s+[A-Za-z]/;
 
 export const isProse = (text: string): boolean => PROSE.test(text);
 
-const cookedOf = (node: SourceNode): string | undefined => {
-  const value = node['value'];
-  if (typeof value !== 'object' || value === null || !('cooked' in value)) return undefined;
-  return typeof value.cooked === 'string' ? value.cooked : undefined;
-};
-
-const textOfLiteral = (node: SourceNode): string | undefined => {
-  if (node.type === 'Literal' || node.type === 'JSXText') return typeof node['value'] === 'string' ? node['value'] : undefined;
-  if (node.type === 'TemplateElement') return cookedOf(node);
-  return undefined;
-};
-
 export const bannedUsesOfSource = (source: ParsedSource, file: string): BannedUseSite[] =>
-  source.nodes.flatMap(({ node }) => {
-    const text = textOfLiteral(node);
-    if (text === undefined || !isProse(text)) return [];
+  stringPartsOf(source).flatMap(({ node, text }) => {
+    if (!isProse(text)) return [];
     return bannedVariantsIn(text).map((use) => ({ file, line: lineOf(source, node), variant: use.variant, word: use.word, text }));
   });
 

@@ -2,6 +2,7 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { DRAIN_RESIDUE_MAX_BYTES, drainIncompleteNote, pumpOutput } from '../src/capture.ts';
+import { sleep, systemWaitTiming } from '@momonga/foundation';
 
 const IDLE_MS = 1000;
 
@@ -30,7 +31,7 @@ describe('the output of a child after it exited is read by one bounded reader', 
     for (const chunk of ['a', 'b', 'c', 'd']) {
       await timers.advanceAsync(400);
       stream.write(chunk);
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await sleep(systemWaitTiming, 0);
     }
     await timers.advanceAsync(400);
     stream.end();
@@ -64,7 +65,7 @@ describe('the output of a child after it exited is read by one bounded reader', 
     for (const chunk of ['a', 'b', 'c']) {
       await timers.advanceAsync(400);
       stream.write(chunk);
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await sleep(systemWaitTiming, 0);
     }
     owner.abort();
 

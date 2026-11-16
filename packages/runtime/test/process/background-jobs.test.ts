@@ -1,3 +1,4 @@
+import { sleep, systemWaitTiming } from '@momonga/foundation';
 import { toJobView } from '../../src/service/views.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -650,7 +651,7 @@ describe('the output of a background job after its command ended is read by the 
   const drainArmed = async (t: Awaited<ReturnType<typeof setup>>): Promise<void> => {
     for (let turn = 0; !t.timers.pending().some((timer) => timer.delayMs === DRAIN_IDLE_MS); turn += 1) {
       if (turn > 10_000) throw new Error('the drain after the exit was never armed');
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await sleep(systemWaitTiming, 0);
     }
   };
 
