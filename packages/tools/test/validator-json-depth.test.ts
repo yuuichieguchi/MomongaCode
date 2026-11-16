@@ -18,13 +18,12 @@ describe('validateToolInput and the one JSON depth bound', () => {
   it.each([
     ['text', (depth: number): unknown => treeArguments(depth)],
     ['an already parsed value', (depth: number): unknown => JSON.parse(treeArguments(depth)) as unknown],
-  ])(`refuses %s nested ${MAX_JSON_DEPTH + 1} deep as invalid input naming the depth`, async (_label, argumentsOf) => {
+  ])(`refuses %s nested ${MAX_JSON_DEPTH + 1} deep as invalid input naming the bound`, async (_label, argumentsOf) => {
     const verdict = await validateToolInput(tree, argumentsOf(MAX_JSON_DEPTH + 1));
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
     expect(verdict.reason).toBe('invalid');
     expect(verdict.message).toContain('Tree');
-    expect(verdict.message).toMatch(/depth/i);
-    expect(verdict.message).toContain(String(MAX_JSON_DEPTH));
+    expect(verdict.message).toContain(`nest deeper than ${MAX_JSON_DEPTH} levels`);
   });
 });
