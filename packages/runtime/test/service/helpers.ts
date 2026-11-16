@@ -294,6 +294,7 @@ export type EventStream = {
   headers: Record<string, string>;
   events: StreamEvent[];
   comments: string[];
+  daemonStopping: number;
   ended: boolean;
   next(): Promise<StreamEvent | undefined>;
   nextComment(): Promise<string>;
@@ -303,6 +304,8 @@ export type EventStream = {
 };
 
 export type StreamCursor = 'seq' | 'id';
+
+const isDaemonStopping = (frame: SseFrame): boolean => frame.id === undefined && frame.event === protocol.DAEMON_STOPPING_EVENT;
 
 export const openEventStream = async (
   client: UdsClient,
@@ -323,6 +326,7 @@ export const openEventStream = async (
     headers: response.headers,
     events: [],
     comments: [],
+    daemonStopping: 0,
     ended: false,
     next: async () => {
       for (;;) {
@@ -330,6 +334,10 @@ export const openEventStream = async (
         if (item === 'end') return undefined;
         if (item.comment !== undefined && item.data === undefined) {
           stream.comments.push(item.comment);
+          continue;
+        }
+        if (isDaemonStopping(item)) {
+          stream.daemonStopping += 1;
           continue;
         }
         return accept(item);
@@ -343,7 +351,8 @@ export const openEventStream = async (
           stream.comments.push(item.comment);
           return item.comment;
         }
-        accept(item);
+        if (isDaemonStopping(item)) stream.daemonStopping += 1;
+        else accept(item);
       }
     },
     until: async (predicate) => {
