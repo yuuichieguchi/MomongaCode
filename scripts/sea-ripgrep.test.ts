@@ -29,10 +29,12 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
 
   const run = (...args: string[]): Promise<Invocation> =>
     new Promise((resolve, reject) => {
-      execFile(binary, args, { cwd: project, env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }), encoding: 'utf8' }, (error, stdout, stderr) => {
+      const child = execFile(binary, args, { cwd: project, env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }), encoding: 'utf8' }, (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== 'number') reject(error);
         else resolve({ status: error === null ? 0 : (error.code as number), stdout, stderr });
       });
+      if (child.stdin === null) throw new Error('the executable was started without a standard input pipe');
+      child.stdin.end();
     });
 
   const cacheEntries = (): string[] => fs.readdirSync(paths.executables).filter((name) => name.startsWith('ripgrep-'));
@@ -42,10 +44,15 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
     return path.join(paths.executables, directory as string, 'rg');
   };
 
+  const undecidedNotice = (): string => {
+    const folder = fs.realpathSync(project);
+    return `momonga: the folder ${folder} is not decided, so its own settings and everything they could make the product run are not loaded; decide it with momonga trust ${folder}\n`;
+  };
+
   const searchRound = async (stderr = ''): Promise<string> => {
     const before = chatCompletions(upstream).length;
     const result = await run('-p', 'Find the needle', '--permission-mode', 'acceptEdits');
-    expect(result).toEqual({ status: 0, stdout: `${DONE}\n`, stderr });
+    expect(result).toEqual({ status: 0, stdout: `${DONE}\n`, stderr: `${undecidedNotice()}${stderr}` });
     const requests = chatCompletions(upstream);
     expect(requests.length - before).toBe(2);
     return JSON.stringify(requests[requests.length - 1]);
