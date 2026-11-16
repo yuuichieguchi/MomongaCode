@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Reporter, TestModule } from 'vitest/node';
-import { OBSERVED_DIR, REUSE_STORE, createRepoDigests, currentTestReusePlan, inputsOf, recordFileOf, recordFor, replayedLine, trackedFilesOf, writeRecord } from './test-reuse.ts';
+import { OBSERVED_DIR, REUSE_STORE, createRepoDigests, currentTestReusePlan, inputsOf, fileFiltersOf, projectsOf, recordFileOf, recordFor, replayedLine, replayedSelected, trackedFilesOf, writeRecord } from './test-reuse.ts';
 import type { Observation } from './test-reuse.ts';
 import { observedNameOf } from './reuse-observed.ts';
 
@@ -54,7 +54,7 @@ export default class ReuseReporter implements Reporter {
       const unchanged = observation.inputs.every((input) => live.digestOf(input) === plan.digests.digestOf(input)) && (!observation.whole || live.treeDigest() === plan.digests.treeDigest());
       if (unchanged) writeRecord(recordFileOf(plan.root, observation.project, observation.file), recordFor(observation, plan.digests, plan.globals));
     }
-    const count = [...plan.replayed.values()].reduce((sum, files) => sum + files.length, 0);
+    const count = replayedSelected(plan.replayed, projectsOf(process.argv), fileFiltersOf(process.argv));
     process.stdout.write(`\n${replayedLine(count)}\n`);
   }
 }

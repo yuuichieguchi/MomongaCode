@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTempDir } from '@momonga/testkit';
-import { REUSE_RECORD_FORMAT, createRepoDigests, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
+import { REUSE_RECORD_FORMAT, createRepoDigests, fileFiltersOf, projectsOf, replayedSelected, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
 import type { ReuseGlobals } from './support/test-reuse.ts';
 
 const GLOBALS: ReuseGlobals = { node: 'v24.0.0', platform: 'darwin', arch: 'arm64', harness: { 'package-lock.json': 'lock' }, env: {} };
@@ -64,7 +64,7 @@ describe('the record of a green test file', () => {
 });
 
 describe('the inputs a test file observed', () => {
-  it('are the repository files it imported or read, as repository paths, without node_modules, the reuse store and paths outside the repository', () => {
+  it('are the repository files it imported or read, as repository paths, without node_modules, the reuse store, paths outside the repository and paths no file can have', () => {
     const root = path.join(path.sep, 'repo');
     expect(
       inputsOf(root, [
@@ -74,6 +74,7 @@ describe('the inputs a test file observed', () => {
         path.join(root, '.cache', 'test-reuse', 'unit', 'r.json'),
         path.join(path.sep, 'tmp', 'scratch'),
         path.join(root, 'test', 'a.test.ts'),
+        path.join(root, 'a\0b'),
         root,
       ]),
     ).toEqual(['', 'packages/x/src/a.ts', 'test/a.test.ts']);
@@ -96,6 +97,7 @@ describe('the digests of the repository', () => {
     const file = before.digestOf('a.txt');
     const listing = before.digestOf('dir');
     expect(before.digestOf('missing')).toBe('absent');
+    expect(before.digestOf(`${'x'.repeat(300)}/y`)).toBe('absent');
     fs.writeFileSync(path.join(root, 'a.txt'), 'changed');
     fs.writeFileSync(path.join(root, 'dir', 'c.txt'), 'three');
     const after = createRepoDigests(root, ['a.txt', 'dir/b.txt']);
@@ -108,5 +110,16 @@ describe('the digests of the repository', () => {
 describe('the line of replayed files', () => {
   it('counts the files the run replayed', () => {
     expect(replayedLine(12)).toBe('Replayed 12 test files, unchanged since their last green run on this machine');
+  });
+});
+
+describe('the replayed files a run counts', () => {
+  const replayed = new Map([['unit', ['test/a.test.ts', 'test/b.test.ts']], ['e2e', ['e2e/c.test.ts']]]);
+
+  it('are the replayed files of the projects and the file filters the run names', () => {
+    const whole = ['node', 'vitest', 'run', '--project', 'unit', '--project', 'e2e', '--project', 'packaging'];
+    expect(replayedSelected(replayed, projectsOf(whole), fileFiltersOf(whole))).toBe(3);
+    const named = ['node', 'vitest', 'run', '--project', 'unit', 'test/a.test.ts', '-t', 'name'];
+    expect(replayedSelected(replayed, projectsOf(named), fileFiltersOf(named))).toBe(1);
   });
 });

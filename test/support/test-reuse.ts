@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, sha256Hex } from '../formal/reuse.ts';
@@ -55,6 +55,7 @@ const OUTSIDE = new Set(['node_modules', '.git']);
 export const inputsOf = (root: string, paths: readonly string[]): string[] => {
   const store = REUSE_STORE.split(path.sep).join('/');
   const inputs = paths.flatMap((file) => {
+    if (file.includes('\0')) return [];
     const relative = path.relative(root, file);
     if (relative.startsWith('..') || path.isAbsolute(relative)) return [];
     const posix = relative.split(path.sep).join('/');
@@ -65,13 +66,15 @@ export const inputsOf = (root: string, paths: readonly string[]): string[] => {
   return [...new Set(inputs)].sort();
 };
 
+const NO_FILE_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR', 'ENAMETOOLONG']);
+
 const digestOfPath = (file: string): string => {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ENOTDIR') return 'absent';
+    if (code !== undefined && NO_FILE_CODES.has(code)) return 'absent';
     throw error;
   }
   if (stat.isDirectory()) return `dir:${sha256Hex(fs.readdirSync(file).sort().join('\n'))}`;
@@ -183,3 +186,19 @@ export const currentTestReusePlan = (): ReusePlan => {
   if (plan === undefined) throw new Error('no test reuse plan was made; vitest.config.ts makes it when it loads');
   return plan;
 };
+
+const VALUE_OPTIONS = new Set(['--project', '-t', '--testNamePattern', '--reporter', '--config', '-c', '--root', '-r', '--dir']);
+
+export const fileFiltersOf = (argv: readonly string[]): string[] => {
+  const run = argv.indexOf('run');
+  const words = run === -1 ? [] : argv.slice(run + 1);
+  return words.filter((word, index) => !word.startsWith('-') && !VALUE_OPTIONS.has(words[index - 1] ?? ''));
+};
+
+export const replayedSelected = (replayed: ReadonlyMap<string, readonly string[]>, projects: readonly string[], filters: readonly string[]): number =>
+  [...replayed.entries()]
+    .filter(([project]) => projects.length === 0 || projects.includes(project))
+    .flatMap(([, files]) => files)
+    .filter((file) => filters.length === 0 || filters.some((filter) => file.includes(filter))).length;
+
+export const projectsOf = (argv: readonly string[]): string[] => argv.flatMap((word, index) => (argv[index - 1] === '--project' ? [word] : word.startsWith('--project=') ? [word.slice('--project='.length)] : []));
