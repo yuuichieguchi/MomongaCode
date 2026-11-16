@@ -6,7 +6,7 @@ import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, crea
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
-import { afterMicrotasks, createFakeClock, createFakeRandom, createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, sleepDrivenTiming, startLockHolder, TEST_STDIO_LAUNCH, testKernelLock, waitFor } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeRandom, REAL_PROCESS_TEST_TIMEOUT_MS, sleepDrivenTiming, startLockHolder, TEST_STDIO_LAUNCH, testKernelLock, waitFor, withTempDir } from '@momonga/testkit';
 import type { McpOAuthProvider } from '../src/mcp-oauth.ts';
 import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
 import type * as RemoteTransportModule from '../src/remote-transport.ts';
@@ -50,7 +50,7 @@ const steppedPorts = (): FileLockPorts & { waitedMs(): number } => {
 
 describe('MCP OAuth provider store waits (N81)', () => {
   it('a record lock wait outlasts the default lock timeout and ends only on the signal of the operation', async (context) => {
-    const directory = path.join(createTempDir(), 'mcp-credentials');
+    const directory = path.join(withTempDir(context), 'mcp-credentials');
     const url = 'https://mcp.example.com/mcp';
     const store = createFileCredentialStore(directory, { lock: testKernelLock(), ports: steppedPorts() });
     await store.write(credentialKey('remote', url), '{"version":1,"issuers":{}}', new AbortController().signal);

@@ -111,7 +111,7 @@ export const E2E_CHECK_PASSED_TEXT = describeVerification({
 });
 
 export const decideProjectFolderWithCheck = async (home: E2eHome): Promise<void> => {
-  writeSettingsFile(home, { ...baseSettings(home, sandboxChoiceOf({ home }).kind), verification: E2E_DECLARED_CHECK });
+  writeSettingsFile(home, { ...baseSettings(home, sandboxChoiceOf({ home }).kind), verification: E2E_DECLARED_CHECK, memory: { reflection: { enabled: false } } });
   const decided = await runCli(home, ['trust', home.project, '--set', 'trusted']);
   if (decided.code !== 0) throw new Error(`momonga trust ${home.project} --set trusted exited ${decided.code}: ${decided.stderr}`);
 };

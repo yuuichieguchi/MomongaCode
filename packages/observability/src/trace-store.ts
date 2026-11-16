@@ -1,7 +1,7 @@
 import type { DatabaseSync, SQLOutputValue, StatementSync } from 'node:sqlite';
 import type { AttributeValue } from '@opentelemetry/api';
 import { immediateTx, migrate, openDatabase, isRecord } from '@momonga/foundation';
-import type { Clock, Migration } from '@momonga/foundation';
+import type { Migration } from '@momonga/foundation';
 import { reportError } from './errors.ts';
 import { DEFAULT_MAX_QUEUED_BYTES } from './body-queue.ts';
 import { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
@@ -75,7 +75,7 @@ export type TraceStore = {
   close(): void;
 };
 
-export type OpenTraceStoreOptions = { path: string; busyTimeoutMs: number; clock: Clock };
+export type OpenTraceStoreOptions = { path: string; busyTimeoutMs: number };
 
 const INITIAL_SCHEMA = `
 CREATE TABLE spans (
@@ -316,7 +316,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   spansWithoutRun: db.prepare('SELECT * FROM spans WHERE run_id IS NULL ORDER BY start_ms, end_ms DESC, rowid'),
   bodiesOfRunAfter: db.prepare(
     `SELECT b.* FROM bodies b
-     WHERE b.id > ? AND b.expires_at_ms > ?
+     WHERE b.id > ?
        AND EXISTS (SELECT 1 FROM spans s WHERE s.trace_id = b.trace_id AND s.span_id = b.span_id AND s.run_id = ?)
      ORDER BY b.id LIMIT ?`,
   ),
@@ -333,7 +333,7 @@ const all = (statement: StatementSync, ...parameters: Array<string | number>): R
 
 type Statements = ReturnType<typeof prepareStatements>;
 
-const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): TraceStore => {
+const createStore = (db: DatabaseSync, statements: Statements): TraceStore => {
   let closed = false;
 
   const checkpoint = (mode: 'PASSIVE' | 'TRUNCATE'): void => {
@@ -451,7 +451,7 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
       return rows.map((row) => ({ seq: readInteger('spans', String(row['span_id']), row, 'ingest_seq'), span: decodeSpan(row) }));
     },
     bodiesOfRunAfter: (runId, afterId, limit) =>
-      all(statements.bodiesOfRunAfter, afterId, clock.now(), runId, limit).map((row) => ({ id: readInteger('bodies', String(row['id']), row, 'id'), body: decodeBody(row) })),
+      all(statements.bodiesOfRunAfter, afterId, runId, limit).map((row) => ({ id: readInteger('bodies', String(row['id']), row, 'id'), body: decodeBody(row) })),
     purgeRuns,
     moveLegacyContent,
     compact,
@@ -472,7 +472,7 @@ export const openTraceStore = (options: OpenTraceStoreOptions): TraceStore => {
   try {
     migrate(db, TRACE_STORE_MIGRATIONS);
     db.exec('PRAGMA secure_delete = ON');
-    return createStore(db, prepareStatements(db), options.clock);
+    return createStore(db, prepareStatements(db));
   } catch (error) {
     db.close();
     throw error;
