@@ -4,6 +4,7 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { POLL_INTERVAL_MS } from '@momonga/foundation';
 import { TOOL_OUTPUT_TAG, tokensForText } from '@momonga/protocol';
 import { fmSchemaRefusalOf, fmToolsRefusalOf } from './fm-schema-decoding.ts';
 import { collectAllowedNames, findUsedKeywords, generateInstance } from './schema-instance.ts';
@@ -305,21 +306,9 @@ const createSocketPath = (): { socketPath: string; ownedDir?: string } => {
   return { socketPath: path.join(dir, 'fake.sock'), ownedDir: dir };
 };
 
-const untilFileExists = (file: string, signal: AbortSignal): Promise<void> =>
-  new Promise<void>((resolve, reject) => {
-    const watcher = fs.watch(path.dirname(file));
-    const finish = (settle: () => void): void => {
-      watcher.close();
-      signal.removeEventListener('abort', onAbort);
-      settle();
-    };
-    const onAbort = (): void => finish(() => reject(signal.reason));
-    watcher.on('change', () => {
-      if (fs.existsSync(file)) finish(resolve);
-    });
-    signal.addEventListener('abort', onAbort, { once: true });
-    if (fs.existsSync(file)) finish(resolve);
-  });
+const untilFileExists = async (file: string, signal: AbortSignal): Promise<void> => {
+  while (!fs.existsSync(file)) await delay(POLL_INTERVAL_MS, undefined, { signal });
+};
 
 export const startFakeChatCompletions = async (
   options: FakeChatCompletionsOptions,
