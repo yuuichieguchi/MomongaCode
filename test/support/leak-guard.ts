@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { systemTempRoot, tempDirPrefixFor, TEST_RUN_ENV, testTempBases } from '@momonga/testkit';
 import { TEMP_LEDGER_ENV, readTempLedger } from './temp-ledger.ts';
+import type { TempEntry } from './temp-ledger.ts';
+
+export const UNRECORDED_CREATOR = 'made by no recorded test';
 
 export const leakedTempDirs = (tmpRoot: string, token: string): string[] => {
   const prefix = tempDirPrefixFor(token);
@@ -19,16 +22,24 @@ const isUnder = (root: string, entry: string): boolean => {
 
 const stillExists = (entry: string): boolean => fs.lstatSync(entry, { throwIfNoEntry: false }) !== undefined;
 
-export const leakedTempEntries = (tmpRoots: readonly string[], token: string, recorded: readonly string[]): string[] => {
+export const leakedTempEntries = (tmpRoots: readonly string[], token: string, recorded: readonly TempEntry[]): string[] => {
   const carryingToken = tmpRoots.flatMap((tmpRoot) => leakedTempDirs(tmpRoot, token).map((entry) => path.join(tmpRoot, entry)));
-  const recordedAndLeft = recorded.filter((entry) => tmpRoots.some((tmpRoot) => isUnder(tmpRoot, entry)) && stillExists(entry));
+  const recordedAndLeft = recorded.map((entry) => entry.path).filter((entry) => tmpRoots.some((tmpRoot) => isUnder(tmpRoot, entry)) && stillExists(entry));
   return [...new Set([...carryingToken, ...recordedAndLeft])];
 };
 
-export const assertNoLeakedTempDirs = (tmpRoots: readonly string[], token: string, recorded: readonly string[]): void => {
+const creatorsOf = (recorded: readonly TempEntry[]): ReadonlyMap<string, string> =>
+  new Map(recorded.flatMap((entry) => (entry.creator === undefined ? [] : [[entry.path, entry.creator] as const])));
+
+export const assertNoLeakedTempDirs = (tmpRoots: readonly string[], token: string, recorded: readonly TempEntry[]): void => {
   const leaked = leakedTempEntries(tmpRoots, token, recorded);
   if (leaked.length === 0) return;
-  const failure = new Error(`test run ${token} left ${leaked.length} temp dir(s): ${leaked.join(', ')}`);
+  const creators = creatorsOf(recorded);
+  const named = leaked.map((entry) => {
+    const creator = creators.get(entry);
+    return `${entry} (${creator === undefined ? UNRECORDED_CREATOR : `made by ${creator}`})`;
+  });
+  const failure = new Error(`test run ${token} left ${leaked.length} temp dir(s): ${named.join(', ')}`);
   for (const entry of leaked) fs.rmSync(entry, { recursive: true, force: true });
   throw failure;
 };

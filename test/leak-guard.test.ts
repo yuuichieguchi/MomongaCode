@@ -6,8 +6,11 @@ import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { shortTempBase } from '@momonga/foundation';
 import { TEST_RUN_ENV, testRunToken, testTempBases, withTempDir } from '@momonga/testkit';
-import { assertNoLeakedTempDirs, claimRunToken, leakedTempDirs, leakedTempEntries, newRunToken } from './support/leak-guard.ts';
+import { UNRECORDED_CREATOR, assertNoLeakedTempDirs, claimRunToken, leakedTempDirs, leakedTempEntries, newRunToken } from './support/leak-guard.ts';
 import { TEMP_LEDGER_ENV, readTempLedger, recordTempEntry } from './support/temp-ledger.ts';
+import type { TempEntry } from './support/temp-ledger.ts';
+
+const madeBy = (entry: string, creator: string): TempEntry => ({ path: entry, creator });
 
 describe('leak guard', () => {
   it('generates a four-hex run token', () => {
@@ -27,7 +30,7 @@ describe('leak guard', () => {
     fs.mkdirSync(path.join(root, 'mmt-abcd-111111'));
     fs.writeFileSync(path.join(root, 'mmt-abcd-111111', 'left'), 'planted');
     fs.mkdirSync(path.join(root, 'mmt-ffff-333333'));
-    expect(() => assertNoLeakedTempDirs([root], 'abcd', [])).toThrow(`test run abcd left 1 temp dir(s): ${path.join(root, 'mmt-abcd-111111')}`);
+    expect(() => assertNoLeakedTempDirs([root], 'abcd', [])).toThrow(`test run abcd left 1 temp dir(s): ${path.join(root, 'mmt-abcd-111111')} (${UNRECORDED_CREATOR})`);
     expect(fs.readdirSync(root)).toEqual(['mmt-ffff-333333']);
   });
 
@@ -42,7 +45,7 @@ describe('leak guard', () => {
     const second = withTempDir(context);
     fs.mkdirSync(path.join(first, 'mmt-abcd-111111'));
     fs.mkdirSync(path.join(second, 'mmt-abcd-222222'));
-    expect(() => assertNoLeakedTempDirs([first, second], 'abcd', [])).toThrow(`${path.join(first, 'mmt-abcd-111111')}, ${path.join(second, 'mmt-abcd-222222')}`);
+    expect(() => assertNoLeakedTempDirs([first, second], 'abcd', [])).toThrow(`${path.join(first, 'mmt-abcd-111111')} (${UNRECORDED_CREATOR}), ${path.join(second, 'mmt-abcd-222222')} (${UNRECORDED_CREATOR})`);
   });
 
   it('sweeps the base of homes and the base of other directories', () => {
@@ -55,8 +58,8 @@ describe('leak guard over the entries the run recorded', () => {
     const root = withTempDir(context);
     const left = path.join(root, 'mm-left');
     fs.mkdirSync(left);
-    expect(leakedTempEntries([root], 'abcd', [left, path.join(root, 'mm-removed')])).toEqual([left]);
-    expect(() => assertNoLeakedTempDirs([root], 'abcd', [left])).toThrow(`test run abcd left 1 temp dir(s): ${left}`);
+    expect(leakedTempEntries([root], 'abcd', [madeBy(left, 'a.test.ts'), madeBy(path.join(root, 'mm-removed'), 'a.test.ts')])).toEqual([left]);
+    expect(() => assertNoLeakedTempDirs([root], 'abcd', [madeBy(left, 'packages/x/test/a.test.ts > makes a folder')])).toThrow(`test run abcd left 1 temp dir(s): ${left} (made by packages/x/test/a.test.ts > makes a folder)`);
     expect(fs.existsSync(left)).toBe(false);
   });
 
@@ -64,20 +67,20 @@ describe('leak guard over the entries the run recorded', () => {
     const root = withTempDir(context);
     const left = path.join(root, 'mmt-abcd-111111');
     fs.mkdirSync(left);
-    expect(leakedTempEntries([root], 'abcd', [left, left])).toEqual([left]);
+    expect(leakedTempEntries([root], 'abcd', [madeBy(left, 'a.test.ts'), madeBy(left, 'a.test.ts')])).toEqual([left]);
   });
 
   it('names a recorded entry left inside a directory of a temp base', (context) => {
     const root = withTempDir(context);
     const nested = path.join(root, 'kept', 'guard-nested');
     fs.mkdirSync(nested, { recursive: true });
-    expect(leakedTempEntries([root], 'abcd', [nested])).toEqual([nested]);
+    expect(leakedTempEntries([root], 'abcd', [madeBy(nested, 'a.test.ts')])).toEqual([nested]);
   });
 
   it('does not judge a recorded entry outside every temp base', (context) => {
     const base = withTempDir(context);
     const elsewhere = withTempDir(context);
-    expect(leakedTempEntries([base], 'abcd', [elsewhere])).toEqual([]);
+    expect(leakedTempEntries([base], 'abcd', [madeBy(elsewhere, 'a.test.ts')])).toEqual([]);
   });
 });
 
@@ -102,9 +105,9 @@ describe('the run token is claimed with the ledger of the run', () => {
   it('reads back what was recorded, one entry per line, whatever characters the path holds', (context) => {
     const root = withTempDir(context);
     const { ledger } = claimRunToken(root, () => 'abcd');
-    recordTempEntry(ledger, '/tmp/with space');
-    recordTempEntry(ledger, '/tmp/with\nnewline');
-    expect(readTempLedger(ledger)).toEqual(['/tmp/with space', '/tmp/with\nnewline']);
+    recordTempEntry(ledger, madeBy('/tmp/with space', 'a.test.ts > one'));
+    recordTempEntry(ledger, { path: '/tmp/with\nnewline', creator: undefined });
+    expect(readTempLedger(ledger)).toEqual([madeBy('/tmp/with space', 'a.test.ts > one'), { path: '/tmp/with\nnewline', creator: undefined }]);
   });
 });
 
@@ -130,7 +133,7 @@ describe('the temp entry recorder of a worker', () => {
   ])('records an entry made with %s under a prefix without the run token, and the guard names it until it is removed', async (_form, make) => {
     const dir = await make(path.join(fs.realpathSync(os.tmpdir()), 'mm-'));
     try {
-      expect(readTempLedger(ledgerOfRun())).toContain(dir);
+      expect(readTempLedger(ledgerOfRun())).toContainEqual({ path: dir, creator: `test/leak-guard.test.ts > ${expect.getState().currentTestName}` });
       expect(leakedTempEntries(testTempBases(), testRunToken(), readTempLedger(ledgerOfRun()))).toContain(dir);
     } finally {
       fs.rmSync(dir, { recursive: true });
