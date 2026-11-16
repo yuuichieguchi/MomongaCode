@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SOLVER_THREAD_STOP_BOUND_MS } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { SOLVER_THREAD_POLL_MS, stopSolverThreads } from '../src/engine.ts';
 import type { SolverThreads } from '../src/engine.ts';
@@ -54,12 +54,20 @@ const stopping = (timers: FakeTimers, threads: SolverThreads): { outcome: () => 
   return { outcome: () => outcome, done };
 };
 
+const pollsUntil = async (timers: FakeTimers, stop: { outcome: () => 'pending' | 'stopped' | Error }, elapsedMs: number): Promise<void> => {
+  for (let elapsed = 0; elapsed < elapsedMs && stop.outcome() === 'pending'; elapsed += SOLVER_THREAD_POLL_MS) {
+    await afterMicrotasks();
+    await timers.advanceAsync(SOLVER_THREAD_POLL_MS);
+  }
+  await afterMicrotasks();
+};
+
 describe('the solver threads are stopped within a stated bound and none is left behind', () => {
   it('terminates again a worker the solver adds after the first termination, and ends with every worker terminated', async () => {
     const timers = createFakeTimers(createFakeClock(0));
     const threads = threadsThatComeBack(timers, 2);
     const stop = stopping(timers, threads);
-    await timers.advanceAsync(3 * SOLVER_THREAD_POLL_MS);
+    await pollsUntil(timers, stop, 3 * SOLVER_THREAD_POLL_MS);
     await stop.done;
     expect(stop.outcome()).toBe('stopped');
     expect(threads.alive()).toEqual([]);
@@ -71,7 +79,7 @@ describe('the solver threads are stopped within a stated bound and none is left 
     const timers = createFakeTimers(createFakeClock(0));
     const threads = threadsThatComeBack(timers, 0);
     const stop = stopping(timers, threads);
-    await timers.advanceAsync(SOLVER_THREAD_POLL_MS);
+    await pollsUntil(timers, stop, SOLVER_THREAD_POLL_MS);
     await stop.done;
     expect(stop.outcome()).toBe('stopped');
     expect(threads.terminations()).toBe(1);
@@ -82,9 +90,9 @@ describe('the solver threads are stopped within a stated bound and none is left 
     const timers = createFakeTimers(createFakeClock(0));
     const threads = threadsThatComeBack(timers, Number.POSITIVE_INFINITY);
     const stop = stopping(timers, threads);
-    await timers.advanceAsync(SOLVER_THREAD_STOP_BOUND_MS - SOLVER_THREAD_POLL_MS);
+    await pollsUntil(timers, stop, SOLVER_THREAD_STOP_BOUND_MS - SOLVER_THREAD_POLL_MS);
     expect(stop.outcome()).toBe('pending');
-    await timers.advanceAsync(SOLVER_THREAD_POLL_MS);
+    await pollsUntil(timers, stop, SOLVER_THREAD_POLL_MS);
     await stop.done;
     expect(String(stop.outcome())).toContain(`the solver threads did not stop within ${SOLVER_THREAD_STOP_BOUND_MS} ms`);
   });

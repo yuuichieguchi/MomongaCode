@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { SOLVER_THREAD_STOP_BOUND_MS } from '@momonga/foundation';
+import { SOLVER_THREAD_STOP_BOUND_MS, waitUntil } from '@momonga/foundation';
 import type { Timing } from '@momonga/foundation';
 import type { Z3Api } from './smt.ts';
 
@@ -22,12 +22,17 @@ const anyThreadLeft = ({ PThread }: SolverThreads): boolean => PThread.runningWo
 export const stopSolverThreads = async (threads: SolverThreads, timing: Timing): Promise<void> => {
   const deadline = timing.monotonicMs() + SOLVER_THREAD_STOP_BOUND_MS;
   threads.PThread.terminateAllThreads();
-  for (;;) {
-    await new Promise<void>((resolve) => timing.setTimeout(resolve, SOLVER_THREAD_POLL_MS));
-    if (!anyThreadLeft(threads)) break;
-    if (timing.monotonicMs() >= deadline) throw new Error(`the solver threads did not stop within ${SOLVER_THREAD_STOP_BOUND_MS} ms`);
-    threads.PThread.terminateAllThreads();
-  }
+  let terminatedAtMs = timing.monotonicMs();
+  const quietForOnePoll = async (): Promise<true | undefined> => {
+    if (anyThreadLeft(threads)) {
+      threads.PThread.terminateAllThreads();
+      terminatedAtMs = timing.monotonicMs();
+      return undefined;
+    }
+    return timing.monotonicMs() - terminatedAtMs >= SOLVER_THREAD_POLL_MS ? true : undefined;
+  };
+  const outcome = await waitUntil(timing, quietForOnePoll, { intervalMs: SOLVER_THREAD_POLL_MS, deadline });
+  if (outcome.kind !== 'found') throw new Error(`the solver threads did not stop within ${SOLVER_THREAD_STOP_BOUND_MS} ms`);
   threads.async_cancel?.(new Error('Z3 threads were terminated'));
 };
 

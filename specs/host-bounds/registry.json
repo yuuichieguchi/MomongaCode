@@ -57,6 +57,7 @@
     {"name":"DAEMON_MARKER_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
     {"name":"KEEPER_NAME_BYTES","file":"packages/foundation/src/process-contract.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"LOG_ITEM_MAX_CHARS","file":"packages/foundation/src/process-contract.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
+    {"name":"SOLVER_THREAD_STOP_BOUND_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"STOP_MESSAGE_MAX_BYTES","file":"packages/foundation/src/process-contract.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"SWEEP_INTERVAL_MS","file":"packages/foundation/src/process-contract.ts","kind":"C","owner":"foundation","row":"context.md"},
     {"name":"NONCE_BYTES","file":"packages/foundation/src/process-lock.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
@@ -127,7 +128,8 @@
     {"name":"MIN_BODY_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"OMISSION_RESERVE_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"OBSERVED_FILE_HASH_PAGE_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"},
-    {"name":"OBSERVED_UNTRACKED_FILE_MAX_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"}
+    {"name":"OBSERVED_UNTRACKED_FILE_MAX_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"},
+    {"name":"SOLVER_THREAD_POLL_MS","file":"packages/verify/src/engine.ts","kind":"C","owner":"policy-verify-sandbox","row":"verify.md"}
   ],
   "signalTimeouts": {
     "packages/foundation/src/process-contract.ts": ["STARTUP_TIMEOUT_MS"]
