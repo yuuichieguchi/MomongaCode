@@ -18,7 +18,7 @@ describe('a compaction that runs at a reduced protection level', () => {
     env.gateway.script.push(
       bigStep('t0', { letter: 'a', size: 0, pad: 'x' }),
       bigStep('t1', { letter: 'a', size: 0, pad: 'y' }),
-      ...[0, 1, 2, 3].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 2600) })),
+      ...[0, 1, 2, 3].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 2450) })),
       textStep('done'),
     );
     env.gateway.compactSummaries.push('S1');

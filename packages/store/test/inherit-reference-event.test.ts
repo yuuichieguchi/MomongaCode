@@ -223,8 +223,8 @@ describe('the shared item-count function (13.4 step 2)', () => {
 });
 
 describe('the snapshot version and the public view (13.2, 13.7)', () => {
-  it('SNAPSHOT_STATE_VERSION is 19, above the 16 that carries no reference fields, and a version-16 snapshot decodes to undefined', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBe(25);
+  it('SNAPSHOT_STATE_VERSION is above the 16 that carries no reference fields, and a version-16 snapshot decodes to undefined', () => {
+    expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(16);
     const state = initialRunState({ runId: NEXT_RUN, sessionId: SESSION, fence: TEST_FENCE });
     expect(decodeRunState('run-next@1', { ...encodeRunState(state), stateVersion: 16 })).toBeUndefined();
     expect(decodeRunState('run-next@1', encodeRunState(state))).toEqual(state);

@@ -103,10 +103,10 @@ describe('snapshot state version 11', () => {
     expect(await foldedRunState(store, run.id)).toEqual(state);
   });
 
-  it('round-trips streaming with seen, the mode and a plain-message summary', async () => {
+  it('round-trips streaming with seen, its thought ids, the mode and a plain-message summary', async () => {
     const { state, read } = await storedSnapshot();
     expect(state.mode).toBe('plan');
-    expect(state.streaming).toEqual({ step: 2, attempt: 1, seen: true, items: [{ itemId: 'm2', text: 'partial answer' }] });
+    expect(state.streaming).toEqual({ step: 2, attempt: 1, seen: true, items: [{ itemId: 'm2', text: 'partial answer' }], thoughtIds: ['r2'] });
     expect(state.summary).toEqual({ item: PLAIN, summary: 'first part', replacedThroughSeq: 3 });
     expect(read()).toEqual(state);
   });
