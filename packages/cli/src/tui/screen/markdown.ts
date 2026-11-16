@@ -32,7 +32,7 @@ type Role = keyof typeof MARKDOWN_STYLE;
 type Inline = { text: string; spans: Span[]; links: Link[] };
 
 const FENCE = /^(\s*)(`{3,}|~{3,})(.*)$/;
-const QUOTE = /^ {0,3}> ?(.*)$/;
+const QUOTE_MARK = /^ {0,3}> ?/;
 const HEADING = /^ {0,3}#{1,6} +/;
 const UNDERLINE = /^ {0,3}(?:=+|-+) *$/;
 const RULE = /^ {0,3}([-*_])(?: *\1){2,} *$/;
@@ -40,8 +40,10 @@ const LIST_ITEM = /^( *)([-*+]|\d{1,9}[.)]) +(.*)$/;
 const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
 const CELL_BAR = /(?<!\\)\|/;
 
-const PLAIN = /[^\\`[!<*_h]+/y;
+const PLAIN = /[^\\`[!<&*_h]+/y;
 const ESCAPED_MARK = /\\([!-/:-@[-`{-~])/y;
+const CHARACTER_REFERENCE = /&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{1,31});/y;
+const NUMERIC_REFERENCE = /^#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}))$/;
 const MARKDOWN_LINK = /\[((?:\\.|[^[\]\\])*)\]\(\s*<?([^\s()<>]+)>?(?:\s+"[^"]*")?\s*\)/y;
 const REFERENCE = /\[((?:\\.|[^[\]\\])+)\](?:\[((?:\\.|[^[\]\\])*)\])?/y;
 const DEFINITION = /^ {0,3}\[((?:\\.|[^[\]\\])+)\]:\s*<?([^\s<>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*$/;
@@ -51,6 +53,47 @@ const BARE_URL = /https?:\/\/[^\s<>"'`\\]+/y;
 const URL_TRAILING = /[.,;:!?)\]}*_~]+$/;
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 const SPACE = /\s/;
+
+const NAMED_CHARACTERS: ReadonlyMap<string, string> = new Map([
+  ['amp', '&'],
+  ['lt', '<'],
+  ['gt', '>'],
+  ['quot', '"'],
+  ['apos', "'"],
+  ['nbsp', ' '],
+  ['copy', '©'],
+  ['reg', '®'],
+  ['trade', '™'],
+  ['hellip', '…'],
+  ['mdash', '—'],
+  ['ndash', '–'],
+  ['lsquo', '‘'],
+  ['rsquo', '’'],
+  ['ldquo', '“'],
+  ['rdquo', '”'],
+  ['bull', '•'],
+  ['middot', '·'],
+  ['times', '×'],
+  ['divide', '÷'],
+  ['euro', '€'],
+  ['pound', '£'],
+  ['yen', '¥'],
+  ['cent', '¢'],
+  ['sect', '§'],
+  ['deg', '°'],
+  ['plusmn', '±'],
+  ['para', '¶'],
+  ['laquo', '«'],
+  ['raquo', '»'],
+]);
+
+const characterOf = (name: string): string | undefined => {
+  const numeric = NUMERIC_REFERENCE.exec(name);
+  if (numeric === null) return NAMED_CHARACTERS.get(name);
+  const code = numeric[1] === undefined ? Number.parseInt(numeric[2] ?? '', 10) : Number.parseInt(numeric[1], 16);
+  const valid = code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+  return valid ? String.fromCodePoint(code) : '�';
+};
 
 export type References = ReadonlyMap<string, string>;
 
@@ -129,6 +172,14 @@ const inlineInto = (out: Inline, source: string, depth: number, references: Refe
     if (match === null) return undefined;
     out.text += match[1];
     return ESCAPED_MARK.lastIndex;
+  };
+
+  const characterReferenceAt = (position: number): number | undefined => {
+    const match = sticky(CHARACTER_REFERENCE, position);
+    const character = match?.[1] === undefined ? undefined : characterOf(match[1]);
+    if (character === undefined) return undefined;
+    out.text += character;
+    return CHARACTER_REFERENCE.lastIndex;
   };
 
   const codeAt = (position: number): number | undefined => {
@@ -222,6 +273,8 @@ const inlineInto = (out: Inline, source: string, depth: number, references: Refe
     switch (source[position]) {
       case '\\':
         return escapeAt(position);
+      case '&':
+        return characterReferenceAt(position);
       case '`':
         return codeAt(position);
       case '[':
@@ -306,7 +359,7 @@ const sourceBytes = (line: string): number => Buffer.byteLength(line) + LONGEST_
 
 const overUnit = (line: string): boolean => sourceBytes(line) > MARKDOWN_UNIT_BYTES;
 
-type Fence = { readonly mark: string; readonly length: number };
+type Fence = { readonly mark: string; readonly length: number; readonly quote: number };
 
 const fenceOf = (line: string): (Fence & { info: string }) | undefined => {
   const match = FENCE.exec(line);
@@ -314,8 +367,22 @@ const fenceOf = (line: string): (Fence & { info: string }) | undefined => {
   const info = match?.[3];
   const mark = run?.[0];
   if (run === undefined || info === undefined || mark === undefined) return undefined;
-  return mark === '`' && info.includes('`') ? undefined : { mark, length: run.length, info: info.trim() };
+  return mark === '`' && info.includes('`') ? undefined : { mark, length: run.length, info: info.trim(), quote: 0 };
 };
+
+type Quoted = { readonly depth: number; readonly content: string };
+
+const unquoted = (line: string, limit: number): Quoted => {
+  let content = line;
+  let depth = 0;
+  for (let mark = QUOTE_MARK.exec(content); mark !== null && depth < limit; mark = QUOTE_MARK.exec(content)) {
+    content = content.slice(mark[0].length);
+    depth += 1;
+  }
+  return { depth, content };
+};
+
+const QUOTE_COLUMNS = displayWidth(QUOTE_GUTTER);
 
 const closes = (line: Fence & { info: string }, open: Fence): boolean => line.mark === open.mark && line.length >= open.length && line.info === '';
 
@@ -326,23 +393,16 @@ const withoutClosingMarks = (heading: string): string => {
   return end < trimmed.length && (end === 0 || trimmed[end - 1] === ' ') ? trimmed.slice(0, end).trimEnd() : trimmed;
 };
 
-const lineRows = (line: string, width: number, references: References): Row[] => {
-  let gutter = '';
-  let content = line;
-  for (let quote = QUOTE.exec(content); quote !== null && fits(gutter + QUOTE_GUTTER, width); quote = QUOTE.exec(content)) {
-    gutter += QUOTE_GUTTER;
-    content = quote[1] ?? '';
-  }
-  const lead: Prefix = { first: gutter, rest: gutter };
-  if (RULE.test(content)) return wrapInline(inlineOf('─'.repeat(Math.max(1, width - displayWidth(gutter))), NO_REFERENCES, 'rule'), width, lead);
+const lineRows = (content: string, width: number, references: References): Row[] => {
+  if (RULE.test(content)) return wrapInline(inlineOf('─'.repeat(Math.max(1, width)), NO_REFERENCES, 'rule'), width);
   const heading = HEADING.exec(content);
-  if (heading !== null) return wrapInline(inlineOf(withoutClosingMarks(content.slice(heading[0].length)), references, 'heading'), width, lead);
+  if (heading !== null) return wrapInline(inlineOf(withoutClosingMarks(content.slice(heading[0].length)), references, 'heading'), width);
   const item = LIST_ITEM.exec(content);
   if (item !== null) {
     const marker = `${item[1] ?? ''}${item[2] === '-' || item[2] === '*' || item[2] === '+' ? BULLET : (item[2] ?? '')} `;
-    if (fits(gutter + marker, width)) return wrapInline(inlineOf(item[3] ?? '', references), width, { first: gutter + marker, rest: gutter + ' '.repeat(displayWidth(marker)) });
+    if (fits(marker, width)) return wrapInline(inlineOf(item[3] ?? '', references), width, { first: marker, rest: ' '.repeat(displayWidth(marker)) });
   }
-  return wrapInline(inlineOf(content, references), width, lead);
+  return wrapInline(inlineOf(content, references), width);
 };
 
 const codePrefix = (width: number): Prefix => (fits(CODE_INDENT, width) ? { first: CODE_INDENT, rest: CODE_INDENT } : NO_PREFIX);
@@ -361,11 +421,11 @@ const coloredRows = (line: string, colours: readonly CodeSpan[], width: number):
   return wrapInline({ text: line, spans, links: [] }, width, codePrefix(width), null);
 };
 
-const codeLinesOf = (text: string, from: number, to: number): string[] => {
+const codeLinesOf = (text: string, from: number, to: number, quote: number): string[] => {
   if (to <= from) return [];
   const read = linesOf(text.slice(0, to), from);
   const found: string[] = [];
-  for (let line = read.at(found.length); line !== undefined; line = read.at(found.length)) found.push(line);
+  for (let line = read.at(found.length); line !== undefined; line = read.at(found.length)) found.push(unquoted(line, quote).content);
   if (text[to - 1] === '\n') found.pop();
   return found;
 };
@@ -466,7 +526,36 @@ const recordRows = (headers: readonly Inline[], body: readonly (readonly Inline[
 
 export type TableDrawing = 'grid' | 'records';
 
-type Page = { readonly width: number; readonly tables: TableDrawing; readonly references: References };
+type Page = { readonly width: number; readonly tables: TableDrawing; readonly references: References; readonly levels: number };
+
+const quoteLevelsOf = (width: number): number => {
+  let levels = 0;
+  while (fits(QUOTE_GUTTER.repeat(levels + 1), width)) levels += 1;
+  return levels;
+};
+
+const insideQuote = (page: Page, depth: number): Page => ({ ...page, width: page.width - QUOTE_COLUMNS * depth, levels: page.levels - depth });
+
+const quotedLook = (look: Look, depth: number): Look => (index) => {
+  const line = look(index);
+  if (line === undefined) return undefined;
+  const quote = unquoted(line, depth);
+  return quote.depth === depth ? quote.content : undefined;
+};
+
+const prefixedRows = (rows: readonly Row[], gutter: string): Row[] =>
+  gutter === ''
+    ? [...rows]
+    : rows.map((row): Row => {
+        const shift = gutter.length;
+        return {
+          ...row,
+          text: gutter + row.text,
+          spans: [[0, shift, MARKDOWN_STYLE.gutter], ...row.spans.map(([start, end, token]): Span => [start + shift, end + shift, token])],
+          prefixCols: row.prefixCols + displayWidth(gutter),
+          ...(row.links === undefined ? {} : { links: row.links.map(([start, end, url]): Link => [start + shift, end + shift, url]) }),
+        };
+      });
 
 const tableRows = (lines: readonly string[], { width, references }: Page, drawing: TableDrawing): Row[] => {
   const sources = lines.filter((_, index) => index !== 1).map(cellsOf);
@@ -478,7 +567,7 @@ const tableRows = (lines: readonly string[], { width, references }: Page, drawin
   return [borderRow(widths, '┌', '┬', '┐'), ...gridRows(headers, widths), borderRow(widths, '├', '┼', '┤'), ...body.flatMap((cells) => gridRows(cells, widths)), borderRow(widths, '└', '┴', '┘')];
 };
 
-type CodeBlock = { readonly from: number; readonly language: string; readonly rows: number };
+type CodeBlock = { readonly from: number; readonly language: string; readonly rows: number; readonly quote: number };
 
 export type BlockState = {
   readonly fence: Fence | undefined;
@@ -536,18 +625,19 @@ const definedBy = (line: string, references: References): boolean => {
   return label !== undefined && references.has(referenceName(label));
 };
 
-const continuesParagraph = (look: Look, index: number, references: References): boolean => {
+const continuesParagraph = (look: Look, index: number, { references, levels }: Page): boolean => {
   const line = look(index);
   if (line === undefined || line.trim() === '' || overUnit(line) || fenceOf(line) !== undefined) return false;
-  if (HEADING.test(line) || QUOTE.test(line) || RULE.test(line) || UNDERLINE.test(line) || LIST_ITEM.test(line) || definedBy(line, references)) return false;
+  if (HEADING.test(line) || unquoted(line, levels).depth > 0 || RULE.test(line) || UNDERLINE.test(line) || LIST_ITEM.test(line) || definedBy(line, references)) return false;
   return !startsTable(look, index);
 };
 
-const paragraphAt = (look: Look, index: number, list: number | undefined, { width, references }: Page): Block => {
+const paragraphAt = (look: Look, index: number, list: number | undefined, page: Page): Block => {
+  const { width, references } = page;
   const lines = [look(index) ?? ''];
   let bytes = sourceBytes(lines[0] ?? '');
   let end = index + 1;
-  for (; continuesParagraph(look, end, references); end += 1) {
+  for (; continuesParagraph(look, end, page); end += 1) {
     const line = look(end) ?? '';
     if (bytes + sourceBytes(line) > MARKDOWN_UNIT_BYTES) break;
     lines.push(line);
@@ -559,10 +649,28 @@ const paragraphAt = (look: Look, index: number, list: number | undefined, { widt
   return { rows: lines.flatMap((line) => lineRows(line, width, references)), next: end, state: { ...OUTSIDE, list, paragraph: list === undefined ? 'top' : 'item' } };
 };
 
+const quoteBlock = (look: Look, index: number, depth: number, state: BlockState, page: Page): Block => {
+  const inner = blockAt(quotedLook(look, depth), index, state, insideQuote(page, depth));
+  const fence = inner.state.fence;
+  return {
+    rows: prefixedRows(inner.rows, QUOTE_GUTTER.repeat(depth)),
+    next: inner.next,
+    state: fence === undefined ? OUTSIDE : { ...OUTSIDE, fence: { ...fence, quote: depth } },
+  };
+};
+
 const blockAt = (look: Look, index: number, state: BlockState, page: Page): Block => {
   const { width, references } = page;
   const line = look(index) ?? '';
   const one = (rows: Row[], next: BlockState): Block => ({ rows, next: index + 1, state: next });
+  if (state.fence !== undefined && state.fence.quote > 0) {
+    if (unquoted(line, state.fence.quote).depth < state.fence.quote) return blockAt(look, index, OUTSIDE, page);
+    return quoteBlock(look, index, state.fence.quote, { ...state, fence: { ...state.fence, quote: 0 } }, page);
+  }
+  if (state.fence === undefined) {
+    const quote = unquoted(line, page.levels).depth;
+    if (quote > 0) return quoteBlock(look, index, quote, OUTSIDE, page);
+  }
   const fence = fenceOf(line);
   if (state.fence !== undefined) return fence !== undefined && closes(fence, state.fence) ? one([], { ...state, fence: undefined }) : one(codeRows(line, width, 'code'), state);
   if (state.records !== undefined) return isTableRow(line) ? one(recordAt(line, state.records, page), state) : blockAt(look, index, { ...state, records: undefined }, page);
@@ -577,7 +685,7 @@ const blockAt = (look: Look, index: number, state: BlockState, page: Page): Bloc
   if (indent >= codeFrom && state.paragraph === 'none' && (item === null || state.list === undefined)) return one(codeRows(line.slice(codeFrom), width, 'code'), { ...OUTSIDE, list });
   if (startsTable(look, index)) return tableAt(look, index, page);
   if (definedBy(line, references)) return one([], { ...OUTSIDE, list });
-  if (HEADING.test(line) || QUOTE.test(line) || RULE.test(line)) return one(lineRows(line, width, references), { ...OUTSIDE, list });
+  if (HEADING.test(line) || RULE.test(line)) return one(lineRows(line, width, references), { ...OUTSIDE, list });
   if (item !== null) return one(lineRows(line, width, references), { ...OUTSIDE, paragraph: 'item', list: (item[1] ?? '').length + (item[2] ?? '').length + 1 });
   return paragraphAt(look, index, state.paragraph === 'item' ? state.list : list, page);
 };
@@ -612,7 +720,7 @@ export type Parsed = { rows: Row[]; retract: number; point: ParsePoint; tail: Ro
 
 export const parseMarkdown = (text: string, from: ParsePoint, width: number, reading: Reading): Parsed => {
   const lines = linesOf(text, from.characters);
-  const page: Page = { width, tables: reading.tables, references: reading.references };
+  const page: Page = { width, tables: reading.tables, references: reading.references, levels: quoteLevelsOf(width) };
   let examined = 0;
   const look: Look = (index) => {
     examined = Math.max(examined, index + 1);
@@ -624,18 +732,19 @@ export const parseMarkdown = (text: string, from: ParsePoint, width: number, rea
   let { state } = from;
   let taken = 0;
   const colourBlock = (code: CodeBlock, to: number): void => {
-    const coloured = blockRowsOf(codeLinesOf(text, code.from, to), code.language, width);
+    const inside = insideQuote(page, code.quote);
+    const coloured = blockRowsOf(codeLinesOf(text, code.from, to, code.quote), code.language, inside.width);
     if (coloured === undefined) return;
     const dropped = Math.min(code.rows, rows.length);
     rows.length -= dropped;
     retract += code.rows - dropped;
-    for (const row of coloured) rows.push(row);
+    for (const row of prefixedRows(coloured, QUOTE_GUTTER.repeat(code.quote))) rows.push(row);
   };
   const traced = (before: BlockState, block: Block): BlockState => {
     const after = block.state;
     if (before.fence === undefined && after.fence !== undefined) {
-      const [language = ''] = (fenceOf(lines.at(index) ?? '')?.info ?? '').split(SPACE);
-      return { ...after, code: { from: lines.startOf(block.next), language, rows: 0 } };
+      const [language = ''] = (fenceOf(unquoted(lines.at(index) ?? '', after.fence.quote).content)?.info ?? '').split(SPACE);
+      return { ...after, code: { from: lines.startOf(block.next), language, rows: 0, quote: after.fence.quote } };
     }
     const { code } = before;
     if (code === undefined) return after;
@@ -673,7 +782,7 @@ export type ReferenceScan = { readonly characters: number; readonly fence: Fence
 
 export const NOTHING_SCANNED: ReferenceScan = { characters: 0, fence: undefined, references: NO_REFERENCES };
 
-const MAY_MATTER = /^\s*[[`~]/;
+const MAY_MATTER = /^[\s>]*[[`~]/;
 
 export const referencesOf = (text: string, before: ReferenceScan, settled: boolean): ReferenceScan => {
   let { fence } = before;
@@ -685,7 +794,7 @@ export const referencesOf = (text: string, before: ReferenceScan, settled: boole
     const raw = text.slice(start, stop);
     start = end === -1 ? text.length : end + 1;
     if (!MAY_MATTER.test(raw)) continue;
-    const line = inertText(end !== -1 && raw.endsWith('\r') ? raw.slice(0, -1) : raw);
+    const line = unquoted(inertText(end !== -1 && raw.endsWith('\r') ? raw.slice(0, -1) : raw), Number.POSITIVE_INFINITY).content;
     const marks = fenceOf(line);
     if (fence !== undefined) {
       if (marks !== undefined && closes(marks, fence)) fence = undefined;
