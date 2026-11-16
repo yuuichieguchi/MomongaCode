@@ -1,7 +1,7 @@
 export { ACTIVATE_SKILL_TOOL_NAME, DEFAULT_SKILL_LIMITS, DESCRIPTION_MAX_LENGTH, SKILL_DIRECTORY_SEGMENTS, SKILL_FILE_NAME } from './constants.ts';
 export { isValidSkillName } from './scan.ts';
 export type { SkillLimits } from './constants.ts';
-export { UnreadablePathError, attemptRead, createNodeSkillFileSystem, describeUnreadable } from './file-system.ts';
+export { UnreadablePathError, attemptRead, createNodeSkillFileSystem, describeUnreadable, stoppedBy } from './file-system.ts';
 export type { DirectoryEntry, ReadAttempt, SkillFileSystem } from './file-system.ts';
 export { parseSkillFile } from './frontmatter.ts';
 export type { SkillFileParse } from './frontmatter.ts';

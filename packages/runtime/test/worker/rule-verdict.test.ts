@@ -6,6 +6,7 @@ import { makeEnv as makeBareEnv } from './harness.ts';
 import type { Env, EnvOptions } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+import { deferred } from './deferred.ts';
 import { RuleVerificationFailure } from '../../src/process/rule-verifier-thread-client.ts';
 import { folderPolicyVerification } from '../../src/process/folder-verification.ts';
 import { ruleVerdictFor } from '../../src/worker/rule-verdict.ts';
@@ -322,7 +323,7 @@ describe('the verdict of the permission rules before a run, with a fake verifier
     env.ruleVerifier.answer = () => refuted;
 
     const pinned = await ruleVerdictFor(
-      { options: { store: env.store, home: env.home, ruleVerifier: env.ruleVerifier }, control: { signal: new AbortController().signal, recordingRaised: <T>(pending: Promise<T>) => pending, fail: (error: unknown) => { throw error; } } as never },
+      { options: { store: env.store, home: env.home, ruleVerifier: env.ruleVerifier, verificationStop: new AbortController().signal }, control: { signal: new AbortController().signal, recordingRaised: <T>(pending: Promise<T>) => pending, fail: (error: unknown) => { throw error; } } as never },
       { permissionMode: 'manual', cwd: env.project } as never,
       { rules, roots: [env.project], exemptDirectory: env.sessionTmpDir, enforcement: 'exact-paths', unixSockets },
     );
@@ -330,33 +331,39 @@ describe('the verdict of the permission rules before a run, with a fake verifier
     expect(env.ruleVerifier.verified).toHaveLength(1);
   });
 
-  it('a worker that stops during the verification loses nothing: the next claim verifies once and starts', async () => {
+  it('a worker that stops during the verification loses nothing: the verification the daemon started completes and the next claim takes its verdict', async () => {
     const env = await makeEnv();
     let entered = (): void => undefined;
     const verifying = new Promise<void>((resolve) => {
       entered = resolve;
     });
+    const release = deferred<RuleVerdict>();
+    const signals: AbortSignal[] = [];
     let first = true;
     env.ruleVerifier.answer = (_input: unknown, signal: AbortSignal) => {
+      signals.push(signal);
       if (!first) return proved;
       first = false;
       entered();
-      return new Promise<RuleVerdict>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+      return release.promise;
     };
     env.gateway.script.push(textStep('Hello.'));
     const run = await env.enqueue('Say hello');
     const stopped = env.worker('worker-1');
     const running = env.runOnce(stopped);
     await verifying;
-    await stopped.abort('shutdown');
+    const stopping = stopped.abort('shutdown');
+    release.resolve(proved);
+    await stopping;
     await running;
+    expect(signals[0]?.aborted).toBe(false);
     expect(env.ofType(run.id, 'model.requested')).toEqual([]);
     expect(env.run(run.id).status).toBe('QUEUED');
 
     await env.runOnce(env.worker('worker-2'));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.ruleVerifier.verified).toHaveLength(2);
+    expect(env.ruleVerifier.verified).toHaveLength(1);
   });
 
   it('a rule set that changes during the run is verified again before the next batch: refuted executes no call and fails the run; the journal holds the new verdict', async () => {

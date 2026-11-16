@@ -40,6 +40,19 @@ const thrownBy = async (call: () => unknown): Promise<unknown> => {
   throw new Error('expected a throw');
 };
 
+describe('the sandbox network of a session', () => {
+  it('is the value the session was created with, over the user setting, and the user setting when the session has none', async () => {
+    const f = await makeRuntimeFixture();
+    writeUserSettings(f.temp.home, { ...chatTargetSettings(DECLARED_CREDENTIAL), sandboxNetwork: 'allow' });
+    await f.composition.userSnapshot(signalNever());
+    const chosen = f.store.createSession({ cwd: f.temp.project, env: {}, permissionMode: 'manual', model: 'default', sandboxNetwork: 'deny' });
+    const plain = createSession(f.store, f.temp.project);
+
+    expect(await f.composition.sandboxNetwork(chosen, signalNever())).toBe('deny');
+    expect(await f.composition.sandboxNetwork(plain, signalNever())).toBe('allow');
+  });
+});
+
 describe('settings composition hooks and auto mode', () => {
   const stopHook = (command: string) => ({ Stop: [{ hooks: [{ type: 'command', command }] }] });
 
