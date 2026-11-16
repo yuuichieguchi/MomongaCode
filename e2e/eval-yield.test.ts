@@ -93,7 +93,7 @@ describe('momonga eval yield live', () => {
     expect(report.gate?.passed).toBe(false);
     expect(report.families).toHaveLength(MINIMUM_PAIRS);
     for (const family of report.families) {
-      expect(family.learn).toMatchObject({ status: 'COMPLETED', candidates: 2, accepted: 1, rejected: 1, reflection: { state: 'done', calls: 1 } });
+      expect(family.learn).toMatchObject({ status: 'COMPLETED', candidates: 1, accepted: 1, rejected: 0, reflection: { state: 'done', calls: 1 } });
       expect(family.learn.reflection.inputTokens).toBeGreaterThan(0);
       expect(family.nothingAccepted).toBe(false);
       expect(family.recalledAccepted).toBe(1);

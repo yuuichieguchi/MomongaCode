@@ -182,6 +182,23 @@ describe('MCP input in the terminal', () => {
     }
   });
 
+  it(titleOf('cli-start-keys-pty'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, fake } = await prepareProduct({ script: [textReply('noted 1a')] });
+    const pty = await spawnWithFakes(home);
+    await trustAndWait(pty);
+    pty.write('1');
+    pty.write('a');
+    await pty.waitFor('> 1a');
+    pty.write(KEYS.up);
+    pty.write(KEYS.down);
+    pty.write(KEYS.enter);
+    await pty.waitFor('noted 1a');
+    await untilRunEnds(pty, 'manual');
+    expect(requestText(chatCompletions(fake)[0])).toContain('1a');
+    expect(fs.existsSync(path.join(home.root, OPEN_LOG_FILE_NAME))).toBe(false);
+    await leave(pty);
+  });
+
   it(titleOf('cli-startup-notices'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home } = await prepareProduct();
     const agents = path.join(home.project, '.momonga', 'agents');
