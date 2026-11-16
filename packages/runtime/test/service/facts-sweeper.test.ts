@@ -289,7 +289,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
       expect(problems).toEqual([]);
     });
 
-    it('a closed session that the retention sweep deletes while its run is in a batch leaves no row behind, and the other runs are still covered', async () => {
+    it('a closed session that the retention sweep deletes while its run is in a batch leaves no row behind, and the batch commits with the other runs covered', async () => {
       const periodMs = 100_000;
       const scene = await world();
       const closed = await scene.complete();
@@ -299,8 +299,13 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
       const thread = threadOf(scene.sessionOf, new Set(), undefined, async (runId) => {
         if (runId === closed) await scene.store.retention.sweep({ periodMs, purges: [] }, new AbortController().signal);
       });
-      const sweeper = startFactsSweeper({ store: scene.store as RuntimeStore, thread, timers: scene.timers, intervalMs: 1000, batchSize, onError: () => undefined });
+      const errors: unknown[] = [];
+      const sweeper = startFactsSweeper({ store: scene.store as RuntimeStore, thread, timers: scene.timers, intervalMs: 1000, batchSize, onError: (error: unknown) => errors.push(error) });
       const problems: string[] = [];
+      await tick(scene.timers);
+      for (let settle = 0; settle < 8; settle += 1) await afterMicrotasks();
+      expect(errors).toEqual([]);
+      expect(scene.facts.get(kept)?.kind).toBe('facts');
       for (let round = 0; round < 4; round += 1) {
         await tick(scene.timers);
         for (let settle = 0; settle < 8; settle += 1) await afterMicrotasks();
