@@ -186,12 +186,20 @@ export const calleeName = (call: SourceNode): string | undefined => {
 
 export const relativeOf = (file: string): string => path.relative(ROOT, file).split(path.sep).join('/');
 
+export const GENERATED_SOURCE_SUFFIX = '.generated.ts';
+
+export const isGeneratedSource = (file: string): boolean => file.endsWith(GENERATED_SOURCE_SUFFIX);
+
+export const isScannedSource = (file: string): boolean => /\.tsx?$/.test(file) && !isGeneratedSource(file) && !file.endsWith('.d.ts');
+
 const filesUnder = (directory: string): string[] =>
   fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(directory, entry.name);
-    if (entry.isDirectory()) return filesUnder(full);
-    return /\.tsx?$/.test(entry.name) && !entry.name.endsWith('.generated.ts') && !entry.name.endsWith('.d.ts') ? [full] : [];
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : filesUnder(full);
+    return isScannedSource(entry.name) ? [full] : [];
   });
+
+export const sourcesUnder = (directory: string): string[] => (fs.existsSync(directory) ? filesUnder(directory).sort() : []);
 
 export const productPackages = (): string[] =>
   fs
@@ -199,7 +207,16 @@ export const productPackages = (): string[] =>
     .filter((name) => name !== 'testkit' && fs.existsSync(path.join(ROOT, 'packages', name, 'src')))
     .sort();
 
-export const packageSources = (name: string): string[] => filesUnder(path.join(ROOT, 'packages', name, 'src')).sort();
+export const workspacePackages = (): string[] =>
+  fs
+    .readdirSync(path.join(ROOT, 'packages'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+
+export const packageSources = (name: string): string[] => sourcesUnder(path.join(ROOT, 'packages', name, 'src'));
+
+export const packageTests = (name: string): string[] => sourcesUnder(path.join(ROOT, 'packages', name, 'test'));
 
 export const productSources = (): string[] => productPackages().flatMap(packageSources);
 
@@ -223,3 +240,52 @@ export const perFile = (files: readonly string[], count: (source: ParsedSource) 
       .map((file) => [relativeOf(file), count(parsedProductSource(file))] as const)
       .filter(([, counts]) => Object.keys(counts).length > 0),
   );
+
+export const parentsOf = (source: ParsedSource): ReadonlyMap<SourceNode, SourceNode | undefined> => new Map(source.nodes.map(({ node, parent }) => [node, parent] as const));
+
+export interface StringPart {
+  readonly node: SourceNode;
+  readonly text: string;
+}
+
+const cookedOf = (node: SourceNode): string | undefined => {
+  const value = node['value'];
+  if (typeof value !== 'object' || value === null || !('cooked' in value)) return undefined;
+  return typeof value.cooked === 'string' ? value.cooked : undefined;
+};
+
+export const stringPartsOf = (source: ParsedSource): StringPart[] =>
+  source.nodes.flatMap(({ node }) => {
+    if ((node.type === 'Literal' || node.type === 'JSXText') && typeof node['value'] === 'string') return [{ node, text: node['value'] }];
+    if (node.type === 'TemplateElement') {
+      const text = cookedOf(node);
+      return text === undefined ? [] : [{ node, text }];
+    }
+    return [];
+  });
+
+export const callsOf = (source: ParsedSource): SourceNode[] => source.nodes.map(({ node }) => node).filter((node) => node.type === 'CallExpression' || node.type === 'NewExpression');
+
+export const isMemberCallOf = (call: SourceNode, method: string): boolean => {
+  const callee = unwrapped(childOf(call, 'callee'));
+  return callee?.type === 'MemberExpression' && callee['computed'] !== true && identifierName(childOf(callee, 'property')) === method;
+};
+
+export const moduleSpecifiersOf = (file: string, text: string = fs.readFileSync(file, 'utf8')): string[] => {
+  const found: string[] = [];
+  const visit = (node: SourceNode): void => {
+    if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration' || node.type === 'ImportExpression') {
+      const specifier = literalValue(childOf(node, 'source'));
+      if (typeof specifier === 'string') found.push(specifier);
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) {
+        for (const item of value) if (isNode(item)) visit(item);
+      } else if (isNode(value)) {
+        visit(value);
+      }
+    }
+  };
+  visit(programOf(file, text));
+  return found;
+};
