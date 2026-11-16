@@ -6,7 +6,7 @@ import type { UdsClient } from '@momonga/foundation';
 import { onCleanup } from '../process/helpers.ts';
 import { launchService, openEventStream, serviceOptions, startService } from '../service/helpers.ts';
 
-vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS * 4 });
+vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const RUNS = 200;
 const FIRST_SEED = 4_301;

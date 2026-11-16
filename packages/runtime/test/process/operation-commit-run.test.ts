@@ -2,11 +2,11 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { finishApprovingPrompts, launchRuntime, modelSettings, prepareStack, readDb, scriptedToolCall, sessionEnvFor, startGateway, waitForStatus } from './run-helpers.ts';
 import type { Launched, RunHome } from './run-helpers.ts';
 
-vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+vi.setConfig({ testTimeout: SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS });
 
 const HOST_KIND = process.platform === 'darwin' ? 'seatbelt' : 'bubblewrap';
 const BYPASS = { permissionMode: 'bypassPermissions', bypassAllowed: true };
@@ -90,7 +90,7 @@ describe('GitCommit through the runtime process, composed as the product compose
     ]);
     expect(gitIn(stack.temp, 'log', '-1', '--format=%s')).toBe('add notes');
     expect(gitIn(stack.temp, 'status', '--porcelain')).toBe('');
-  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
+  });
 
   it('offers the Git and pull request operations only in a folder the person trusts', async () => {
     const stack = await prepareStack({ script: [textReply('first'), textReply('second')] });

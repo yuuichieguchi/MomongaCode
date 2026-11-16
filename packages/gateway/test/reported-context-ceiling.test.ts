@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { runProbe } from '@momonga/gateway';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
@@ -8,6 +8,8 @@ import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 import { ACCOUNT, accountRoute, signIn, startPlanGateway } from './plan-signin-support.ts';
 import { hostProbePorts } from './probe-ports-support.ts';
 import { LMSTUDIO_API_V1_MODELS, LMSTUDIO_V1_MODELS } from './detect-kinds-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CEILING = 32768;
 
@@ -27,7 +29,7 @@ describe('a reported maximum is a ceiling, never the window in force (design-mod
     expect(reportedContextCeiling(LMSTUDIO_API_V1_MODELS)).toBe(32768);
   });
 
-  it('the probe searches the window when the listing reports only a maximum', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('the probe searches the window when the listing reports only a maximum', async () => {
     const window = 3000;
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', contextWindow: window, models: [{ id: 'system', object: 'model', max_context_length: CEILING }] });
     try {
@@ -39,7 +41,7 @@ describe('a reported maximum is a ceiling, never the window in force (design-mod
     }
   });
 
-  it('the plan catalog marks an entry with only a maximum unusable', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('the plan catalog marks an entry with only a maximum unusable', async () => {
     const gateway = await startPlanGateway({ models: [{ slug: 'ceiling-model', display_name: 'Ceiling Model', visibility: 'list', max_context_length: CEILING }] });
     try {
       await signIn(gateway);
