@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { defineTool } from '@momonga/tools';
-import { DEADLINE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
+import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
 import { MODEL_ID, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 describe('worker recovery of a not_applied call under the current policy', () => {
@@ -93,7 +93,7 @@ describe('worker reporter with a throwing onError hook', () => {
         },
       });
       worker.start();
-      await env.passTime(() => env.run(healthy.id).status === 'COMPLETED', 'the healthy run to complete');
+      await env.passTime(() => env.run(healthy.id).status === 'COMPLETED', 'the healthy run to complete while the failed claim still holds its lease', LEASE_MS - 1);
       await expect(env.settled(worker.stop(), 'the worker to stop')).resolves.toBeUndefined();
     } finally {
       process.off('unhandledRejection', onUnhandled);
