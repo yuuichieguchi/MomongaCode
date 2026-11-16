@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -201,7 +202,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
 
       const outcome = await probeManagedFm({
         timers: systemTiming,
-        inspector: testProcessInspector(),
+        inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
         launch: TEST_UNPROTECTED_LAUNCH,
         lock: testKernelLock(),
         platform: process.platform,

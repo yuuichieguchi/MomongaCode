@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { momongaPaths, nodeFileSystem, personCapabilityOf, ruleEnforcementOf, systemRandom } from '@momonga/foundation';
+import { momongaPaths, nodeFileSystem, nodeFileSystemSync, personCapabilityOf, ruleEnforcementOf, systemRandom } from '@momonga/foundation';
 import type { ChildLaunch } from '@momonga/foundation';
 import { createGroupSpawn } from '../../../gateway/src/managed/fm-processes.ts';
 import { createStdioTransport } from '@momonga/mcp';
@@ -175,7 +175,7 @@ const runChild: Record<ChildKind, (composition: Composition, place: Home, report
     const markerDirectory = path.join(place.work, 'server-markers');
     fs.mkdirSync(markerDirectory, { recursive: true });
     const command = launch.commandOf(place.probeArgv(report), []);
-    const child = await createGroupSpawn({ env: { PATH: HOST_PATH }, markerDirectory, onWarning: () => undefined, inspector: testProcessInspector() })(command.file, command.args, launch.protection);
+    const child = await createGroupSpawn({ env: { PATH: HOST_PATH }, markerDirectory, onWarning: () => undefined, inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync })(command.file, command.args, launch.protection);
     cleanups.push(async () => {
       await child.kill('SIGKILL');
     });

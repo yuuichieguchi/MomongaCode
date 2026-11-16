@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,7 +36,7 @@ const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] 
   exec: fakeExec,
   hashes: createBinaryHashCache(),
   lock: testKernelLock(),
-  inspector: testProcessInspector(),
+  inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
   launch: TEST_UNPROTECTED_LAUNCH,
   isUsableBinary: async (binary: string) => fs.existsSync(binary),
   readStopGraceMs: () => 1_000,

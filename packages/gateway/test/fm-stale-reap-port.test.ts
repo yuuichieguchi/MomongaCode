@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -33,7 +34,7 @@ describe('the start-up reap of stale managed server groups', () => {
     const dir = makeHome();
     const markerDirectory = path.join(dir, 'markers');
     fs.mkdirSync(markerDirectory, { recursive: true });
-    await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory, onWarning: () => undefined })(process.execPath, ['-e', STAY_ALIVE], TEST_UNPROTECTED_LAUNCH.protection);
+    await createGroupSpawn({ inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync, env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory, onWarning: () => undefined })(process.execPath, ['-e', STAY_ALIVE], TEST_UNPROTECTED_LAUNCH.protection);
     const recordedGroup = (): number | undefined => {
       const marker = fs.readdirSync(markerDirectory)[0];
       const recorded = marker === undefined ? undefined : /g0*(\d+)/.exec(fs.readFileSync(path.join(markerDirectory, marker), 'utf8'))?.[1];

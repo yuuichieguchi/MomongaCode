@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { PERSON_TRAFFIC } from '../../src/probe/request-gate.ts';
 import { NO_PROGRESS_LISTENER } from '../../src/probe/auto-probe.ts';
 import { createHash } from 'node:crypto';
@@ -225,7 +226,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     const report = await measureManagedServer({
       timers: systemTiming,
       gate: PERSON_TRAFFIC,
-      inspector: testProcessInspector(),
+      inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
       launch: TEST_UNPROTECTED_LAUNCH,
       lock: testKernelLock(),
       description,

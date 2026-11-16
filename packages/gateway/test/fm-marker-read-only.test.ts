@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -22,7 +23,7 @@ describe('the marker descriptor the managed group spawn hands to its child, whos
     const markers = path.join(dir, 'markers');
     fs.mkdirSync(markers, { mode: 0o700 });
     const outcomeFile = path.join(dir, 'outcome');
-    await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: () => undefined })(process.execPath, ['-e', WRITE_THROUGH_MARKER, outcomeFile], TEST_UNPROTECTED_LAUNCH.protection);
+    await createGroupSpawn({ inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync, env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: () => undefined })(process.execPath, ['-e', WRITE_THROUGH_MARKER, outcomeFile], TEST_UNPROTECTED_LAUNCH.protection);
     const [marker] = fs.readdirSync(markers);
     const markerFile = path.join(markers, marker ?? '');
     await until(() => fs.readFileSync(markerFile, 'utf8').includes('\ng'), 'the group line of the attempt record');

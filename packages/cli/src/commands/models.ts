@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
@@ -880,7 +881,7 @@ export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, progr
   return listManagedModel({
     paths,
     lock: locks.mechanism,
-    inspector: layoutProcessInspector(locks.capability),
+    inspector: layoutProcessInspector(locks.capability), random: systemRandom, fileSystem: nodeFileSystemSync,
     instance: await cliProbeInstance(ports, paths, description, program.id),
     description,
     target: program.id,

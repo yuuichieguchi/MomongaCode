@@ -85,7 +85,7 @@ import type {
   RolePort,
   SecretStore,
   StopValues,
-  TextStream, EndpointScope } from '@momonga/foundation';
+  TextStream, EndpointScope, FileSystemSync, Random } from '@momonga/foundation';
 import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, layoutProcessInspector, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import type { ChildLaunch, KernelLockMechanism, LayoutLocks, ProcessInspector } from '@momonga/foundation';
 import {
@@ -433,6 +433,8 @@ type ManagedAdapterWiring = {
   paths: MomongaPaths;
   lock: KernelLockMechanism;
   inspector: ProcessInspector;
+  random: Random;
+  fileSystem: FileSystemSync;
   generation: number;
   childEnv: Readonly<Record<string, string>>;
   exec: ExecFn;
@@ -484,6 +486,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     lockPath: serving.lockPath,
     lock: wiring.lock,
     inspector: wiring.inspector,
+    random: wiring.random,
+    fileSystem: wiring.fileSystem,
     markerDirectory: serving.markerDirectory,
     readyTimeoutMs: target.readyTimeoutMs,
     env: wiring.childEnv,
@@ -507,6 +511,8 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     instance: probing,
     lock: wiring.lock,
     inspector: wiring.inspector,
+    random: wiring.random,
+    fileSystem: wiring.fileSystem,
     readyTimeoutMs: target.readyTimeoutMs,
     env: wiring.childEnv,
     exec: wiring.exec,
@@ -1310,6 +1316,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               paths,
               lock: kernelLock,
               inspector,
+              random: systemRandom,
+              fileSystem: nodeFileSystemSync,
               childEnv,
               exec,
               execWithStdin,
