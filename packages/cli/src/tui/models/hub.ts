@@ -1,4 +1,4 @@
-import { plainHttpWarningText } from '@momonga/config';
+import { declaredCommandProblem, plainHttpWarningText } from '@momonga/config';
 import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
 import type { GatewayHealth } from '@momonga/protocol';
 import { SEPARATOR, addressesOf, configuredWindowsOf, modelRowOf, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
@@ -113,8 +113,13 @@ const declaredOf = (edit: ModelsEdit): Readonly<Record<string, unknown>> => {
   return typeof servers === 'object' && servers !== null ? (servers as Record<string, unknown>) : {};
 };
 
+export const programCommandProblem = (command: string): string | undefined => {
+  const problem = declaredCommandProblem(command);
+  return problem === undefined ? undefined : `The command ${problem}`;
+};
+
 const programValue = async (context: ModelsFlowContext, field: (typeof PROGRAM_FIELD_ROWS)[number]['field']): Promise<string | undefined> => {
-  if (field === 'command') return context.overlays.promptText({ title: PROGRAM_PATH_PROMPT, validate: (text) => (text.trim() === '' ? 'Write a value.' : undefined) });
+  if (field === 'command') return context.overlays.promptText({ title: PROGRAM_PATH_PROMPT, validate: (text) => programCommandProblem(text.trim()) });
   if (field === 'args') {
     const text = await context.overlays.promptText({ title: PROGRAM_ARGUMENTS_PROMPT, validate: () => undefined });
     return text === undefined ? undefined : JSON.stringify(text.split(/\s+/).filter((part) => part !== ''));

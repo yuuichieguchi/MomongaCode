@@ -140,13 +140,17 @@ const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, ser
   };
 };
 
-const checkBaseUrl = (baseUrl: string, where: string, carriesCredential: boolean): void => {
+export const baseUrlProblem = (baseUrl: string, carriesCredential: boolean): string | undefined => {
   const problem = transportUrlProblem(baseUrl);
-  if (problem === 'cleartext' && carriesCredential) {
-    throw new ConfigError(`${where}: baseUrl ${redactedUrl(baseUrl)} must use https: because this connection sends a credential (http: to another computer is only allowed for a connection without one)`);
-  }
-  if (problem !== undefined && problem !== 'cleartext') throw new ConfigError(`${where}: ${transportUrlMessage('baseUrl', baseUrl, problem)}`);
-  if (baseUrl.includes('?') || baseUrl.includes('#')) throw new ConfigError(`${where}: baseUrl must not contain a query or fragment`);
+  if (problem === 'cleartext' && carriesCredential) return `baseUrl ${redactedUrl(baseUrl)} must use https: because this connection sends a credential (http: to another computer is only allowed for a connection without one)`;
+  if (problem !== undefined && problem !== 'cleartext') return transportUrlMessage('baseUrl', baseUrl, problem);
+  if (baseUrl.includes('?') || baseUrl.includes('#')) return 'baseUrl must not contain a query or fragment';
+  return undefined;
+};
+
+const checkBaseUrl = (baseUrl: string, where: string, carriesCredential: boolean): void => {
+  const problem = baseUrlProblem(baseUrl, carriesCredential);
+  if (problem !== undefined) throw new ConfigError(`${where}: ${problem}`);
 };
 
 const checkSocketPath = (socketPath: string, where: string): void => {
