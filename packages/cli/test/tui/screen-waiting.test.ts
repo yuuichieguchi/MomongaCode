@@ -35,7 +35,7 @@ const MEASURING = { fields: ['toolCalling'], step: 'plain answer', elapsedSecond
 describe('the phase of a run comes from its events (6.1)', () => {
   it('names each wait by the event that starts it and takes its start from that event', () => {
     expect(phaseAfter([at(7000, requested)])).toEqual({ kind: 'model', text: 'waiting for the model', startedAt: 7000 });
-    expect(phaseAfter([requested, at(8000, { type: 'model.stream.restarted', attempt: 0 })])).toMatchObject({ text: 'waiting for the model', startedAt: 8000 });
+    expect(phaseAfter([requested, at(8000, { type: 'model.stream.restarted', step: 0, attempt: 0, itemIds: [] })])).toMatchObject({ text: 'waiting for the model', startedAt: 8000 });
     expect(phaseAfter([requested, at(2000, thought('a')), at(3000, thought('b'))])).toMatchObject({ text: 'thinking', startedAt: 2000 });
     expect(phaseAfter([requested, thought('a'), at(4000, message('x')), at(5000, message('y'))])).toMatchObject({ text: 'responding', startedAt: 4000 });
     expect(phaseAfter([at(100, call('c1', 'Bash ls'))])).toMatchObject({ text: 'running Bash ls', startedAt: 100 });

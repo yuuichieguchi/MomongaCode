@@ -746,9 +746,10 @@ export function App(props: AppProps) {
             if (key !== undefined) origins.at(key);
             if (event.type === 'model.responded' && event.target !== undefined) setServedTarget(event.target);
             if (event.type === 'user.message' && event.source !== undefined) refreshInbox().catch(reportError);
-            if (replay === undefined) foldLiveEvent(store, event, first);
-            if (replay === undefined && isPrompt(event, first)) showPromptNotes();
-            else foldReplayedEvent(store, event, first, (record) => showShellRecord(store, record, now()));
+            if (replay === undefined) {
+              foldLiveEvent(store, event, first);
+              if (isPrompt(event, first)) showPromptNotes();
+            } else foldReplayedEvent(store, event, first, (record) => showShellRecord(store, record, now()));
             if (key !== undefined) replay?.notes?.after(key);
           },
           replay === undefined || seq === undefined ? undefined : replay.before + seq,

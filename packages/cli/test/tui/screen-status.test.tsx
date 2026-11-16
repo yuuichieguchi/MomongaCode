@@ -140,8 +140,8 @@ describe('a state that ends is not an entry (6.5)', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/mode plan', '> /mode plan');
     app.stdin.write(KEYS.enter);
-    const said = linesOf(await untilFrame(app, 'permission mode: plan'));
-    expect(said[13]).toMatch(/^mode: plan \(shift\+tab\) · tokens: 0 · context: 0% +permission mode: plan$/);
+    const said = linesOf(await untilFrame(app, 'plan: read-only tools'));
+    expect(said[13]).toMatch(/^mode: plan \(shift\+tab\) · tokens: 0 · context: 0% +plan: read-only tools, the agent proposes a plan$/);
     expect(said.slice(0, 10).join('').trim()).toBe('');
     terminal.emit(keyX);
     const after = linesOf(await untilFrame(app, 'new line'));
