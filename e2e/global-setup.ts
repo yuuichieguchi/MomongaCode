@@ -6,9 +6,9 @@ import { BUNDLE_SCRIPT } from './support/launcher.ts';
 import { claimE2eRun } from './support/run-setup.ts';
 import { SANDBOX_ENV, encodeSandboxProbe, runSandboxProbe, sandboxLine } from './support/sandbox.ts';
 
-export const BOTH_PROJECTS_WARNING = 'e2e warning: both projects are selected; run e2e only through npm run test:e2e';
+export const BOTH_PROJECTS_REFUSAL = 'the unit and the e2e projects cannot share one run; run e2e only through npm run test:e2e';
 
-export const bothProjectsSelected = (argv: readonly string[]): boolean => {
+const bothProjectsSelected = (argv: readonly string[]): boolean => {
   const projects: string[] = [];
   argv.forEach((arg, index) => {
     if (arg === '--project') projects.push(argv[index + 1] ?? '');
@@ -17,7 +17,11 @@ export const bothProjectsSelected = (argv: readonly string[]): boolean => {
   return projects.length === 0 || (projects.includes('unit') && projects.includes('e2e'));
 };
 
+export const refusedSelection = (argv: readonly string[]): string | undefined => (bothProjectsSelected(argv) ? BOTH_PROJECTS_REFUSAL : undefined);
+
 export default function setup(): () => Promise<void> {
+  const refusal = refusedSelection(process.argv);
+  if (refusal !== undefined) throw new Error(refusal);
   const { run, teardown } = claimE2eRun();
   process.env[TEST_RUN_ENV] = run;
   execFileSync(process.execPath, [BUNDLE_SCRIPT], { stdio: 'inherit' });
@@ -25,6 +29,5 @@ export default function setup(): () => Promise<void> {
   const probe = runSandboxProbe();
   process.env[SANDBOX_ENV] = encodeSandboxProbe(probe);
   console.log(sandboxLine(probe, E2E_CASES));
-  if (bothProjectsSelected(process.argv)) console.warn(BOTH_PROJECTS_WARNING);
   return teardown;
 }

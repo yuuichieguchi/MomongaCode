@@ -89,8 +89,6 @@ describe('Open Responses compliance suite against the supervised gateway debug l
     const port = debugPortOf(home.paths.logFiles.gateway);
 
     const { output, exitCode } = await runSuite(`http://127.0.0.1:${port}/v1`, home.root, { PATH: '/usr/bin:/bin', HOME: home.home, TMPDIR: home.sessionTmp });
-    for (const result of output.results) console.log(`${result.status.padEnd(7)} ${result.id}${result.errors === undefined ? '' : `: ${result.errors.join('; ')}`}`);
-    console.log(JSON.stringify(output.summary));
 
     expect(output.results.filter((result) => result.status !== 'passed')).toEqual([]);
     expect(output.summary).toEqual({ passed: EXPECTED_TESTS, failed: 0, skipped: 0, total: EXPECTED_TESTS });
