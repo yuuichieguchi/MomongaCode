@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PROJECT_MANDATE_FILE, approvalDigestOf, loadMcpServers, loadProjectMandate, loadSettings, writeAutoFitRecord } from '@momonga/config';
-import { readAutoFitRecord } from '../src/auto-fit.ts';
+import { PROJECT_MANDATE_FILE, approvalDigestOf, loadMcpServers, loadProjectMandate, loadSettings, readAutoFitView, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import { makeDir, makeTree, mcpJsonPath, trusting, userSettingsPath, writeText } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -54,7 +53,7 @@ describe('a JSON file that begins with a byte order mark', () => {
     } as unknown as AutoFitRecord;
     const file = await writeAutoFitRecord(directory, record, (bytes) => 'ab'.repeat(bytes), testKernelLock());
     fs.writeFileSync(file, marked(record), { mode: 0o600 });
-    expect(await readAutoFitRecord(directory, key)).toEqual(record);
+    expect(await readAutoFitView(directory, 'guard', key)).toMatchObject({ measurement: expect.stringMatching(/^(passed|did_not_pass)$/u), facts: { recordedAt: record.recordedAt } });
   });
 
   it('keeps a byte order mark inside a string, and removes only the one at the start', async () => {
