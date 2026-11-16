@@ -5,7 +5,7 @@ import type { ResolvedModel } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
 import type { Capabilities, ChainMemberEntry, LocalServerDetection, MomongaModelEntry, MomongaModelList, UnavailableCapabilities } from '@momonga/protocol';
 import { withTempDir, testKernelLock } from '@momonga/testkit';
-import type { DetectRequest, ModelsShell } from '../src/commands/models.ts';
+import type { DetectRequest, ModelsShell, ServerProgram } from '../src/commands/models.ts';
 import { userModelsAt } from './user-models.ts';
 
 export const OLLAMA_ADDRESS = 'http://127.0.0.1:11434';
@@ -127,7 +127,7 @@ export const listingOf = (home: string): MomongaModelList => {
   return { object: 'list', data, start: resolved.start ?? null, roles: resolved.roles };
 };
 
-export type ShellHarness = { shell: ModelsShell; stdout: string[]; stderr: string[]; detections: DetectRequest[]; listings: number[]; out(): string; err(): string };
+export type ShellHarness = { shell: ModelsShell; stdout: string[]; stderr: string[]; detections: DetectRequest[]; listings: number[]; programsAsked: ServerProgram[]; out(): string; err(): string };
 
 export type ShellFakes = {
   found?: (request: DetectRequest) => readonly LocalServerDetection[];
@@ -142,6 +142,7 @@ export const shellOf = ({ home, settingsFile }: ShellHome, fakes: ShellFakes = {
   const stderr: string[] = [];
   const detections: DetectRequest[] = [];
   const listings: number[] = [];
+  const programsAsked: ServerProgram[] = [];
   const shell: ModelsShell = {
     stdout: { write: (text) => void stdout.push(text) },
     stderr: { write: (text) => void stderr.push(text) },
@@ -163,12 +164,13 @@ export const shellOf = ({ home, settingsFile }: ShellHome, fakes: ShellFakes = {
       return (fakes.found ?? (() => []))(request);
     },
     describe: fakes.describe ?? (async (_server, model) => model),
-    programModel: async () => {
+    programModel: async (program) => {
+      programsAsked.push(program);
       if (fakes.programModel === undefined) throw new Error('the program was started, but this case gives no model for it');
       return fakes.programModel;
     },
   };
-  return { shell, stdout, stderr, detections, listings, out: () => stdout.join(''), err: () => stderr.join('') };
+  return { shell, stdout, stderr, detections, listings, programsAsked, out: () => stdout.join(''), err: () => stderr.join('') };
 };
 
 export const ollamaFound = (address: string, ids: readonly string[]): LocalServerDetection => ({

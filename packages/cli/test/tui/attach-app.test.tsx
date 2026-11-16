@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultTuiSettings } from '@momonga/config';
 import type { ResolvedTuiSettings } from '@momonga/config';
+import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import { runView } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
@@ -14,6 +15,10 @@ const SWITCH_ON = 'Attach file contents: on (enter to turn off)';
 const SWITCH_OFF = 'Attach file contents: off (enter to turn on)';
 const COMPLETION_HINT = 'tab: complete · esc: close the list';
 const PNG = { mediaType: 'image/png' as const, data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString('base64') };
+
+const LEFT_PRESS = { type: 'mouse', kind: 'press', button: 'left', col: 6, ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false } as const;
+const pressAt = (row: number): TerminalEvent => ({ ...LEFT_PRESS, row });
+const screenRowOf = (shown: string, text: string): number => shown.split('\n').findIndex((line) => line.includes(text)) + 1;
 
 const inputLines = (shown: string): string[] =>
   shown
@@ -68,6 +73,16 @@ describe('@ completion (design 5.7)', () => {
     app.stdin.write(KEYS.tab);
     const shown = await untilFrame(app, (now) => inputLines(now)[0] === '> see @src/app.tsx' && !now.includes(SWITCH_ON));
     expect(shown).not.toContain(SWITCH_ON);
+    expect(backend.started).toEqual([]);
+    app.unmount();
+  });
+
+  it('a press on a row of the list completes that path into the input and sends nothing', async () => {
+    const { app, backend, terminal } = await ready();
+    await type(app, 'see @', '> see @');
+    const shown = await untilFrame(app, '@src/lib/util.ts');
+    expect(terminal.emit(pressAt(screenRowOf(shown, '@src/lib/util.ts')))).toBe(true);
+    await untilFrame(app, (now) => inputLines(now)[0] === '> see @src/lib/util.ts');
     expect(backend.started).toEqual([]);
     app.unmount();
   });

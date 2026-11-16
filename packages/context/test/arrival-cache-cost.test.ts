@@ -132,20 +132,15 @@ const RUNS = [
 ];
 
 describe('person item 8, Q2: cache cost of one arrival by placement', () => {
-  it('prints the per-run totals', async () => {
-    const lines: string[] = [`sizes (chars): ${JSON.stringify(SIZES)}; weighted = uncached + ${CACHED_PRICE} * cacheable`];
+  it('a placement after the cached prefix costs no more uncached input than today, and one before it costs more', async () => {
     for (const layout of LAYOUTS) {
       for (const { steps, arrivalStep } of RUNS) {
         const control = totalsOf(await simulate(steps, steps + 1, 'today', layout));
-        lines.push(`layout=${layout} N=${steps} k=${arrivalStep} | no-arrival total=${control.total} cacheable=${control.cacheable} uncached=${control.uncached} weighted=${control.weighted}`);
         const totalsBy = new Map<Placement, Totals>();
         for (const placement of PLACEMENTS) {
           const rows = await simulate(steps, arrivalStep, placement, layout);
           const totals = totalsOf(rows);
           totalsBy.set(placement, totals);
-          const atArrival = rows[arrivalStep - 1] as Row;
-          const after = rows[arrivalStep] as Row;
-          lines.push(`  ${placement.padEnd(5)} total=${totals.total} cacheable=${totals.cacheable} uncached=${totals.uncached} weighted=${totals.weighted} | req k: total=${atArrival.total} cacheable=${atArrival.cacheable} uncached=${atArrival.uncached} | req k+1: cacheable=${after.cacheable} uncached=${after.uncached}`);
         }
         const [today, d1, d2] = PLACEMENTS.map((placement) => totalsBy.get(placement) as Totals) as [Totals, Totals, Totals];
         expect(d1.uncached).toBeLessThanOrEqual(today.uncached);
@@ -154,6 +149,5 @@ describe('person item 8, Q2: cache cost of one arrival by placement', () => {
         expect(d1.weighted).toBeLessThan(d2.weighted);
       }
     }
-    console.log(lines.join('\n'));
   });
 });

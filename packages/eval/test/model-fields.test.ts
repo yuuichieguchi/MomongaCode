@@ -111,10 +111,10 @@ describe('eval records name a model by its full reference (design-model-names 3.
     expect(Object.keys(report)).not.toContain('modelAliases');
     expect(parseContextReport(encodeContextReport(report), 'report.json').models).toEqual([CLOUD, LOCAL]);
     expect(formatContextReport(report).split('\n')[1]).toBe(
-      `model: real (derived from the pinned provenance of the models that answered: opus (model); the models the runs used: ${CLOUD}, ${LOCAL})`,
+      `model: real (derived from the pinned provenance of the models that answered: anthropic/opus (model); the models the runs used: ${CLOUD}, ${LOCAL})`,
     );
     expect(formatContextReport(reportOf([], () => undefined)).split('\n')[1]).toBe(
-      'model: real (derived from the pinned provenance of the models that answered: opus (model); the models the runs used: none recorded)',
+      'model: real (derived from the pinned provenance of the models that answered: anthropic/opus (model); the models the runs used: none recorded)',
     );
 
     const outcome = await improved();

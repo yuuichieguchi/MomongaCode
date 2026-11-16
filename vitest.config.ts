@@ -35,6 +35,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'packaging',
+          provide: { [RUN_CLASS_KEY]: 'heavy' },
           include: ['scripts/**/*.test.ts'],
           setupFiles: ['test/support/child-process-guard.ts', 'test/support/temp-entry-recorder.ts'],
           globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'e2e/support/run-setup.ts', 'test/support/lock-proof.ts'],

@@ -109,7 +109,7 @@ describe('provenance of a report', () => {
 
   it('says that the kind of model is derived from the pinned provenance of the answering models', () => {
     const text = formatContextReport(build(sample(), base([summarized(2, fidelity([], 1, 1))])));
-    expect(text).toMatch(/derived from the pinned provenance of the models that answered: opus \(model\)/);
+    expect(text).toMatch(/derived from the pinned provenance of the models that answered: anthropic\/opus \(model\)/);
     expect(text).not.toMatch(/declared by the operator/);
   });
 });

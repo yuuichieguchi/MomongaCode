@@ -66,7 +66,7 @@ const tokensOf = (transcripts: readonly Transcript[]): number =>
 
 type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompletion>;
 
-const completerFor = async (ports: CliPorts, paths: MomongaPaths, model: string, capabilities: ChainCapabilities, signal: AbortSignal): Promise<{ complete: Completer; close(): Promise<void> }> => {
+export const completerFor = async (ports: CliPorts, paths: MomongaPaths, model: string, capabilities: ChainCapabilities, signal: AbortSignal): Promise<{ complete: Completer; close(): Promise<void> }> => {
   const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient, isGenerationRetiredRefusal } = await import('@momonga/runtime');
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway'), clock: ports.clock, version: ports.version });
   const complete: Completer = async (request) => {
