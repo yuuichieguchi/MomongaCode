@@ -34,6 +34,14 @@ describe('a precondition that needs no person is checked before a person is aske
     expect(fs.readFileSync(file, 'utf8')).toBe('export const add = (a, b) => a + b;\n');
   });
 
+  it('shows the whole line a partial match changes in the diff of its approval', async () => {
+    const tools = await makeBuiltins();
+    const file = tools.write('add.js', 'export const add = (a, b) => a - b;\n');
+    tools.markRead(file);
+    const asked = approvalOf(await tools.run('Edit', { file_path: file, old_string: 'a - b', new_string: 'a + b' }, MANUAL));
+    expect(asked.shown.diff).toMatchObject({ hunks: [{ oldStart: 1, newStart: 1, lines: ['-export const add = (a, b) => a - b;', '+export const add = (a, b) => a + b;'] }], added: 1, removed: 1 });
+  });
+
   it('fails a Write over a file that was not read without asking, and asks about a new file', async () => {
     const tools = await makeBuiltins();
     const file = tools.write('notes.txt', 'old\n');

@@ -7,7 +7,7 @@ import { expectRejected } from './support.ts';
 
 const SPEC_DIR = path.resolve(import.meta.dirname, '../../src/operations/specs');
 
-const CATALOGUE = ['GitBranch', 'GitStage', 'GitFetch', 'GitUpdate', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'];
+const CATALOGUE = ['GitBranch', 'GitStage', 'GitFetch', 'GitUpdate', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment', 'IssueRead', 'IssueComment'];
 
 const rawSpecs = (): Array<Record<string, unknown>> =>
   fs
@@ -29,7 +29,7 @@ const specOf = (name: string) => {
 };
 
 describe('the operation catalogue', () => {
-  it('is built from one data file per operation and holds exactly the Phase 1 operations', () => {
+  it('is built from one data file per operation and holds exactly the operations of the catalogue', () => {
     expect(rawSpecs().map((spec) => spec['name']).sort()).toEqual([...CATALOGUE].sort());
     expect(OPERATION_SPECS.map((spec) => spec.name).sort()).toEqual([...CATALOGUE].sort());
   });
@@ -58,8 +58,9 @@ describe('the operation catalogue', () => {
     expect(specOf(name).approval).toBe(approval);
   });
 
-  it('marks the two operations that read a pull request as the only read-only operations, with no effect', () => {
-    expect(OPERATION_SPECS.filter((spec) => spec.sideEffect === 'read_only').map((spec) => spec.name).sort()).toEqual(['PullRequestComments', 'PullRequestStatus']);
+  it('marks the operations that read an issue or a pull request as the only read-only operations, with no effect', () => {
+    expect(OPERATION_SPECS.filter((spec) => spec.sideEffect === 'read_only').map((spec) => spec.name).sort()).toEqual(['IssueRead', 'PullRequestComments', 'PullRequestStatus']);
+    expect(specOf('IssueRead').effect).toBeUndefined();
     expect(specOf('PullRequestStatus').effect).toBeUndefined();
     expect(specOf('PullRequestComments').effect).toBeUndefined();
   });
@@ -129,12 +130,12 @@ describe('loading an operation spec', () => {
     return { ...raw, observe: [pr, { id: 'checks', via: { forge: 'listChecks', args: { headSha: '{seen.pr.headSha}' }, ...checks } }] };
   };
 
-  it('rejects a probe that lists every item as lines without the forms of a line', () => {
-    expect(messageOf(() => parseOperationSpec(statusWith({ shape: 'lines' })))).toBe('PullRequestStatus: the probe checks lists every item and must give the forms of a line in lines');
+  it('rejects a probe that shows what the forge gave without the forms of a line', () => {
+    expect(messageOf(() => parseOperationSpec(statusWith({ shape: 'lines' })))).toBe('PullRequestStatus: the probe checks shows what the forge gave and must give the forms of a line in lines');
   });
 
-  it('rejects the forms of a line on a probe that does not list every item', () => {
-    expect(messageOf(() => parseOperationSpec(statusWith({ shape: 'list', lines: ['{item.name}'] })))).toBe('PullRequestStatus: the probe checks gives the forms of a line but does not list every item (shape lines)');
+  it('rejects the forms of a line on a probe that shows nothing', () => {
+    expect(messageOf(() => parseOperationSpec(statusWith({ shape: 'list', lines: ['{item.name}'] })))).toBe('PullRequestStatus: the probe checks gives the forms of a line but shows nothing (shape lines or shown)');
   });
 
   it('rejects a probe that reads a value of this observation from a probe that does not come before it', () => {
@@ -250,5 +251,30 @@ describe('what an approval names is what the effect does (every field of the per
     const spec = OPERATION_SPECS.find((candidate) => candidate.name === 'PullRequestCreate');
     expect(spec?.require).toEqual([['before.headBranch.sha', 'input.headSha']]);
     expect(spec?.observe.find((probe) => probe.id === 'headBranch')?.via).toMatchObject({ forge: 'getBranch', args: { branch: '{input.head}' } });
+  });
+});
+
+describe('every input of a guard is an argument of the call or an observation, checked when the spec is loaded', () => {
+  const commitWith = (changes: Record<string, unknown>): Record<string, unknown> => ({ ...rawOf('GitCommit'), ...changes });
+
+  it('refuses a clause that compares with an input the call does not take', () => {
+    expect(() => parseOperationSpec(commitWith({ unchanged: [['after.head', 'input.expectedHead']] }))).toThrow(
+      new OperationSpecError('GitCommit: the clause reads input.expectedHead, which is not an argument of the call'),
+    );
+  });
+
+  it('refuses a clause that reads a value no probe observes', () => {
+    expect(() => parseOperationSpec(commitWith({ applied: [['after.headSha', 'before.head']] }))).toThrow(
+      new OperationSpecError('GitCommit: the clause reads after.headSha, which no probe observes'),
+    );
+  });
+
+  it('refuses a condition on an observation that no probe makes, and a reference that is neither', () => {
+    expect(() => parseOperationSpec(commitWith({ unchanged: [{ ifObserved: 'before.tip', then: [], else: [] }] }))).toThrow(
+      new OperationSpecError('GitCommit: the clause reads before.tip, which no probe observes'),
+    );
+    expect(() => parseOperationSpec(commitWith({ applied: [['after.head', 'call.id']] }))).toThrow(
+      new OperationSpecError('GitCommit: the clause reads call.id, which is neither an argument of the call nor an observation'),
+    );
   });
 });
