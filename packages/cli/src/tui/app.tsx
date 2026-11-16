@@ -8,6 +8,7 @@ import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
+import { modelChosen } from './transcript.ts';
 import { followMeasurement, readinessNoticeOf } from '../readiness.ts';
 import { isPrompt } from '../run/prompt-event.ts';
 import { isTerminalStatus } from '../run/follow.ts';
@@ -425,6 +426,7 @@ export function App(props: AppProps) {
     const read = displayMapOf(listingViewsOf(await backend.models()));
     displaysRef.current = read;
     setDisplays(read);
+    store.update({ shownModels: read });
     return read;
   };
 
@@ -547,6 +549,7 @@ export function App(props: AppProps) {
   const applyModel = async (chosen: string): Promise<void> => {
     const previous = sessionModelRef.current;
     const session = await backend.setModel(chosen);
+    modelChosen(store);
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
     unconfiguredModel.current = false;

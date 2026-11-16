@@ -14,6 +14,7 @@ export type DetectedLocalServer = {
 export type DetectedManagedServer = {
   shape: 'managed';
   id: string;
+  label: string;
   provider: string;
   binary: string;
   refused?: { message: string; remedy?: string };

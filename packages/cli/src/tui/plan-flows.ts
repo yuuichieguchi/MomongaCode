@@ -284,9 +284,9 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const managedChoice = (server: DetectedManagedServer): Choice => {
     if (server.refused !== undefined) {
       const remedy = server.refused.remedy === undefined ? '' : ` (${server.refused.remedy})`;
-      return { row: { label: `${builtInRowOf(server.id)} · ${server.refused.message}${remedy}`, disabled: true }, act: async () => undefined };
+      return { row: { label: `${builtInRowOf(server)} · ${server.refused.message}${remedy}`, disabled: true }, act: async () => undefined };
     }
-    return { row: { label: builtInRowOf(server.id) }, act: async () => connectAdded(await addBuiltIn(flowContext(), server.id)) };
+    return { row: { label: builtInRowOf(server) }, act: async () => connectAdded(await addBuiltIn(flowContext(), server.id)) };
   };
 
   const addLocalServer = async (): Promise<void> => {

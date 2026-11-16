@@ -98,7 +98,7 @@ describe('the detector fills the field its shape reports (O-R5-4 S10)', () => {
 });
 
 describe('managed server descriptions are listed when their binary exists (O-R5-4 S7)', () => {
-  const described: ManagedServerDescription = { ...FM_SERVER, id: 'custom-server', provider: 'someone', binary: { defaultPath: '/opt/custom/serve' }, preconditions: [] };
+  const described: ManagedServerDescription = { ...FM_SERVER, id: 'custom-server', label: 'the server custom-server', provider: 'someone', binary: { defaultPath: '/opt/custom/serve' }, preconditions: [] };
 
   it('lists a description whose binary exists, without starting it or reading a model list', async () => {
     const checked: string[] = [];
@@ -109,7 +109,7 @@ describe('managed server descriptions are listed when their binary exists (O-R5-
         return file === '/opt/custom/serve';
       },
     });
-    expect(found).toEqual([{ shape: 'managed', id: 'custom-server', provider: 'someone', binary: '/opt/custom/serve' }]);
+    expect(found).toEqual([{ shape: 'managed', id: 'custom-server', label: 'the server custom-server', provider: 'someone', binary: '/opt/custom/serve' }]);
     expect(checked).toContain('/opt/custom/serve');
   });
 
@@ -121,7 +121,7 @@ describe('managed server descriptions are listed when their binary exists (O-R5-
 });
 
 describe('managed preconditions run through runPreconditions at detection (O-R5-5 item 4)', () => {
-  const gated: ManagedServerDescription = { ...FM_SERVER, id: 'gated-server', provider: 'someone', binary: { defaultPath: '/opt/gated/serve' } };
+  const gated: ManagedServerDescription = { ...FM_SERVER, id: 'gated-server', label: 'the server gated-server', provider: 'someone', binary: { defaultPath: '/opt/gated/serve' } };
   const exitCodes = (codes: Readonly<Record<string, number>>) => async (file: string, args: readonly string[]) => {
     expect(file).toBe('/opt/gated/serve');
     return { exitCode: codes[args.join(' ')] ?? 0, stdout: '', stderr: '' };
@@ -129,7 +129,7 @@ describe('managed preconditions run through runPreconditions at detection (O-R5-
 
   it('lists a description whose preconditions are met with no refused field', async () => {
     const found = await detect({ servers: [gated], exists: async () => true, exec: exitCodes({}) });
-    expect(found).toEqual([{ shape: 'managed', id: 'gated-server', provider: 'someone', binary: '/opt/gated/serve' }]);
+    expect(found).toEqual([{ shape: 'managed', id: 'gated-server', label: 'the server gated-server', provider: 'someone', binary: '/opt/gated/serve' }]);
   });
 
   it('lists a refused description with the message and remedy of the rule', async () => {
@@ -138,6 +138,7 @@ describe('managed preconditions run through runPreconditions at detection (O-R5-
       {
         shape: 'managed',
         id: 'gated-server',
+        label: 'the server gated-server',
         provider: 'someone',
         binary: '/opt/gated/serve',
         refused: { message: 'the Apple Foundation Models licence has not been accepted', remedy: 'sudo fm license' },
@@ -154,7 +155,7 @@ describe('managed preconditions run through runPreconditions at detection (O-R5-
       },
     });
     expect(found).toEqual([
-      { shape: 'managed', id: 'gated-server', provider: 'someone', binary: '/opt/gated/serve', refused: { message: 'the precondition "license --status" could not run: spawn EACCES' } },
+      { shape: 'managed', id: 'gated-server', label: 'the server gated-server', provider: 'someone', binary: '/opt/gated/serve', refused: { message: 'the precondition "license --status" could not run: spawn EACCES' } },
     ]);
   });
 
