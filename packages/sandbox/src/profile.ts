@@ -115,6 +115,19 @@ async function metadataAncestors(allowed: readonly string[], denied: readonly st
   return unique(found);
 }
 
+function lexicalMetadataAncestors(allowed: readonly string[], denied: readonly string[]): string[] {
+  const found: string[] = [];
+  for (const entry of allowed) {
+    for (const guard of denied.filter((candidate) => lexicallyWithin(entry, candidate) && !lexicallyWithin(candidate, entry))) {
+      for (let current = path.dirname(entry); lexicallyWithin(current, guard); current = path.dirname(current)) {
+        found.push(current);
+        if (lexicallyWithin(guard, current)) break;
+      }
+    }
+  }
+  return unique(found);
+}
+
 export const SYSTEM_RESOLVER_SOCKET = '/private/var/run/mDNSResponder';
 
 const GRANTED_NETWORK_RULES = [
@@ -194,7 +207,7 @@ export async function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmp
   const metadataAllowed = [...readAllowed, ...(userDenies.length > 0 && scratchDir !== undefined ? [scratchDir] : [])];
   const reallowedScratch = [...(sessionTmpDir === undefined ? [] : [sessionTmpDir]), ...(scratchDir === undefined ? [] : [scratchDir])];
   const metadataOf = async (allowed: readonly string[]): Promise<string[]> =>
-    unique([...(await metadataAncestors(allowed, readDenied, within)), ...(await metadataAncestors(allowed, userReadGuards, lexicallyWithin))]);
+    unique([...(await metadataAncestors(allowed, readDenied, within)), ...lexicalMetadataAncestors(allowed, userReadGuards)]);
   const reallowedMetadata = await metadataOf(reallowedScratch);
   const metadataDirs = unique([...(await metadataOf(metadataAllowed)), ...reallowedMetadata]);
 
@@ -314,6 +327,11 @@ export function buildProtectionProfile(denied: readonly string[], scratch: reado
     const name = `SCRATCH_ALLOWED_${index}`;
     params[name] = folder;
     lines.push(`(allow file-read* file-write* (subpath (param "${name}")))`);
+  });
+  lexicalMetadataAncestors(scratch, denied).forEach((directory, index) => {
+    const name = `SCRATCH_METADATA_${index}`;
+    params[name] = directory;
+    lines.push(`(allow file-read-metadata (literal (param "${name}")))`);
   });
   return { profile: `${lines.join('\n')}\n`, params };
 }

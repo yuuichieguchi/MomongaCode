@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import { afterAll } from 'vitest';
 import { createPathResolver, momongaLayout, nodeFileSystem, protectedAreasOf } from '@momonga/foundation';
 import { createTempDir } from '@momonga/testkit';
@@ -37,5 +39,18 @@ describe('the one launch of a child that runs outside the command sandbox', () =
       expect(launch.protection.kind).toBe('unprotected');
       expect(launch.commandOf(['git', 'ls-files'], [])).toEqual({ file: 'git', args: ['ls-files'] });
     }
+  });
+});
+
+describe.runIf(process.platform === 'darwin')('a child under the real seatbelt protection on macOS', () => {
+  it('creates a repository in a scratch folder that lies deep inside a denied area of the home', async () => {
+    const launch = await noneSandboxLaunchOf({ home: HOME, platform: 'darwin', env: {}, isUsableBinary: absent, paths: SAME_PATHS });
+    const store = path.join(momongaLayout(HOME, 'darwin', {}).root, 'state', 'observer', 'store');
+    fs.mkdirSync(store, { recursive: true });
+    const command = launch.commandOf(['git', 'init', '-q'], [store]);
+    const ran = spawnSync(command.file, command.args, { cwd: HOME, env: { PATH: process.env['PATH'] ?? '', GIT_DIR: store, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }, encoding: 'utf8', input: '' });
+    expect(ran.stderr).toBe('');
+    expect(ran.status).toBe(0);
+    expect(fs.existsSync(path.join(store, 'HEAD'))).toBe(true);
   });
 });

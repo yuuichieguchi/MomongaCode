@@ -52,7 +52,7 @@ describe('childProtectionFor', () => {
 describe('the protection command', () => {
   const protection: ChildProtection = { kind: 'home-denied', home: HOME, denied: ['/home/someone/.momonga', '/home/someone/.cache/momonga/tmp'] };
 
-  it('builds the macOS protection profile: everything allowed except the home areas, the command scratch allowed back', () => {
+  it('builds the macOS protection profile: everything allowed except the home areas, the command scratch allowed back with the metadata of its folders inside the area', () => {
     expect(buildProtectionProfile(protection.denied, ['/home/someone/.cache/momonga/tmp/sessions/s1'])).toEqual({
       profile: [
         '(version 1)',
@@ -62,9 +62,14 @@ describe('the protection command', () => {
         '(deny file-read* file-write* (subpath (param "HOME_DENIED_1")))',
         '(deny network-outbound (remote unix-socket (subpath (param "HOME_DENIED_1"))))',
         '(allow file-read* file-write* (subpath (param "SCRATCH_ALLOWED_0")))',
+        '(allow file-read-metadata (literal (param "SCRATCH_METADATA_0")))',
+        '(allow file-read-metadata (literal (param "SCRATCH_METADATA_1")))',
         '',
       ].join('\n'),
-      params: { HOME_DENIED_0: '/home/someone/.momonga', HOME_DENIED_1: '/home/someone/.cache/momonga/tmp', SCRATCH_ALLOWED_0: '/home/someone/.cache/momonga/tmp/sessions/s1' },
+      params: { HOME_DENIED_0: '/home/someone/.momonga', HOME_DENIED_1: '/home/someone/.cache/momonga/tmp', SCRATCH_ALLOWED_0: '/home/someone/.cache/momonga/tmp/sessions/s1',
+        SCRATCH_METADATA_0: '/home/someone/.cache/momonga/tmp/sessions',
+        SCRATCH_METADATA_1: '/home/someone/.cache/momonga/tmp',
+      },
     });
   });
 

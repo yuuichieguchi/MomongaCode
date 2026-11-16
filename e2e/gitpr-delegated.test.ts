@@ -118,6 +118,7 @@ describe('gitpr: delegated work through the real runtime, from the production st
       gitAt(home, home.project, 'commit', '-q', '-am', 'Add the second widget');
       const { run, frames } = await runToEnd(runtime, 'Push main', ['GitPush']);
       expect(allOutputsOf(frames)).not.toMatch(/certificate|SSL/i);
+      expect(outputsOf(frames, 'GitPush').join('\n')).not.toContain('file effects were not observed');
       expect(run.status).toBe('COMPLETED');
       expect(gitAt(home, server.repositoryPath, 'log', '-1', '--format=%s', 'main'), allOutputsOf(frames)).toBe('Add the second widget');
       expect(server.requests.some((request) => request.path.endsWith('/git-receive-pack') && request.authorized)).toBe(true);
