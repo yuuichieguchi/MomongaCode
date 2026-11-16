@@ -43,7 +43,13 @@ export const createFakeFm = async ({ dir }: CreateFakeFmOptions): Promise<FakeFm
   const binaryPath = path.join(dir, 'fm');
   const configPath = `${binaryPath}.json`;
   let config: FakeFmConfig = {};
-  const writeConfig = (): void => fs.writeFileSync(configPath, JSON.stringify(config));
+  let writes = 0;
+  const writeConfig = (): void => {
+    writes += 1;
+    const staged = `${configPath}.${process.pid}.${writes}.tmp`;
+    fs.writeFileSync(staged, JSON.stringify(config));
+    fs.renameSync(staged, configPath);
+  };
   await fs.promises.writeFile(binaryPath, scriptSource(), { mode: 0o755 });
   writeConfig();
   return {

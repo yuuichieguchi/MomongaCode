@@ -314,3 +314,19 @@ describe('createFakeFm serveDetachedHelperPidFile', () => {
     expect(holdersOf(marker)).toEqual([]);
   });
 });
+
+describe('the fake fm config is replaced whole', () => {
+  it('a reader that opened the config before a configure still reads the whole earlier config, never a file truncated under it', async () => {
+    const fm = await createFakeFm({ dir: makeDir() });
+    fm.configure({ envDumpFile: 'before' });
+    const before = fs.readFileSync(fm.configPath, 'utf8');
+    const reader = fs.openSync(fm.configPath, 'r');
+    try {
+      fm.configure({ envDumpFile: 'after-'.repeat(1000) });
+      expect(fs.readFileSync(reader, 'utf8')).toBe(before);
+    } finally {
+      fs.closeSync(reader);
+    }
+    expect(JSON.parse(fs.readFileSync(fm.configPath, 'utf8'))).toEqual({ envDumpFile: 'after-'.repeat(1000) });
+  });
+});
