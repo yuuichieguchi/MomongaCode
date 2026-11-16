@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ABANDON_KILL_GRACE_MS, DAEMON_MARKER_KILL_GRACE_MS, DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, generationMarkerDirectories, momongaPaths, runtimeMaxCloseMs, writeStopRecord } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, DAEMON_MARKER_KILL_GRACE_MS, DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, generationMarkerDirectories, hostProcessGroupPort, momongaPaths, runtimeMaxCloseMs, writeStopRecord } from '@momonga/foundation';
 import type { GenerationReaperOptions, MarkerKind, ReapMarkerDirectoryOptions, StopValues } from '@momonga/foundation';
 import { createFakeClock, createFakeKernelLock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, withTempDir, testProcessInspector, testKernelLock } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -45,6 +45,26 @@ const setup = (context: CleanupContext, overrides: Partial<ReaperPassOptions> = 
 };
 
 describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
+  it('reaps every marker kind of a dead generation through the group port it was given', async (context) => {
+    const groupPort = hostProcessGroupPort();
+    const reaps: ReapMarkerDirectoryOptions[] = [];
+    const s = setup(context, {
+      markerPorts: {
+        groupPort,
+        findHolders: async () => [],
+        reapMarkerDirectory: async (request) => {
+          reaps.push(request);
+          return { reaped: 0, kept: 0, unreaped: [] };
+        },
+      },
+    });
+    prepareGenerationForTest(s.home, 1, '1.2.3');
+    fs.writeFileSync(path.join(generationMarkerDirectories(s.paths, 1).daemons, 'runtime-old'), '', { mode: 0o600 });
+    await createReaperPass(s.options)({ signal: new AbortController().signal });
+    expect(reaps).toHaveLength(4);
+    expect(reaps.every((request) => request.groupPort === groupPort)).toBe(true);
+  });
+
   it('hands the reaper the home paths, the lock mechanism and the signal of the pass', async (context) => {
     const seen: GenerationReaperOptions[] = [];
     const s = setup(context, {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAXIMUM_STOP_VALUES, findHolders, isTransientFailure, markerReapClockBoundMs, readAttemptRecord, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
-import type { JsonLogger, Timing, RetryKind, StopValues, UninspectableRegistry, ProcessInspector } from '@momonga/foundation';
+import type { JsonLogger, Timing, RetryKind, StopValues, UninspectableRegistry, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
@@ -28,6 +28,7 @@ export type MarkerPorts = {
   reapMarkerDirectory?: typeof reapMarkerDirectory;
   reapMarkedProcesses?: typeof reapMarkedProcesses;
   listMarkers?: (markersDir: string) => Promise<string[]>;
+  groupPort?: ProcessGroupPort;
 };
 
 export type DaemonMarker = {
@@ -93,6 +94,7 @@ export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogg
       label: 'daemon',
       onWarning: (detail) => writeEvent(input.logger, orphansWarning({ detail, marker: input.marker })),
       inspector: input.inspector,
+      ...(input.markerPorts?.groupPort === undefined ? {} : { groupPort: input.markerPorts.groupPort }),
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
   } catch (error) {
@@ -237,6 +239,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     signal,
     timing: options.reapTiming,
     inspector: options.inspector,
+    ...(options.markerPorts?.groupPort === undefined ? {} : { groupPort: options.markerPorts.groupPort }),
     ...(options.occasion === undefined ? {} : { occasion: options.occasion }),
   });
   return { reaped: result.reaped, kept: result.kept, aborted: signal.aborted };

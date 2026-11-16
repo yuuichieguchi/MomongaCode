@@ -1,4 +1,4 @@
-import { parseFlags } from '@momonga/foundation';
+import { hostProcessGroupPort, parseFlags } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import type { SelfExecutable, SpawnDetached } from '../ports.ts';
 import { superviseInvocation } from './launcher.ts';
@@ -30,5 +30,6 @@ export const successorLauncherOf = (start: SuccessorStart, successor: SuccessorS
 export const runSupervise = async (io: EntryIo, options: SuperviseOptions): Promise<number> => {
   const { runSupervisorEntry, createSpawnPort, SUPERVISE_ENTRY_FLAGS } = await import('@momonga/supervisor');
   const home = parseFlags(io.argv, SUPERVISE_ENTRY_FLAGS).home ?? io.home;
-  return runSupervisorEntry(io, { ...options.deps, launcher: options.launcher, spawn: createSpawnPort(), successorLauncher: successorLauncherOf({ home, env: io.env }, options.successor) });
+  const port = hostProcessGroupPort();
+  return runSupervisorEntry(io, { ...options.deps, markerPorts: { ...options.deps.markerPorts, groupPort: port }, launcher: options.launcher, spawn: createSpawnPort({ port }), successorLauncher: successorLauncherOf({ home, env: io.env }, options.successor) });
 };

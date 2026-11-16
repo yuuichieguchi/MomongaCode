@@ -638,6 +638,7 @@ export type ReapMarkerDirectoryOptions = {
   label: string;
   onWarning(message: string): void;
   kill?: SignalSender;
+  groupPort?: ProcessGroupPort;
   timing?: Timing;
   signal: AbortSignal;
   inspector: ProcessInspector;
@@ -712,6 +713,7 @@ export const reapMarkerDirectory = async ({
   label,
   onWarning,
   kill,
+  groupPort,
   timing,
   signal,
   inspector,
@@ -719,7 +721,7 @@ export const reapMarkerDirectory = async ({
 }: ReapMarkerDirectoryOptions): Promise<ReapMarkerDirectoryResult> => {
   const markers = await markerFilesUnder(dir);
   const reap: MarkerReap = (marker) =>
-    reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), signal, inspector });
+    reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(groupPort === undefined ? {} : { groupPort }), ...(timing === undefined ? {} : { timing }), signal, inspector });
   const outcomes = await Promise.all(
     markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
       try {

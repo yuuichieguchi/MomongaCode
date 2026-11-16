@@ -70,8 +70,8 @@ export const createGroupSpawn =
     return groupChildOf(launched, marker, onWarning, inspector, port);
   };
 
-export type ReapStaleGroupsOptions = { markerDirectory: string; graceMs: number; onWarning: WarningSink; signal: AbortSignal; inspector: ProcessInspector };
+export type ReapStaleGroupsOptions = Pick<GroupLaunchHost, 'port'> & { markerDirectory: string; graceMs: number; onWarning: WarningSink; signal: AbortSignal; inspector: ProcessInspector };
 
-export const reapStaleGroups = async ({ markerDirectory, graceMs, onWarning, signal, inspector }: ReapStaleGroupsOptions): Promise<void> => {
-  await reapMarkerDirectory({ dir: markerDirectory, killGraceMs: graceMs, label: MANAGED_SERVER_LABEL, onWarning, signal, inspector, occasion: 'startup' });
+export const reapStaleGroups = async ({ markerDirectory, graceMs, onWarning, signal, inspector, port }: ReapStaleGroupsOptions): Promise<void> => {
+  await reapMarkerDirectory({ dir: markerDirectory, killGraceMs: graceMs, label: MANAGED_SERVER_LABEL, onWarning, signal, inspector, occasion: 'startup', ...(port === undefined ? {} : { groupPort: port }) });
 };

@@ -325,9 +325,12 @@ export type MarkerCalls = {
   reapMarkedProcesses: Array<Parameters<NonNullable<MarkerPorts['reapMarkedProcesses']>>[0]>;
 };
 
-export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: string[]): { ports: Required<MarkerPorts>; calls: MarkerCalls } => {
+export type RecordingMarkerPorts = Required<Omit<MarkerPorts, 'groupPort'>> & Pick<MarkerPorts, 'groupPort'>;
+
+export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: string[]): { ports: RecordingMarkerPorts; calls: MarkerCalls } => {
   const calls: MarkerCalls = { findHolders: [], reapMarkerDirectory: [], reapMarkedProcesses: [] };
-  const ports: Required<MarkerPorts> = {
+  const ports: RecordingMarkerPorts = {
+    ...(overrides.groupPort === undefined ? {} : { groupPort: overrides.groupPort }),
     files: overrides.files ?? nodeMarkerFiles,
     findHolders: async (marker, probe) => {
       calls.findHolders.push(marker);
@@ -409,7 +412,7 @@ export type Harness = {
   readonly fake: FakeSpawn;
   readonly log: CapturedLog;
   readonly stdout: CapturedText;
-  readonly markers: { ports: Required<MarkerPorts>; calls: MarkerCalls };
+  readonly markers: { ports: RecordingMarkerPorts; calls: MarkerCalls };
   readonly order: string[];
   readonly supervisor: SupervisorProcess;
   readonly successorLaunches: number[];
