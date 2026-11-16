@@ -137,7 +137,7 @@ describe('the forge of a pull request operation is the remote its input names', 
 
   it('every operation that asks a forge takes the remote as an optional input', () => {
     const asksForge = OPERATION_SPECS.filter((spec) => spec.subject.kind === 'forge' || spec.observe.some((probe) => 'forge' in probe.via) || (spec.effect !== undefined && 'forge' in spec.effect));
-    expect(asksForge.map((spec) => spec.name).sort()).toEqual(['PullRequestComment', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestStatus']);
+    expect(asksForge.map((spec) => spec.name).sort()).toEqual(['IssueComment', 'IssueRead', 'PullRequestComment', 'PullRequestComments', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestStatus']);
     for (const spec of asksForge) {
       const input = spec.input as { properties: Record<string, unknown>; required: string[] };
       expect(input.properties['remote']).toMatchObject({ type: 'string' });
