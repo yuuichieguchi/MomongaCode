@@ -5,6 +5,7 @@ import type { ResolvedSettings, StopValuesReader } from '@momonga/config';
 import { createSandboxOf, placeholderJournalDirectoryOf } from './sandbox-of.ts';
 import { canonicalHomeOf, installTrust, settledOrAborted, layoutProcessInspector, busyTimeoutMs, unixSocketPolicyOf } from '@momonga/foundation';
 import {
+  ABANDON_KILL_GRACE_MS,
   acquireProcessLock,
   announceReady,
   rotatedLogsPurge,
@@ -91,7 +92,6 @@ import {
   CANCEL_UPSTREAM_SETTLE_MS,
   GATEWAY_CANCEL_TIMEOUT_MS,
   IDEMPOTENCY_PURGE_MS,
-  MARKER_REAP_KILL_GRACE_MS,
   MEMORY_UPKEEP_BATCH_MARKS,
   MEMORY_PAGE_ROWS,
   RUNTIME_ABORT_BUDGET_MS,
@@ -466,10 +466,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     await step('mcp-markers', async () => {
       const reapStop = new AbortController();
-      const bound = timers.setTimeout(() => reapStop.abort(), markerReapClockBoundMs(MARKER_REAP_KILL_GRACE_MS));
+      const bound = timers.setTimeout(() => reapStop.abort(), markerReapClockBoundMs(ABANDON_KILL_GRACE_MS));
       const reapSignal = signal === undefined ? reapStop.signal : AbortSignal.any([signal, reapStop.signal]);
       try {
-        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal, inspector, occasion: 'startup' });
+        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: ABANDON_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal, inspector, occasion: 'startup' });
       } finally {
         timers.clearTimeout(bound);
       }
@@ -522,7 +522,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('tool-markers', async () => {
-      await reapToolMarkers({ dir: paths.markers.tools, inspector, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
+      await reapToolMarkers({ dir: paths.markers.tools, inspector, store, killGraceMs: ABANDON_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
       await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
     });
 
@@ -679,7 +679,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         const stop = new AbortController();
         const handle = timers.setTimeout(() => stop.abort(), RUNTIME_TEARDOWN_BUDGET_MS);
         try {
-          await reapToolMarkers({ dir: paths.markers.tools, inspector, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal: stop.signal, event: 'shutdown', owners: toolRuntime.owners });
+          await reapToolMarkers({ dir: paths.markers.tools, inspector, store, killGraceMs: ABANDON_KILL_GRACE_MS, onWarning, timing: reapTiming, signal: stop.signal, event: 'shutdown', owners: toolRuntime.owners });
         } finally {
           timers.clearTimeout(handle);
         }
@@ -1029,7 +1029,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                   dir: paths.markers.tools,
                   inspector,
                   store,
-                  killGraceMs: MARKER_REAP_KILL_GRACE_MS,
+                  killGraceMs: ABANDON_KILL_GRACE_MS,
                   onWarning,
                   timing: reapTiming,
                   signal: AbortSignal.any([sweepStop.signal, tickStop.signal]),

@@ -294,7 +294,6 @@
       {"name":"JOB_ID_HEX_CHARS","file":"packages/runtime/src/process/constants.ts","lacks":["row"]},
       {"name":"JOB_KILL_OWNER_WAKE_MS","file":"packages/runtime/src/process/constants.ts","lacks":["kind","row"]},
       {"name":"JOB_OUTPUT_FILE_MAX_BYTES","file":"packages/runtime/src/process/constants.ts","lacks":["row"]},
-      {"name":"MARKER_REAP_KILL_GRACE_MS","file":"packages/runtime/src/process/constants.ts","lacks":["kind"]},
       {"name":"POOL_IDLE_CLOSE_MS","file":"packages/runtime/src/process/constants.ts","lacks":["kind"]},
       {"name":"POOL_REFERENCE_AUDIT_MS","file":"packages/runtime/src/process/constants.ts","lacks":["kind"]},
       {"name":"REQUEUE_BASE_MS","file":"packages/runtime/src/process/constants.ts","lacks":["kind","row"]},
