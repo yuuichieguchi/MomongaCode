@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { contextFor, countingRunner, makeGitWorld, operationTool, partsOf, remoteSha, subjectFor } from './support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const pushedWorld = () => {
   const world = makeGitWorld();

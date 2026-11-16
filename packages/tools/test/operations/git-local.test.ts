@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { contextFor, countingRunner, makeGitWorld, operationTool, partsOf } from './support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const commitCount = (world: ReturnType<typeof makeGitWorld>): number => Number(world.git(world.work, 'rev-list', '--count', 'HEAD'));
 
