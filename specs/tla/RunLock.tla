@@ -1,20 +1,4 @@
 ---------------------------- MODULE RunLock ----------------------------
-(* The run lock of development tooling (design-dev-run-reuse, section 3): a heavy run never overlaps any other
-   run, light runs may overlap each other. Protocol: claim your own lock first, then look at the other class.
-
-   Actors, derived from the protocol text: a light acquirer (LClaimOwn, LCheckHeavy, LRefuse), a heavy acquirer
-   (HClaimHeavy, HScanOne, HDecide) including its removal of a free light file left by a dead holder, the release
-   by the holder (LEnd, HEnd), a crash of any process at any step with the kernel freeing its lock (Crash), a
-   waiter that repeats attempts up to its own limit (Retry, GiveUp), a nested child that inherits the token of a
-   running holder (KSpawn, KEnd, KCrash). Two starts at the same instant are two processes whose steps interleave.
-   A describer and an isHeld probe only read and are invisible to the protocol (a probe is retried by the claim).
-
-   Abstracted away: the kernel lock mechanism (an atomic claim that the kernel releases on death; creating a light
-   file and locking it are one step), the file system (a file exists or not), time and sleeping (the wait is a
-   bounded number of attempts), the description files. The heavy scan works on the light files that exist when
-   the heavy has claimed (todo is a snapshot); a light that claims later is refused by its own look at heavy.
-   A token is trusted only when its holder is running: a child whose parent died before the child started holds
-   no live token and is an ordinary new process, modelled by the existing processes. *)
 EXTENDS Naturals, FiniteSets
 
 CONSTANTS Lights, Heavies, Waiters, MaxAttempts, Nested, Variant

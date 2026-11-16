@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
@@ -20,6 +21,10 @@ const validEntry = {
   budgetCpuSeconds: 5,
 };
 
+const validModule = { module: 'Tiny', abstractions: ['time is a counter'], notProved: ['liveness'] };
+
+const specDir = path.resolve(import.meta.dirname, '..', '..', 'specs', 'tla');
+
 describe('the manifest reader', () => {
   let root = '';
 
@@ -33,7 +38,7 @@ describe('the manifest reader', () => {
 
   const manifestWith = (entry: Record<string, unknown>): string => {
     const file = path.join(root, 'manifest.json');
-    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, entries: [{ ...validEntry, ...entry }] }));
+    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, modules: [validModule], entries: [{ ...validEntry, ...entry }] }));
     return file;
   };
 
@@ -59,8 +64,43 @@ describe('the manifest reader', () => {
 
   it('refuses a manifest with no entries', () => {
     const file = path.join(root, 'manifest.json');
-    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, entries: [] }));
+    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, modules: [validModule], entries: [] }));
     expect(() => readManifest(file)).toThrow(new Error('the TLA manifest is invalid: entries must not be empty'));
+  });
+
+  const documentWith = (document: Record<string, unknown>): string => {
+    const file = path.join(root, 'manifest.json');
+    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, modules: [validModule], entries: [validEntry], ...document }));
+    return file;
+  };
+
+  it('refuses a manifest of the format momonga-tla-manifest/1', () => {
+    expect(MANIFEST_FORMAT).toBe('momonga-tla-manifest/2');
+    expect(() => readManifest(documentWith({ format: 'momonga-tla-manifest/1' }))).toThrow('the TLA manifest is invalid: format must be "momonga-tla-manifest/2"');
+  });
+
+  it('reads the abstractions and the unproved claims of each module', () => {
+    expect(readManifest(documentWith({})).modules).toEqual([validModule]);
+  });
+
+  it.each(['abstractions', 'notProved'])('refuses a module with no %s', (field) => {
+    expect(() => readManifest(documentWith({ modules: [{ ...validModule, [field]: [] }] }))).toThrow(`the TLA manifest is invalid: modules[0].${field} must not be empty`);
+    expect(() => readManifest(documentWith({ modules: [{ ...validModule, [field]: [''] }] }))).toThrow(`the TLA manifest is invalid: modules[0].${field}[0] must be a non-empty string`);
+  });
+
+  it('refuses a manifest with no modules and a module listed twice', () => {
+    expect(() => readManifest(documentWith({ modules: undefined }))).toThrow('the TLA manifest is invalid: modules must be an array');
+    expect(() => readManifest(documentWith({ modules: [validModule, validModule] }))).toThrow('the TLA manifest is invalid: modules[1].module Tiny is listed more than once');
+  });
+
+  it('lists every module of specs/tla once, and no module that is not on disk', () => {
+    const onDisk = fs.readdirSync(specDir).filter((file) => file.endsWith('.tla')).map((file) => file.slice(0, -'.tla'.length)).sort();
+    expect(readManifest(path.join(specDir, 'manifest.json')).modules.map((entry) => entry.module).sort()).toEqual(onDisk);
+  });
+
+  it('finds no comment in any TLA+ module: what a model leaves out is in the manifest', () => {
+    const commented = fs.readdirSync(specDir).filter((file) => file.endsWith('.tla') && /\(\*|\\\*/.test(fs.readFileSync(path.join(specDir, file), 'utf8')));
+    expect(commented).toEqual([]);
   });
 
   it('is reachable through the manifest module with every name of the reader, the runner and the budget', () => {

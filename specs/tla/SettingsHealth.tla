@@ -1,102 +1,4 @@
 ------------------------- MODULE SettingsHealth -------------------------
-(***************************************************************************)
-(* Model of the settings files of design-recorded-answers-2026-11-07.md,   *)
-(* item Q15: one rule for every settings file (user, project, local). A    *)
-(* broken file refuses new Runs and names the file. A Run that was already *)
-(* admitted continues on the last good copy.                               *)
-(*                                                                         *)
-(* Code sources (the readers and writers of the modelled state)            *)
-(*   the writer: the user editing, replacing or deleting a file. Deleting  *)
-(*       the user file reads as the defaults, so it is a write of a valid  *)
-(*       version here. A half-written file is a broken file.               *)
-(*   the cache: packages/config/src/user-settings.ts (createUserSettingsCache, lastGood) *)
-(*       (refresh on every read, keyed by the change key; lastGood). The   *)
-(*       project and local files have no cache today                       *)
-(*       (packages/config/src/load-settings.ts (loadSettings) reads them on *)
-(*       every call); the design gives them the same cache, so the model   *)
-(*       has one cache rule for both files                                 *)
-(*   admission readers (class admit):                                      *)
-(*       packages/runtime/src/service/app.ts (sessionSettingsOf), called by the run-creating calls with the request signal *)
-(*       packages/runtime/src/process/start-runtime-process.ts (sessionCreateSettings), the callback that the service calls *)
-(*       packages/runtime/src/process/settings-port.ts (sessionCreateSettings, admitUserSnapshot) *)
-(*       packages/runtime/src/process/mcp-admin.ts (admitUserSnapshot)     *)
-(*   in-run readers (class in-run), all through the cache read of          *)
-(*       takeUserSnapshot, userSnapshot and loadSessionSettings of the     *)
-(*       settings composition or the settings port it hands the worker:    *)
-(*       the claim packages/runtime/src/worker/claim-runner.ts (context, verification) *)
-(*       the steps packages/runtime/src/worker/tool-step.ts (appendRule, hooks, tools, trusted) *)
-(*       packages/runtime/src/worker/context-step.ts (trusted)             *)
-(*       packages/runtime/src/worker/hook-step.ts (hooks, tools)           *)
-(*       packages/runtime/src/worker/verification-step.ts (tools)          *)
-(*       packages/runtime/src/worker/auto-classifier.ts (autoModeClassifier) *)
-(*       packages/runtime/src/worker/token-pin.ts (context, tools)         *)
-(*       packages/runtime/src/worker/completion-pin.ts (verification)      *)
-(*       packages/runtime/src/worker/memory-share.ts (context)             *)
-(*       the rules packages/runtime/src/governance/rules.ts (rules)        *)
-(*       packages/runtime/src/governance/governance-port.ts (trusted)      *)
-(*       packages/runtime/src/memory/reflection.ts (memory, trusted, verification) *)
-(*       the process ports packages/runtime/src/process/tool-runtime.ts (loadSessionSettings, takeUserSnapshot, userSnapshot) *)
-(*       packages/runtime/src/process/agents-port.ts (approvedProjectAgents, trusted) *)
-(*       packages/runtime/src/process/history-port.ts (trusted)            *)
-(*       packages/runtime/src/process/memory-port.ts (trusted)             *)
-(*       packages/runtime/src/process/skills-port.ts (trusted)             *)
-(*       packages/runtime/src/process/user-input.ts (tools, trusted)       *)
-(*       packages/runtime/src/process/issue-source.ts (userSnapshot)       *)
-(*       They are two actors here: Claim (a queued Run becomes running)    *)
-(*       and Step (a running Run reads); the others read through the       *)
-(*       same path as Step                                                 *)
-(*   a background reader with no Run: the memory upkeep pass               *)
-(*       packages/runtime/src/process/start-runtime-process.ts (startMemorySweeper, forgetAfterDays) *)
-(*       (Sweep)                                                           *)
-(*   readers that start no new work (class read): the session view and     *)
-(*       the session patch,                                                *)
-(*       packages/runtime/src/service/app.ts (sessionViewOf, patchSession, sessionReadSettingsOf) *)
-(*       (View)                                                            *)
-(*   the kept copy: packages/config/src/kept-settings.ts (keptSettingsDirectory) *)
-(*       the last good copy of each file by path, written on every valid   *)
-(*       read into the runtime state; a crash keeps it, and the start-up   *)
-(*       and recovery read it from there (Persist)                         *)
-(*   the process start: the settings step of                               *)
-(*       packages/runtime/src/process/start-runtime-process.ts (startRuntimeProcess, step) *)
-(*       throws on a broken file, and                                      *)
-(*       packages/supervisor/src/child-manager.ts (launchSpawning, hold)   *)
-(*       holds the spawn while the file is broken; the supervisor watch    *)
-(*       packages/supervisor/src/start-supervisor.ts (evaluateOnce) logs and *)
-(*       retries held spawns. The gateway reads per request through its    *)
-(*       pinned derivation (SettingsSwap.tla). Restart is the one actor   *)
-(*       for the process starts; the start-up reads                        *)
-(*       only the user file, so it starts only when the user file is valid;*)
-(*       a project or local file may be broken at a restart                *)
-(*   a daemon crash: loses the memory cache; the kept copy and the Runs   *)
-(*       stay                                                              *)
-(*                                                                         *)
-(* Abstractions: the content of a file beyond "broken" or a version number *)
-(* (a valid version is 1..MaxVersion, 0 is broken); the timing of the file *)
-(* watcher (the change key makes every read see the file at that moment,   *)
-(* and Watch is the refresh that happens with no reader); the other causes *)
-(* that fail a Run (the model fails a Run only for a settings read); the   *)
-(* CLI, which reads the file once at command start                         *)
-(* (packages/cli/src/run/open-session.ts (loadUserSettings)) and so is the *)
-(* Restart rule; two gateways or two                                       *)
-(* runtimes racing (the process locks make it one each); the setting       *)
-(* values: a deny rule is a version, and H4 is "the read returns the       *)
-(* current valid version".                                                 *)
-(*                                                                         *)
-(* Switches. The configuration SettingsHealth is the design the model      *)
-(* holds.                                                                  *)
-(*   ReadMode    what an in-run reader does. "lastGood": refresh, then use *)
-(*               the last good copy (the design). "throw": refresh, and    *)
-(*               throw when the file is broken (the code today).           *)
-(*               "stale": never refresh, use the copy taken at start       *)
-(*   AdmitMode   what admission looks at. "disk": refresh, then look at    *)
-(*               the file (the design). "cache": the cached health with no *)
-(*               refresh                                                   *)
-(*   StartMode   "refuse": the process starts only when every file is      *)
-(*               valid (the design). "ignore": it starts anyway            *)
-(*   NameFile    the refusal names the broken file                         *)
-(*   Persist     the last good copy survives a crash (the design). FALSE:  *)
-(*               it lives only in memory (the code before the kept copy)   *)
-(***************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
 CONSTANTS
@@ -130,20 +32,6 @@ VARIABLES disk, lastGood, health, up, runState, steps, edits, crashes,
 vars == <<disk, lastGood, health, up, runState, steps, edits, crashes,
           admitLog, refusalLog, readFailed, badReads, startedBroken>>
 
-(* disk[f]      the file on disk: 0 broken, otherwise a valid version     *)
-(* lastGood[f]  the cache: the last valid version it read, 0 none         *)
-(* health[f]    what the cache knows of the file at its last refresh      *)
-(* up           the runtime process serves                                *)
-(* runState[r]  new, queued, running, done, failed; kept by the store, so *)
-(*              a crash does not change it                                *)
-(* admitLog     one record per admission: the files broken on disk then   *)
-(* refusalLog   one record per refusal: the file it names ("none" when it *)
-(*              names none) and the files broken on disk then             *)
-(* readFailed   some reader threw because of a settings file              *)
-(* badReads     what the readers got that they must not: "invalid" (no    *)
-(*              valid copy) or "stale" (not the current valid version)    *)
-(* startedBroken some start-up served with the user file broken          *)
-
 TypeOK ==
     /\ disk \in [Files -> Versions]
     /\ lastGood \in [Files -> Versions]
@@ -172,7 +60,6 @@ Init ==
 BrokenOnDisk == {f \in Files : disk[f] = 0}
 BrokenInCache == {f \in Files : health[f] = "broken"}
 
-(* the cache after a refresh *)
 GoodAfter(f) == IF disk[f] # 0 THEN disk[f] ELSE lastGood[f]
 HealthAfter(f) == IF disk[f] # 0 THEN "ok" ELSE "broken"
 
@@ -180,7 +67,6 @@ RefreshAll ==
     /\ lastGood' = [f \in Files |-> GoodAfter(f)]
     /\ health' = [f \in Files |-> HealthAfter(f)]
 
-(* What the cache holds after a reader of the given mode went through it *)
 CacheAfterRead ==
     IF ReadMode = "stale"
     THEN [good |-> lastGood, hl |-> health]
@@ -194,7 +80,6 @@ ReadProblems(vals) ==
     (IF \E f \in Files : vals[f] = 0 THEN {"invalid"} ELSE {})
     \cup (IF \E f \in Files : disk[f] # 0 /\ vals[f] # disk[f] THEN {"stale"} ELSE {})
 
-(* A reader of the in-run class: read both files, or throw *)
 InRunRead(failedState, okState, r) ==
     LET c == CacheAfterRead
     IN /\ lastGood' = c.good
@@ -290,30 +175,21 @@ Spec == Init /\ [][Next]_vars
         /\ WF_vars(Restart)
         /\ \A r \in Runs : WF_vars(Admit(r)) /\ WF_vars(Claim(r)) /\ WF_vars(Step(r)) /\ WF_vars(Finish(r))
 
-(* H1: no Run is admitted while any of its settings files is broken *)
 AdmittedOnlyWhenValid == \A a \in admitLog : a.broken = {}
 
-(* H2: a Run admitted while valid never ends in error because a file broke *)
 NoRunFails == \A r \in Runs : runState[r] # "failed"
 
-(* No reader of the in-run class throws, a Run or not (the memory pass too) *)
 NoReaderThrows == ~readFailed
 
-(* H3 and H4: every value read is a valid version, and while the file is   *)
-(* valid it is the version on disk                                         *)
 ReadsValid == "invalid" \notin badReads
 ReadsCurrent == "stale" \notin badReads
 
-(* Every refusal names a file, and that file is broken *)
 RefusalNamesFile == \A x \in refusalLog : x.file \in x.broken
 
-(* H5: no process serves when its start-up read of the user file is broken *)
 StartReadValid == ~startedBroken
 
-(* A serving process has a last good copy of every file *)
 ProcessHasGood == up => \A f \in Files : lastGood[f] # 0
 
-(* Once the files are valid and stay so, every Run is admitted *)
 AllValid == BrokenOnDisk = {}
 FixedThenAdmitted ==
     (<>[]AllValid) => (<>[](\A r \in Runs : runState[r] # "new"))

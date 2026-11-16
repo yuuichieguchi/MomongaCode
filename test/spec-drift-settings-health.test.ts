@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { moduleHeaderOf } from './formal/manifest.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createUserSettingsCache } from '@momonga/config';
 import type { KeptRecords } from '@momonga/config';
@@ -36,9 +37,7 @@ const textOf = (file: string): string => fs.readFileSync(path.join(packagesDir, 
 const filesMatching = (pattern: RegExp): string[] => productSources.filter((file) => pattern.test(textOf(file)));
 
 const headerText = (): string => {
-  const end = spec.indexOf('EXTENDS');
-  return spec
-    .slice(0, end)
+  return moduleHeaderOf('SettingsHealth')
     .split('\n')
     .map((line) => line.replace(/^\s*\(\*+/, '').replace(/\*+\)\s*$/, '').trim())
     .join(' ')

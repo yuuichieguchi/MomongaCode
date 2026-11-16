@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { moduleHeaderOf } from './formal/manifest.ts';
 import { describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '..');
 const credentialSpec = fs.readFileSync(path.join(root, 'specs', 'tla', 'PlanCredential.tla'), 'utf8');
 const signInSpec = fs.readFileSync(path.join(root, 'specs', 'tla', 'PlanSignIn.tla'), 'utf8');
+const credentialText = `${credentialSpec}\n${moduleHeaderOf('PlanCredential')}`;
 const constantsPath = path.join(root, 'packages', 'protocol', 'src', 'plan-constants.json');
 
 type PlanConstants = {
@@ -56,8 +58,8 @@ describe('PlanCredential.tla against plan-constants.json', () => {
   });
 
   it('holds store_unwritable as the memory flag mUnwr and leaves plan_disabled to PlanSignIn', () => {
-    expect(credentialSpec).toMatch(/store_unwritable/);
-    expect(credentialSpec).toMatch(/\bmUnwr\b/);
+    expect(credentialText).toMatch(/store_unwritable/);
+    expect(credentialText).toMatch(/\bmUnwr\b/);
     expect(setDefinitionOf(credentialSpec, 'AcctStates')).not.toContain('store_unwritable');
     expect(setDefinitionOf(signInSpec, 'RecStates')).toContain('plan_disabled');
   });
@@ -78,7 +80,7 @@ describe('PlanCredential.tla against plan-constants.json', () => {
   });
 
   it('leaves invalid_client out of the model, as the model states', () => {
-    expect(credentialSpec).toMatch(/invalid_client and the state plan_disabled are not modelled/);
+    expect(credentialText.replace(/\s+/g, ' ')).toMatch(/invalid_client and the state plan_disabled are not modelled/);
   });
 });
 
@@ -134,7 +136,7 @@ describe('PlanCredential.tla: a transient persist failure never signs an account
 
 
 describe('PlanCredential.tla states the intent write failure', () => {
-  const header = credentialSpec.slice(0, credentialSpec.indexOf('EXTENDS'));
+  const header = moduleHeaderOf('PlanCredential');
 
   it('says that the intent write before a refresh can fail and that its failure sends nothing', () => {
     expect(header).not.toMatch(/intent write before a refresh cannot fail/);

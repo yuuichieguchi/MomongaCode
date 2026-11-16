@@ -1,89 +1,4 @@
 ---------------------------- MODULE RunRecord -----------------------------
-(***************************************************************************)
-(* Model of the record that makes recovery measurable (design              *)
-(* design-reliability-report.md, increment I4): the journal events        *)
-(* attempt.failed (F) and the takeover record (L), the run.started        *)
-(* recovery field (S), and the fold that turns the journal into recovery   *)
-(* episodes. Specs/tla/RunRecovery.tla models what the run may do; this    *)
-(* module models what is written down about a failure and whether the     *)
-(* fold of the journal recovers the truth.                                 *)
-(*                                                                         *)
-(* Code sources modelled (release/rc1)                                    *)
-(*   packages/store/src/runtime-store.ts (claim, heartbeat, transition, release, releaseLease, requestCancel, appendAsService, finishCancelled, deadLetterExhausted, expireApprovals, resolveApproval, resolveElicitation, changeStatus) *)
-(*       claim is the TAKEOVER; resolving an approval or an elicitation is *)
-(*       the QUEUED wake                                                   *)
-(*   packages/runtime/src/worker/claim-runner.ts (drive, requeueOrStop)    *)
-(*       and the run.started append                                        *)
-(*   packages/runtime/src/worker/terminals.ts (finish, yieldTo, cancel, yieldLease) *)
-(*   packages/runtime/src/service/terminal-sweeper.ts (startTerminalSweeper) *)
-(*   packages/reliability/src/fold-facts.ts (foldFacts): the fold          *)
-(*                                                                         *)
-(* Ghost variables (they decide nothing, they only state the truth): ghost *)
-(* time is the logical clock clk; chain is the failure chain that is open *)
-(* (a failure with no progress yet); truth is the list of chains that     *)
-(* ended and how; unc is the earliest failure that no run.started carries *)
-(* yet; miss and badRec are history flags.                                 *)
-(*                                                                         *)
-(* Abstractions (a proof holds only for this model):                       *)
-(*   - one run. Parent and child runs act on each other only through the  *)
-(*     service edges (a cancel cascade, the wake of a parent), which are   *)
-(*     the RequestCancel and ResolveWake actions of a run; the record      *)
-(*     rules are per run                                                   *)
-(*   - time is a counter that moves when a lease is set or renewed and    *)
-(*     when attempt.failed is stamped; wall-clock units are not modelled   *)
-(*   - the lease lifetime and the heartbeat period are not modelled; the   *)
-(*     lease expires nondeterministically (ExpireLease). The arithmetic     *)
-(*     lastLiveAt = lease_expires_at - leaseMs holds only while the        *)
-(*     process that renewed and the process that claims use one leaseMs;    *)
-(*     that is not modelled and not claimed                                *)
-(*   - model request, model response, tool call, tool completion or       *)
-(*     reconcile are the events Q, R, O, C; one call at a time. The        *)
-(*     reconcile result is an oracle (ok or unknown)                       *)
-(*   - the cancel recovery of a CANCELLING run (reconciling started calls) *)
-(*     is one step to CANCELLED                                            *)
-(*   - the gateway, the tools, the hooks, the context step and background *)
-(*     jobs write no field of the run row and no recovery event; their    *)
-(*     failures reach the record only through requeueOrStop (Fail) or the  *)
-(*     graceful yields (Drain)                                             *)
-(*   - the deadline is not a clock: FinishStop stands for every stop that  *)
-(*     is not a failure (deadline, budget, loop, refusal, max tokens)      *)
-(*   - the facts sweeper and its cursor are in FactsSweeper.tla            *)
-(*                                                                         *)
-(* Switches. The configuration RunRecord is the design that the models     *)
-(* hold. Every other configuration flips one switch back to the design as  *)
-(* written, or to the code of rc1, and is evidence that an invariant       *)
-(* catches it.                                                             *)
-(*   LostAtClaim        claim appends the takeover record L in its own     *)
-(*                      transaction                                        *)
-(*   FailedBeforeYield  the failing worker appends F before the yield      *)
-(*                      (FALSE: rc1, which never writes F, and a F after   *)
-(*                      the yield, which the fence rejects)                *)
-(*   FoldOpensOn        "records": a chain opens on F or L. "started": it  *)
-(*                      opens on a run.started that carries recovery      *)
-(*   EarliestFailure    the recovery field of run.started names the        *)
-(*                      earliest failure record since the last run.started *)
-(*                      (FALSE: the latest)                                *)
-(*   MergeChain         failures with no progress between them are one     *)
-(*                      episode (FALSE: each record opens an episode and   *)
-(*                      closes the one before it as failed)                *)
-(*   RequestIsProgress  Q and O count as progress                          *)
-(*   StopAsProgress     a STOPPED or CANCELLED end counts as progress      *)
-(*   Refunds            a failed attempt may be refunded                   *)
-(*   MaxCalls           the number of tool calls the run may ever request; *)
-(*                      calls have identities, a response may request     *)
-(*                      several, and they start and settle in any order    *)
-(*   OwedAtFirstRecord  the calls an episode waits for are the calls open  *)
-(*                      at the record that opened it (FALSE: the calls     *)
-(*                      open at any record of the chain)                   *)
-(*   CloseRule          when a settling call event ends an episode.        *)
-(*                      "settled": when no call owed to the episode is     *)
-(*                      left. "nonOwed": also at a settling event of a     *)
-(*                      call that is not owed, with unknown_effect while   *)
-(*                      an owed call is left. "first": at the first        *)
-(*                      settling event                                     *)
-(*   CallsAsFlag        the fold keeps one call flag (any settling event   *)
-(*                      clears every call)                                 *)
-(***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
 CONSTANTS
@@ -133,9 +48,6 @@ NoUnc == [on |-> FALSE, at |-> 0, cause |-> ""]
 Terminal == {"COMPLETED", "STOPPED", "FAILED", "CANCELLED"}
 ClaimSt == {"RUNNING", "CANCELLING"}
 
-(* WAITING stands for WAITING_HUMAN and WAITING_TOOL. Every status edge    *)
-(* the model takes; test/spec-drift-record.test.ts checks each against the *)
-(* transition tables of the store.                                         *)
 DeclaredEdges ==
     {<<"RUNNING", "QUEUED">>, <<"RUNNING", "WAITING">>, <<"RUNNING", "COMPLETED">>,
      <<"RUNNING", "STOPPED">>, <<"RUNNING", "FAILED">>, <<"RUNNING", "CANCELLING">>,
@@ -143,7 +55,6 @@ DeclaredEdges ==
      <<"QUEUED", "STOPPED">>, <<"WAITING", "STOPPED">>, <<"WAITING", "QUEUED">>,
      <<"QUEUED", "FAILED">>}
 
-(* The journal event type of every event kind of the model *)
 ProtocolEvent ==
     [S |-> {"run.started"}, F |-> {"attempt.failed"}, L |-> {"attempt.lost"}, T |-> {"run.status"},
      Q |-> {"model.requested"}, R |-> {"model.responded"}, O |-> {"tool.started"},
@@ -163,21 +74,12 @@ VARIABLES st, owner, tok, live, rnw, origin, att, fa, nclaim, clk, ev,
 vars == <<st, owner, tok, live, rnw, origin, att, fa, nclaim, clk, ev,
           pc, wtok, wtake, wfail, truth, chain, unc, miss, badRec>>
 
-(* st, owner, tok, live, rnw, origin, att, fa  the runs row: status, lease *)
-(*   owner, lease token, lease unexpired, the clock at the last renewal,   *)
-(*   cancel origin, attempts, consecutive failed attempts                  *)
-(* ev     the events table; an event is [k, x, y, why]; why is a ghost    *)
-(*        tag that no reader of the journal may use                       *)
-(* pc, wtok, wtake, wfail  the worker: program counter, lease token,      *)
-(*        Claim.takeover (taken, lastLiveAt), refund of the failed attempt *)
-
 Ev(k, x, y, why) == [k |-> k, x |-> x, y |-> y, why |-> why]
 
 Max(S) == CHOOSE x \in S : \A y \in S : y <= x
 Min(S) == CHOOSE x \in S : \A y \in S : x <= y
 
 -----------------------------------------------------------------------------
-(* Journal queries *)
 
 IdxOf(k) == {i \in DOMAIN ev : ev[i].k = k}
 LastIdx(k) == IF IdxOf(k) = {} THEN 0 ELSE Max(IdxOf(k))
@@ -204,9 +106,6 @@ CallPredatesStart(c) == LastIdx("S") > Max({i \in IdxOf("O") : ev[i].y = c})
 FailureRecordsSinceStart ==
     {i \in DOMAIN ev : i > LastIdx("S") /\ ev[i].k \in {"F", "L"}}
 
-(* The rule of the worker that appends run.started (claim-runner.ts): the  *)
-(* recovery field. The journal is read first; the claim's takeover is the  *)
-(* fallback.                                                               *)
 RecOf(w) ==
     IF FailureRecordsSinceStart # {}
     THEN LET p == IF EarliestFailure THEN Min(FailureRecordsSinceStart) ELSE Max(FailureRecordsSinceStart)
@@ -215,8 +114,6 @@ RecOf(w) ==
     ELSE [x |-> "none", y |-> 0]
 
 -----------------------------------------------------------------------------
-(* The fold: fold-facts.ts over the journal. It reads event kinds and the  *)
-(* fields x and y; it never reads why.                                     *)
 
 Opens(e) == IF FoldOpensOn = "records" THEN e.k \in {"F", "L"}
             ELSE e.k = "S" /\ e.x # "none"
@@ -267,7 +164,6 @@ FoldFrom(fs, i) == IF i > Len(ev) THEN fs ELSE FoldFrom(FoldStep(fs, ev[i]), i +
 Folded == FoldFrom([open |-> NoOpen, oc |-> {}, out |-> <<>>], 1)
 
 -----------------------------------------------------------------------------
-(* Ghost updates *)
 
 GFail(at, cause) ==
     /\ chain' = IF ~chain.on THEN [on |-> TRUE, at |-> at, ow |-> OpenCalls, unk |-> FALSE]
@@ -298,7 +194,6 @@ GSettle(c, o) ==
 GKeep == UNCHANGED <<chain, truth, unc>>
 
 -----------------------------------------------------------------------------
-(* Store helpers *)
 
 Fence(w) == tok = wtok[w] /\ owner = w /\ st \in ClaimSt
 
@@ -336,8 +231,6 @@ Init ==
     /\ miss = FALSE /\ badRec = FALSE
 
 -----------------------------------------------------------------------------
-(* store.claim. It does not append a status event. When LostAtClaim, a      *)
-(* takeover appends L in the same transaction.                              *)
 
 Claim(w) ==
     /\ pc[w] = "idle" /\ nclaim < MaxClaims
@@ -378,12 +271,7 @@ ExpireLease ==
     /\ UNCHANGED <<st, owner, tok, rnw, origin, att, fa, nclaim, clk, ev, pc, wtok, wtake, wfail, truth, chain, unc, miss, badRec>>
 
 -----------------------------------------------------------------------------
-(* The worker. A worker program counter is idle, claimed (before            *)
-(* run.started), started, failed (attempt.failed is written, the yield     *)
-(* is not).                                                                 *)
 
-(* terminals.finish: the run ends. Used by the worker for COMPLETED,       *)
-(* STOPPED and FAILED.                                                     *)
 Finish(w, to, o) ==
     /\ pc[w] \in {"claimed", "started"} /\ Fence(w) /\ st = "RUNNING"
     /\ st' = to /\ owner' = NoOwner /\ live' = FALSE
@@ -400,7 +288,6 @@ FinishFail(w) == Finish(w, "FAILED", "failed")
 
 FinishDone(w) == pc[w] = "started" /\ Phase = "final" /\ Finish(w, "COMPLETED", ProgressVerdict)
 
-(* terminals.cancel after the cancel recovery *)
 CancelRun(w) ==
     /\ pc[w] \in {"claimed", "started"} /\ Fence(w) /\ st = "CANCELLING"
     /\ st' = "CANCELLED" /\ owner' = NoOwner /\ live' = FALSE
@@ -409,8 +296,6 @@ CancelRun(w) ==
     /\ GClose("stopped")
     /\ UNCHANGED <<tok, rnw, origin, att, fa, nclaim, clk, miss, badRec>>
 
-(* The append of run.started in drive. The recovery field is computed only *)
-(* when the fold reads it.                                                 *)
 StartRun(w) ==
     /\ pc[w] = "claimed" /\ Fence(w) /\ st = "RUNNING"
     /\ LET rec == IF FoldOpensOn = "started" THEN RecOf(w) ELSE [x |-> "none", y |-> 0]
@@ -447,8 +332,6 @@ AppendC(w, c, o) ==
     /\ GSettle(c, o)
     /\ UNCHANGED <<st, owner, tok, live, rnw, origin, att, fa, nclaim, clk, pc, wtok, wtake, wfail, miss, badRec>>
 
-(* requeueOrStop, the requeue branches: attempt.failed first, then the     *)
-(* yield. Two steps; a crash or a takeover can fall between them.         *)
 Fail(w) ==
     /\ pc[w] \in {"claimed", "started"} /\ Fence(w) /\ st = "RUNNING"
     /\ \E refund \in IF Refunds THEN BOOLEAN ELSE {FALSE} :
@@ -460,8 +343,6 @@ Fail(w) ==
     /\ pc' = [pc EXCEPT ![w] = "failed"]
     /\ UNCHANGED <<st, owner, tok, live, rnw, origin, att, fa, nclaim, wtok, wtake, badRec>>
 
-(* terminals.yieldTo('QUEUED') after a failure. A CANCELLING run is not    *)
-(* moved: yieldLease releases its lease (terminals.ts settle).             *)
 YieldFail(w) ==
     /\ pc[w] = "failed" /\ Fence(w)
     /\ IF st = "RUNNING"
@@ -475,8 +356,6 @@ YieldFail(w) ==
     /\ ToIdle(w)
     /\ UNCHANGED <<tok, rnw, origin, nclaim, clk, truth, chain, unc, miss, badRec>>
 
-(* yieldLease, and every yieldTo('QUEUED') that is not a failure: graceful *)
-(* shutdown, the mode change, the context step. The attempt is refunded.   *)
 Drain(w) ==
     /\ pc[w] \in {"claimed", "started"} /\ Fence(w)
     /\ IF st = "RUNNING"
@@ -489,7 +368,6 @@ Drain(w) ==
     /\ ToIdle(w)
     /\ UNCHANGED <<tok, rnw, origin, nclaim, clk, truth, chain, unc, miss, badRec>>
 
-(* yieldTo('WAITING_HUMAN') or ('WAITING_TOOL') *)
 WaitYield(w) ==
     /\ pc[w] = "started" /\ Fence(w) /\ st = "RUNNING"
     /\ st' = "WAITING"
@@ -506,7 +384,6 @@ Step(w) ==
     \/ Fail(w) \/ YieldFail(w) \/ Drain(w) \/ WaitYield(w)
 
 -----------------------------------------------------------------------------
-(* Environment: the service and the sweepers *)
 
 EnvStop(from, o) ==
     /\ st = from
@@ -515,26 +392,22 @@ EnvStop(from, o) ==
     /\ GClose(o)
     /\ UNCHANGED <<owner, tok, live, rnw, origin, att, fa, nclaim, clk, pc, wtok, wtake, wfail, miss, badRec>>
 
-(* sweepQueued and expireApprovals (the deadline, the approval timeout)    *)
 SweepQueued == EnvStop("QUEUED", "stopped")
 
 SweepWaiting == EnvStop("WAITING", "stopped")
 
-(* resolveApproval, resolveElicitation, wakeRun, the expiry of a wait     *)
 ResolveWake ==
     /\ st = "WAITING"
     /\ st' = "QUEUED"
     /\ ev' = Append(ev, Ev("T", "WAITING", "QUEUED", "wake"))
     /\ UNCHANGED <<owner, tok, live, rnw, origin, att, fa, nclaim, clk, pc, wtok, wtake, wfail, truth, chain, unc, miss, badRec>>
 
-(* requestCancel, and the cancel cascade from a parent *)
 RequestCancel ==
     /\ st \in {"QUEUED", "RUNNING", "WAITING"}
     /\ st' = "CANCELLING" /\ origin' = st
     /\ ev' = Append(ev, Ev("T", st, "CANCELLING", "cancel"))
     /\ UNCHANGED <<owner, tok, live, rnw, att, fa, nclaim, clk, pc, wtok, wtake, wfail, truth, chain, unc, miss, badRec>>
 
-(* finishCancelled in terminal-sweeper.ts *)
 FinishCancelled ==
     /\ SweeperOwned /\ (owner = NoOwner \/ ~live)
     /\ st' = "CANCELLED" /\ owner' = NoOwner /\ live' = FALSE
@@ -542,8 +415,6 @@ FinishCancelled ==
     /\ GClose("stopped")
     /\ UNCHANGED <<tok, rnw, origin, att, fa, nclaim, clk, pc, wtok, wtake, wfail, miss, badRec>>
 
-(* deadLetterExhausted in terminal-sweeper.ts, and the dead-letter pass at  *)
-(* the head of claim                                                        *)
 DeadLetter ==
     /\ Claimable /\ Exhausted
     /\ LET to == IF st = "CANCELLING" THEN "CANCELLED" ELSE "FAILED"
@@ -561,7 +432,6 @@ Next ==
 Spec == Init /\ [][Next]_vars
 
 -----------------------------------------------------------------------------
-(* Properties *)
 
 TypeOK ==
     /\ st \in Terminal \cup {"QUEUED", "RUNNING", "WAITING", "CANCELLING"}
@@ -570,44 +440,26 @@ TypeOK ==
     /\ \A w \in Workers : pc[w] \in {"idle", "claimed", "started", "failed"}
     /\ att \in Int /\ fa \in Nat
 
-(* Every status event is an edge of the store *)
 OnlyDeclaredEdges ==
     \A i \in DOMAIN ev : ev[i].k = "T" => <<ev[i].x, ev[i].y>> \in DeclaredEdges
 
-(* Every failure that happened has a record in the journal at the instant   *)
-(* it happened: the claim that takes over a lease appends L, a failing      *)
-(* worker appends F before it yields.                                       *)
 NoMissingRecord == ~miss
 
-(* A status event RUNNING -> QUEUED names a failure exactly when the event *)
-(* before it is attempt.failed (a graceful yield writes none).             *)
 FailedBeforeRequeue ==
     \A i \in DOMAIN ev :
         (ev[i].k = "T" /\ ev[i].x = "RUNNING" /\ ev[i].y = "QUEUED")
             => ((ev[i].why = "fail") <=> (i > 1 /\ ev[i - 1].k = "F"))
 
-(* When the fold reads the recovery field of run.started, the field names  *)
-(* the earliest failure that no earlier run.started carried, with its      *)
-(* cause and instant, and a run.started carries none otherwise.            *)
 RecoveryFieldExact == ~badRec
 
-(* The episodes the fold closes are the failure chains that really ended,  *)
-(* in order, with their start and their outcome.                           *)
 FoldMatchesTruth == Folded.out = truth
 
-(* The fold never leaves an open episode on a terminal run: fold-facts.ts  *)
-(* throws then, and the sweeper would stop on that run.                    *)
 TerminalFoldTotal == st \in Terminal => ~Folded.open.on
 
-(* design-reliability-report.md 2.3 item 1: at most maxTotalAttempts       *)
-(* attempt.failed per run                                                  *)
 FailedEventsAtMostTotalAttempts == Count("F") <= MaxTotalAttempts
 
 Bound == Len(ev) <= MaxEvents /\ clk <= MaxClk
 
-(* The configurations of the call family look at the fold of failure     *)
-(* records and calls; they leave out the waiting and the cancelling       *)
-(* paths, which the other configurations cover.                          *)
 CallsFocus == st \notin {"WAITING", "CANCELLING", "CANCELLED"}
 
 WorkerSymmetry == Permutations(Workers)

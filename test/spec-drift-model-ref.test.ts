@@ -58,13 +58,12 @@ describe('ModelRef.tla and its configurations (a model is named by its server an
     expect(variants()).toEqual([DECIDED, ...Object.keys(VIOLATED_BY_VARIANT)].sort());
   });
 
-  it('each wrong rule has exactly one evidence configuration, run every time, that violates its property', () => {
+  it('each wrong rule has exactly one evidence configuration that violates its property (its tier is the cold-wall rule of test/formal/tiers.test.ts)', () => {
     const evidence = entries().filter((entry) => entry.role === 'evidence');
     const found = Object.fromEntries(evidence.map((entry) => [JSON.parse(constantOf(configOf(entry.config), 'Variant')) as string, typeof entry.expect === 'object' ? entry.expect.violates : 'holds']));
     expect(evidence).toHaveLength(Object.keys(VIOLATED_BY_VARIANT).length);
     expect(found).toEqual(VIOLATED_BY_VARIANT);
     for (const entry of evidence) {
-      expect(entry.tier, entry.config).toBe('every-run');
       expect(entry.config, entry.config).toBe(`ModelRef.${JSON.parse(constantOf(configOf(entry.config), 'Variant')) as string}`);
       expect(typeof entry.expect === 'object' ? entry.expect.exitCode : 0, entry.config).toBe(entry.config === 'ModelRef.serveUnchecked' ? TEMPORAL_ACTION_PROPERTY_EXIT : INVARIANT_EXIT);
     }
@@ -77,8 +76,8 @@ describe('ModelRef.tla and its configurations (a model is named by its server an
   it('every configuration of the model is in the manifest, and every manifest entry has its configuration', () => {
     const configs = fs.readdirSync(specDir).filter((file) => /^ModelRef(\.\w+)?\.cfg$/.test(file)).map((file) => file.slice(0, -'.cfg'.length)).sort();
     expect(entries().map((entry) => entry.config).sort()).toEqual(configs);
-    expect(entries().find((entry) => entry.config === 'ModelRef')).toMatchObject({ role: 'check', expect: 'holds', tier: 'every-run' });
-    expect(entries().find((entry) => entry.config === 'ModelRef.childDeep')).toMatchObject({ role: 'check', expect: 'holds', tier: 'deep' });
+    expect(entries().find((entry) => entry.config === 'ModelRef')).toMatchObject({ role: 'check', expect: 'holds' });
+    expect(entries().find((entry) => entry.config === 'ModelRef.childDeep')).toMatchObject({ role: 'check', expect: 'holds' });
   });
 
   it('each instance has the default tags the design gives it, and the two table instances are the ones whose tables the code is compared with', () => {

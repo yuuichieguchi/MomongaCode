@@ -2,14 +2,16 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { stateDirOf } from '../../scripts/support/dev-state.ts';
 import { checkEntry, createTierReport } from './check-entry.ts';
-import type { ManifestEntry, Tier } from './manifest-reader.ts';
+import type { ManifestEntry, ModuleLimits, Tier } from './manifest-reader.ts';
+import { moduleOf } from './manifest-reader.ts';
 import { createJavaIdentityReader, createResultStore, reuseModeOf } from './reuse.ts';
 import type { JavaIdentity, ResultStore } from './reuse.ts';
-import { TLC_WORKERS } from './runner.ts';
+import { TLC_WORKERS, notProvedText } from './runner.ts';
 
 export type TierOptions = {
   tier: Tier;
   entries: readonly ManifestEntry[] | Error;
+  modules: readonly ModuleLimits[];
   manifestConfigs: readonly string[];
   script: string;
   repoRoot: string;
@@ -82,6 +84,9 @@ export const describeTier = (options: TierOptions): void => {
           const { mode, store, java } = session();
           const outcome = await checkEntry({ entry, script, repoRoot, tier, mode, env, store, java, limitMs, now });
           report.add(entry.config, outcome);
+          const limits = options.modules.find((module) => module.module === moduleOf(entry.config));
+          if (limits === undefined) throw new Error(`${entry.config}: the manifest has no modules entry for ${moduleOf(entry.config)}`);
+          process.stderr.write(notProvedText(entry.config, limits));
           expect(outcome.outcome === 'ran' ? outcome.problems : []).toEqual([]);
         },
         limitMs,

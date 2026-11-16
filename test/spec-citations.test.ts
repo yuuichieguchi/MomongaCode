@@ -23,6 +23,15 @@ const citationsOf = (spec: string): Citation[] =>
     [...text.matchAll(CITED_FILE)].map((match) => ({ spec, line: index + 1, file: match[0], after: text.slice((match.index ?? 0) + match[0].length) })),
   );
 
+const manifest = JSON.parse(fs.readFileSync(path.join(specDir, 'manifest.json'), 'utf8')) as { modules: { module: string; header?: string[]; abstractions: string[]; notProved: string[] }[] };
+
+const manifestCitationsOf = (): Citation[] =>
+  manifest.modules.flatMap((entry) =>
+    [...(entry.header ?? []), ...entry.abstractions, ...entry.notProved].flatMap((text, index) =>
+      [...text.matchAll(CITED_FILE)].map((match) => ({ spec: `manifest.json modules ${entry.module}`, line: index + 1, file: match[0], after: text.slice((match.index ?? 0) + match[0].length) })),
+    ),
+  );
+
 const escaped = (word: string): string => word.replace(/[$]/g, '\\$');
 
 const problemsOf = (citation: Citation): string[] => {
@@ -44,5 +53,11 @@ describe('the code citations in the headers of the TLA+ models', () => {
     const specs = fs.readdirSync(specDir).filter((file) => file.endsWith('.tla')).sort();
     expect(specs.length).toBeGreaterThan(0);
     expect(specs.flatMap(citationsOf).flatMap(problemsOf)).toEqual([]);
+  });
+
+  it('name an existing file and its symbols in the texts of the manifest modules, never a line', () => {
+    const citations = manifestCitationsOf();
+    expect(citations.length).toBeGreaterThan(0);
+    expect(citations.flatMap(problemsOf)).toEqual([]);
   });
 });

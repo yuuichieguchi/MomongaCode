@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { moduleHeaderOf } from './formal/manifest.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { DERIVATIONS, DERIVED_VALUES } from '../packages/store/src/derived-repair.ts';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
@@ -25,7 +26,7 @@ const constantOf = (name: string): string => {
 };
 
 const headerEntries = (): { derivation: number; model: string; holds: string[]; scope: string }[] => {
-  const header = spec.slice(0, spec.indexOf('*****)', spec.indexOf('Derivations of the code')));
+  const header = moduleHeaderOf('DerivedRepair');
   const rows = header.slice(header.indexOf('Derivations of the code'), header.indexOf('Actors of the code')).split('\n').slice(1);
   const texts = rows.map((row) => row.replace(/^\(\*\s?/, '').replace(/\s*\*\)\s*$/, '')).filter((row) => row.trim() !== '');
   const entries: { derivation: number; model: string; text: string }[] = [];
