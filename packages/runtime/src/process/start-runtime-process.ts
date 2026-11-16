@@ -1060,7 +1060,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                   purges: [
                     async (runIds, cutoffMs) => {
                       traceStore.purgeRuns(runIds, cutoffMs);
-                      traceStore.moveLegacyContent({ retentionMs: retention.days * DAY_MS });
+                      traceStore.moveLegacyContent({ retentionMs: clock.now() - cutoffMs });
                     },
                     (runIds, cutoffMs, purgeSignal) => gatewayClient.retentionPurge(runIds, cutoffMs, purgeSignal),
                     (_runIds, cutoffMs, purgeSignal) => pruneGitObserverStores({ storeRoot: observerStoreRoot(paths), cutoffMs }, childLaunch, purgeSignal),

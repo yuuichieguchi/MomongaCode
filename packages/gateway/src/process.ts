@@ -1069,7 +1069,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     cleanups.push(() => telemetries.retireAll());
     (await step('telemetry', () => telemetries.admit(startSignal))).release();
-    const contentRetentionMs = resolveRetentionSettings(settings.retention).days * DAY_MS;
 
     signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);
@@ -1563,7 +1562,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       retentionPurge: async (runIds, cutoffMs, requestSignal) => {
         await flushTelemetry(requestSignal);
         traceStore.purgeRuns(runIds, cutoffMs);
-        traceStore.moveLegacyContent({ retentionMs: contentRetentionMs });
+        traceStore.moveLegacyContent({ retentionMs: clock.now() - cutoffMs });
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
