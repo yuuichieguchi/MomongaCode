@@ -1258,6 +1258,10 @@ const JOB_OUTPUT_INCOMPLETE = `
 ALTER TABLE ${BACKGROUND_COMMANDS_TABLE} ADD COLUMN output_incomplete INTEGER NOT NULL DEFAULT 0 CHECK (output_incomplete IN (0, 1));
 `;
 
+const IDEMPOTENCY_GROUP_NAME = `
+ALTER TABLE idempotency ADD COLUMN group_name TEXT;
+`;
+
 const RETENTION_SWEEPS = `
 CREATE TABLE retention_sweeps (
   session_id TEXT PRIMARY KEY,
@@ -1562,5 +1566,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 52,
     name: 'keep on the row of a command run in the background whether the output read after the command ended stopped before the output ended, so its view says so; a row finished before keeps 0',
     sql: JOB_OUTPUT_INCOMPLETE,
+  },
+  {
+    version: 53,
+    name: 'keep on an idempotency record the name of the process group its command attached, so a recovery reads the group the same way for a tool as for a background job',
+    sql: IDEMPOTENCY_GROUP_NAME,
   },
 ];
