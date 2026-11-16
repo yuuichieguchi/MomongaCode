@@ -2,12 +2,14 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_RETIRED, FIRST_GENERATION, generationLayout } from '@momonga/foundation';
+import { EXIT_RETIRED, FIRST_GENERATION, SWEEP_INTERVAL_MS, generationLayout } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { onCleanup } from '../process/helpers.ts';
 import { PERSON_CAPABILITY_TEST_HEADER, personCapabilityFileOf } from '../service/helpers.ts';
 import { launchRuntime, prepareStack, readDb, scriptedToolCall, startGateway, waitForCondition, waitForStatus } from '../process/run-helpers.ts';
 import { mutableRole } from '../shared/mutable-role.ts';
+import { systemTimers } from '../../src/service/timers.ts';
+import type { ServiceTimers } from '../../src/service/timers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -55,6 +57,28 @@ const openNonStreamRequest = async (socketPath: string, home: string): Promise<n
   return socket;
 };
 
+type RoleTickTimers = ServiceTimers & { roleTicks(): number };
+
+const roleTickTimers = (role: { refreshes(): number }): RoleTickTimers => {
+  let roleTicks = 0;
+  return {
+    setTimeout: (callback, ms) =>
+      systemTimers.setTimeout(() => {
+        const before = role.refreshes();
+        callback();
+        if (ms === SWEEP_INTERVAL_MS && role.refreshes() > before) roleTicks += 1;
+      }, ms),
+    clearTimeout: (handle) => systemTimers.clearTimeout(handle),
+    monotonicMs: () => systemTimers.monotonicMs(),
+    roleTicks: () => roleTicks,
+  };
+};
+
+const roleTicksEnded = async (timers: RoleTickTimers, count: number): Promise<void> => {
+  const started = timers.roleTicks();
+  await waitForCondition(() => timers.roleTicks() > started + count, `${count} role ticks of the retiring runtime to end (the next one starts only after the last has settled)`);
+};
+
 const jobOf = (database: string): { status: string } | undefined => readDb<{ status: string }>(database, 'SELECT status FROM jobs')[0];
 
 describe('T-I4-7 (17.1 "Exit", rules 3a and 3b): a retiring runtime exits exactly when it holds no step, no owned job and no open non-stream request', () => {
@@ -70,7 +94,8 @@ describe('T-I4-7 (17.1 "Exit", rules 3a and 3b): a retiring runtime exits exactl
     await startGateway(stack.temp);
     const role = mutableRole('serving');
     let shutdowns = 0;
-    const launched = await launchRuntime(stack.temp, { role: role.port, requestShutdown: () => void (shutdowns += 1) });
+    const timers = roleTickTimers(role);
+    const launched = await launchRuntime(stack.temp, { role: role.port, timers, requestShutdown: () => void (shutdowns += 1) });
     const socketPath = generationLayout(stack.temp.home, FIRST_GENERATION).sockets.runtime;
     const session = await launched.createSession(BYPASS);
     if (row.job) {
@@ -93,8 +118,7 @@ describe('T-I4-7 (17.1 "Exit", rules 3a and 3b): a retiring runtime exits exactl
     if (!holdsSomething) {
       await waitForCondition(() => shutdowns === 1, 'the retiring runtime that holds nothing to ask for its shutdown');
     } else {
-      const refreshedBefore = role.refreshes();
-      await waitForCondition(() => role.refreshes() >= refreshedBefore + ROLE_TICKS_WAITED, 'three reads of the role by the retiring runtime');
+      await roleTicksEnded(timers, ROLE_TICKS_WAITED);
       expect(shutdowns).toBe(0);
       if (row.job) expect(jobOf(stack.temp.paths.databases.runtime)?.status).toBe('running');
       hold?.release();

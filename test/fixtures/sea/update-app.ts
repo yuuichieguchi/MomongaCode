@@ -1,6 +1,6 @@
 import { nodeBoundedCommandRunner, nodeEntryIo } from '@momonga/foundation';
 import { daemonEntries } from '../../../packages/cli/src/daemon/entries.ts';
-import { nodeHelperHost, nodePorts, processHome } from '../../../packages/cli/src/node-ports.ts';
+import { daemonFileSystem, nodeHelperHost, nodePorts, processHome } from '../../../packages/cli/src/node-ports.ts';
 import { buildProgram, exitOfFailure, pathsOf } from '../../../packages/cli/src/program.ts';
 import { nodeUpdateWiring } from '../../../packages/cli/src/update/wiring.ts';
 
@@ -18,7 +18,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
   const wiring = nodeUpdateWiring(ports, await pathsOf(ports));
   const program = buildProgram({
     ports,
-    entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
+    entries: daemonEntries(ports.self, ports.version, ports.spawnDetached, daemonFileSystem),
     helper: { helpers: async () => ({}), call: undefined, host: nodeHelperHost() },
     update: () => ({
       ...wiring,

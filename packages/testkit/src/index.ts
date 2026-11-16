@@ -308,3 +308,5 @@ export { TEST_BUILTIN_TOOL_OFFER, TEST_TOOL_LIMITS } from './tool-limits.ts';
 export { TEST_UNPROTECTED_LAUNCH } from './test-launch.ts';
 export { PropertyFailure, forEachSeed, seededGenerator, seedsFrom } from './property.ts';
 export type { Generator } from './property.ts';
+export { fileSystemWithFault } from './file-system-fault.ts';
+export type { FileSystemFault } from './file-system-fault.ts';

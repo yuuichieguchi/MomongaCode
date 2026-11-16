@@ -38,7 +38,7 @@ import {
   personCapabilityOf,
   endpointScopeOf,
 } from '@momonga/foundation';
-import type { GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism, EndpointScope } from '@momonga/foundation';
+import type { FileSystem, GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism, EndpointScope } from '@momonga/foundation';
 import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
@@ -336,6 +336,8 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
 };
 
 export const processHome = (): string => process.env['HOME'] ?? os.homedir();
+
+export const daemonFileSystem: FileSystem = nodeFileSystem;
 
 export const nodePorts = (version: string, interrupt: AbortSignal, home: string, streams: GuardedStandardStreams = guardStandardStreams(process)): CliPorts => {
   const self = nodeSelf(process.argv, isSea);

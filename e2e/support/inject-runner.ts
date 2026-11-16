@@ -18,6 +18,10 @@ import { spawnSupervisor, startStack } from './stack.ts';
 import type { E2eStack, StartStackOptions } from './stack.ts';
 import { childOf } from './supervisor-client.ts';
 import { textReply, toolCallReply } from './upstream.ts';
+import { SUPERVISOR_APP_VERSION } from './app-version.ts';
+import { roleMainOverride } from './launcher.ts';
+import { fileFaultArgument } from './role-main.ts';
+import type { RoleMainFileFault } from './role-main.ts';
 import { E2E_DISPOSE_BOUND_MS, E2E_MARGIN_MS, E2E_READY_DEADLINE_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eTestTimeoutMs, until, withinBound } from './wait.ts';
 
 export type ScenarioResult =
@@ -34,6 +38,8 @@ const GATEWAY_RETRY = GATEWAY_CONFIG_DEFAULTS.retry;
 const GATEWAY_WINDOW_BOUND_MS = GATEWAY_RETRY.totalWaitMs + E2E_MARGIN_MS;
 const SMALL_FILESYSTEM_MAX_BYTES = 256 * 1024 * 1024;
 const FILL_CHUNK_BYTES = 1024 * 1024;
+const PORT_FAULT_MARKER_NAME = 'file-fault.on';
+const PORT_FAULT_RECORD_NAME = 'file-fault.refused';
 const LEDGER_DIRECTORY_NAME = 'ledger';
 const LEDGER_FILE_NAME = 'ledger.txt';
 const HOOK_MARK_FILE_NAME = 'hook.mark';
@@ -199,7 +205,15 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
     },
   },
   disk_full: {
+    stackOptions: (env) =>
+      env.scenario.requires === 'linux-container'
+        ? {}
+        : { deps: { launcherOverrides: { runtime: roleMainOverride('runtime', SUPERVISOR_APP_VERSION, [fileFaultArgument(portFaultOf(env))]) } } },
     beforeRun: async (env) => {
+      if (env.scenario.requires !== 'linux-container') {
+        fs.writeFileSync(portFaultOf(env).marker, '');
+        return;
+      }
       env.filler = path.join(env.home.root, 'filler.bin');
       const descriptor = fs.openSync(env.filler, 'w');
       const chunk = Buffer.alloc(FILL_CHUNK_BYTES);
@@ -212,7 +226,16 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       }
     },
     inject: async (env) => {
-      fs.rmSync(env.filler as string, { force: true });
+      if (env.scenario.requires === 'linux-container') {
+        fs.rmSync(env.filler as string, { force: true });
+        return;
+      }
+      const fault = portFaultOf(env);
+      await until(() => fs.existsSync(fault.record) && fs.readFileSync(fault.record, 'utf8') !== '', {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+        description: `a write of the runtime under ${fault.under} refused with ENOSPC by the file-system port`,
+      });
+      fs.rmSync(fault.marker);
     },
   },
   rate_limit: {
@@ -291,6 +314,13 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
     },
   },
 };
+
+const portFaultOf = (env: TrialEnv): RoleMainFileFault => ({
+  code: 'ENOSPC',
+  under: env.home.paths.root,
+  marker: path.join(env.home.root, PORT_FAULT_MARKER_NAME),
+  record: path.join(env.home.root, PORT_FAULT_RECORD_NAME),
+});
 
 const createRunId = async (env: TrialEnv, fault: Fault): Promise<string> => {
   const runtime = env.runtime as RuntimeClient;
@@ -399,10 +429,10 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     env.stack = await startStack({
       home,
       needsBash: true,
-      deps: { restart: E2E_RESTART_POLICY },
       model: { answers: 'script' },
       script,
       ...stackOptions,
+      deps: { restart: E2E_RESTART_POLICY, ...stackOptions.deps },
       settings: { permissions: { additionalDirectories: [ledgerDirectory] }, ...stackOptions.settings },
     });
     env.fake = env.stack.fake;

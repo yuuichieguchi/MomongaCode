@@ -162,7 +162,9 @@ const sendCounted = async (send: AsyncSignalSender, target: number, signal: Node
   }
 };
 
-type ProvedSignal = { send: AsyncSignalSender; reads: PassReads; stop: AbortSignal };
+type ProvedSignal = { send: AsyncSignalSender; reads: PassReads; stop: AbortSignal; group?: ProcessGroupPort };
+
+const groupSenderOf = (group: ProcessGroupPort): AsyncSignalSender => (target, signal, options) => (signal === 0 ? group.alive(Math.abs(target), options).then(() => undefined) : group.signal(Math.abs(target), signal, options));
 
 const startUnchanged = async ({ pid, startedAt }: Identity, reads: PassReads, pass: SignalPass): Promise<boolean> => {
   const read = await reads.startTime(pid);
@@ -176,7 +178,8 @@ const signalHolder = async ({ send, stop }: ProvedSignal, pid: number, signal: N
 };
 
 const signalGroupTarget = async (proved: ProvedSignal, group: number, proof: readonly Identity[], signal: NodeJS.Signals, pass: SignalPass): Promise<void> => {
-  const { send, reads, stop } = proved;
+  const { reads, stop } = proved;
+  const send = proved.group === undefined ? proved.send : groupSenderOf(proved.group);
   for (const identity of proof) {
     if (!(await startUnchanged(identity, reads, pass))) continue;
     const groupNow = (await reads.groups([identity.pid], [group])).get(identity.pid);
@@ -399,7 +402,7 @@ const reconcilePasses = async (
     if (liveness.answer === 'unknown') return listed(couldNotCheckResult(liveness.reason, false, []), []);
     return listed(unknownResult([NONE_VERIFIED, ...findingNotes({ leftAloneGroup: pgid })].join(' '), false, { leftAloneGroup: pgid }), []);
   }
-  const proved: ProvedSignal = { send: asyncSenderOf(kill), reads, stop };
+  const proved: ProvedSignal = { send: asyncSenderOf(kill), reads, stop, group };
   const first = await splitByGroup(holders, pgid, reads);
   const termPass = await signalProved(proved, [...groupTarget(pgid, first.inGroup, groupAlive), ...first.outsideGroup.map(ownProof)], 'SIGTERM', passes);
   const unsignalled = new Set(termPass.unsignalled);

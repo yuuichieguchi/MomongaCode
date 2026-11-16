@@ -2,7 +2,7 @@ import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, ensureMomongaDirs, fixedSocket, generationLayout, inspectProcessLock, momongaPaths, parseProgressLine, publishCurrentGeneration } from '@momonga/foundation';
+import { FIRST_GENERATION, nodeFileSystem, createUdsClient, ensureMomongaDirs, fixedSocket, generationLayout, inspectProcessLock, momongaPaths, parseProgressLine, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { globalErrorHandler } from '@opentelemetry/core';
@@ -59,7 +59,7 @@ type Launched = { io: FakeEntryIo; exit: Promise<number> };
 
 const launch = (context: CleanupContext, home: string, flags: readonly string[], ioHome = home): Launched => {
   const io = createFakeEntryIo({ argv: [...flags], home: ioHome, env: { PATH: MINIMAL_PATH, HOME: ioHome } });
-  const exit = runRuntimeEntry(io, { version: VERSION, helperSelf: TEST_HELPER_SELF });
+  const exit = runRuntimeEntry(io, { version: VERSION, helperSelf: TEST_HELPER_SELF, fileSystem: nodeFileSystem });
   registerCleanup(context, async () => {
     if (io.exits.length === 0) io.signal('SIGINT');
     await exit.catch(() => undefined);

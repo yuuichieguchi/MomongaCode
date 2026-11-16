@@ -3,7 +3,7 @@ import type { ExecutableHelpers } from '@momonga/foundation';
 import { daemonEntries } from './daemon/entries.ts';
 import { helperCallOf } from './helper-mode.ts';
 import { provideEmbeddedWindowsKeeper } from './keeper/host.ts';
-import { nodeHelperHost, nodePorts, processHome } from './node-ports.ts';
+import { daemonFileSystem, nodeHelperHost, nodePorts, processHome } from './node-ports.ts';
 import type { CliPorts } from './ports.ts';
 import { pathsOf } from './paths.ts';
 import { buildProgram, exitOfFailure } from './program.ts';
@@ -27,7 +27,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     let update: UpdateWiring | undefined;
     const program = buildProgram({
       ports,
-      entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
+      entries: daemonEntries(ports.self, ports.version, ports.spawnDetached, daemonFileSystem),
       helper: { helpers, call: helperCall, host: nodeHelperHost() },
       update: async () => (update ??= nodeUpdateWiring(ports, await pathsOf(ports))),
       interrupt: interrupt.signal,
