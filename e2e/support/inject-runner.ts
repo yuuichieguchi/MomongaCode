@@ -38,6 +38,7 @@ const LEDGER_DIRECTORY_NAME = 'ledger';
 const LEDGER_FILE_NAME = 'ledger.txt';
 const HOOK_MARK_FILE_NAME = 'hook.mark';
 const HOOK_RELEASE_FILE_NAME = 'hook.release';
+const BROKEN_SETTINGS_TEXT = '{ "models": ';
 
 const scenarioFile = parseInjectionScenarios(fs.readFileSync(SCENARIOS_FILE, 'utf8'), SCENARIOS_FILE);
 const codeDigest = await codeDigestOfRunningProcess();
@@ -256,6 +257,25 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
   budget: {
     runBody: (env) => ({ limits: { maxTotalTokens: env.scenario.params?.maxTotalTokens } }),
   },
+  settings_broken: {
+    beforeRun: async (env) => {
+      env.holds.push((env.fake as FakeChatCompletionsServer).hold());
+    },
+    inject: async (env) => {
+      const hold = env.holds[0] as FakeResponseHold;
+      await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request of the running run' });
+      fs.writeFileSync(env.home.paths.settingsFile, BROKEN_SETTINGS_TEXT);
+      hold.release();
+    },
+    afterTerminal: async (env) => {
+      const runtime = env.runtime as RuntimeClient;
+      const { sessionId } = (await runtime.getRun(env.runId as string)).run;
+      const refused = await runtime.json('POST', `/v1/sessions/${sessionId}/runs`, { input: env.scenario.task.prompt });
+      const text = JSON.stringify(refused.body);
+      if (refused.status === 202) throw new Error(`scenario ${env.scenario.id}: a new run was admitted while the settings file was broken`);
+      if (!text.includes(env.home.paths.settingsFile)) throw new Error(`scenario ${env.scenario.id}: the refusal of a new run (${refused.status}) does not name the settings file: ${text}`);
+    },
+  },
   external_state_changed: {
     stackOptions: (env) => ({
       settings: { hooks: { PostToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: hookCommandOf(env) }] }] } },
@@ -372,6 +392,7 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     filler: undefined,
   };
   let completed = false;
+  let failure: unknown;
   try {
     const stackOptions = fault.stackOptions?.(env) ?? {};
     const script = fault.upstreamScript?.(env, scriptOf(env)) ?? scriptOf(env);
@@ -420,11 +441,17 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
       frames,
       trial: { scenario: resultId, facts: [facts], witness, answeredBy: answeredBy as AnsweredByView[], unrecordedAnswers: 0 },
     };
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
     fs.writeFileSync(env.hookRelease, '');
     await env.stream?.close();
     await env.runtime?.close();
-    await disposeAll({ test: resultId, failed: !completed });
+    await disposeAll({ test: resultId, failed: !completed }).catch((disposeError: unknown) => {
+      if (failure === undefined) throw disposeError;
+      throw new AggregateError([failure, disposeError], `${resultId}: ${failure instanceof Error ? failure.message : String(failure)}`, { cause: failure });
+    });
   }
 };
 
