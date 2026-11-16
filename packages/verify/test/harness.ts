@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, vi } from 'vitest';
-import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf, systemWaitTiming } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule, PolicyFilesystem, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -35,7 +35,7 @@ let engine: Z3Engine | undefined;
 
 export const useZ3 = (): { engine: () => Z3Engine } => {
   beforeAll(async () => {
-    engine = await openZ3({ entry: resolveInstalledZ3(import.meta.url) });
+    engine = await openZ3({ entry: resolveInstalledZ3(import.meta.url) }, systemWaitTiming);
   });
   afterAll(async () => {
     await engine?.close();

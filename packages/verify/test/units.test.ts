@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { systemWaitTiming } from '@momonga/foundation';
 import { alphabetFor, foldCase, intersectSets, normalizeSet, subtractSets, unionSets } from '../src/char-set.ts';
 import { decodeFromZ3, escapeForZ3 } from '../src/smt.ts';
 import { openZ3, Z3LoadError } from '../src/engine.ts';
@@ -39,7 +40,7 @@ describe('the solver string syntax', () => {
 
 describe('the solver module', () => {
   it('rejects a module that does not export the solver interface', async () => {
-    await expect(openZ3({ entry: new URL('./harness.ts', import.meta.url).pathname })).rejects.toBeInstanceOf(Z3LoadError);
+    await expect(openZ3({ entry: new URL('./harness.ts', import.meta.url).pathname }, systemWaitTiming)).rejects.toBeInstanceOf(Z3LoadError);
   });
 });
 

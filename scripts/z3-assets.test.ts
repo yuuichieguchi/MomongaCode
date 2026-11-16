@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Z3_API_FILE, Z3_EXTRACTED_FILES, Z3_MANIFEST_ASSET, Z3_RUNTIME_FILE, Z3_WASM_ASSET, ensureBundledZ3, openZ3, parseZ3Manifest } from '@momonga/verify';
-import { nodeFileSystem } from '@momonga/foundation';
+import { nodeFileSystem, systemWaitTiming } from '@momonga/foundation';
 import { testKernelLock } from '@momonga/testkit';
 import { Z3_BROTLI_QUALITY, buildZ3Assets } from './z3-assets.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
@@ -39,7 +39,7 @@ describe('the Z3 assets embedded in the single executable', () => {
     });
 
     expect(fs.readdirSync(path.dirname(bundled.entry)).sort()).toEqual([Z3_API_FILE, Z3_RUNTIME_FILE].sort());
-    const engine = await openZ3(bundled);
+    const engine = await openZ3(bundled, systemWaitTiming);
     try {
       const ctx = new engine.api.Context('main');
       const solver = new ctx.Solver();
