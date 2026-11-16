@@ -44,9 +44,9 @@ describe('UpdateSwitch.tla and the gateway agree', () => {
     expect(gateway).toContain("const admitNewCall = (): void => {\n      if (isRetiring()) throw generationRetiredError();\n    };");
     expect(gateway).toContain('createResponsesService(services, validator, tracker, admitNewCall)');
     expect(gateway).toContain('createUnaryService(services, validator, tracker, admitNewCall)');
-    expect(sourceOf('gateway', 'src', 'core', 'responses-service.ts')).toContain('return { stream, events: replay(found.frames) };\n      }\n    }\n    admitNewCall();');
+    expect(sourceOf('gateway', 'src', 'core', 'responses-service.ts')).toContain('return { stream, events: replay(found.frames) };\n      }\n      if (services.closeSignal.aborted) throw gatewayClosedError();\n    }\n    admitNewCall();');
     const unary = sourceOf('gateway', 'src', 'core', 'unary.ts');
-    expect(unary).toContain('else return Promise.resolve(stored.resource);\n    }\n    admitNewCall();');
+    expect(unary).toContain('if (services.closeSignal.aborted) throw gatewayClosedError();\n    admitNewCall();\n    const controller = new AbortController();');
     expect(unary).toContain('countTokens: (rawBody, signal, deadlineHeader) => {\n      admitNewCall();');
     expect(unary).toContain('if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);\n      admitNewCall();');
   });
