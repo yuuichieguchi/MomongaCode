@@ -33,11 +33,11 @@ import {
   startDeadlineSignal,
   SETTINGS_APPLIED_ENV,
   systemClock,
-  nodeFileSystem, nodeFileSystemSync,
+  nodeFileSystemSync,
   systemRandom,
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
+import type { Clock, FileSystem, GenerationRole, HelperSelf, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream, LayoutLocks } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, pageRunBodies } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { createPlaceholderJournal, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
@@ -156,6 +156,7 @@ export type StartRuntimeProcessOptions = {
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
   helperSelf: HelperSelf;
+  fileSystem: FileSystem;
   ruleSolver?: RuleSolverSource;
   socketGuard?: SocketGuardSource;
   role?: RolePort;
@@ -200,7 +201,7 @@ const assertAbsolute = (name: string, value: string): void => {
 };
 
 export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> => {
-  const { home, version, signal } = options;
+  const { home, version, signal, fileSystem } = options;
   assertAbsolute('home', home);
   if (options.gatewaySocketPath !== undefined) assertAbsolute('gatewaySocketPath', options.gatewaySocketPath);
   const workerCount = options.workerCount ?? 1;
@@ -388,16 +389,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const paths = await step('dirs', async () => {
       await requireGenerationDirs(sharedPaths, options.generation);
       const scoped = scopeToGeneration(sharedPaths, options.generation);
-      await ensureJobOutputDirectory(nodeFileSystem, scoped.jobs);
-      await nodeFileSystem.mkdir(scoped.tmp.spawn, SPAWN_DIRECTORY_MODE);
+      await ensureJobOutputDirectory(fileSystem, scoped.jobs);
+      await fileSystem.mkdir(scoped.tmp.spawn, SPAWN_DIRECTORY_MODE);
       return scoped;
     });
-    const own = generationLayout(canonicalHome, options.generation, platform, await endpointScopeOf(sharedPaths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
+    const own = generationLayout(canonicalHome, options.generation, platform, await endpointScopeOf(sharedPaths, platform, { files: fileSystem, random: systemRandom, lock: kernelLock }));
     const rolePort = options.role ?? createRolePort({ paths: sharedPaths, generation: options.generation, logger });
     await step('role', () => rolePort.refresh());
     const ignorableMarkerDirectories = async (signal: AbortSignal): Promise<string[]> => {
       const directories = [paths.markers.root];
-      for (const generation of (await settledOrAborted(nodeFileSystem.readdir(sharedPaths.markers.root), signal)).map(generationOfDirectoryName)) {
+      for (const generation of (await settledOrAborted(fileSystem.readdir(sharedPaths.markers.root), signal)).map(generationOfDirectoryName)) {
         if (generation === undefined || generation === options.generation) continue;
         if (!(await settledOrAborted(generationIsLive(sharedPaths, generation, { lock: kernelLock }), signal))) directories.push(scopeToGeneration(sharedPaths, generation).markers.root);
       }
@@ -421,7 +422,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const created = createUserSettingsCache({
         home: canonicalHome,
         onWarning,
-        keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(canonicalHome), kernelLock),
+        keptRecords: diskKeptRecords(fileSystem, systemRandom, keptSettingsDirectory(canonicalHome), kernelLock),
         onLoaded: (loaded) => stopValuesReader.remember(stopValuesOfSettings(loaded.settings)),
         ...(appliedRecord === undefined ? {} : { appliedRecord }),
       });
@@ -476,7 +477,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const { notifier, store, journalThread } = await step('store', async () => {
       migrateRuntimeDatabase(paths.databases.runtime, storeBusyWaitMs);
-      const { dev, ino } = await nodeFileSystem.stat(paths.databases.runtime);
+      const { dev, ino } = await fileSystem.stat(paths.databases.runtime);
       const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, lock: kernelLock, busyTimeoutMs: storeBusyWaitMs, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
       const createdNotifier = createRunNotifier();
       try {
@@ -493,7 +494,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           onCommit: createdNotifier.onCommit,
           preparer: startedThread,
           unaskedCommands: unaskedCommandsFor(platform),
-          fileSystem: nodeFileSystem,
+          fileSystem: fileSystem,
           fileSystemSync: nodeFileSystemSync,
           random: systemRandom,
         });
@@ -533,7 +534,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       cache,
       signal: lifetime.signal,
       env: process.env,
-      install: (config, installSignal) => installTrust(config, nodeFileSystem, { signal: installSignal }),
+      install: (config, installSignal) => installTrust(config, fileSystem, { signal: installSignal }),
       onWarning: (message) => logger.warn(message),
     });
 
@@ -771,10 +772,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           clock,
           home: canonicalHome,
           unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS, protection: noneProtection, platform }),
-          files: nodeFileSystem,
+          files: fileSystem,
         }),
         evidenceRun: evidenceRunFor,
-        skillFiles: nodeFileSystem,
+        skillFiles: fileSystem,
         platform,
         defaults: RUNTIME_DEFAULTS,
         timers,
@@ -814,7 +815,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         role: rolePort,
         work: { runs: runsInFlight, jobs: () => toolRuntime.jobs.liveJobs() },
         ignorableMarkerDirectories,
-        files: nodeFileSystem,
+        files: fileSystem,
         onRequestEnd: () => onWorkEnded(),
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
@@ -875,7 +876,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const requireService = (): RunService => runService;
     const otherRuntimeLive = async (): Promise<boolean> => {
-      for (const generation of (await nodeFileSystem.readdir(sharedPaths.run)).map(generationOfDirectoryName)) {
+      for (const generation of (await fileSystem.readdir(sharedPaths.run)).map(generationOfDirectoryName)) {
         if (generation === undefined || generation === options.generation) continue;
         if ((await inspectProcessLock(generationLayout(canonicalHome, generation).locks.runtime, { mechanism: kernelLock })).state !== 'free') return true;
       }
@@ -911,7 +912,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const upkeepSchedule = createMemoryUpkeepSchedule({
         store,
         clock,
-        fileSystem: nodeFileSystem,
+        fileSystem: fileSystem,
         views: memoryViews,
         batchSize: MEMORY_UPKEEP_BATCH_MARKS,
         pageRows: MEMORY_PAGE_ROWS,
@@ -1061,7 +1062,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                     },
                     (runIds, cutoffMs, purgeSignal) => gatewayClient.retentionPurge(runIds, cutoffMs, purgeSignal),
                     (_runIds, cutoffMs, purgeSignal) => pruneGitObserverStores({ storeRoot: observerStoreRoot(paths), cutoffMs }, childLaunch, purgeSignal),
-                    rotatedLogsPurge(nodeFileSystem, Object.values(sharedPaths.logFiles)),
+                    rotatedLogsPurge(fileSystem, Object.values(sharedPaths.logFiles)),
                   ],
                 },
                 sweepStop.signal,

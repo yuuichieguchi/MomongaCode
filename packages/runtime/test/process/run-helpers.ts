@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, createUdsClient, ensureMomongaDirs, fixedRolePort, generationLayout, inspectProcessLock, momongaPaths, parseProgressLine, FIRST_GENERATION, fixedSocket, scopeToGeneration } from '@momonga/foundation';
-import type { Clock, GenerationRole, JsonLogger, MomongaPaths, ReadyFields, RolePort, StopValues, TextStream, UdsClient, LayoutLocks } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, nodeFileSystem, createUdsClient, ensureMomongaDirs, fixedRolePort, generationLayout, inspectProcessLock, momongaPaths, parseProgressLine, FIRST_GENERATION, fixedSocket, scopeToGeneration } from '@momonga/foundation';
+import type { Clock, FileSystem, GenerationRole, JsonLogger, MomongaPaths, ReadyFields, RolePort, StopValues, TextStream, UdsClient, LayoutLocks } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
@@ -87,6 +87,7 @@ export type StartRuntimeProcessOptions = {
   requestShutdown?: () => void;
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
   helperSelf?: HelperSelf;
+  fileSystem?: FileSystem;
 };
 
 const exported = <T>(name: string): T => {
@@ -96,7 +97,7 @@ const exported = <T>(name: string): T => {
 };
 
 export const startRuntimeProcessUnprepared = (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> =>
-  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), locks: testLocks(), helperSelf: TEST_HELPER_SELF, ...options });
+  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), locks: testLocks(), helperSelf: TEST_HELPER_SELF, fileSystem: nodeFileSystem, ...options });
 
 export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> => {
   if (path.isAbsolute(options.home) && options.signal?.aborted !== true) {

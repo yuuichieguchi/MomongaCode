@@ -212,6 +212,32 @@
       }
     },
     {
+      "id": "disk-full-port",
+      "fault": "disk_full",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "expect": {
+        "status": "COMPLETED"
+      }
+    },
+    {
       "id": "rate-limit-inside",
       "fault": "rate_limit",
       "requires": "any",

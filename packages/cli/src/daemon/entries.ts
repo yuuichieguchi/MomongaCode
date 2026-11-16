@@ -1,4 +1,4 @@
-import type { EntryIo } from '@momonga/foundation';
+import type { EntryIo, FileSystem } from '@momonga/foundation';
 import type { SelfExecutable, SpawnDetached } from '../ports.ts';
 import { embeddedRipgrepSource } from '../ripgrep/host.ts';
 import { hostSocketGuardSource } from '../socket-guard/host.ts';
@@ -12,7 +12,7 @@ export type DaemonEntries = {
   runtime(io: EntryIo): Promise<number>;
 };
 
-export const daemonEntries = (self: SelfExecutable, version: string, spawnDetached: SpawnDetached): DaemonEntries => ({
+export const daemonEntries = (self: SelfExecutable, version: string, spawnDetached: SpawnDetached, fileSystem: FileSystem): DaemonEntries => ({
   supervise: (io) => runSupervise(io, { launcher: selfLauncher(self), deps: { version }, successor: { self, spawnDetached } }),
   gateway: async (io) => {
     const { runGatewayEntry } = await import('@momonga/gateway');
@@ -27,6 +27,7 @@ export const daemonEntries = (self: SelfExecutable, version: string, spawnDetach
     return runRuntimeEntry(io, {
       version,
       helperSelf: self.kind === 'single-binary' ? { execPath: self.execPath } : { execPath: self.execPath, script: self.script },
+      fileSystem,
       ...(bundledRipgrep === undefined ? {} : { bundledRipgrep }),
       ...(ruleSolver === undefined ? {} : { ruleSolver }),
       ...(socketGuard === undefined ? {} : { socketGuard }),
