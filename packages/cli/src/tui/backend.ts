@@ -8,8 +8,7 @@ import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningF
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
 import { approveProjectItems, editProjectMandate, writeProjectMcpServer, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
-import type { AcceptedCheck, ApprovedItem, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
-import type { CheckProposal } from '@momonga/runtime';
+import type { AcceptedCheck, ApprovedItem, CheckProposal, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
 import type { ModelsHost } from '../commands/models.ts';
 import { storeSecretValue } from '../commands/secret.ts';
@@ -30,7 +29,7 @@ import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import { newerListenerOf } from '../handover/stream.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
-import { followRun } from '../run/follow.ts';
+import { followRun, followSession } from '../run/follow.ts';
 import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
@@ -308,10 +307,24 @@ export const createTuiBackend = (
       await runtime().cancel(runId);
     },
     inbox: {
-      add: (delivery, text, images) => runtime().inboxAdd(current().id, delivery, text, images),
+      add: (delivery, text, images, attachMentions) => runtime().inboxAdd(current().id, delivery, text, images, attachMentions),
       withdraw: (id) => runtime().inboxWithdraw(id),
       list: () => runtime().inboxList(current().id),
       successor: (runId) => runtime().runSuccessor(runId),
+      follow: async (sessionId, after, changed, signal) =>
+        followSession({
+          client: runtime(),
+          clock: ports.clock,
+          random: ports.random,
+          sessionId,
+          after,
+          reconnectBoundMs: await daemonReadyBoundMs(),
+          restoreConnection: restoreDaemon(ports, paths, onNewer),
+          onEvent: (frame) => {
+            if (frame.data.type === 'inbox.changed') changed();
+          },
+          signal,
+        }),
     },
     userInput: {
       fileCandidates: async (signal) => {

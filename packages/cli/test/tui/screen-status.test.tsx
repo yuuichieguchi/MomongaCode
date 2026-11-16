@@ -86,6 +86,20 @@ describe('the measuring row ends with its cause (6.2)', () => {
     app.unmount();
   });
 
+  it('keeps one measuring timer across a session change and stops it when the screen closes', async () => {
+    const clock = manualClock(1000);
+    const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
+    const { app } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
+    await untilFrame(app, 'measuring toolCalling');
+    const pending = clock.pending();
+    await type(app, '/clear', '> /clear');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, (shown) => shown.includes('measuring toolCalling') && !shown.includes('> /clear'));
+    expect(clock.pending()).toBe(pending);
+    app.unmount();
+    expect(clock.pending()).toBe(0);
+  });
+
   it('disappears without a word when the model is ready', async () => {
     const clock = manualClock(1000);
     const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };

@@ -5,7 +5,7 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 
 const WIDE = { columns: 140, rows: 60 };
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = 'A run is working. Esc stops it.';
 
 const compacting = async (line: string, call: string) => {
   const started = await start({}, {}, WIDE);
@@ -32,6 +32,15 @@ describe('/compact', () => {
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
     backend.finish(runView());
     await untilFrame(app, (now) => !now.includes('compacting the conversation'));
+    app.unmount();
+  });
+
+  it('shows the request once, from the event the compaction run writes, so a rebuild shows the same entry', async () => {
+    const { app, backend } = await compacting('/compact', 'compact');
+    backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
+    backend.finish(runView());
+    const shown = await untilFrame(app, (now) => !now.includes('esc to cancel'));
+    expect(shown.split('> /compact').length - 1).toBe(1);
     app.unmount();
   });
 

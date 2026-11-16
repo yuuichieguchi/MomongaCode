@@ -38,7 +38,7 @@ import { readChildCounts } from './child-counts.ts';
 import type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 import { createChildManager } from './child-manager.ts';
 import type { ChildManager, SpawnPort } from './child-manager.ts';
-import { DAEMON_MARKER_KILL_GRACE_MS, HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, MANY_GENERATIONS_THRESHOLD, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS, HELD_RETRY_MS, MANY_GENERATIONS_THRESHOLD, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
 import { handedCredentialNames } from './child-env.ts';
@@ -87,7 +87,6 @@ export type SupervisorOptions = {
   runtime?: RuntimeTuning;
   gateway?: GatewayTuning;
   startupTimeoutMs?: number;
-  lockWaitMs?: number;
   heldRetryMs?: number;
   restart?: Partial<RestartPolicy>;
   intervals?: Partial<SupervisorIntervals>;
@@ -111,13 +110,16 @@ export type SupervisorOptions = {
   onShutdownRequested?: (values?: StopValues) => void;
 };
 
-export type SupervisorStartTiming = { startupTimeoutMs: number };
+export type SupervisorStartTiming = { startupTimeoutMs: number; generationPollMs: number };
 
-export const resolveStartTiming = (options: Pick<SupervisorOptions, 'startupTimeoutMs'>): SupervisorStartTiming => ({
+export const resolveStartTiming = (options: Pick<SupervisorOptions, 'startupTimeoutMs' | 'intervals'>): SupervisorStartTiming => ({
   startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
+  generationPollMs: resolveIntervals(options.intervals).generationPollMs,
 });
 
-export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => timing.startupTimeoutMs;
+export const generationLockWaitBoundMs = (timing: SupervisorStartTiming): number => timing.startupTimeoutMs + timing.generationPollMs;
+
+export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => generationLockWaitBoundMs(timing) + timing.startupTimeoutMs;
 
 export type SupervisorCloseResult = { clean: boolean; killed: ChildRole[]; leaked: ChildRole[]; fatal?: Error; exitCode?: number };
 
@@ -353,7 +355,6 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         intervals,
         startupTimeoutMs,
         heldRetryMs: options.heldRetryMs ?? HELD_RETRY_MS,
-        lockWaitMs: options.lockWaitMs ?? LOCK_WAIT_DEADLINE_MS,
         version: options.version,
         isDraining: () => draining,
         isRetiring: () => role === 'retiring',
@@ -361,6 +362,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         onVersionMismatch: (mismatch) => onVersionMismatch(mismatch.childVersion),
         stopValues,
         onReady: () => promoteOnceAllReady(),
+        onProgress: () => {
+          if (promotionBoundTimer !== undefined) armPromotionBound();
+        },
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
         lockMechanism,
@@ -401,6 +405,16 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       log(generationPromoted({ generation: own.generation, version: options.version, startToPromotedMs: clock.now() - processStartedAt }));
       runReaperPass();
     };
+
+    function armPromotionBound(): void {
+      if (promotionBoundTimer !== undefined) timers.clearTimeout(promotionBoundTimer);
+      promotionBoundTimer = timers.setTimeout(() => {
+        promotionBoundTimer = undefined;
+        if (role !== 'starting' || draining || ended) return;
+        log(startUnpromoted({ generation: own.generation, reason: 'startup-bound' }));
+        endByItself();
+      }, startupTimeoutMs);
+    }
 
     function promoteOnceAllReady(): void {
       if (role !== 'starting' || promoting || draining || ended || !managers.every((manager) => manager.state() === 'ready')) return;
@@ -651,12 +665,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         inspector,
       });
 
-    promotionBoundTimer = timers.setTimeout(() => {
-      promotionBoundTimer = undefined;
-      if (role !== 'starting' || draining || ended) return;
-      log(startUnpromoted({ generation: own.generation, reason: 'startup-bound' }));
-      endByItself();
-    }, startupTimeoutMs);
+    armPromotionBound();
     armPoll();
 
     launchPromise = runLaunchTask({

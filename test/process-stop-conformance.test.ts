@@ -2,9 +2,10 @@ import { createTempDir, sleepDrivenTiming, SOURCE_SCAN_TEST_TIMEOUT_MS } from '@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAXIMUM_STOP_VALUES, createPosixGroupPort, gatewayStopBudgetMs, killedChildSettleMs, managedServerReapBoundMs, reapMarkedProcesses, reconcileProcessGroup, runtimeStopBudgetMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { MAXIMUM_STOP_VALUES, createPosixGroupPort, signalGroupExceptLeader, gatewayStopBudgetMs, killedChildSettleMs, managedServerReapBoundMs, reapMarkedProcesses, reconcileProcessGroup, runtimeStopBudgetMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ProcessGroupPort, ProcessInspector, Timing } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
+import { cfgNames } from './formal/cfg-names.ts';
 import { canStillRun } from '../packages/foundation/src/platform/run-state.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
@@ -150,11 +151,33 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'check', expect: 'holds' });
   });
 
-  it('the sandbox group teardown signals a follower only after it is proved again, and the evidence without that proof violates', () => {
-    const spec = fs.readFileSync(path.join(specDir, 'GroupFollowers.tla'), 'utf8');
-    expect(spec).toContain('Reproved(m)');
-    expect(manifest.entries.find((entry) => entry.config === 'GroupFollowers')).toMatchObject({ role: 'check', expect: 'holds' });
-    expect(manifest.entries.find((entry) => entry.config === 'GroupFollowers.noReproof')).toMatchObject({ role: 'evidence', expect: { violates: 'NoStrangerSignalled', exitCode: 12 } });
+  it('GroupFollowers: on every world of the model, with each follower staying, exiting, or exiting and its pid reused between the listing and the send, the teardown signals exactly the followers still proved and never a stranger', () => {
+    const followers = cfgNames(specDir, 'GroupFollowers');
+    expect(followers.invariants).toContain('NoStrangerSignalled');
+    const members = (followers.constants['Members'] ?? '').replace(/[{}]/g, '').split(',').map((name) => name.trim());
+    const leader = 500;
+    const pidOf = (index: number): number => leader + 1 + index;
+    type Fate = 'gone' | 'stays' | 'exits' | 'reused';
+    let worlds: Fate[][] = [[]];
+    for (const _member of members) worlds = worlds.flatMap((world) => (['gone', 'stays', 'exits', 'reused'] as const).map((fate) => [...world, fate]));
+    const failures: string[] = [];
+    for (const fates of worlds) {
+      const sent: number[] = [];
+      const atList = fates.flatMap((fate, index) => (fate === 'gone' ? [] : [{ pid: pidOf(index), startTicks: 10n + BigInt(index) }]));
+      const atSend = (pid: number) => {
+        const fate = fates[pid - leader - 1];
+        if (fate === 'stays') return { groupId: leader, startTicks: 10n + BigInt(pid - leader - 1) };
+        if (fate === 'reused') return { groupId: 900, startTicks: 99n };
+        return undefined;
+      };
+      const signalled = signalGroupExceptLeader(leader, 'SIGTERM', { members: () => [{ pid: leader, startTicks: 1n }, ...atList], statOf: atSend }, (pid) => {
+        sent.push(pid);
+        if (atSend(pid) === undefined) throw Object.assign(new Error('no such process'), { code: 'ESRCH' });
+      });
+      const proved = fates.flatMap((fate, index) => (fate === 'stays' ? [pidOf(index)] : []));
+      if (JSON.stringify(sent) !== JSON.stringify(proved) || signalled !== proved.length) failures.push(`${fates.join(',')}: sent ${sent.join(',')}`);
+    }
+    expect(failures).toEqual([]);
   });
 
   it.each(['ProcessStop.generations', 'ProcessStop.userStop'])('the generation configuration %s holds', (config) => {

@@ -49,7 +49,7 @@ const builtInIds = new Set(MANAGED_SERVERS.map((server) => server.id));
 describe('O-R5-6 (E): user models.servers in detection (R06-73, S7)', () => {
   it('lists a declared server whose command exists as a managed row of its id and command', async () => {
     const found = await detectWith(await declaredServers(), new Set([DECLARED_COMMAND]), passing);
-    expect(found.filter((row) => 'shape' in row && row.id === DECLARED_ID)).toEqual([{ shape: 'managed', id: DECLARED_ID, provider: DECLARED_ID, binary: DECLARED_COMMAND }]);
+    expect(found.filter((row) => 'shape' in row && row.id === DECLARED_ID)).toEqual([{ shape: 'managed', id: DECLARED_ID, label: `the server ${DECLARED_ID}`, provider: DECLARED_ID, binary: DECLARED_COMMAND }]);
   });
 
   it('lists nothing for a declared server whose command does not exist', async () => {
@@ -67,6 +67,6 @@ describe('O-R5-6 (E): user models.servers in detection (R06-73, S7)', () => {
 
   it('never refuses a declared server: it has no preconditions, so a failing exec leaves its row plain', async () => {
     const found = await detectWith(await declaredServers(), new Set([DECLARED_COMMAND]), failing);
-    expect(found.find((row) => 'shape' in row && row.id === DECLARED_ID)).toEqual({ shape: 'managed', id: DECLARED_ID, provider: DECLARED_ID, binary: DECLARED_COMMAND });
+    expect(found.find((row) => 'shape' in row && row.id === DECLARED_ID)).toEqual({ shape: 'managed', id: DECLARED_ID, label: `the server ${DECLARED_ID}`, provider: DECLARED_ID, binary: DECLARED_COMMAND });
   });
 });

@@ -322,7 +322,6 @@
       {"name":"CONTROL_CLOSE_ALL_AFTER_MS","file":"packages/supervisor/src/constants.ts","lacks":["kind"]},
       {"name":"HELD_RETRY_MS","file":"packages/supervisor/src/constants.ts","lacks":["kind"]},
       {"name":"LINE_MAX_BYTES","file":"packages/supervisor/src/constants.ts","lacks":["row"]},
-      {"name":"LOCK_WAIT_DEADLINE_MS","file":"packages/supervisor/src/constants.ts","lacks":["kind"]},
       {"name":"RAW_MAX_BYTES","file":"packages/supervisor/src/constants.ts","lacks":["row"]},
       {"name":"RESTART_BASE_MS","file":"packages/supervisor/src/constants.ts","lacks":["kind"]},
       {"name":"RESTART_MAX_MS","file":"packages/supervisor/src/constants.ts","lacks":["kind"]},

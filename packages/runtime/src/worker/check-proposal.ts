@@ -1,9 +1,9 @@
 import { acceptedCheckOf, declaredChecksOf } from '@momonga/config';
-import type { DeclaredCheck, ResolvedSettings } from '@momonga/config';
+import type { CheckProposal, ResolvedSettings } from '@momonga/config';
 import { hostPaths } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 
-export type CheckProposal = { readonly ask: false } | { readonly ask: true; readonly checks: readonly DeclaredCheck[] };
+export type { CheckProposal };
 
 const NO_QUESTION: CheckProposal = { ask: false };
 

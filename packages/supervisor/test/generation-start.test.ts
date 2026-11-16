@@ -105,6 +105,24 @@ describe('promotion only above run/current (15.3 S4, 15.5, 15.6)', () => {
     await published(h, 1);
   });
 
+  it('a start whose child reports progress past the start-up bound in total is promoted, and its health shows the progress', async (context) => {
+    const h = await startHarness(context, { behaviours: { runtime: { autoReady: false } } });
+    await h.waitForState('gateway', 'ready');
+    const child = h.fake.latest('runtime');
+    const PROGRESS_EVERY_MS = STARTUP_TIMEOUT_MS - 10_000;
+    let seen: string | undefined;
+    for (let step = 0; step < 3; step += 1) {
+      await pump(h.timers, h.realWork, PROGRESS_EVERY_MS);
+      child.writeStdout(JSON.stringify({ event: 'progress', service: 'runtime', pid: child.pid, step: `step-${step}` }));
+      await pumpUntil(h.timers, () => h.child('runtime').progressAt !== seen && h.child('runtime').progressAt !== undefined, { realWork: h.realWork, maxMs: 1000, description: 'the progress is in the health' });
+      seen = h.child('runtime').progressAt;
+    }
+    expect(h.log.withMsg('start.unpromoted')).toEqual([]);
+    expect(h.child('runtime').state).toBe('starting');
+    child.ready();
+    await published(h, 1);
+  });
+
   it('gives up at the start-up bound, counted from its start, when it was never promoted: exits by itself, keeps its directory, publishes nothing', async (context) => {
     const lock = createFakeKernelLock({ inheritable: false });
     const h = await startHarness(context, { behaviours: { runtime: { autoReady: false } }, overrides: { lockMechanism: lock } });

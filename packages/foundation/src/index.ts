@@ -312,6 +312,7 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, LogFields, LogLevel, LogValue, ReadyFields, ReservedLogKey, StopValueName, StopValues, TextStream } from './process-contract.ts';
+export { parseProgressLine, startupSteps } from './startup-progress.ts';
 export { findHolders, holderGroups, markerReapClockBoundMs, markerRemedyText, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { ReapMarkerDirectoryResult } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport } from './process-markers.ts';
@@ -341,6 +342,7 @@ export type { FlagSpec } from './entry-flags.ts';
 export { watchLifeline } from './lifeline.ts';
 export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 export type { RotatingLogFile } from './rotating-log.ts';
+export { rotatedLogsPurge } from './log-retention.ts';
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
 export { guardStandardStreams } from './standard-streams.ts';
 export type { GuardedStandardStreams } from './standard-streams.ts';

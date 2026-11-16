@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, SKILL_DIRECTORY_SEGMENTS, SKILL_FILE_NAME } from '@momonga/runtime';
+import { AGENT_FILE_SUFFIX, AGENT_FOLDER_PARTS, SKILL_FILE_NAME, SKILL_FOLDER_PARTS } from '@momonga/protocol';
 import type { CliFiles } from '../ports.ts';
 
 export type TemplateKind = 'skill' | 'agent';
@@ -9,7 +9,7 @@ export type CreatedFile = { kind: 'created'; file: string } | { kind: 'exists'; 
 export type TemplateFiles = Pick<CliFiles, 'readTextIfPresent' | 'mkdirPrivate' | 'writeText'>;
 
 export const templateFileOf = (home: string, kind: TemplateKind, name: string): string =>
-  kind === 'skill' ? path.join(home, SKILL_DIRECTORY_SEGMENTS.native, name, SKILL_FILE_NAME) : path.join(home, AGENT_DIRECTORY_SEGMENTS, `${name}${AGENT_FILE_SUFFIX}`);
+  kind === 'skill' ? path.join(home, ...SKILL_FOLDER_PARTS.native, name, SKILL_FILE_NAME) : path.join(home, ...AGENT_FOLDER_PARTS, `${name}${AGENT_FILE_SUFFIX}`);
 
 const TEMPLATE_BODIES: Readonly<Record<TemplateKind, { description: string; body: string }>> = {
   skill: { description: 'Say what this skill does and when to use it.', body: 'Write the steps of the skill here.' },

@@ -7,7 +7,7 @@ import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { subagentLines } from '../../src/tui/screen/subagents.tsx';
 import { waitingOf, waitingRowText as waitingRowTextWith } from '../../src/tui/screen/waiting-row.tsx';
 import type { WaitingFacts } from '../../src/tui/screen/waiting-row.tsx';
-import { runCreated, runLeft, setThoughtWindow, shownRunPhase, toggleNewestThought, toggleThought } from '../../src/tui/transcript.ts';
+import { modelChosen, runCreated, runLeft, setThoughtWindow, shownRunPhase, toggleNewestThought, toggleThought } from '../../src/tui/transcript.ts';
 import { capabilitiesOf } from '../fake-backend.ts';
 import { manualClock } from './screen-clock.ts';
 import { fold, plainOf, storeOf, ROW_FACTS } from './screen-fakes.ts';
@@ -165,6 +165,20 @@ describe('the answering model (6.4)', () => {
   it('writes one entry when another model answers and none while the same one does', () => {
     expect(fold([responded('primary'), responded('primary')]).entries).toEqual([]);
     expect(fold([responded('primary'), responded(), responded('backup')]).entries).toEqual([{ kind: 'info', text: 'model changed: primary -> backup' }]);
+  });
+
+  it('names each model by its display name', () => {
+    const store = createTranscriptStore();
+    store.update({ shownModels: new Map([['ollama/primary:latest', 'primary'], ['ollama/backup:latest', 'backup']]) });
+    storeOf([responded('ollama/primary:latest'), responded('ollama/backup:latest')], store);
+    expect(plainOf(store).entries).toEqual([{ kind: 'info', text: 'model changed: primary -> backup' }]);
+  });
+
+  it('writes no entry for a switch the person made', () => {
+    const store = storeOf([responded('primary')]);
+    modelChosen(store);
+    storeOf([responded('backup')], store);
+    expect(plainOf(store).entries).toEqual([]);
   });
 });
 

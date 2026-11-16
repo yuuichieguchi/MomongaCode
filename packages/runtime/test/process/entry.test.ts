@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, ensureMomongaDirs, fixedSocket, generationLayout, inspectProcessLock, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, ensureMomongaDirs, fixedSocket, generationLayout, inspectProcessLock, momongaPaths, parseProgressLine, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { globalErrorHandler } from '@opentelemetry/core';
@@ -67,7 +67,7 @@ const launch = (context: CleanupContext, home: string, flags: readonly string[],
 };
 
 const waitForReadyOrExit = async ({ io }: Launched): Promise<void> => {
-  await waitForCondition(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit');
+  await waitForCondition(() => io.announcedLines().length > 0 || io.exits.length > 0, 'the ready line or an exit');
   if (io.exits.length > 0) throw new Error(`the entry exited with ${io.exits[0]} before ready: ${io.stderrLines().join('\n')}`);
 };
 
@@ -87,7 +87,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
 
     expect(await exit).toBe(78);
     expect(io.exits).toEqual([78]);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
     const lines = stderrJson(io);
     expect(lastLine(lines)).toMatchObject({ msg: 'entry.exit', service: 'runtime', code: 78, path: 'start-failed', clean: false });
   });
@@ -99,7 +99,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(77);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', code: 77, path: 'start-failed', clean: false });
   });
 
@@ -110,7 +110,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(1);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', code: 1, path: 'start-failed' });
   });
 
@@ -121,7 +121,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     await waitForReadyOrExit(launched);
-    expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'runtime' });
+    expect(JSON.parse(launched.io.announcedLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'runtime' });
     launched.io.signal('SIGTERM');
     expect(await launched.exit).toBe(0);
   });
@@ -145,8 +145,10 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     launched.io.signal('SIGTERM');
     expect(await launched.exit).toBe(0);
     expect(launched.io.exits).toEqual([0]);
-    expect(launched.io.stdoutLines()).toHaveLength(1);
-    expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'runtime', version: VERSION, socketPath: firstGeneration(paths).sockets.runtime });
+    expect(launched.io.stdoutLines().slice(0, -1).map((line) => parseProgressLine(line)?.service)).toEqual(launched.io.stdoutLines().slice(0, -1).map(() => 'runtime'));
+    expect(launched.io.stdoutLines().length).toBeGreaterThan(1);
+    expect(launched.io.announcedLines()).toHaveLength(1);
+    expect(JSON.parse(launched.io.announcedLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'runtime', version: VERSION, socketPath: firstGeneration(paths).sockets.runtime });
     expect(await inspectProcessLock(firstGeneration(paths).locks.runtime, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     expect(launched.io.logFilePaths).toEqual([paths.logFiles.runtime]);
     const log = roleLog(launched.io, paths);
@@ -210,7 +212,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
 
     expect(await exit).toBe(78);
     expect(io.exits).toEqual([78]);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
     expect(io.stderrLines()).toHaveLength(1);
     expect(() => JSON.parse(io.stderrLines()[0] ?? '')).not.toThrow();
     expect(io.stderrLines()[0]).toContain('no-such-flag');
@@ -227,7 +229,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const otel = stderrJson(launched.io).filter((line) => line.msg === 'otel.error');
     expect(otel).toHaveLength(1);
     expect(otel[0]).toMatchObject({ level: 'warn', service: 'runtime', err: { message: 'otel exporter failed (injected)' } });
-    expect(launched.io.stdoutLines()).toHaveLength(1);
+    expect(launched.io.announcedLines()).toHaveLength(1);
     launched.io.signal('SIGTERM');
     expect(await launched.exit).toBe(0);
   });

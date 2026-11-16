@@ -39,6 +39,7 @@ const manager = createChildManager({
   onRetiredExit: () => undefined,
   endpoint: roleEndpoint(layout, 'runtime'),
   onReady: () => undefined,
+  onProgress: () => undefined,
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
   secretStoreEnv: secretStoreEnvFor({ PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home }, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
@@ -53,7 +54,6 @@ const manager = createChildManager({
   intervals: DEFAULT_INTERVALS,
   startupTimeoutMs: STARTUP_TIMEOUT_MS,
   heldRetryMs: HELD_RETRY_MS,
-  lockWaitMs: 60_000,
   isDraining: () => false,
   onBackgroundError: (error) => {
     process.stderr.write(`${String(error)}\n`);

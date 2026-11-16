@@ -62,7 +62,7 @@ export const SERVER_ACTIONS = ['Edit server', 'Name this server', 'Remove server
 export const FORGET_PROGRAM_TOO_ROW = 'Also forget the server program';
 export const REMOVE_SERVER_ONLY_ROW = 'Remove the server';
 
-export const HUB_ACTIONS = ['Add a model', 'Model for new sessions', 'Fallback models', 'Billing changes', 'Models for other jobs', 'Wait limits', 'Programs', 'Check the servers'] as const;
+export const HUB_ACTIONS = ['Add a model', 'Model for new sessions', 'Fallback models', 'Billing changes', 'Models for other roles', 'Wait limits', 'Programs', 'Check the servers'] as const;
 
 export type HubAction = (typeof HUB_ACTIONS)[number];
 
@@ -84,7 +84,7 @@ export const onlyModelRow = (display: string): string => `Only for ${display}`;
 export const BILLING_TITLE = 'Billing changes';
 export const FORBID_ROW = 'Forbid';
 
-export const ROLE_TITLE = 'Models for other jobs';
+export const ROLE_TITLE = 'Models for other roles';
 export const SESSION_MODEL_ROW = "Use the session's model";
 
 export const ROLE_ROWS = [
@@ -121,7 +121,7 @@ export const TOGGLE_ROWS = ['yes', 'no', 'not declared'] as const;
 
 export const SIGN_IN_REQUIRED_WORD = 'sign in required';
 
-export const MODEL_CHANGE_NOTE = 'a change applies from the next task';
+export const MODEL_CHANGE_NOTE = 'a change applies from the next run';
 export const ALSO_AT_START_LABEL = 'also use at every start';
 
 export const startingModelSetText = (display: string): string => `Starting model set to ${display}`;

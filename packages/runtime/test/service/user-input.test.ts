@@ -199,6 +199,17 @@ describe('files named with @ in a message (design 5.8)', () => {
     expect(sent.indexOf('explain @src/app.tsx')).toBeLessThan(sent.indexOf('attached_file'));
   });
 
+  it('attaches the files a waiting message names with @ when the client asks for it, as a run does', async () => {
+    const seen: { text: string; terms: AttachTerms }[] = [];
+    const env = await attachingService(seen);
+    const session = await env.createSession();
+    const response = await env.http('POST', `/v1/sessions/${session.id}/inbox`, { body: { delivery: 'queue', text: 'explain @src/app.tsx and @.env', attachMentions: true } });
+    expect(response.status).toBe(201);
+    expect(seen.map((call) => call.text)).toEqual(['explain @src/app.tsx and @.env']);
+    const [started] = env.store.listRuns(session.id);
+    expect(env.ofType(started?.id ?? '', 'user.message')[0]).toMatchObject({ text: 'explain @src/app.tsx and @.env', source: 'queue', attachments: [{ type: 'attached_file', path: 'src/app.tsx' }, { type: 'attachment_note', path: '.env' }] });
+  });
+
   it('leaves the text alone when the client did not ask for attachments or the text names no file', async () => {
     const seen: { text: string; terms: AttachTerms }[] = [];
     const env = await attachingService(seen);

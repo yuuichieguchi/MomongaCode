@@ -154,6 +154,7 @@ export type InboxRow = {
   delivery: Stored<InboxDelivery>;
   text: string;
   images?: ImageAttachment[];
+  attachments?: MessageAttachment[];
   seq: number;
   state: Stored<InboxState>;
   createdAt: number;
@@ -163,7 +164,7 @@ export type InboxRow = {
 
 export type QueuedRunTerms = { timeoutMs: number; limits: Record<string, unknown>; pins: Record<string, unknown>; mandate?: Mandate };
 
-export type InboxAddInput = { delivery: InboxDelivery; text: string; images?: ImageAttachment[]; run: QueuedRunTerms };
+export type InboxAddInput = { delivery: InboxDelivery; text: string; images?: ImageAttachment[]; attachments?: MessageAttachment[]; run: QueuedRunTerms };
 
 export type ClaimStatus = 'RUNNING' | 'CANCELLING';
 

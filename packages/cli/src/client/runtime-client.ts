@@ -172,7 +172,7 @@ export type RuntimeClient = {
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   compact(sessionId: string, instructions?: string): Promise<RunView>;
   getRun(id: string): Promise<RunView>;
-  inboxAdd(sessionId: string, delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[]): Promise<InboxAddResponse>;
+  inboxAdd(sessionId: string, delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[], attachMentions?: boolean): Promise<InboxAddResponse>;
   inboxWithdraw(id: string): Promise<InboxWithdrawResponse>;
   inboxList(sessionId: string): Promise<InboxRowView[]>;
   runSuccessor(runId: string): Promise<RunView | undefined>;
@@ -494,9 +494,9 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return runOf(body, `GET ${path}`);
   };
 
-  const inboxAdd = async (sessionId: string, delivery: InboxDelivery, text: string, images: readonly ImageAttachment[] = []): Promise<InboxAddResponse> => {
+  const inboxAdd = async (sessionId: string, delivery: InboxDelivery, text: string, images: readonly ImageAttachment[] = [], attachMentions = false): Promise<InboxAddResponse> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}/inbox`;
-    const { body } = await send('POST', path, [201], { body: { delivery, text, ...(images.length === 0 ? {} : { images }) } });
+    const { body } = await send('POST', path, [201], { body: { delivery, text, ...(images.length === 0 ? {} : { images }), ...(attachMentions ? { attachMentions: true } : {}) } });
     return checkInboxAdd(body, `POST ${path}`);
   };
 

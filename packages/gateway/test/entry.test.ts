@@ -46,7 +46,7 @@ const launch = (context: CleanupContext, home: string, flags: readonly string[],
 };
 
 const waitForReadyOrExit = async ({ io }: Launched): Promise<void> => {
-  await until(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
+  await until(() => io.announcedLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
   if (io.exits.length > 0) throw new Error(`the entry exited with ${io.exits[0]} before ready: ${io.stderrLines().join('\n')}`);
 };
 
@@ -63,7 +63,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
 
     expect(await exit).toBe(78);
     expect(io.exits).toEqual([78]);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', service: 'gateway', code: 78, path: 'start-failed', clean: false });
   });
 
@@ -74,7 +74,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(EXIT_ALREADY_RUNNING);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
   });
 
   it('gateway: a held gateway.sock.lock gives 1', async (context) => {
@@ -84,7 +84,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(1);
-    expect(io.stdoutText()).toBe('');
+    expect(io.announcedLines()).toEqual([]);
   });
 
   it('gateway: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', async (context) => {
@@ -94,7 +94,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     await waitForReadyOrExit(launched);
-    expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway' });
+    expect(JSON.parse(launched.io.announcedLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway' });
     launched.io.signal('SIGTERM');
     expect(await launched.exit).toBe(0);
   });
@@ -118,8 +118,8 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     launched.io.signal('SIGTERM');
     expect(await launched.exit).toBe(0);
     expect(launched.io.exits).toEqual([0]);
-    expect(launched.io.stdoutLines()).toHaveLength(1);
-    expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway', version: VERSION, socketPath: firstGeneration(paths).sockets.gateway });
+    expect(launched.io.announcedLines()).toHaveLength(1);
+    expect(JSON.parse(launched.io.announcedLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway', version: VERSION, socketPath: firstGeneration(paths).sockets.gateway });
     expect((await inspectProcessLock(firstGeneration(paths).locks.gateway, { mechanism: testKernelLock() })).state).toBe('free');
     expect(launched.io.logFilePaths).toEqual([paths.logFiles.gateway]);
     const log = parseJsonLines(launched.io.logLines(paths.logFiles.gateway));

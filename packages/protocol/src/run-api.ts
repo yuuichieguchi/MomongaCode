@@ -1567,7 +1567,7 @@ export const RUN_API_SCHEMAS = {
     ],
   }),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
-  AddInboxRequest: root(closed({ delivery: enumOf(INBOX_DELIVERIES), text: PROMPT_TEXT, images: { type: 'array', items: imageAttachment } }, ['delivery', 'text'])),
+  AddInboxRequest: root(closed({ delivery: enumOf(INBOX_DELIVERIES), text: PROMPT_TEXT, images: { type: 'array', items: imageAttachment }, attachMentions: boolean }, ['delivery', 'text'])),
   InboxRowView: root(inboxRowView),
   InboxResponse: root(closed({ pending: inboxPending }, ['pending'])),
   InboxAddResponse: root(closed({ row: inboxRowView, pending: inboxPending }, ['row', 'pending'])),

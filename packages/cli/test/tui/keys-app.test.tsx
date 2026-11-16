@@ -23,7 +23,8 @@ import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
 import { KEYS as PRESS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
-import { fakeScreenTerminal } from './screen-fakes.ts';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
+import type { FakeScreenSize } from './screen-fakes.ts';
 
 const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): KeyEvent => ({ type: 'key', name, ...plain, ...mods });
@@ -66,14 +67,14 @@ const disk = (initial?: string) => {
   };
 };
 
-const startWith = async (options: FakeBackendOptions, extra: Partial<AppProps>, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+const startWith = async (options: FakeBackendOptions, extra: Partial<AppProps>, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakeBackend(options);
-  const terminal = fakeScreenTerminal(screen);
+  const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
   const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} {...extra} onExit={() => undefined} />);
   return { backend, terminal, app };
 };
 
-const withFile = async (initial: ReturnType<typeof file> | undefined, options: FakeBackendOptions = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}, extra: Partial<AppProps> = {}) => {
+const withFile = async (initial: ReturnType<typeof file> | undefined, options: FakeBackendOptions = {}, screen: Partial<FakeScreenSize> = {}, extra: Partial<AppProps> = {}) => {
   const host = disk(initial === undefined ? undefined : JSON.stringify(initial));
   const keyBindings = createKeyBindings({ file: FILE, shownFile: SHOWN, files: host.files });
   await keyBindings.load();
@@ -123,7 +124,7 @@ describe('every hint is generated from the keys in force (P11)', () => {
     ['the hidden lines row', (keys) => expandRowText(7, keys), '… +7 lines (ctrl+o to expand)', '… +7 lines (ctrl+t to expand)'],
     ['the attachment line', (keys) => attachmentLine(attachment, keys).replace('attached a.png (image/png, 0 bytes) ', ''), '(backspace on an empty input removes the last)', '(ctrl+b on an empty input removes the last)'],
     ['the editor hint', editorUnsetHint, 'Set $EDITOR to use ctrl+g.', 'Set $EDITOR to use ctrl+v.'],
-    ['the running-task hint', taskRunningHint, 'A task is running. Esc stops it.', 'A task is running. F2 stops it.'],
+    ['the running-task hint', taskRunningHint, 'A run is working. Esc stops it.', 'A run is working. F2 stops it.'],
     ['the exit hint', (keys) => exitHint(keys.hintFor('prompt.interrupt')), 'Press ctrl+c again to exit', 'Press ctrl+c again to exit'],
   ];
 
@@ -139,7 +140,7 @@ describe('every hint is generated from the keys in force (P11)', () => {
     expect(waitingRowText(waiting, { kind: 'static' }, 0, bare)).toBe('• thinking 0s');
     expect(attachmentLine(attachment, bare)).toBe('attached a.png (image/png, 0 bytes)');
     expect(editorUnsetHint(bare)).toBe('Set $EDITOR to edit the draft in an editor.');
-    expect(taskRunningHint(bare)).toBe('A task is running.');
+    expect(taskRunningHint(bare)).toBe('A run is working.');
     expect(selectHint(spec, bare)).toBe('1-9 or enter to choose · up/down to move · esc: No · ctrl+c: cancel the run');
     expect(moreLinesText(4, bare)).toBe('… 4 more lines');
     expect(waitingHint(bare)).toBe('enter submits the pasted URL · esc cancels');

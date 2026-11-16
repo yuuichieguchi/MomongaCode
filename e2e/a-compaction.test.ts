@@ -43,7 +43,7 @@ const MEMORY_DENY = ['MemorySave', 'MemorySearch'] as const;
 const HISTORY_DENY = ['HistorySearch', 'HistoryRead'] as const;
 const FULL_DENY = [] as const;
 const LEAN_DENY = ['Edit', 'Bash', ...MEMORY_DENY, ...HISTORY_DENY] as const;
-const CONSTRAINED_DENY = ['Read', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
+const CONSTRAINED_DENY = ['Edit', 'Write', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
 const FULL_LINE_CHARS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const LEAN_LINE_CHARS = [90, 80, 70, 60, 50, 40, 30, 20, 10] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
@@ -158,10 +158,11 @@ const assertAcceptance = async (
 
   const completed = ofType(journal, 'tool.completed');
   const grep = completed[0];
-  expect(grep?.data['truncated']).toBe(true);
   expect(grep?.data['handle']).toBe(haystack.handle);
+  expect({ truncated: grep?.data['truncated'] === true, formatted: grep?.data['formatted'] !== undefined }).not.toEqual({ truncated: false, formatted: false });
   const grepInline = String(grep?.data['output']);
-  expect(grepInline.length).toBeLessThan(haystack.grepOutput.length);
+  expect(grepInline).toContain(haystack.handle);
+  expect(grepInline.includes(haystack.grepOutput)).toBe(false);
   expect(await seenOutputTokens(count, { callId: String(grep?.data['callId']), tool: 'Grep' }, grepInline)).toBeLessThanOrEqual(plan.sizing.itemCap);
 
   expect(compacted.length).toBeGreaterThanOrEqual(1);

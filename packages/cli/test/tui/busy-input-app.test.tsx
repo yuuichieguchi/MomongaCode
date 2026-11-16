@@ -11,7 +11,7 @@ const WIDE = { columns: 140, rows: 40 };
 const BUSY_HINT = 'enter: steer after the next tool call · tab: queue for after this run · esc: stop';
 const TAKE_BACK_HINT = `${BUSY_HINT} · up: take back waiting messages`;
 const COMPLETION_HINT = 'tab: complete · esc: close the list';
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = 'A run is working. Esc stops it.';
 
 const inputLines = (shown: string): string[] =>
   shown
@@ -65,6 +65,23 @@ describe('typing while a run works (design 5.3)', () => {
     expect(backend.calls.filter((call) => call.startsWith('inbox:'))).toEqual(['inbox:steer:also the docs', 'inbox:queue:then release']);
     expect(shown.indexOf('steer   also the docs')).toBeLessThan(shown.indexOf('queued  then release'));
     expect(shown.indexOf('queued  then release')).toBeLessThan(shown.indexOf('╭'));
+    app.unmount();
+  });
+
+  it('shows a message another client adds to the session at once, from the session event stream, without a refresh', async () => {
+    const { backend, app } = await working();
+    expect(backend.inboxFollowers).toEqual([{ sessionId: backend.inboxFollowers[0]?.sessionId, after: 0 }]);
+    backend.addFromAnotherClient('from the other window');
+    const shown = await untilFrame(app, 'queued  from the other window');
+    expect(shown).toContain(TAKE_BACK_HINT);
+    app.unmount();
+  });
+
+  it('asks the runtime to attach the files a steered or queued message names with @, as a run does', async () => {
+    const { backend, app } = await working();
+    await send(backend, app, KEYS.enter, 'look at @notes.md now', 'steer   look at @notes.md now');
+    await send(backend, app, KEYS.tab, 'plain text', 'queued  plain text');
+    expect(backend.calls.filter((call) => call.startsWith('inbox-mentions:'))).toEqual(['inbox-mentions:look at @notes.md now']);
     app.unmount();
   });
 

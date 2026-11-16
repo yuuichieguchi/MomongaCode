@@ -21,7 +21,7 @@ export const planSlashCommands = (flows: PlanFlows): readonly SlashCommand[] => 
 export const modelPickerCommand = (flows: PlanFlows): SlashCommand => ({
   name: 'model',
   usage: MODEL_USAGE,
-  description: 'choose the model from a list, or switch to another from the next task',
+  description: 'choose the model from a list, or switch to another from the next run',
   needsSession: false,
   run: async (args, context) => {
     if (args === '') {

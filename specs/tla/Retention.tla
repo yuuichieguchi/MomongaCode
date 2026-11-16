@@ -55,12 +55,19 @@
 (*       processes write spans with run_id into their trace stores        *)
 (*       (observability/src/trace-store.ts:80); both purge by the same    *)
 (*       call and are one store here (TrExport, PurgeTr)                  *)
-(*   the age purge of trace bodies (observability/src/body-purge.ts,      *)
-(*       started at runtime/src/process/start-runtime-process.ts:415 and  *)
-(*       gateway/src/process.ts:482): retired by the rule, because one    *)
-(*       question has one rule. Responses with no run link are purged by  *)
-(*       age in the gateway alone; nothing refers to them, and they are   *)
-(*       not modelled                                                     *)
+(*   the work-tree observer's git store and the logs: written per        *)
+(*       session by the runtime; the observer store is pruned by          *)
+(*       pruneGitObserverStores, a purge of the sweep                     *)
+(*       (runtime/src/process/start-runtime-process.ts, retention-sweep). *)
+(*       They are one store here (OtWrite, PurgeOt)                       *)
+(*   one period: every purge takes the cutoff of the one sweep, from the  *)
+(*       one setting retention.days (retentionSweep,                      *)
+(*       store/src/retention.ts); periods records the period each store   *)
+(*       was swept with, and OneSetting states it is the one period. The  *)
+(*       age purge of trace bodies (body-purge.ts) is removed: trace      *)
+(*       bodies go with their spans in purgeRuns. Responses with no run   *)
+(*       link are purged by the same cutoff; nothing refers to them, and  *)
+(*       they are not modelled                                            *)
 (*   attach and replay readers (readRunEvents, store/src/types.ts:580;    *)
 (*       replay, :736) read pages of one session. A reader of a running   *)
 (*       or queued run is protected by ActiveNotDeleted. A reader of a    *)
@@ -112,10 +119,14 @@
 (*   FromActivity  a session is judged from its last activity (FALSE:      *)
 (*                 from its creation; NoEarlyDelete judges against the     *)
 (*                 last activity in both cases)                            *)
+(*   PerStoreSweep the observer and log store is swept by a period of its *)
+(*                 own (FALSE: the one period of the sweep)                *)
+(*   DeleteWhileRead a session whose run still runs may be deleted (FALSE:  *)
+(*                 every member of the unit has no run that has not ended) *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
-CONSTANTS Sessions, Days, MaxNow, MaxCrashes, MaxSkew, UseClosure, Record, LockedBlobs, FromActivity
+CONSTANTS Sessions, Days, MaxNow, MaxCrashes, MaxSkew, UseClosure, Record, LockedBlobs, FromActivity, PerStoreSweep, DeleteWhileRead
 
 ASSUME /\ Sessions # {}
        /\ Days \in Nat \ {0}
@@ -126,10 +137,12 @@ ASSUME /\ Sessions # {}
        /\ Record \in BOOLEAN
        /\ LockedBlobs \in BOOLEAN
        /\ FromActivity \in BOOLEAN
+       /\ PerStoreSweep \in BOOLEAN
+       /\ DeleteWhileRead \in BOOLEAN
 
-VARIABLES now, skews, crashes, rt, run, act, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born
+VARIABLES now, skews, crashes, rt, run, act, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods
 
-vars == <<now, skews, crashes, rt, run, act, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born>>
+vars == <<now, skews, crashes, rt, run, act, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 Idle == {"none", "terminal"}
 
@@ -149,7 +162,9 @@ Closure(s) == Grow({s}, Cardinality(Sessions) - 1)
 Unit(s) == IF UseClosure THEN Closure(s) ELSE {s}
 
 Eligible(s) == /\ rt[s] = "live"
-               /\ \A m \in Unit(s) : Expired(m) /\ run[m] \in Idle
+               /\ \A m \in Unit(s) : Expired(m) /\ (DeleteWhileRead \/ run[m] \in Idle)
+
+OtPeriod == IF PerStoreSweep THEN Days + 1 ELSE Days
 
 TypeOK ==
     /\ now \in 0..MaxNow
@@ -161,6 +176,8 @@ TypeOK ==
     /\ ref \subseteq Sessions \X Sessions
     /\ tr \in [Sessions -> {"none", "has", "gone"}]
     /\ gw \in [Sessions -> {"none", "has", "gone"}]
+    /\ ot \in [Sessions -> {"none", "has", "gone"}]
+    /\ periods \subseteq {Days, Days + 1}
     /\ sweep \subseteq Sessions
     /\ row \in BOOLEAN
     /\ file \in BOOLEAN
@@ -180,6 +197,8 @@ Init ==
     /\ ref = {}
     /\ tr = [s \in Sessions |-> "none"]
     /\ gw = [s \in Sessions |-> "none"]
+    /\ ot = [s \in Sessions |-> "none"]
+    /\ periods = {}
     /\ sweep = {}
     /\ row = FALSE
     /\ file = FALSE
@@ -192,21 +211,21 @@ Init ==
 Tick ==
     /\ now < MaxNow
     /\ now' = now + 1
-    /\ UNCHANGED <<skews, crashes, rt, run, act, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<skews, crashes, rt, run, act, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 ClockBack ==
     /\ skews < MaxSkew
     /\ now > 0
     /\ now' = now - 1
     /\ skews' = skews + 1
-    /\ UNCHANGED <<crashes, rt, run, act, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<crashes, rt, run, act, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 NewRoot(s) ==
     /\ rt[s] = "absent"
     /\ rt' = [rt EXCEPT ![s] = "live"]
     /\ act' = [act EXCEPT ![s] = now]
     /\ born' = [born EXCEPT ![s] = IF FromActivity THEN 0 ELSE now]
-    /\ UNCHANGED <<now, skews, crashes, run, ref, tr, gw, sweep, row, file, owners, putSt, lock, early>>
+    /\ UNCHANGED <<now, skews, crashes, run, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, periods>>
 
 NewChild(c, p) ==
     /\ c # p
@@ -216,7 +235,7 @@ NewChild(c, p) ==
     /\ act' = [act EXCEPT ![c] = now]
     /\ ref' = ref \cup {<<c, p>>}
     /\ born' = [born EXCEPT ![c] = IF FromActivity THEN 0 ELSE now]
-    /\ UNCHANGED <<now, skews, crashes, run, tr, gw, sweep, row, file, owners, putSt, lock, early>>
+    /\ UNCHANGED <<now, skews, crashes, run, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, periods>>
 
 CreateRun(s) ==
     /\ rt[s] = "live"
@@ -224,14 +243,14 @@ CreateRun(s) ==
     /\ lock # "gc"
     /\ run' = [run EXCEPT ![s] = "queued"]
     /\ act' = [act EXCEPT ![s] = now]
-    /\ UNCHANGED <<now, skews, crashes, rt, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 Start(s) ==
     /\ rt[s] = "live"
     /\ run[s] = "queued"
     /\ run' = [run EXCEPT ![s] = "running"]
     /\ act' = [act EXCEPT ![s] = now]
-    /\ UNCHANGED <<now, skews, crashes, rt, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 Finish(s) ==
     /\ rt[s] = "live"
@@ -239,7 +258,7 @@ Finish(s) ==
     /\ putSt[s] = "idle"
     /\ run' = [run EXCEPT ![s] = "terminal"]
     /\ act' = [act EXCEPT ![s] = now]
-    /\ UNCHANGED <<now, skews, crashes, rt, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, ref, tr, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 PutFile(s) ==
     /\ rt[s] = "live"
@@ -247,7 +266,7 @@ PutFile(s) ==
     /\ putSt[s] = "idle"
     /\ file' = TRUE
     /\ putSt' = [putSt EXCEPT ![s] = "filed"]
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, sweep, row, owners, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, ot, sweep, row, owners, lock, early, born, periods>>
 
 PutTx(s) ==
     /\ putSt[s] = "filed"
@@ -258,21 +277,21 @@ PutTx(s) ==
             /\ owners' = owners \cup {s}
             /\ file' = IF LockedBlobs THEN TRUE ELSE file
        ELSE UNCHANGED <<row, owners, file>>
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, sweep, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, ot, sweep, lock, early, born, periods>>
 
 GwCommit(s) ==
     /\ run[s] # "none"
     /\ gw[s] # "gone"
     /\ rt[s] = "live" \/ s \in sweep
     /\ gw' = [gw EXCEPT ![s] = "has"]
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 TrExport(s) ==
     /\ run[s] # "none"
     /\ tr[s] # "gone"
     /\ rt[s] = "live" \/ s \in sweep
     /\ tr' = [tr EXCEPT ![s] = "has"]
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, gw, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 Phase1(s) ==
     LET C == Unit(s) IN
@@ -282,19 +301,34 @@ Phase1(s) ==
     /\ owners' = owners \ C
     /\ sweep' = sweep \cup C
     /\ early' = (early \/ \E m \in C : ~TrulyExpired(m))
-    /\ UNCHANGED <<now, skews, crashes, run, act, ref, tr, gw, row, file, putSt, lock, born>>
+    /\ periods' = periods \cup {Days}
+    /\ UNCHANGED <<now, skews, crashes, run, act, ref, tr, gw, ot, row, file, putSt, lock, born>>
 
 PurgeTr(s) ==
     /\ s \in sweep
     /\ tr[s] # "gone"
     /\ tr' = [tr EXCEPT ![s] = "gone"]
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, gw, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, gw, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
 
 PurgeGw(s) ==
     /\ s \in sweep
     /\ gw[s] # "gone"
     /\ gw' = [gw EXCEPT ![s] = "gone"]
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, sweep, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, ot, sweep, row, file, owners, putSt, lock, early, born, periods>>
+
+OtWrite(s) ==
+    /\ run[s] # "none"
+    /\ ot[s] # "gone"
+    /\ rt[s] = "live" \/ s \in sweep
+    /\ ot' = [ot EXCEPT ![s] = "has"]
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born, periods>>
+
+PurgeOt(s) ==
+    /\ s \in sweep
+    /\ ot[s] # "gone"
+    /\ ot' = [ot EXCEPT ![s] = "gone"]
+    /\ periods' = periods \cup {OtPeriod}
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, sweep, row, file, owners, putSt, lock, early, born>>
 
 GcFirst ==
     /\ row
@@ -307,7 +341,7 @@ GcFirst ==
        ELSE /\ row' = FALSE
             /\ lock' = "unlink"
             /\ UNCHANGED file
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, sweep, owners, putSt, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, ot, sweep, owners, putSt, early, born, periods>>
 
 GcSecond ==
     /\ lock # "none"
@@ -319,16 +353,17 @@ GcSecond ==
             /\ file' = FALSE
             /\ UNCHANGED row
     /\ lock' = "none"
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, sweep, owners, putSt, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, ot, sweep, owners, putSt, early, born, periods>>
 
 RemoveEntry(s) ==
     /\ s \in sweep
     /\ tr[s] = "gone"
     /\ gw[s] = "gone"
+    /\ ot[s] = "gone"
     /\ ~(row /\ owners = {})
     /\ lock = "none"
     /\ sweep' = sweep \ {s}
-    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, row, file, owners, putSt, lock, early, born>>
+    /\ UNCHANGED <<now, skews, crashes, rt, run, act, ref, tr, gw, ot, row, file, owners, putSt, lock, early, born, periods>>
 
 Crash ==
     /\ crashes < MaxCrashes
@@ -336,7 +371,7 @@ Crash ==
     /\ lock' = "none"
     /\ putSt' = [s \in Sessions |-> "idle"]
     /\ sweep' = IF Record THEN sweep ELSE {}
-    /\ UNCHANGED <<now, skews, rt, run, act, ref, tr, gw, row, file, owners, early, born>>
+    /\ UNCHANGED <<now, skews, rt, run, act, ref, tr, gw, ot, row, file, owners, early, born, periods>>
 
 Next ==
     \/ Tick
@@ -353,6 +388,8 @@ Next ==
         \/ PutTx(s)
         \/ GwCommit(s)
         \/ TrExport(s)
+        \/ OtWrite(s)
+        \/ PurgeOt(s)
         \/ Phase1(s)
         \/ PurgeTr(s)
         \/ PurgeGw(s)
@@ -363,7 +400,7 @@ Spec == Init /\ [][Next]_vars
 
 LiveSpec ==
     /\ Spec
-    /\ \A s \in Sessions : WF_vars(Phase1(s)) /\ WF_vars(PurgeTr(s)) /\ WF_vars(PurgeGw(s)) /\ WF_vars(RemoveEntry(s)) /\ WF_vars(PutTx(s))
+    /\ \A s \in Sessions : WF_vars(Phase1(s)) /\ WF_vars(PurgeTr(s)) /\ WF_vars(PurgeGw(s)) /\ WF_vars(PurgeOt(s)) /\ WF_vars(RemoveEntry(s)) /\ WF_vars(PutTx(s))
     /\ WF_vars(GcFirst)
     /\ WF_vars(GcSecond)
 
@@ -378,12 +415,17 @@ OwnersLive == \A s \in owners : rt[s] = "live"
 OwnedBlobReadable == owners # {} => row /\ file
 
 NoUncoveredDangling ==
-    \A s \in Sessions : (rt[s] = "deleted" /\ (tr[s] = "has" \/ gw[s] = "has")) => s \in sweep
+    \A s \in Sessions : (rt[s] = "deleted" /\ (tr[s] = "has" \/ gw[s] = "has" \/ ot[s] = "has")) => s \in sweep
 
 ExpiredClosureDeleted == \A s \in Sessions : Eligible(s) ~> (rt[s] = "deleted" \/ ~Eligible(s))
 
 DeletionCompletes ==
-    \A s \in Sessions : rt[s] = "deleted" ~> (s \notin sweep /\ tr[s] = "gone" /\ gw[s] = "gone")
+    \A s \in Sessions : rt[s] = "deleted" ~> (s \notin sweep /\ tr[s] = "gone" /\ gw[s] = "gone" /\ ot[s] = "gone")
+
+OneSetting == periods \subseteq {Days}
+
+NoLiveReferenceDeleted ==
+    \A s \in Sessions : (run[s] \in {"queued", "running"} \/ \E c \in Sessions : <<c, s>> \in ref /\ rt[c] = "live") => rt[s] # "deleted"
 
 UnownedBlobCollected == (row /\ owners = {}) ~> (~row \/ owners # {})
 

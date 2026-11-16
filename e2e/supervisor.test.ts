@@ -1,4 +1,5 @@
 import { spawn } from '@momonga/testkit/child-process';
+import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -17,7 +18,7 @@ import { isAlive } from './support/process.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { LAUNCHER_PATH, productSandbox } from './support/sandbox.ts';
-import { SUPERVISOR_APP_VERSION, baseSettings, spawnSupervisor, startStack, upstreamModelRef, withUpstreamEntry, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, spawnSupervisor, startStack, upstreamModelRef, withUpstreamEntry, writeSettingsFile } from './support/stack.ts';
 import type { SpawnedSupervisor, SupervisorExit } from './support/stack.ts';
 import { childOf, createSupervisorClient, pidOf } from './support/supervisor-client.ts';
 import type { E2eDeps } from './support/supervisor-main.ts';
@@ -44,7 +45,6 @@ import {
 } from './support/wait.ts';
 
 const S1C_PHASE1_ORPHAN_GRACE_MS = 30_000;
-const S7_LOCK_WAIT_MS = 1500;
 const KILLED_STACK_BOUND_MS = E2E_READY_DEADLINE_MS + E2E_MARGIN_MS;
 const S1_TIMEOUT_MS = e2eTestTimeoutMs(
   E2E_READY_DEADLINE_MS,
@@ -150,8 +150,8 @@ const openRuntimeClient = (home: E2eHome): RuntimeClient => {
   return client;
 };
 
-const spawnNextSupervisor = async (home: E2eHome, deps: E2eDeps, stackNumber: number, generation?: number): Promise<SpawnedSupervisor> => {
-  const supervisor = spawnSupervisor({ home, entry: { kind: 'test', deps, ...(generation === undefined ? {} : { generation }) }, stackNumber });
+const spawnNextSupervisor = async (home: E2eHome, deps: E2eDeps, stackNumber: number, generation?: number, version?: string): Promise<SpawnedSupervisor> => {
+  const supervisor = spawnSupervisor({ home, entry: { kind: 'test', deps, ...(generation === undefined ? {} : { generation }), ...(version === undefined ? {} : { version }) }, stackNumber });
   await home.ledger.add(supervisor.pid, 'supervisor');
   registerE2eCleanup(() => {
     if (isAlive(supervisor.pid)) process.kill(supervisor.pid, 'SIGKILL');
@@ -182,6 +182,11 @@ const stopRuntimeAndKillSupervisor = async (home: E2eHome): Promise<{ orphanPid:
   await until(() => firstExit(), { deadlineMs: E2E_MARGIN_MS, description: 'first supervisor gone after SIGKILL' });
   expect(isAlive(orphanPid)).toBe(true);
   return { orphanPid, gatewayPid, firstPid: stack.ready.pid };
+};
+
+const resumeWedgedOrphan = async (orphanPid: number): Promise<void> => {
+  process.kill(orphanPid, 'SIGCONT');
+  await until(() => !isAlive(orphanPid), { deadlineMs: E2E_ORPHAN_CLOSE_BOUND_MS, description: 'the resumed orphan closed itself after the lifeline EOF' });
 };
 
 describe('supervisor cases', () => {
@@ -321,6 +326,8 @@ describe('supervisor cases', () => {
     expect(await findHolders(path.join(daemonMarkersOf(home.paths, 1), runtimeMarkers[0] ?? ''), { inspector: testProcessInspector(), signal: new AbortController().signal })).toContain(orphanPid);
     expect(fs.existsSync(generationOf(home, 2).sockets.supervisor)).toBe(false);
     expect(await inspectProcessLock(generationOf(home, 2).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
+
+    await resumeWedgedOrphan(orphanPid);
   });
 
   it(titleOf('s1c-phase2'), { timeout: S1C_PHASE2_TIMEOUT_MS }, async () => {
@@ -351,6 +358,8 @@ describe('supervisor cases', () => {
     expect(fs.existsSync(generationOf(home, 1).dir)).toBe(true);
     expect(records.at(-1)).toMatchObject({ msg: 'entry.exit', code: 0, path: 'close', trigger: 'request', clean: true });
     expect(await inspectProcessLock(generationOf(home, 2).locks.supervisor, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
+
+    await resumeWedgedOrphan(orphanPid);
   });
 
   it.skipIf(skipCase('s2'))(titleOf('s2'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -541,11 +550,11 @@ describe('supervisor cases', () => {
 
   it(titleOf('s7'), { timeout: S7_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    prepareGenerationForTest(home.home, FIRST_GENERATION, SUPERVISOR_APP_VERSION);
+    prepareGenerationForTest(home.home, FIRST_GENERATION, cliPackage.version);
     const holderPid = await startLockHolderFixture(home, firstGeneration(home.paths).locks.runtime);
     expect(await inspectProcessLock(firstGeneration(home.paths).locks.runtime, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: holderPid });
 
-    const stack = await startStack({ home, deps: { lockWaitMs: S7_LOCK_WAIT_MS }, readiness: false, preparedGeneration: FIRST_GENERATION });
+    const stack = await startStack({ home, readiness: false, preparedGeneration: FIRST_GENERATION });
     const external = await stack.client.untilChild('runtime', (child) => child.state === 'external', E2E_RESTART_BOUND_MS);
     expect(external.restarts).toBe(0);
     expect(external.pid).toBeUndefined();
@@ -583,7 +592,7 @@ describe('supervisor cases', () => {
     const home = await createE2eHome();
     const runtimeGhost = await startSleepFixture(home);
     const gatewayGhost = await startSleepFixture(home);
-    prepareGenerationForTest(home.home, FIRST_GENERATION, SUPERVISOR_APP_VERSION);
+    prepareGenerationForTest(home.home, FIRST_GENERATION, cliPackage.version);
     writeStaleLock(firstGeneration(home.paths).locks.runtime, runtimeGhost);
     writeStaleLock(firstGeneration(home.paths).locks.gateway, gatewayGhost);
 
@@ -647,7 +656,7 @@ describe('supervisor cases', () => {
     const runtimePid = pidOf(before, 'runtime');
     const gatewayPid = pidOf(before, 'gateway');
 
-    const second = await spawnNextSupervisor(home, {}, 2, FIRST_GENERATION);
+    const second = await spawnNextSupervisor(home, {}, 2, FIRST_GENERATION, cliPackage.version);
     expect(second.depsFile).not.toBe(stack.supervisor.depsFile);
     const readyFailure = second.ready().then(
       () => undefined,

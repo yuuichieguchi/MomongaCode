@@ -153,6 +153,8 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const lines = launched.stdout.lines();
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? '')).toEqual({ event: 'ready', ...launched.handle.ready });
+    expect(launched.stdout.progressSteps.slice(0, 3)).toEqual(['dirs', 'role', 'lock']);
+    expect(launched.stdout.progressSteps.at(-1)).toBe('ready');
     expect(launched.handle.ready).toEqual({
       service: 'runtime',
       pid: process.pid,

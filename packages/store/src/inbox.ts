@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_STATES, MEMORY_ORIGINS, TERMINAL_STATUSES, base64ByteLength } from '@momonga/protocol';
-import type { ImageAttachment, InboxChangeRow, InboxDelivery, InboxRowView, InboxState, Mandate, MemoryOrigin, Stored } from '@momonga/protocol';
+import type { ImageAttachment, InboxChangeRow, MessageAttachment, InboxDelivery, InboxRowView, InboxState, Mandate, MemoryOrigin, Stored } from '@momonga/protocol';
 import type { DecodeContext } from './decode-context.ts';
 import { corrupt, isRecord, readerFor, storedOneOf } from './rows.ts';
 import type { Row } from './rows.ts';
@@ -17,6 +17,27 @@ const imageOf = (identity: string, value: unknown): ImageAttachment => {
   const mediaType = IMAGE_MEDIA_TYPES.find((candidate) => candidate === value['mediaType']);
   if (mediaType === undefined) throw corrupt(TABLE, identity, `attachments holds the unknown media type ${JSON.stringify(value['mediaType'])}`);
   return { mediaType, data: value['data'] };
+};
+
+const textField = (identity: string, value: Record<string, unknown>, field: string): string => {
+  const found = value[field];
+  if (typeof found !== 'string') throw corrupt(TABLE, identity, `mention_attachments holds an entry without the text field ${field}`);
+  return found;
+};
+
+const mentionAttachmentOf = (identity: string, value: unknown): MessageAttachment => {
+  if (!isRecord(value)) throw corrupt(TABLE, identity, 'mention_attachments must hold objects');
+  switch (value['type']) {
+    case 'attached_file':
+      if (value['truncated'] !== false) throw corrupt(TABLE, identity, 'an attached file of mention_attachments must be whole');
+      return { type: 'attached_file', path: textField(identity, value, 'path'), content: textField(identity, value, 'content'), truncated: false };
+    case 'attachment_note':
+      return { type: 'attachment_note', path: textField(identity, value, 'path'), text: textField(identity, value, 'text'), shown: textField(identity, value, 'shown') };
+    case 'forge_issue':
+      return { type: 'forge_issue', issue: textField(identity, value, 'issue'), content: textField(identity, value, 'content') };
+    default:
+      throw corrupt(TABLE, identity, `mention_attachments holds the unknown part ${JSON.stringify(value['type'])}`);
+  }
 };
 
 const recordOf = (identity: string, value: unknown, what: string): Record<string, unknown> => {
@@ -44,12 +65,15 @@ const decodeRow = (row: Row, context: DecodeContext): InboxRow => {
   const reader = readerFor(TABLE, identity, row);
   const attachments = reader.json('attachments');
   if (!Array.isArray(attachments)) throw corrupt(TABLE, identity, 'attachments must be a list');
+  const mentioned = reader.json('mention_attachments');
+  if (!Array.isArray(mentioned)) throw corrupt(TABLE, identity, 'mention_attachments must be a list');
   return {
     id: reader.string('id'),
     sessionId: reader.string('session_id'),
     delivery: storedOneOf(context, TABLE, identity, 'delivery', INBOX_DELIVERIES, reader.string('delivery')),
     text: reader.string('text'),
     ...(attachments.length === 0 ? {} : { images: attachments.map((entry) => imageOf(identity, entry)) }),
+    ...(mentioned.length === 0 ? {} : { attachments: mentioned.map((entry) => mentionAttachmentOf(identity, entry)) }),
     seq: reader.number('seq'),
     state: storedOneOf(context, TABLE, identity, 'state', INBOX_STATES, reader.string('state')),
     createdAt: reader.number('created_at'),
@@ -59,14 +83,14 @@ const decodeRow = (row: Row, context: DecodeContext): InboxRow => {
 };
 
 export const inboxRowView = (row: InboxRow): InboxRowView => {
-  const { images, queued: _queued, ...rest } = row;
+  const { images, attachments: _attachments, queued: _queued, ...rest } = row;
   return { ...rest, ...(images === undefined ? {} : { images: images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }) };
 };
 
 export const inboxChangeRow = ({ id, delivery, state, seq }: InboxRow): InboxChangeRow => ({ id, delivery, state, seq });
 
 export type InboxTable = {
-  insert(input: { id: string; sessionId: string; delivery: InboxDelivery; text: string; images: readonly ImageAttachment[] | undefined; terms: QueuedRunTerms; origin: MemoryOrigin }): InboxRow;
+  insert(input: { id: string; sessionId: string; delivery: InboxDelivery; text: string; images: readonly ImageAttachment[] | undefined; attachments: readonly MessageAttachment[] | undefined; terms: QueuedRunTerms; origin: MemoryOrigin }): InboxRow;
   get(id: string): InboxRow | undefined;
   pending(sessionId: string): InboxRow[];
   pendingCount(sessionId: string): number;
@@ -82,8 +106,8 @@ export const createInboxTable = (db: DatabaseSync, clock: Clock, context: Decode
   const sql = {
     nextSeq: db.prepare(`SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM ${TABLE} WHERE session_id = :sessionId`),
     insert: db.prepare(
-      `INSERT INTO ${TABLE} (id, session_id, delivery, text, attachments, seq, state, created_at, settled_at, run_terms_json, origin)
-       VALUES (:id, :sessionId, :delivery, :text, :attachments, :seq, 'pending', :createdAt, NULL, :terms, :origin)`,
+      `INSERT INTO ${TABLE} (id, session_id, delivery, text, attachments, mention_attachments, seq, state, created_at, settled_at, run_terms_json, origin)
+       VALUES (:id, :sessionId, :delivery, :text, :attachments, :mentioned, :seq, 'pending', :createdAt, NULL, :terms, :origin)`,
     ),
     byId: db.prepare(`SELECT * FROM ${TABLE} WHERE id = :id`),
     pending: db.prepare(`SELECT * FROM ${TABLE} WHERE session_id = :sessionId AND state = 'pending' ORDER BY seq`),
@@ -117,6 +141,7 @@ export const createInboxTable = (db: DatabaseSync, clock: Clock, context: Decode
         delivery: input.delivery,
         text: input.text,
         attachments: canonicalJson(input.images ?? []),
+        mentioned: canonicalJson(input.attachments ?? []),
         seq: numberOf(sql.nextSeq.get({ sessionId: input.sessionId }), input.sessionId, 'next'),
         createdAt: clock.now(),
         terms: canonicalJson(input.terms),

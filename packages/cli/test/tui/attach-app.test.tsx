@@ -208,6 +208,35 @@ describe('image paste (design 5.7)', () => {
     app.unmount();
   });
 
+  it('writes the note of the attached image after the message it belongs to', async () => {
+    const { app, backend } = await ready({ imageInput: true, clipboard: { kind: 'image', image: PNG } });
+    await type(app, 'look ', '> look');
+    app.stdin.write(KEYS.ctrlV);
+    await untilFrame(app, (now) => inputLines(now)[0] === '> look [Image #1]');
+    app.stdin.write(KEYS.enter);
+    const shown = await untilFrame(app, (now) => inputLines(now)[0] === '>' && now.includes('> look [Image #1]') && now.includes('attached [Image #1]'));
+    expect(shown.indexOf('> look [Image #1]')).toBeLessThan(shown.indexOf('attached [Image #1]'));
+    backend.finish(runView());
+    app.unmount();
+  });
+
+  it('gives a waiting message taken back its image again, so the next send carries it', async () => {
+    const { app, backend } = await ready({ imageInput: true, clipboard: { kind: 'image', image: PNG } });
+    await runStarted(backend, app, 'one');
+    await type(app, 'and ', '> and');
+    app.stdin.write(KEYS.ctrlV);
+    await untilFrame(app, (now) => inputLines(now)[0] === '> and [Image #1]');
+    app.stdin.write(KEYS.tab);
+    await untilFrame(app, 'queued  and [Image #1]');
+    app.stdin.write(KEYS.up);
+    const back = await untilFrame(app, (now) => inputLines(now)[0] === '> and [Image #1]' && !now.includes('queued  and'));
+    expect(back).toContain('attached [Image #1] (image/png, 11 bytes)');
+    app.stdin.write(KEYS.tab);
+    await untilFrame(app, 'queued  and [Image #1]');
+    expect(backend.inboxRows.at(-1)?.images).toEqual([{ mediaType: 'image/png', byteLength: PNG.data.length }]);
+    app.unmount();
+  });
+
   it('removes the span whole at Backspace, and the image with it', async () => {
     const { app, backend } = await ready({ imageInput: true, clipboard: { kind: 'image', image: PNG } });
     app.stdin.write(KEYS.ctrlV);

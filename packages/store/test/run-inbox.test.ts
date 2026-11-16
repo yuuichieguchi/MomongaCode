@@ -150,6 +150,23 @@ describe('adding, listing and taking back (design 5.3)', () => {
 });
 
 describe('steering at the step boundary', () => {
+  it('carries the files a message named with @ into the user message it becomes, steered or queued', async () => {
+    const h = harness();
+    const { session, run, claim } = await busySession(h.store);
+    const file = { type: 'attached_file' as const, path: 'src/app.tsx', content: '     1\tfirst', truncated: false as const };
+    const attachments = [file, { type: 'attachment_note' as const, path: '.env', text: 'The user referenced .env, which cannot be attached.', shown: '.env: not attached' }];
+    await h.store.inbox.add(session.id, { delivery: 'steer', text: 'see @src/app.tsx and @.env', attachments, run: TERMS });
+    h.store.inbox.deliverSteering(claim);
+    const steered = h.store.readRunEvents(run.id, 0, 1000).filter((event) => event.type === 'user.message').at(-1);
+    expect(steered).toMatchObject({ text: 'see @src/app.tsx and @.env', source: 'steer', attachments });
+    const other = newSession(h.store);
+    const waiting = await enqueue(h.store, other.id, 'first');
+    await h.store.inbox.add(other.id, { delivery: 'queue', text: 'then @src/app.tsx', attachments: [file], run: TERMS });
+    await cancelToEnd(h.store, waiting.id);
+    const queued = h.store.readRunEvents(h.store.inbox.successorOf(waiting.id)?.id ?? '', 0, 1000).find((event) => event.type === 'user.message');
+    expect(queued).toMatchObject({ text: 'then @src/app.tsx', source: 'queue', attachments: [file] });
+  });
+
   it('delivers every pending steer row in seq order as user messages marked steer, in the run, and leaves the queued rows', async () => {
     const h = harness();
     const { session, run, claim } = await busySession(h.store);

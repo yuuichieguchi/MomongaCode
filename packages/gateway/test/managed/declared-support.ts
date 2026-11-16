@@ -9,6 +9,7 @@ export type Declaration = { command: string; args: readonly string[]; readyPath:
 
 export const declaredForm = (id: string, declaration: Declaration): ManagedServerDescription => ({
   id,
+  label: `the server ${id}`,
   provider: id,
   wire: 'chat-completions',
   binary: { defaultPath: declaration.command },

@@ -8,7 +8,9 @@ import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
+import { modelChosen } from './transcript.ts';
 import { followMeasurement, readinessNoticeOf } from '../readiness.ts';
+import { isPrompt } from '../run/prompt-event.ts';
 import { isTerminalStatus } from '../run/follow.ts';
 import { describeRunEnd } from '../run/headless.ts';
 import type { Reopen } from '../run/resolve-session.ts';
@@ -29,11 +31,12 @@ import { pickConversation } from './commands/resume.ts';
 import { skillCommands } from './commands/skills.ts';
 import { createReplayQueue } from './replay.ts';
 import type { ReplayQueue } from './replay.ts';
-import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertSpan, insertText, isEditorAction, placeCaret, placeText, pushHistory, withHistory } from './editor.ts';
+import { applyAction, emptyEditor, enterOf, expandedText, heldMessageOf, insertPaste, insertSpan, insertText, isEditorAction, placeCaret, placeMessages, placeText, pushHistory, withHistory } from './editor.ts';
+import type { HeldMessage } from './editor.ts';
 import { hasMentionToken, imageSpanLabel, NO_CLIPBOARD_PROGRAM_HINT, NO_IMAGE_INPUT_HINT, useAtMenu } from './attach.ts';
 import type { AtAct } from './attach.ts';
 import { leftShell, SHELL_MARK, shellCommandOf, shellEnded, shellFailed, shellHint, shellHistoryText, shellLabel, shellOutput, shellStarted, showShellRecord, typedIntoDraft } from './user-shell.ts';
-import { INBOX_FULL_HINT, busyDeliveryOf, busyHint, completionHint, draftOf, isInboxFull, onFirstLine, takenBack, waitingRows } from './busy-input.ts';
+import { INBOX_FULL_HINT, busyDeliveryOf, busyHint, completionHint, draftOf, isInboxFull, onFirstLine, waitingRows } from './busy-input.ts';
 import type { EditorState } from './editor.ts';
 import { editorUnsetHint } from './external-editor.ts';
 import type { ExternalEditorPort } from './external-editor.ts';
@@ -152,7 +155,7 @@ const unavailableExternalEditor: ExternalEditorPort = {
 export const STILL_STARTING_HINT = 'Still starting. Your text is kept.';
 export const taskRunningHint = (keys: KeyTable): string => {
   const key = keys.keyHint('run.stop');
-  return key === '' ? 'A task is running.' : `A task is running. ${key.charAt(0).toUpperCase()}${key.slice(1)} stops it.`;
+  return key === '' ? 'A run is working.' : `A run is working. ${key.charAt(0).toUpperCase()}${key.slice(1)} stops it.`;
 };
 export const EXIT_ARM_MS = 3000;
 export const HISTORY_SEARCH_TITLE = 'History';
@@ -249,7 +252,8 @@ export function App(props: AppProps) {
   const [reconnectingSince, setReconnectingSince] = useState<number | undefined>(undefined);
   const [measuring, setMeasuring] = useState<{ since: number; state: Measuring } | undefined>(undefined);
   const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
-  const stopMeasuring = useRef<(() => void) | undefined>(undefined);
+  const [probe, setProbe] = useState<{ sessionId: string | undefined; model: string; retryAfterSeconds: number } | undefined>(undefined);
+  const [followedSession, setFollowedSession] = useState<{ id: string; after: number } | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
   const [historyGeneration, setHistoryGeneration] = useState(0);
   const { adoption, move } = props;
@@ -279,6 +283,8 @@ export function App(props: AppProps) {
   const sessionModelRef = useRef<string | undefined>(undefined);
   const signInFailedRun = useRef<{ text: string; options: StartRunOptions; sessionModel: string } | undefined>(undefined);
   const busyRef = useRef(false);
+  const promptNotes = useRef<readonly string[]>([]);
+  const sentMessages = useRef(new Map<string, { message: HeldMessage; attachments: readonly Attachment[] }>());
   const facts = useRef<ScreenFacts>({ overlay: false, position: FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush });
   const [handover] = useState(() => {
     let suspended = false;
@@ -420,6 +426,7 @@ export function App(props: AppProps) {
     const read = displayMapOf(listingViewsOf(await backend.models()));
     displaysRef.current = read;
     setDisplays(read);
+    store.update({ shownModels: read });
     return read;
   };
 
@@ -461,8 +468,7 @@ export function App(props: AppProps) {
   };
 
   const endMeasuring = (): void => {
-    stopMeasuring.current?.();
-    stopMeasuring.current = undefined;
+    setProbe(undefined);
     setMeasuring(undefined);
   };
 
@@ -477,13 +483,7 @@ export function App(props: AppProps) {
     const readiness = agentReadiness(entry.capabilities);
     if (readiness.state === 'probing') {
       setMeasuring({ since: now(), state: readiness.measuring });
-      stopMeasuring.current = followMeasurement(
-        { read: () => backend.model(), timers },
-        readiness.retryAfterSeconds,
-        (measured) => showModel(measured),
-        (error) => modelUnread(error),
-        (state) => setMeasuring((before) => (before === undefined ? undefined : { since: before.since, state })),
-      );
+      setProbe({ sessionId: openedSession.current?.id, model: entry.id, retryAfterSeconds: readiness.retryAfterSeconds });
       return;
     }
     const text = readinessNoticeOf(readiness, 'tui');
@@ -492,6 +492,7 @@ export function App(props: AppProps) {
 
   const showSession = async (session: SessionView): Promise<void> => {
     openedSession.current = { id: session.id, hasRun: session.latestRunId !== null };
+    setFollowedSession((before) => (before?.id === session.id ? before : { id: session.id, after: session.lastEventId }));
     setModeState(session.permissionMode);
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
@@ -548,12 +549,13 @@ export function App(props: AppProps) {
   const applyModel = async (chosen: string): Promise<void> => {
     const previous = sessionModelRef.current;
     const session = await backend.setModel(chosen);
+    modelChosen(store);
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
     unconfiguredModel.current = false;
     await readDisplays();
     const name = shownModel(session.model);
-    note(busyRef.current ? `model: ${name}; the running task keeps ${previous === undefined ? previous : shownModel(previous)}, the next task uses ${name}` : `model: ${name}; applies from the next task`);
+    note(busyRef.current ? `model: ${name}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${name}; applies from the next run`);
     endMeasuring();
     void backend.model().then(showModel, modelUnread);
   };
@@ -745,6 +747,7 @@ export function App(props: AppProps) {
             if (event.type === 'model.responded' && event.target !== undefined) setServedTarget(event.target);
             if (event.type === 'user.message' && event.source !== undefined) refreshInbox().catch(reportError);
             if (replay === undefined) foldLiveEvent(store, event, first);
+            if (replay === undefined && isPrompt(event, first)) showPromptNotes();
             else foldReplayedEvent(store, event, first, (record) => showShellRecord(store, record, now()));
             if (key !== undefined) replay?.notes?.after(key);
           },
@@ -754,7 +757,12 @@ export function App(props: AppProps) {
       onChildEvent: (frame, agent) =>
         deliver(() => {
           setReconnectingSince(undefined);
-          if (!isOpaqueEvent(frame.data)) foldChildEvent(store, frame.data, agent);
+          const event = frame.data;
+          if (isOpaqueEvent(event)) return;
+          const key = 'seq' in event ? { runId: event.runId, seq: event.seq } : undefined;
+          if (key !== undefined) origins.at(key);
+          foldChildEvent(store, event, agent);
+          if (key !== undefined) replay?.notes?.after(key);
         }),
       onChildStarted: (agent, childRunId) => deliver(() => subagentStarted(store, agent, childRunId, now())),
       onChildEnded: (_agent, childRunId) => deliver(() => subagentEnded(store, childRunId)),
@@ -975,11 +983,12 @@ export function App(props: AppProps) {
     const draft = draftOf(editorRef.current);
     if (draft === undefined) return;
     const sent = heldAttachments(attachmentsRef.current, editorRef.current.pastes);
+    const held = heldMessageOf(editorRef.current);
     replaceEditor(draft.state);
     setAttachments([]);
     backend.recordHistory(draft.text).catch(reportError);
     const refused = (error: unknown): void => {
-      replaceEditor(placeText(editorRef.current, takenBack([draft.text], editorRef.current.text)));
+      replaceEditor(placeMessages(editorRef.current, [held, heldMessageOf(editorRef.current)]));
       setAttachments([...sent, ...attachmentsRef.current]);
       if (!isInboxFull(error)) {
         reportError(error);
@@ -989,7 +998,8 @@ export function App(props: AppProps) {
       refreshInbox().catch(reportError);
     };
     const accepted = async (): Promise<void> => {
-      const added = await backend.inbox.add(delivery, draft.text, sent.map((attachment) => attachment.image));
+      const added = await backend.inbox.add(delivery, draft.text, sent.map((attachment) => attachment.image), attachOn && hasMentionToken(draft.text));
+      sentMessages.current.set(added.row.id, { message: held, attachments: sent });
       setWaitingMessages(added.pending);
       await resumeQueuedRuns();
     };
@@ -999,13 +1009,23 @@ export function App(props: AppProps) {
   const takeBackWaiting = async (): Promise<void> => {
     const rows = waitingRef.current.toSorted((left, right) => left.seq - right.seq);
     const answers = await Promise.all(rows.map((row) => backend.inbox.withdraw(row.id)));
-    const texts = answers.filter((answer) => answer.outcome === 'withdrawn').map((answer) => answer.row.text);
+    const withdrawn = answers.filter((answer) => answer.outcome === 'withdrawn').map((answer) => answer.row);
+    const records = withdrawn.map((row) => sentMessages.current.get(row.id) ?? { message: { text: row.text, pastes: [] }, attachments: [] });
+    for (const row of answers) sentMessages.current.delete(row.row.id);
     const current = editorRef.current;
-    replaceEditor(placeText(withHistory(current, texts.reduce(pushHistory, current.history)), takenBack(texts, current.text)));
+    const texts = withdrawn.map((row) => row.text);
+    replaceEditor(placeMessages(withHistory(current, texts.reduce(pushHistory, current.history)), [...records.map((record) => record.message), heldMessageOf(current)]));
+    setAttachments([...records.flatMap((record) => record.attachments), ...attachmentsRef.current]);
     await refreshInbox();
   };
 
   type Resubmit = { text: string; options: StartRunOptions; sessionModel: string };
+
+  const showPromptNotes = (): void => {
+    const shown = promptNotes.current;
+    promptNotes.current = [];
+    for (const text of shown) note(text);
+  };
 
   const runStarted = async (prepare: () => { start: () => Promise<RunView>; resubmit: Resubmit | undefined }): Promise<void> => {
     setBusyState(true);
@@ -1023,6 +1043,7 @@ export function App(props: AppProps) {
       attention.runEnded('error');
       if (!exiting.current) reportError(error);
     } finally {
+      promptNotes.current = [];
       runIdRef.current = undefined;
       setReconnectingSince(undefined);
       runLeft(store);
@@ -1034,7 +1055,7 @@ export function App(props: AppProps) {
     runStarted(() => {
       const sent = attachmentsRef.current;
       setAttachments([]);
-      for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
+      promptNotes.current = sent.map((attachment) => `attached ${describeAttachment(attachment.file, attachment.image)}`);
       const runOptions: StartRunOptions = {
         ...options,
         ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }),
@@ -1044,11 +1065,7 @@ export function App(props: AppProps) {
       return { start: () => backend.startRun(text, runOptions), resubmit: runModel === undefined ? undefined : { text, options: runOptions, sessionModel: runModel } };
     });
 
-  const runCompaction = (instructions: string | undefined): Promise<void> =>
-    runStarted(() => {
-      append({ kind: 'user', text: instructions === undefined ? '/compact' : `/compact ${instructions}` });
-      return { start: () => backend.compact(instructions), resubmit: undefined };
-    });
+  const runCompaction = (instructions: string | undefined): Promise<void> => runStarted(() => ({ start: () => backend.compact(instructions), resubmit: undefined }));
 
   const runSlash = async (line: string): Promise<boolean> => {
     const parsed = parseSlash(line);
@@ -1132,7 +1149,7 @@ export function App(props: AppProps) {
     return true;
   };
 
-  const submit = async (text: string): Promise<void> => {
+  const submit = async (text: string, held: HeldMessage = { text, pastes: [] }): Promise<void> => {
     if (text.trim().startsWith('/')) {
       await runSlash(text);
       return;
@@ -1146,9 +1163,9 @@ export function App(props: AppProps) {
       return;
     }
     if (unconfiguredModel.current) {
-      replaceEditor(placeText(editorRef.current, text));
+      replaceEditor(placeMessages(editorRef.current, [held]));
       await flows.modelPicker(sessionModel);
-      if (unconfiguredModel.current || editorRef.current.text !== text) return;
+      if (unconfiguredModel.current || editorRef.current.text !== held.text) return;
       replaceEditor(placeText(editorRef.current, ''));
       await runPrompt(text);
       return;
@@ -1156,8 +1173,8 @@ export function App(props: AppProps) {
     await runPrompt(text);
   };
 
-  const submitSafely = (text: string): void => {
-    prompts.flow(() => submit(text)).catch(reportError);
+  const submitSafely = (text: string, held: HeldMessage): void => {
+    prompts.flow(() => submit(text, held)).catch(reportError);
   };
 
   const sendInitialPrompt = useEffectEvent((): void => {
@@ -1219,12 +1236,31 @@ export function App(props: AppProps) {
     syncBanner();
   }, [sessionModel, notices, unconnected, displays]);
 
-  useEffect(
-    () => () => {
-      stopMeasuring.current?.();
-    },
-    [],
-  );
+  const measured = useEffectEvent((entry: MomongaModelEntry): void => showModel(entry));
+  const measurementFailed = useEffectEvent((error: unknown): void => modelUnread(error));
+  useEffect(() => {
+    if (probe === undefined) return undefined;
+    return followMeasurement(
+      { read: () => backend.model(), timers },
+      probe.retryAfterSeconds,
+      (entry) => measured(entry),
+      (error) => measurementFailed(error),
+      (state) => setMeasuring((before) => (before === undefined ? undefined : { since: before.since, state })),
+    );
+  }, [probe, backend, timers]);
+
+  const inboxChanged = useEffectEvent((): void => {
+    refreshInbox().catch(reportError);
+  });
+  const inboxStreamLost = useEffectEvent((error: unknown): void => reportError(error));
+  useEffect(() => {
+    if (followedSession === undefined) return undefined;
+    const following = new AbortController();
+    backend.inbox.follow(followedSession.id, followedSession.after, () => inboxChanged(), following.signal).catch((error: unknown) => {
+      if (!following.signal.aborted) inboxStreamLost(error);
+    });
+    return () => following.abort();
+  }, [followedSession, backend]);
 
   useEffect(
     () =>
@@ -1392,9 +1428,10 @@ export function App(props: AppProps) {
       return;
     }
     setAttachments(heldAttachments(attachmentsRef.current, editorRef.current.pastes));
+    const held = heldMessageOf(editorRef.current);
     replaceEditor(outcome.state);
     backend.recordHistory(outcome.text).catch(reportError);
-    submitSafely(outcome.text);
+    submitSafely(outcome.text, held);
   };
 
   const onEditorAction = (action: ActionId | undefined, typed: string | undefined): void => {

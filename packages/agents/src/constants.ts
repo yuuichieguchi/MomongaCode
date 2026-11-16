@@ -1,10 +1,12 @@
 import path from 'node:path';
 
+import { AGENT_FOLDER_PARTS } from '@momonga/protocol';
+
 export { AGENT_TOOL_NAME } from '@momonga/protocol';
 
-export const AGENT_DIRECTORY_SEGMENTS = path.join('.momonga', 'agents');
+export const AGENT_DIRECTORY_SEGMENTS = path.join(...AGENT_FOLDER_PARTS);
 
-export const AGENT_FILE_SUFFIX = '.md';
+export { AGENT_FILE_SUFFIX } from '@momonga/protocol';
 
 export const AGENT_NAME_MAX_LENGTH = 256;
 

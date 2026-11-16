@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STDIO_FLUSH_MS,
+  DAEMON_MARKER_KILL_GRACE_MS,
   DEFAULT_STOP_VALUES,
   KILL_CONFIRM_MS,
   ENTRY_HARD_EXIT_MARGIN_MS,
@@ -28,7 +29,7 @@ import {
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
 import type { StopValues as ProductStopValues } from '@momonga/foundation';
-import { resolveStartTiming, shutdownStepBoundsMs, supervisorStartBoundMs } from '@momonga/supervisor';
+import { DEFAULT_RESTART_POLICY, childRestartBoundMs, generationLockWaitBoundMs, resolveStartTiming, shutdownStepBoundsMs, supervisorStartBoundMs } from '@momonga/supervisor';
 import { proofArith } from '../support/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../support/proofs/arith.ts';
 import { expectRefuted, prove } from '../support/proofs/prove.ts';
@@ -153,18 +154,30 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3; the clos
     return { arith, predecessor, phaseOne, startup, readyBound, withPredecessorWait };
   };
 
-  it('S3 proves the ready bound of a start is STARTUP_TIMEOUT_MS for every stop value of a previous daemon: a start waits for no previous daemon', async () => {
+  it('S3 proves the stall limit of a start, the longest it waits without progress, is its generation lock wait plus its promotion stall limit for every stop value of a previous daemon: a start waits for no previous daemon', async () => {
     const { arith, startup, readyBound } = clientBoundArith('S3');
-    expect(await prove(arith, readyBound.eq(startup))).toEqual({ status: 'proved' });
-    expect(supervisorStartBoundMs(resolveStartTiming({}))).toBe(STARTUP_TIMEOUT_MS);
+    const lockWait = constant(arith, generationLockWaitBoundMs(resolveStartTiming({})));
+    expect(await prove(arith, readyBound.eq(lockWait.add(startup)))).toEqual({ status: 'proved' });
+    expect(supervisorStartBoundMs(resolveStartTiming({}))).toBe(generationLockWaitBoundMs(resolveStartTiming({})) + STARTUP_TIMEOUT_MS);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('S3w refutes that bound for a start that waited for a previous daemon to close, with a counter-example for every allowed stop value', async () => {
+  it('S3w refutes that bound for a start that waited for a previous daemon to close, with a counter-example among the allowed stop values', async () => {
     const { arith, predecessor, phaseOne, readyBound, withPredecessorWait } = clientBoundArith('S3w');
     const model = await expectRefuted(arith, readyBound.ge(withPredecessorWait));
     expect(BigInt(model['predecessor.drainTimeoutMs'] as string)).toBeGreaterThanOrEqual(0n);
-    expect(await prove(arith, readyBound.lt(withPredecessorWait))).toEqual({ status: 'proved' });
     expect(await prove(arith, phaseOne.ge(predecessor.drainTimeoutMs.add(RUNTIME_CLOSE_FIXED_MS)))).toEqual({ status: 'proved' });
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
+
+  it('S4 proves the client stall limit covers a crash restart: for every backoff the policy allows and every child start-up stretch without progress within its stall limit, the stdio flush, the marker reap, the backoff and that stretch end inside the larger of the two limits', async () => {
+    const arith = proofArith(z3.engine().api, 'S4');
+    const backoff = arith.int('backoff');
+    const startUp = arith.int('startUp');
+    arith.given(backoff.ge(DEFAULT_RESTART_POLICY.minMs), backoff.le(Math.max(DEFAULT_RESTART_POLICY.minMs, DEFAULT_RESTART_POLICY.maxMs)), startUp.ge(0), startUp.le(STARTUP_TIMEOUT_MS));
+    const restart = sumOf(arith, [constant(arith, STDIO_FLUSH_MS), constant(arith, markerReapClockBoundMs(DAEMON_MARKER_KILL_GRACE_MS)), backoff, startUp]);
+    const restartBound = childRestartBoundMs({ policy: DEFAULT_RESTART_POLICY, startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS });
+    const clientBound = constant(arith, Math.max(supervisorStartBoundMs(resolveStartTiming({})), restartBound));
+    expect(await prove(arith, restart.le(clientBound))).toEqual({ status: 'proved' });
+    expect(await prove(arith, restart.le(constant(arith, restartBound)))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 

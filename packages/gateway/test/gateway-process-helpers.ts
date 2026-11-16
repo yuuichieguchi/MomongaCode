@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { FIRST_GENERATION, SWEEP_INTERVAL_MS, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, momongaPaths, secretStoreEnvFor } from '@momonga/foundation';
+import { FIRST_GENERATION, SWEEP_INTERVAL_MS, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, momongaPaths, parseProgressLine, secretStoreEnvFor } from '@momonga/foundation';
 import type { SecretProcessPort, SecretStore, UdsClient, LayoutLocks } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir, registerOwned, testLocks, pollUntil } from '@momonga/testkit';
@@ -116,7 +116,7 @@ export const captureStdout = (): StdoutCapture => {
     return true;
   }) as typeof process.stdout.write);
   registerCleanup(() => spy.mockRestore());
-  return { lines: () => chunks.join('').split('\n').filter((line) => line !== '') };
+  return { lines: () => chunks.join('').split('\n').filter((line) => line !== '' && parseProgressLine(line) === undefined) };
 };
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {

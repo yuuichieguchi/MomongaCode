@@ -172,6 +172,7 @@ describe('MCP input in the terminal', () => {
       expect(fs.existsSync(path.join(home.root, OPEN_LOG_FILE_NAME))).toBe(false);
       await pty.waitForPrompt('1. Open the URL in the browser and accept');
       pty.write('1');
+      pty.write(KEYS.enter);
       await pty.waitFor('link done');
       expect(fs.readFileSync(path.join(home.root, OPEN_LOG_FILE_NAME), 'utf8')).toBe('https://example.test/connect?s=1\n');
       expect(requestText(chatCompletions(fake)[3])).toContain('link accept');
@@ -179,6 +180,23 @@ describe('MCP input in the terminal', () => {
     } finally {
       await fixture.close();
     }
+  });
+
+  it(titleOf('cli-start-keys-pty'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, fake } = await prepareProduct({ script: [textReply('noted 1a')] });
+    const pty = await spawnWithFakes(home);
+    await trustAndWait(pty);
+    pty.write('1');
+    pty.write('a');
+    await pty.waitFor('> 1a');
+    pty.write(KEYS.up);
+    pty.write(KEYS.down);
+    pty.write(KEYS.enter);
+    await pty.waitFor('noted 1a');
+    await untilRunEnds(pty, 'manual');
+    expect(requestText(chatCompletions(fake)[0])).toContain('1a');
+    expect(fs.existsSync(path.join(home.root, OPEN_LOG_FILE_NAME))).toBe(false);
+    await leave(pty);
   });
 
   it(titleOf('cli-startup-notices'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { homeLayout } from '@momonga/foundation';
 import type { SkillScope } from '@momonga/protocol';
+import { isValidSkillName } from '@momonga/protocol';
 import {
   DESCRIPTION_MAX_LENGTH,
   IGNORED_DIRECTORY_NAMES,
@@ -20,9 +21,8 @@ export type ScanResult = { skills: Skill[]; warnings: string[] };
 
 type Location = { scope: SkillScope; directory: string };
 
-const VALID_NAME = /^(?!-)(?!.*--)[\p{Ll}\p{Nd}-]+(?<!-)$/u;
 
-export const isValidSkillName = (name: string): boolean => name.length <= NAME_MAX_LENGTH && VALID_NAME.test(name);
+export { isValidSkillName };
 
 const locationsOf = ({ home, projectRoot }: ScanRequest): Location[] => [
   { scope: 'project', directory: path.join(projectRoot, SKILL_DIRECTORY_SEGMENTS.native) },

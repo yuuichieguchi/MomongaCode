@@ -14,6 +14,7 @@ export type TranscriptState = {
   newestExpandableTool: string | undefined;
   thoughtWindow: number;
   answeringTarget: string | undefined;
+  shownModels: ReadonlyMap<string, string>;
   lastFailure: AttemptFailed | undefined;
   approval: PendingApproval | undefined;
   queuedApprovals: readonly PendingApproval[];
@@ -39,6 +40,7 @@ export const initialState: TranscriptState = {
   newestExpandableTool: undefined,
   thoughtWindow: MIN_THOUGHT_WINDOW,
   answeringTarget: undefined,
+  shownModels: new Map(),
   lastFailure: undefined,
   approval: undefined,
   queuedApprovals: [],

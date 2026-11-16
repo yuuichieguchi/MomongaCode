@@ -14,7 +14,7 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { command, freshPlace, localFileOf, press, startAt, stored, typeInto, writeSettings } from './settings-harness.tsx';
 import type { Started } from './settings-harness.tsx';
 
-const TASK_RUNNING = 'A task is running. Esc stops it.';
+const TASK_RUNNING = 'A run is working. Esc stops it.';
 
 const toUser = async (started: Started, shown: string): Promise<string> => {
   const target = await untilFrame(started.app, SAVE_TO_TITLE);
@@ -234,7 +234,7 @@ describe('/hooks', () => {
     writeSettings(place.projectFile, { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done', timeout: 5 }] }] } });
     const started = await startAt(place);
     const list = await command(started, '/hooks', HOOKS_TITLE);
-    expect(list).toContain('› 1. Stop  *  say done  timeout 5  project');
+    expect(list).toContain('› 1. Stop  *  say done  timeout 5 s  project');
     expect(list).toContain('2. Add');
     await press(started, '2', '› 2. Add');
     const events = await press(started, KEYS.enter, HOOK_EVENT_TITLE);
@@ -249,7 +249,7 @@ describe('/hooks', () => {
     await press(started, KEYS.enter, 'expected a whole number from 1');
     await press(started, `${KEYS.backspace}30`, '> 30');
     started.app.stdin.write(KEYS.enter);
-    await toUser(started, 'PreToolUse  Bash  echo checked  timeout 30  user');
+    await toUser(started, 'PreToolUse  Bash  echo checked  timeout 30 s  user');
     expect(stored(place.userFile)).toEqual({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo checked', timeout: 30 }] }] } });
     const shown = await untilFrame(started.app, APPLIES_NOW);
     const row = /(\d)\. PreToolUse {2}Bash/.exec(shown)?.[1] ?? '';
@@ -260,7 +260,7 @@ describe('/hooks', () => {
     await press(started, KEYS.enter, HOOK_COMMAND_TITLE);
     await press(started, ' twice', '> echo checked twice');
     await press(started, KEYS.enter, HOOK_TIMEOUT_TITLE);
-    await press(started, KEYS.enter, 'PreToolUse  Bash  echo checked twice  timeout 30  user');
+    await press(started, KEYS.enter, 'PreToolUse  Bash  echo checked twice  timeout 30 s  user');
     expect(stored(place.userFile)).toEqual({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo checked twice', timeout: 30 }] }] } });
     started.app.unmount();
   });
@@ -286,7 +286,7 @@ describe('/hooks', () => {
     await press(started, KEYS.enter, HOOK_COMMAND_TITLE);
     await typeInto(started, 'say done', HOOK_TIMEOUT_TITLE);
     started.app.stdin.write(KEYS.enter);
-    await toUser(started, 'Stop  *  say done  user');
+    await toUser(started, 'Stop  *  say done  timeout 600 s  user');
     expect(stored(place.userFile)).toEqual({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] } });
     started.app.unmount();
   });

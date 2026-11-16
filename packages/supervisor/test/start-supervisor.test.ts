@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { generationLayout, generationMarkerDirectories, momongaPaths, parseReadyLine, inspectProcessLock, scopeToGeneration, syncPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerOwned, createFakeKernelLock, createFakeClock, createFakeTimers, driveFakeTime, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration, testKernelLock, testProcessInspector } from '@momonga/testkit';
-import { ORPHAN_POLL_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
+import { GENERATION_POLL_INTERVAL_MS, ORPHAN_POLL_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
   HARNESS_GENERATION,
@@ -285,10 +285,10 @@ describe('the stop of a start that was never promoted (design 20.14)', () => {
 });
 
 describe('the start reads no orphan option (design 20.16, 20.62)', () => {
-  it('resolves the startup timeout and nothing else', () => {
-    expect(resolveStartTiming({})).toEqual({ startupTimeoutMs: STARTUP_TIMEOUT_MS });
-    expect(resolveStartTiming({ startupTimeoutMs: 7000 })).toEqual({ startupTimeoutMs: 7000 });
-    expect(supervisorStartBoundMs(resolveStartTiming({ startupTimeoutMs: 7000 }))).toBe(7000);
+  it('resolves the startup timeout and the generation poll, and nothing else', () => {
+    expect(resolveStartTiming({})).toEqual({ startupTimeoutMs: STARTUP_TIMEOUT_MS, generationPollMs: GENERATION_POLL_INTERVAL_MS });
+    expect(resolveStartTiming({ startupTimeoutMs: 7000, intervals: { generationPollMs: 50 } })).toEqual({ startupTimeoutMs: 7000, generationPollMs: 50 });
+    expect(supervisorStartBoundMs(resolveStartTiming({ startupTimeoutMs: 7000, intervals: { generationPollMs: 50 } }))).toBe(7000 + 50 + 7000);
   });
 
   it('a start with a held marker of an earlier generation neither waits for it nor reaps it', async (context) => {

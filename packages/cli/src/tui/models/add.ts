@@ -1,7 +1,7 @@
 import path from 'node:path';
-import { providerNameOf, serverNameFromCommand } from '@momonga/config';
-import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, withDefaultTag } from '@momonga/protocol';
-import type { DetectedLocalServer, DetectedModel, LocalServerDetection, ModelView } from '@momonga/protocol';
+import { baseUrlProblem, providerNameOf, serverNameFromCommand } from '@momonga/config';
+import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, managedServerOf, withDefaultTag } from '@momonga/protocol';
+import type { ManagedServerDescription, DetectedLocalServer, DetectedModel, LocalServerDetection, ModelView } from '@momonga/protocol';
 import { describeFailure } from '../../failure.ts';
 import { wholeNumberWithin } from '../../models-check.ts';
 import { addProposalOf, entryOf, foundProposalOf, foundRowOf, kindOf, nameInputOf, offeredServers, proposeForm } from '../../commands/models.ts';
@@ -51,14 +51,11 @@ export type Added = { readonly model: string | undefined };
 
 const NOT_ADDED = undefined;
 
-const BUILT_IN_SERVER_LABELS: Readonly<Record<string, string>> = { fm: 'the Apple on-device model' };
-
-const builtInLabelOf = (id: string): string => (Object.hasOwn(BUILT_IN_SERVER_LABELS, id) ? (BUILT_IN_SERVER_LABELS[id] as string) : id);
-
-const addressProblem = (text: string): string | undefined => {
+export const addressProblem = (text: string): string | undefined => {
   if (!URL.canParse(text.trim())) return NOT_AN_ADDRESS;
   const { protocol } = new URL(text.trim());
-  return protocol === 'http:' || protocol === 'https:' ? undefined : NOT_AN_ADDRESS;
+  if (protocol !== 'http:' && protocol !== 'https:') return NOT_AN_ADDRESS;
+  return baseUrlProblem(text.trim(), false);
 };
 
 const wholeNumberIn = wholeNumberWithin;
@@ -153,7 +150,13 @@ export const addFromFound = async (context: ModelsFlowContext, servers: readonly
   return server === undefined ? NOT_ADDED : addFromServer(context, await openEdit(context), server);
 };
 
-export const builtInRowOf = (id: string): string => builtInServerRow(builtInLabelOf(id));
+export const builtInRowOf = (server: Pick<ManagedServerDescription, 'label'>): string => builtInServerRow(server.label);
+
+export const managedRowOf = (id: string): string => {
+  const server = managedServerOf(MANAGED_SERVERS, id);
+  if (server === undefined) throw new Error(`no managed server is described with the id ${id}`);
+  return builtInRowOf(server);
+};
 
 export const addByAddress = async (context: ModelsFlowContext): Promise<Added | undefined> => {
   const typed = await context.overlays.promptText({ title: ADDRESS_PROMPT, validate: addressProblem });
@@ -271,7 +274,7 @@ export const addRows = (context: ModelsFlowContext, edit: ModelsEdit): AddRow[] 
   { label: TYPE_ADDRESS_ROW, act: () => addByAddress(context) },
   { label: SERVICE_ROW, act: () => addService(context) },
   { label: PROGRAM_ROW, act: () => addProgram(context) },
-  ...unusedBuiltIns(edit).map((id) => ({ label: builtInRowOf(id), act: () => addBuiltIn(context, id) })),
+  ...unusedBuiltIns(edit).map((id) => ({ label: managedRowOf(id), act: () => addBuiltIn(context, id) })),
 ];
 
 export const runAddFlow = async (context: ModelsFlowContext): Promise<Added | undefined> => {

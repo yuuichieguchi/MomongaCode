@@ -141,9 +141,9 @@ describe('followRun', () => {
     await expect(followRun(options(client, []))).rejects.toThrow('the server answered 400');
   });
 
-  it('counts a stream that opens and breaks before any event as still lost, so the outage is measured from the first failure (wire-02)', async () => {
+  it('measures a second outage from its own start when the first reconnect delivered no event', async () => {
     const clock = virtualClock();
-    const { client } = clientOf(
+    const { client, opened } = clientOf(
       [
         { frames: [1], thenThrow: errno('ECONNRESET') },
         { frames: [], thenThrow: errno('ECONNRESET'), idle: () => void clock.sleep(20_000) },
@@ -152,10 +152,13 @@ describe('followRun', () => {
       [runView({ status: 'COMPLETED' })],
     );
 
-    await expect(followRun(options(client, [], { clock, reconnectBoundMs: 10_000 }))).rejects.toBeInstanceOf(ReconnectBoundExceeded);
+    const run = await followRun(options(client, [], { clock, reconnectBoundMs: 10_000 }));
+
+    expect(run.status).toBe('COMPLETED');
+    expect(opened).toEqual([undefined, 1, 1]);
   });
 
-  it('gives up on a stream that answers and then breaks before its first event every time, instead of reconnecting for ever (wire-02)', async () => {
+  it('gives up on a stream that answers and then breaks before its first event every time, instead of reconnecting for ever', async () => {
     const { client } = clientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('UND_ERR_SOCKET') })), []);
 
     await expect(followRun(options(client, [], { reconnectBoundMs: 2000 }))).rejects.toBeInstanceOf(ReconnectBoundExceeded);

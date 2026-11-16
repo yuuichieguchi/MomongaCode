@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, createUdsClient, ensureMomongaDirs, fixedRolePort, generationLayout, inspectProcessLock, momongaPaths, FIRST_GENERATION, fixedSocket, scopeToGeneration } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createUdsClient, ensureMomongaDirs, fixedRolePort, generationLayout, inspectProcessLock, momongaPaths, parseProgressLine, FIRST_GENERATION, fixedSocket, scopeToGeneration } from '@momonga/foundation';
 import type { Clock, GenerationRole, JsonLogger, MomongaPaths, ReadyFields, RolePort, StopValues, TextStream, UdsClient, LayoutLocks } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
@@ -193,14 +193,18 @@ export const startStack = async (fakeOptions: FakeOptionsInput = {}, extraSettin
   return stack;
 };
 
-export type CapturedStdout = TextStream & { chunks: string[]; lines(): string[] };
+export type CapturedStdout = TextStream & { chunks: string[]; progressSteps: string[]; lines(): string[] };
 
 export const captureStream = (): CapturedStdout => {
   const chunks: string[] = [];
+  const progressSteps: string[] = [];
   return {
     chunks,
+    progressSteps,
     write: (chunk) => {
-      chunks.push(chunk);
+      const progress = parseProgressLine(chunk.trimEnd());
+      if (progress === undefined) chunks.push(chunk);
+      else progressSteps.push(progress.step);
       return true;
     },
     lines: () => chunks.join('').split('\n').filter((line) => line !== ''),

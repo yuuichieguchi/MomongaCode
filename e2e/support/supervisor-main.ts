@@ -19,7 +19,6 @@ export const E2E_DEPS_KEYS = [
   'runtime',
   'gateway',
   'startupTimeoutMs',
-  'lockWaitMs',
   'reaper',
   'heldRetryMs',
   'restart',
@@ -31,7 +30,7 @@ export const E2E_DEPS_KEYS = [
 
 export type E2eDeps = Pick<
   SupervisorEntryDeps,
-  'runtime' | 'gateway' | 'startupTimeoutMs' | 'lockWaitMs' | 'reaper' | 'heldRetryMs' | 'restart' | 'intervals' | 'watchSettings'
+  'runtime' | 'gateway' | 'startupTimeoutMs' | 'reaper' | 'heldRetryMs' | 'restart' | 'intervals' | 'watchSettings'
 > & { launcherOverrides?: LauncherOverrides };
 
 export type E2eDepsFile = E2eDeps & { version: string };

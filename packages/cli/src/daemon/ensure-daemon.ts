@@ -6,6 +6,7 @@ import {
   HOST_READ_BOUND_MS,
   LIFELINE_FD,
   STARTUP_TIMEOUT_MS,
+  STDIO_FLUSH_MS,
   STOP_WAIT_WHEN_UNKNOWN_MS,
   beginGenerationStart,
   daemonStopBoundMs,
@@ -27,6 +28,7 @@ import {
 } from '@momonga/foundation';
 import type { CurrentGeneration, GenerationRef, HeldStart, KernelLockMechanism, MomongaPaths, StartTrigger, StopValues, EndpointScope } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
+import { DEFAULT_RESTART_POLICY, childRestartBoundMs, resolveStartTiming, supervisorStartBoundMs } from '@momonga/supervisor';
 import type { InterruptedWorkItem, SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
@@ -81,7 +83,13 @@ export const healthAt = async (socketPath: string): Promise<SupervisorHealth | u
 
 export type DaemonBounds = { readyMs: number; stopMs: number };
 
-export const daemonReadyBoundMs = async (): Promise<number> => STARTUP_TIMEOUT_MS;
+export const startProgressMarkOf = (health: SupervisorHealth | undefined): string =>
+  health === undefined
+    ? 'no supervisor'
+    : JSON.stringify([health.phase, health.children.map((child) => [child.role, child.state, child.startedAt, child.progressAt, child.readyAt, child.restarts])]);
+
+export const daemonReadyBoundMs = async (): Promise<number> =>
+  Math.max(supervisorStartBoundMs(resolveStartTiming({})), childRestartBoundMs({ policy: DEFAULT_RESTART_POLICY, startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS }));
 
 export { STOP_WAIT_WHEN_UNKNOWN_MS };
 
@@ -406,6 +414,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   const start: { own: OwnStart | undefined } = { own: undefined };
   let draining: number | undefined;
   let allocation: 'allowed' | 'withheld' = 'withheld';
+  let ownStartHealth: SupervisorHealth | undefined;
 
   const decide = async (): Promise<DaemonConnection | undefined> => {
     const outcome = await beginGenerationStart(paths, {
@@ -476,6 +485,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
     if (outcome === 'success' && currentHealth !== undefined) return { health: currentHealth, clientIsOlder: orderVersions(ports.version, currentHealth.version) === 'older' };
     if (outcome === 'failed') throw await startFailure(ports, paths, started, current, currentHeld, lock, signal);
     const ownHealth = current?.generation === started.ref.generation ? currentHealth : await healthAt(supervisorSocketOf(paths, started.ref.generation, scope));
+    ownStartHealth = ownHealth;
     if (ownHealth !== undefined) {
       started.sawSupervisor = true;
       const held = heldFailure(ownHealth);
@@ -494,6 +504,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       boundMs: readyMs,
       intervalMs: DAEMON_POLL_INTERVAL_MS,
       description: 'the daemon to become ready',
+      progressMark: () => startProgressMarkOf(ownStartHealth),
       ...(signal === undefined ? {} : { signal }),
     });
   } catch (error) {

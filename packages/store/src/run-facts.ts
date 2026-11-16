@@ -205,6 +205,7 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
         ) SELECT id FROM up WHERE parent IS NULL)
      )`,
   );
+  const runExists = db.prepare('SELECT 1 FROM runs WHERE id = :runId');
   const deleteCalls = db.prepare('DELETE FROM run_calls WHERE run_id = :runId');
   const insertCall = db.prepare('INSERT INTO run_calls (run_id, call_id, basis, side_effect, asked) VALUES (:runId, :callId, :basis, :sideEffect, :asked)');
   const firstCalls = db.prepare('SELECT * FROM run_calls ORDER BY run_id, call_id LIMIT :limit');
@@ -331,16 +332,17 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
 
     commit: (batch: FactsCommit): void => {
       immediateTx(db, () => {
-        for (const facts of batch.rows) {
+        const retained = (runId: string): boolean => runExists.get({ runId }) !== undefined;
+        for (const facts of batch.rows.filter((row) => retained(row.runId))) {
           storeFacts(facts);
           deleteCalls.run({ runId: facts.runId });
         }
-        for (const runId of batch.unavailable) {
+        for (const runId of batch.unavailable.filter(retained)) {
           deleteCalls.run({ runId });
           deleteRecoveries.run({ runId });
           upsertUnavailable.run({ runId, version: INDICATOR_DEFINITIONS_VERSION });
         }
-        for (const call of batch.calls) {
+        for (const call of batch.calls.filter((row) => retained(row.runId))) {
           refuseUnknown(`call ${call.callId} of run ${call.runId}`, [call.basis, call.sideEffect]);
           insertCall.run({ runId: call.runId, callId: call.callId, basis: call.basis, sideEffect: call.sideEffect, asked: call.asked ? 1 : 0 });
         }
