@@ -9,6 +9,8 @@ import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir } from './helpers.ts';
 import { NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
 
+const RUNNING_AS_ROOT = process.getuid?.() === 0;
+
 let base = '';
 let work = '';
 let home = '';
@@ -81,8 +83,7 @@ describe('planBubblewrap refuses a protected name that is a symlink (review item
     expect((error as SandboxPolicyError).message).toContain(target);
   });
 
-  it('refuses an entry below a directory of mode 000, naming it', async () => {
-    if (process.getuid?.() === 0) return;
+  it.skipIf(RUNNING_AS_ROOT)('refuses an entry below a directory of mode 000, naming it', async () => {
     const locked = path.join(work, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
@@ -104,8 +105,6 @@ describe('planBubblewrap refuses a protected name that is a symlink (review item
 });
 
 describe('planBubblewrap refuses only where the sandboxed process could change what it protects', () => {
-  const unlessRoot = (): boolean => process.getuid?.() === 0;
-
   it('does not refuse a symlinked write-denied literal outside every writable area: the read-only root already holds it', async () => {
     const launcher = path.join(home, 'momonga');
     fs.symlinkSync('target', launcher);
@@ -113,8 +112,7 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
     expect(indexOfTriple(args, '--ro-bind', launcher)).toBe(-1);
   });
 
-  it('treats EACCES outside every writable area as absent', async () => {
-    if (unlessRoot()) return;
+  it.skipIf(RUNNING_AS_ROOT)('treats EACCES outside every writable area as absent', async () => {
     const locked = path.join(base, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
@@ -126,8 +124,7 @@ describe('planBubblewrap refuses only where the sandboxed process could change w
     }
   });
 
-  it('refuses EACCES on a protected literal inside a writable area', async () => {
-    if (unlessRoot()) return;
+  it.skipIf(RUNNING_AS_ROOT)('refuses EACCES on a protected literal inside a writable area', async () => {
     const locked = path.join(work, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);

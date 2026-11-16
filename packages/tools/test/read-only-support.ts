@@ -7,7 +7,7 @@ import { testKernelLock } from '@momonga/testkit';
 
 export const KILL_GRACE_MS = 300;
 export const REFUSED_WRITE_MESSAGE = process.platform === 'darwin' ? 'Operation not permitted' : 'Read-only file system';
-export const HAS_REAL_SANDBOX = process.platform === 'darwin' || process.platform === 'linux';
+export { HAS_REAL_SANDBOX } from './helpers.ts';
 
 export const realSandbox = (tmpRoot: string): Sandbox => {
   fs.mkdirSync(tmpRoot, { recursive: true });

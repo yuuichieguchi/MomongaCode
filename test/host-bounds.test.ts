@@ -185,7 +185,7 @@ describe('every host bound is registered once', () => {
   const rowsTitle = `finds the row of every ruled constant in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
 
   if (constantsDocument === undefined) {
-    it.skip(rowsTitle, () => undefined);
+    it(rowsTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
   } else {
     it(rowsTitle, () => {
       expect(registry.constants.filter((entry) => !hasRow(fs.readFileSync(path.join(constantsDocument, entry.row), 'utf8'), entry.name))).toEqual([]);

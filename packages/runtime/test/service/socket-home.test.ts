@@ -30,7 +30,7 @@ const kernelFoldsCase = (layout: Layout): boolean => {
 describe('run socket containment under home', () => {
   it('accepts a socket path under a case variant of home', async (context) => {
     const layout = makeLayout();
-    if (!kernelFoldsCase(layout)) context.skip();
+    if (!kernelFoldsCase(layout)) context.skip('the volume of the test home does not fold case');
     const variantHome = path.join(path.dirname(layout.home), path.basename(layout.home).toUpperCase());
     const service = await attempt(layout, layout.socketPath, variantHome);
     expect(service.socketPath).toBe(layout.socketPath);
