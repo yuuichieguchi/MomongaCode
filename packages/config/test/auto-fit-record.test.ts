@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
-import { readAutoFitRecord } from '../src/auto-fit.ts';
-import { ConfigError, writeAutoFitRecord } from '@momonga/config';
+import * as autoFit from '../src/auto-fit.ts';
+import { readAutoFitView, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import { makeDir } from './helpers.ts';
 import { loadModelsSection } from './load-models.ts';
@@ -49,19 +49,24 @@ const JUDGE = 'srv-judge.example.com-443/judge';
 const SPARE = 'srv-spare.example.com-443/spare';
 const CONNECTIONS = [chatConnection('https://judge.example.com/v1', ['judge']), chatConnection('https://spare.example.com/v1', ['spare'])];
 
+const viewOf = (directory: string) => readAutoFitView(directory, 'guard', KEY);
+
 describe('the stored measurement of an auto-mode classifier names the model that drove the runs', () => {
+  it('the auto-fit module does not export its record reader; readAutoFitView is the one reader', () => {
+    expect(Object.hasOwn(autoFit, 'readAutoFitRecord')).toBe(false);
+  });
+
   it('a record with agentModel is written and read back', async () => {
     const directory = makeDir();
-    const record = { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' };
-    await write(directory, record);
-    expect(await readAutoFitRecord(directory, KEY)).toEqual(record);
+    await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
+    expect(await viewOf(directory)).toMatchObject({ measurement: expect.stringMatching(/^(passed|did_not_pass)$/u), facts: { recordedAt: RECORD.recordedAt } });
   });
 
   it('a file of an earlier build, with agentAlias, is no record: it reads as nothing and never throws', async () => {
     const directory = makeDir();
     const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
     fs.writeFileSync(file, `${JSON.stringify({ ...RECORD, agentAlias: 'fm' }, null, 2)}\n`, { mode: 0o600 });
-    await expect(readAutoFitRecord(directory, KEY)).resolves.toBeUndefined();
+    expect(await viewOf(directory)).toEqual({ model: 'guard', key: KEY, measurement: 'not_measured' });
   });
 
   it.each([
@@ -74,12 +79,9 @@ describe('the stored measurement of an auto-mode classifier names the model that
     const directory = makeDir();
     const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
     fs.writeFileSync(file, text, { mode: 0o600 });
-    const error = await readAutoFitRecord(directory, KEY).then(
-      () => undefined,
-      (caught: unknown) => caught,
-    );
-    expect(error).toBeInstanceOf(ConfigError);
-    expect((error as Error).message.startsWith(`${file}: `)).toBe(true);
+    const view = await viewOf(directory);
+    expect(view).toMatchObject({ measurement: 'unreadable', refusal: { file } });
+    expect((view as { refusal: { reason: string } }).refusal.reason.startsWith(`${file}: `)).toBe(true);
   });
 
   it.each([
@@ -91,12 +93,7 @@ describe('the stored measurement of an auto-mode classifier names the model that
     const directory = makeDir();
     const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
     fs.writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
-    const error = await readAutoFitRecord(directory, KEY).then(
-      () => undefined,
-      (caught: unknown) => caught,
-    );
-    expect(error).toBeInstanceOf(ConfigError);
-    expect((error as Error).message).toBe(`${file}: not an auto mode measurement record`);
+    expect(await viewOf(directory)).toEqual({ model: 'guard', key: KEY, measurement: 'unreadable', refusal: { file, reason: `${file}: not an auto mode measurement record` } });
   });
 
   it('a record that is a directory is refused with the typed error that names the file', async () => {
@@ -104,12 +101,9 @@ describe('the stored measurement of an auto-mode classifier names the model that
     const file = await write(directory, { ...RECORD, agentModel: 'ollama/devstral-small-2:latest' });
     fs.rmSync(file);
     fs.mkdirSync(file);
-    const error = await readAutoFitRecord(directory, KEY).then(
-      () => undefined,
-      (caught: unknown) => caught,
-    );
-    expect(error).toBeInstanceOf(ConfigError);
-    expect((error as Error).message.startsWith(`${file}: `)).toBe(true);
+    const view = await viewOf(directory);
+    expect(view).toMatchObject({ measurement: 'unreadable' });
+    expect((view as { refusal: { reason: string } }).refusal.reason.startsWith(`${file}: `)).toBe(true);
   });
 
   it('the key names the identities of the models that can answer a classification, in chain order, so a change of models.fallback changes it', async () => {
