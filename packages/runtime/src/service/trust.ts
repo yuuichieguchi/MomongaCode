@@ -51,7 +51,7 @@ export const registerTrustRoutes = (route: RouteRegistrar, deps: { store: Pick<R
   const { store } = deps;
   const agentLoader = createAgentLoader({ home: deps.home, fileSystem: createNodeSkillFileSystem() });
   const projectAgents: ProjectAgentsLister = async (projectDir, signal) =>
-    (await settledOrAborted(agentLoader.load({ projectRoot: projectDir, trusted: true, projectAgentApproved: NOTHING_APPROVED }), signal)).pendingApproval;
+    (await settledOrAborted(agentLoader.load({ projectRoot: projectDir, trusted: true, projectAgentApproved: NOTHING_APPROVED, signal }), signal)).pendingApproval;
 
   const viewOf = async (canonical: string, signal: AbortSignal): Promise<Response> => json({ trust: { path: canonical, ...(await store.trust.decisionAsked(canonical, signal)) } }, 200);
 

@@ -16,10 +16,13 @@ export const createAgentsPort = ({ home, fileSystem, settings, runs }: AgentsPor
   const loader = createAgentLoader({ home, fileSystem });
   return {
     runs,
-    load: (session, signal) =>
-      settledOrAborted(
-        (async () => loader.load({ projectRoot: session.cwd, trusted: await settings.trusted(session, signal), projectAgentApproved: approvedByDigest(await settings.approvedProjectAgents(session, signal)) }))(),
-        signal,
-      ),
+    load: async (session, signal) => {
+      signal.throwIfAborted();
+      const trusted = await settledOrAborted(settings.trusted(session, signal), signal);
+      signal.throwIfAborted();
+      const approved = approvedByDigest(await settledOrAborted(settings.approvedProjectAgents(session, signal), signal));
+      signal.throwIfAborted();
+      return settledOrAborted(loader.load({ projectRoot: session.cwd, trusted, projectAgentApproved: approved, signal }), signal);
+    },
   };
 };

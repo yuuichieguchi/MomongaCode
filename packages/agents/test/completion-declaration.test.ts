@@ -19,7 +19,7 @@ const fileSystemOf = (files: Readonly<Record<string, string>>): SkillFileSystem 
 
 const agentFile = (name: string, extra: string) => `---\nname: ${name}\ndescription: ${name} agent\n${extra}---\nDo the work.\n`;
 
-const load = (files: Record<string, string>) => createAgentLoader({ home: HOME, fileSystem: fileSystemOf(files) }).load({ projectRoot: PROJECT, trusted: true, projectAgentApproved: () => true });
+const load = (files: Record<string, string>) => createAgentLoader({ home: HOME, fileSystem: fileSystemOf(files) }).load({ projectRoot: PROJECT, trusted: true, projectAgentApproved: () => true, signal: new AbortController().signal });
 
 type MandateHolder = { mandate?: { completion?: { conditions?: { command: string; when?: string }[]; requirements?: string[]; inherit?: boolean } } };
 

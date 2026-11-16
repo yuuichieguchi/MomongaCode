@@ -90,3 +90,18 @@ export const createNodeSkillFileSystem = (): SkillFileSystem => ({
   readText: (file) => absentAs(file, () => fs.readFile(file, 'utf8')),
   realpath: (target) => absentAs(target, () => fs.realpath(target)),
 });
+
+export const stoppedBy = (fileSystem: SkillFileSystem, signal: AbortSignal): SkillFileSystem => ({
+  listDirectory: async (directory) => {
+    signal.throwIfAborted();
+    return fileSystem.listDirectory(directory);
+  },
+  readText: async (file) => {
+    signal.throwIfAborted();
+    return fileSystem.readText(file);
+  },
+  realpath: async (target) => {
+    signal.throwIfAborted();
+    return fileSystem.realpath(target);
+  },
+});

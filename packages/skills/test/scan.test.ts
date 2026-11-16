@@ -7,7 +7,7 @@ const PROJECT = '/work/app';
 
 const loadFrom = async (files: Record<string, string>, trusted = true, links: Record<string, string> = {}) => {
   const fileSystem = fakeSkillFileSystem(files, links);
-  const set = await createSkillLoader({ home: HOME, fileSystem }).load({ projectRoot: PROJECT, trusted });
+  const set = await createSkillLoader({ home: HOME, fileSystem }).load({ projectRoot: PROJECT, trusted, signal: new AbortController().signal });
   return { set, fileSystem };
 };
 

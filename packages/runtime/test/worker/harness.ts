@@ -102,7 +102,7 @@ export const diskSkillsPort = (home: string, trusted: () => boolean = () => true
 
 export const diskAgentCatalog = (home: string, trusted: () => boolean = () => true): AgentCatalogPort => {
   const loader = createAgentLoader({ home, fileSystem: createNodeSkillFileSystem() });
-  return { load: async (session) => loader.load({ projectRoot: session.cwd, trusted: trusted(), projectAgentApproved: () => true }) };
+  return { load: async (session, signal) => loader.load({ projectRoot: session.cwd, trusted: trusted(), projectAgentApproved: () => true, signal }) };
 };
 
 export type FakeInstructions = InstructionReader & { files: Map<string, string>; reads: string[] };
