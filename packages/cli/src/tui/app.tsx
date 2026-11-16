@@ -59,7 +59,7 @@ import type { RowRequests } from './screen/layout.ts';
 import { allocate, drawnTranscriptRows, inputTopOf, menuRowsCap, naturalRows, panelRowsCap, regionAt } from './screen/layout.ts';
 import { chordContextsOf, keyRouteOf } from './screen/key-route.ts';
 import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
-import { INVITATION_ROWS, InvitationLine, invitationKeyOf, isMenuAction, useSlashMenu } from './screen/menu.tsx';
+import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
 import { SubagentRows } from './screen/subagents.tsx';
@@ -1595,6 +1595,7 @@ export function App(props: AppProps) {
   const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
   const busyHintRow = !inputShown || phase.kind !== 'ready' ? undefined : shellDraft ? shellHint(keys) : !busy ? undefined : slashMenu.open || atMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
+  const invitationText = invitationInMenu && prompts.invitation !== undefined ? invitationRows(prompts.invitation, keys, columns) : [];
   const waiting = waitingOf({
     startingSince: phase.kind === 'starting' ? openedAt : undefined,
     prompting: blockingPrompt(transcript),
@@ -1608,7 +1609,7 @@ export function App(props: AppProps) {
   const rowRequests: RowRequests = {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(editor, columns),
-    invitation: invitationInMenu ? INVITATION_ROWS : 0,
+    invitation: invitationText.length,
     menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: transcript.subagents.length,
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
@@ -1757,7 +1758,7 @@ export function App(props: AppProps) {
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
         ),
-        menu: !menuShown ? null : invitationInMenu && prompts.invitation !== undefined ? <InvitationLine invitation={prompts.invitation} keys={keys} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
+        menu: !menuShown ? null : invitationText.length > 0 ? <InvitationLine rows={fullscreen ? invitationText.slice(0, allocation.menu) : invitationText} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
         lines: inputShown ? (
           <>
