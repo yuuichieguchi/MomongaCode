@@ -36,7 +36,7 @@ export const registryOf = (models: unknown): ManagedServerDescription[] => {
 
 export const loadedDeclaration = async (id: string, declaration: Declaration, home: string = makeHome()): Promise<ManagedServerDescription> => {
   writeSettings(home, { models: modelsOf({ workbench: { adapter: 'managed', server: id, model: 'fake-1' } }, { servers: { [id]: declaration } }) });
-  const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
+  const { settings } = await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
   const found = registryOf(settings.models).find((server) => server.id === id);
   if (found === undefined) throw new Error(`the loaded registry has no server ${JSON.stringify(id)}`);
   return found;

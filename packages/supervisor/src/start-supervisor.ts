@@ -283,7 +283,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     };
 
     const stopValues = options.stopValues ?? createStopValuesReader({ onNotice: (detail) => log(settingsWarning({ detail })) });
-    const settings = createUserSettingsCache({
+    const settings = createUserSettingsCache({ env: process.env,
       home: canonicalHome,
       onWarning: (detail) => log(settingsWarning({ detail })),
       keptRecords: noKeptRecords,
@@ -508,7 +508,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let lastWrittenSeq: number | undefined;
     const recordApplied = async (key: string | undefined): Promise<void> => {
       try {
-        const written = await writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq, { signal: lifetime.signal, random: systemRandom, lock: lockMechanism });
+        const written = await writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq, { env: process.env, signal: lifetime.signal, random: systemRandom, lock: lockMechanism });
         if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
       } catch (error) {
         if (lifetime.signal.aborted || key === recordFailedKey) return;

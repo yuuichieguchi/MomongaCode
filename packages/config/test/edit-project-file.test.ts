@@ -13,7 +13,7 @@ type Trust = { isTrusted(directory: string, signal: AbortSignal): boolean | Prom
 
 const optionsOf = (tree: Tree, trust: Trust) => ({ home: tree.home, trust, mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock() }), random: systemFileLockPorts.random, signal });
 
-const storedApprovals = async (tree: Tree) => (await loadUserSettings({ home: tree.home, signal })).settings.projectApprovals;
+const storedApprovals = async (tree: Tree) => (await loadUserSettings({ env: process.env, home: tree.home, signal })).settings.projectApprovals;
 
 const mandateFile = (tree: Tree): string => path.join(tree.project, PROJECT_MANDATE_FILE);
 

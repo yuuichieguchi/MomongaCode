@@ -77,7 +77,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
   const keptLayers = (use: SettingsUse): KeptLayers => ({ store: cache.kept, use });
 
   const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse, signal: AbortSignal): Promise<LoadSettingsResult> =>
-    loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, signal, user: snapshot.user, kept: keptLayers(use) });
+    loadSettings({ env: process.env, home, projectDir: cwd, cli: {}, trust: trustOracle, signal, user: snapshot.user, kept: keptLayers(use) });
 
   const loadSessionSettings = (cwd: string, snapshot: UserSnapshot, signal: AbortSignal): Promise<LoadSettingsResult> => settledOrAborted(settingsFor(cwd, snapshot, 'read', signal), signal);
 

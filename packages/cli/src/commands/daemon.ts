@@ -50,7 +50,7 @@ export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'stderr' | '
   const others = live.filter((entry) => entry !== serving);
   const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(paths.home, entry.generation).stopRecord)] as const)));
   const settingsNow = [...lastStops.values()].some((values) => values !== undefined)
-    ? await readUserStopValuesOrDefault({ home: paths.home, signal: ports.interrupt, onNotice: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`) })
+    ? await readUserStopValuesOrDefault({ env: process.env, home: paths.home, signal: ports.interrupt, onNotice: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`) })
     : undefined;
   if (options.json) {
     const ordered = [...(serving === undefined ? [] : [serving]), ...others];

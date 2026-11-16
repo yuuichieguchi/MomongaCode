@@ -30,7 +30,7 @@ const settingsWithProviders = async () => {
         }),
       ),
     );
-    return (await loadUserSettings({ home, signal: new AbortController().signal })).settings;
+    return (await loadUserSettings({ env: process.env, home, signal: new AbortController().signal })).settings;
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

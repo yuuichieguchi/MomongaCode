@@ -7,7 +7,7 @@ const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 };
 const load = (models: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models });
-  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const chat = (capabilities: Record<string, unknown>) => ({

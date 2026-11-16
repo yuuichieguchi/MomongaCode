@@ -17,7 +17,7 @@ const setup = async () => {
   await ensureMomongaDirs(paths);
   const stdout: string[] = [];
   const ports = { home, cwd: folder, interrupt: new AbortController().signal, stdout: { write: (text: string) => (stdout.push(text), true) } } as unknown as CliPorts;
-  const stored = async () => acceptedCheckOf((await loadUserSettings({ home, signal: new AbortController().signal })).settings, canonical);
+  const stored = async () => acceptedCheckOf((await loadUserSettings({ env: process.env, home, signal: new AbortController().signal })).settings, canonical);
   return { ports, paths, stdout, canonical, stored };
 };
 

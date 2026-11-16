@@ -11,7 +11,7 @@ export type NoticeSource = (context: NoticeContext) => Promise<readonly string[]
 
 export const settingsWarningSource =
   (ports: Pick<CliPorts, 'home' | 'interrupt'>): NoticeSource =>
-  async () => (await loadUserSettings({ home: ports.home, signal: ports.interrupt })).warnings;
+  async () => (await loadUserSettings({ env: process.env, home: ports.home, signal: ports.interrupt })).warnings;
 
 export const skillWarningSource: NoticeSource = async ({ runtime, session }) => (await runtime.skills(session.id)).warnings;
 

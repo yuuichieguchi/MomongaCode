@@ -21,7 +21,7 @@ const declaredServers = async (): Promise<ManagedServerDescription[]> => {
   writeSettings(home, {
     models: modelsOf({ bench: { adapter: 'managed', server: DECLARED_ID, model: 'bench-1' } }, { servers: { [DECLARED_ID]: { command: DECLARED_COMMAND, args: ['{socket}'], readyPath: '/health' } } }),
   });
-  const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
+  const { settings } = await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
   const registry = settings.models.servers;
   return [...registeredServersOf(registry)];
 };

@@ -59,7 +59,7 @@ const AFTER_REMOVAL: References = { start: undefined, fallback: [OLLAMA_GEMMA], 
 
 const FIVE_REFERENCES = [{ kind: 'start' }, { kind: 'fallback', position: 2 }, { kind: 'role', job: 'compaction' }, { kind: 'classifier' }, { kind: 'billing' }];
 
-const loads = async (home: Home): Promise<string[]> => [...((await loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).settings.models as unknown as { models: ReadonlyMap<string, unknown> }).models.keys()];
+const loads = async (home: Home): Promise<string[]> => [...((await loadUserSettings({ env: process.env, home: home.tree.home, signal: new AbortController().signal })).settings.models as unknown as { models: ReadonlyMap<string, unknown> }).models.keys()];
 
 const planned = (document: unknown, operations: readonly Operation[]): Planned => {
   const plan = planModels(document, operations);
@@ -556,7 +556,7 @@ describe('a settings file that does not load can be edited, and only a result th
 
   it('the file with a start model that was removed by hand does not load', async () => {
     const home = homeWith(DANGLING);
-    await expect(loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).rejects.toThrow(START_SENTENCE);
+    await expect(loadUserSettings({ env: process.env, home: home.tree.home, signal: new AbortController().signal })).rejects.toThrow(START_SENTENCE);
   });
 
   it('setStart to a configured model repairs it, and so does clearing the start model', async () => {
@@ -590,7 +590,7 @@ describe('a settings file that does not load can be edited, and only a result th
 
   it('a model entry the loader refuses is repaired by setting the fields it lacks', async () => {
     const home = homeWith({ models: { connections: [{ ...OLLAMA, models: [{ id: 'llama3.2:latest' }] }] } });
-    await expect(loadUserSettings({ home: home.tree.home, signal: new AbortController().signal })).rejects.toThrow();
+    await expect(loadUserSettings({ env: process.env, home: home.tree.home, signal: new AbortController().signal })).rejects.toThrow();
     await editModels(home, [
       op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'contextWindow'], value: 8192 }),
       op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'maxOutputTokens'], value: 2048 }),

@@ -24,7 +24,7 @@ const writeTextAt = (file: string, text: string, at: Date): void => {
 
 const cacheFor = (tree: Tree) => {
   const warnings: string[] = [];
-  const cache = createUserSettingsCache({ home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords });
+  const cache = createUserSettingsCache({ env: process.env, home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords });
   return { cache, warnings };
 };
 
@@ -163,7 +163,7 @@ describe('loaders taking a user layer', () => {
     writeAt(file, { env: { TZ: 'snapshot' }, autoUpdates: false }, T0);
     const user = await snapshotUser(tree);
     fs.rmSync(file);
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
     expect(result.settings.env).toEqual({ TZ: 'snapshot' });
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.files).toContain(file);
@@ -175,14 +175,14 @@ describe('loaders taking a user layer', () => {
     writeAt(file, { env: { TZ: 'snapshot' } }, T0);
     const user = await snapshotUser(tree);
     writeAt(file, { env: { TZ: 'rewritten' } }, T1);
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree), user });
     expect(result.settings.env).toEqual({ TZ: 'snapshot' });
   });
 
   it('loadSettings without a user layer still reads the user settings file', async () => {
     const tree = makeTree();
     writeAt(userSettingsPath(tree), { env: { TZ: 'file' } }, T0);
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.env).toEqual({ TZ: 'file' });
   });
 

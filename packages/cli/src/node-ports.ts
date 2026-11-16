@@ -80,7 +80,7 @@ export const nodeWorkspaceSandbox = (input: WorkspaceSandboxInput | (() => Promi
 };
 
 const settingsWorkspaceSandbox = (home: string, cwd: string, signal: AbortSignal, warn: (text: string) => void) => async (): Promise<WorkspaceSandboxInput> => {
-  const { settings } = await loadSettings({ home, projectDir: cwd, cli: {}, trust: { isTrusted: () => false }, signal });
+  const { settings } = await loadSettings({ env: process.env, home, projectDir: cwd, cli: {}, trust: { isTrusted: () => false }, signal });
   return { home, platform: process.platform, env: process.env, signal, sandbox: settings.sandbox, network: settings.sandboxNetwork, warn, credentialNaming: { models: settings.models, forges: settings.forges, credentials: settings.credentials } };
 };
 

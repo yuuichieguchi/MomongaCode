@@ -1020,7 +1020,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   try {
     signal?.throwIfAborted();
     const planProfiles = options.planProfiles ?? PLAN_PROFILES;
-    const cache = createUserSettingsCache({
+    const cache = createUserSettingsCache({ env: process.env,
       home: options.home,
       onWarning: (message) => logger.warn(message),
       keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(options.home), kernelLock),

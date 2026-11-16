@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { hostPaths, isRecord } from '@momonga/foundation';
+import type { LayoutEnvironment } from '@momonga/foundation';
 import { approvalDigestOf } from './approval-digest.ts';
 import { layoutOf } from './layout.ts';
 import { ConfigError } from './config-error.ts';
@@ -14,6 +15,8 @@ import { loadUserSettings } from './user-settings.ts';
 export type ProjectMandateEdit = (document: Record<string, unknown>) => boolean;
 
 export type EditProjectMandateOptions = SettingsWriterPorts & { home: string; trust: TrustOracle };
+
+export type ProjectMcpWriteOptions = EditProjectMandateOptions & { env: LayoutEnvironment };
 
 export const editProjectMandate = async (projectDir: string, edit: ProjectMandateEdit, { home, trust, lock, mechanism, random, signal }: EditProjectMandateOptions): Promise<void> => {
   const file = path.join(projectDir, PROJECT_MANDATE_FILE);
@@ -34,11 +37,11 @@ export const editProjectMandate = async (projectDir: string, edit: ProjectMandat
   await approveProjectItems(home, projectDir, [{ kind: 'mandate', ...written }], { lock, mechanism, random, signal });
 };
 
-export const writeProjectMcpServer = async (projectDir: string, name: string, server: Readonly<Record<string, unknown>>, { home, trust, lock, mechanism, random, signal }: EditProjectMandateOptions): Promise<void> => {
+export const writeProjectMcpServer = async (projectDir: string, name: string, server: Readonly<Record<string, unknown>>, { env, home, trust, lock, mechanism, random, signal }: ProjectMcpWriteOptions): Promise<void> => {
   const file = projectMcpServersFile(projectDir);
   if (!(await trust.isTrusted(projectDir, signal))) throw new ConfigError(`${file}: the folder ${projectDir} is not trusted, so its MCP servers are not written`);
   if ('secretEnv' in server) throw new ConfigError(`${file}: MCP server ${JSON.stringify(name)}: secretEnv names an entry of the person's secret store and is only honored in user settings`);
-  if ((await loadUserSettings({ home, signal })).settings.mcpServers?.[name] !== undefined) throw new ConfigError(`${file}: the user settings already define an MCP server named ${JSON.stringify(name)}`);
+  if ((await loadUserSettings({ env, home, signal })).settings.mcpServers?.[name] !== undefined) throw new ConfigError(`${file}: the user settings already define an MCP server named ${JSON.stringify(name)}`);
   const config = assertMcpServer(structuredClone(server), file, name);
   await editUserSettings(
     file,

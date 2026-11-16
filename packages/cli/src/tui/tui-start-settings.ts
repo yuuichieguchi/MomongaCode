@@ -24,14 +24,14 @@ const brokenBy = async (file: string | undefined, read: () => Promise<unknown>):
 };
 
 export const readTuiStart = async ({ home, projectDir, userFile, signal }: TuiStartPlace): Promise<TuiStart> => {
-  const userBroken = await brokenBy(userFile, () => loadUserSettings({ home, signal }));
+  const userBroken = await brokenBy(userFile, () => loadUserSettings({ env: process.env, home, signal }));
   if (userBroken !== undefined) return userBroken;
   let settings: ResolvedTuiSettings = defaultTuiSettings();
   const layersBroken = await brokenBy(undefined, async () => {
-    settings = (await loadSettings({ home, projectDir, cli: {}, trust: UNTRUSTED, signal })).settings.tui;
+    settings = (await loadSettings({ env: process.env, home, projectDir, cli: {}, trust: UNTRUSTED, signal })).settings.tui;
   });
   if (layersBroken !== undefined) return layersBroken;
-  const snapshot = await readSettingsSnapshot({ home, projectDir, trusted: false, signal });
+  const snapshot = await readSettingsSnapshot({ env: process.env, home, projectDir, trusted: false, signal });
   const keys = Object.keys(defaultTuiSettings()) as TuiKey[];
   const merged = settings;
   const sourceOf = (key: TuiKey): SettingSource => {

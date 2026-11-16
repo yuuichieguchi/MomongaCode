@@ -44,7 +44,7 @@ const faultyFiles = (target: string, site: FaultSite, fault: Fault): FileSystem 
   };
 };
 
-const cacheWith = (home: string, files: FileSystem) => createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, files });
+const cacheWith = (home: string, files: FileSystem) => createUserSettingsCache({ env: process.env, home, onWarning: () => undefined, keptRecords: noKeptRecords, files });
 
 afterEach(() => {
   vi.restoreAllMocks();

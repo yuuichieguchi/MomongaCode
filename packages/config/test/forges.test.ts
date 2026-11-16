@@ -7,7 +7,7 @@ const FORGE = { id: 'work', descriptor: 'github', hosts: ['forge.example'], apiB
 const loadUser = async (user: unknown) => {
   const tree = makeTree();
   const file = writeJson(userSettingsPath(tree), user);
-  return { file, loading: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { file, loading: loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const settingsOf = async (files: { user?: unknown; project?: unknown; local?: unknown }) => {
@@ -15,7 +15,7 @@ const settingsOf = async (files: { user?: unknown; project?: unknown; local?: un
   if (files.user !== undefined) writeJson(userSettingsPath(tree), files.user);
   const projectFile = files.project === undefined ? undefined : writeJson(projectSettingsPath(tree), files.project);
   const localFile = files.local === undefined ? undefined : writeJson(localSettingsPath(tree), files.local);
-  const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
   return { result, projectFile, localFile, settings: result.settings as unknown as Record<string, unknown> };
 };
 
@@ -39,7 +39,7 @@ describe('forge instances in settings', () => {
     expect((await settingsOf({ user: { forges: [FORGE] } })).settings['forges']).toEqual([FORGE]);
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { forges: [{ ...FORGE, credential: 'not-a-reference' }] });
-    await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow();
+    await expect(loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow();
   });
 
   it.each(['project', 'local'] as const)('discards forges from %s settings with a warning, so a repository cannot point a credential at its own host', async (layer) => {
@@ -60,7 +60,7 @@ describe('forge instances in settings', () => {
     for (const forge of [bare, { ...FORGE, credential: { env: 'FORGE_TOKEN', secret: 'forge-work' } }, { ...FORGE, credential: {} }]) {
       const tree = makeTree();
       writeJson(userSettingsPath(tree), { forges: [forge] });
-      await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow();
+      await expect(loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow();
     }
   });
 });
@@ -106,6 +106,6 @@ describe('operation settings (OD-6)', () => {
     expect((await settingsOf({ user: { operations: { approval: { PullRequestMerge: 'always' } } } })).settings['operations']).toEqual({ approval: { PullRequestMerge: 'always' } });
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { operations: { approval: { PullRequestMerge: 'never' } } });
-    await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow();
+    await expect(loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow();
   });
 });

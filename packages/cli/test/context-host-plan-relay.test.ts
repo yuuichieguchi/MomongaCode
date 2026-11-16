@@ -95,7 +95,7 @@ describe('the eval relay of a plan target written by the product (P6.10, K4)', (
       const file = momongaLayout(home, process.platform, process.env).settingsFile;
       fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
       fs.writeFileSync(file, JSON.stringify({ models: settings.models }), { mode: 0o600 });
-      const loaded = (await loadUserSettings({ home, signal: new AbortController().signal })).settings.models.models.get(PLAN_TARGET);
+      const loaded = (await loadUserSettings({ env: process.env, home, signal: new AbortController().signal })).settings.models.models.get(PLAN_TARGET);
       if (loaded === undefined || !('capabilities' in loaded) || loaded.capabilities === undefined) throw new Error('the relayed model was not loaded with capabilities');
       const loadedCapabilities: Record<string, unknown> = { ...loaded.capabilities };
       expect({ imageInput: loadedCapabilities['imageInput'], imageTokens: loadedCapabilities['imageTokens'] }).toEqual({ imageInput: true, imageTokens: IMAGE_TOKENS });
@@ -108,7 +108,7 @@ describe('the eval relay of a plan target written by the product (P6.10, K4)', (
     const file = momongaLayout(home, process.platform, process.env).settingsFile;
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, JSON.stringify({ models: settings.models }), { mode: 0o600 });
-    const loaded = await loadUserSettings({ home, signal: new AbortController().signal });
+    const loaded = await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
     const target = loaded.settings.models.models.get(PLAN_TARGET);
     if (target === undefined || !('capabilities' in target) || target.capabilities === undefined) throw new Error('the relayed model was not loaded with capabilities');
     expect({ contextWindow: target.capabilities.contextWindow, maxOutputTokens: target.capabilities.maxOutputTokens }).toEqual({

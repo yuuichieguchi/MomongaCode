@@ -23,7 +23,7 @@ const listedCounters = async (socketPath: string): Promise<Record<string, string
   return listedCountersOf(models.body, 'primary/system');
 };
 
-const resolvedSettings = async (home: string) => (await loadUserSettings({ home, signal: new AbortController().signal })).settings;
+const resolvedSettings = async (home: string) => (await loadUserSettings({ env: process.env, home, signal: new AbortController().signal })).settings;
 
 const resolvedPrimary = async (home: string) => {
   const target = (await resolvedSettings(home)).models.models.get('primary/system');

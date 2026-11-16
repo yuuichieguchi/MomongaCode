@@ -22,7 +22,7 @@ if (home === undefined || child === undefined) throw new Error('p2-manager-fixtu
 const paths = momongaPaths(home, process.platform, {});
 const layout = prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
 const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: process.stderr });
-const settings = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords });
+const settings = createUserSettingsCache({ env: process.env, home, onWarning: () => undefined, keptRecords: noKeptRecords });
 const loaded = await settings.load(new AbortController().signal);
 const manager = createChildManager({
   inspector: testProcessInspector(),

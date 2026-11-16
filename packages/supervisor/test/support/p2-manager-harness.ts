@@ -49,7 +49,7 @@ export type SettingsDouble = UserSettingsCache & {
 export const settingsOnDisk = (home: string): UserSettingsSnapshot => {
   const file = momongaPaths(home, process.platform, {}).settingsFile;
   try {
-    return answeredNow(userSettingsOfText(home, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined), syncPaths);
+    return answeredNow(userSettingsOfText(home, process.env, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined), syncPaths);
   } catch (error) {
     if (error instanceof ConfigError) return { error };
     throw error;
