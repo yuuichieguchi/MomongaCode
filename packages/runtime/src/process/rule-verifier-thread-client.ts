@@ -32,6 +32,10 @@ const verificationOfReply = (reply: unknown): RuleVerification => {
   throw new RuleVerificationFailure('the verification thread gave a reply that is not a verdict');
 };
 
+const liveThreads = new Set<Worker>();
+
+export const runningVerificationThreads = (): number => liveThreads.size;
+
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 export const verifyInThread = ({ code, timers, startBoundMs, onEntered }: RuleVerifierThreadOptions, job: RuleVerifyJob, signal: AbortSignal): Promise<RuleVerification> =>
@@ -43,6 +47,8 @@ export const verifyInThread = ({ code, timers, startBoundMs, onEntered }: RuleVe
     let worker: Worker;
     try {
       worker = new Worker(code, { eval: true, workerData: job });
+      liveThreads.add(worker);
+      worker.once('exit', () => liveThreads.delete(worker));
     } catch (error) {
       reject(new RuleVerificationFailure(`the verification thread could not be started: ${messageOf(error)}`));
       return;

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { systemTimers } from '../../src/service/timers.ts';
-import { RuleVerificationFailure, verifyInThread } from '../../src/process/rule-verifier-thread-client.ts';
+import { RuleVerificationFailure, runningVerificationThreads, verifyInThread } from '../../src/process/rule-verifier-thread-client.ts';
 import type { RuleVerifyJob } from '../../src/process/rule-verifier-thread.ts';
 
 const HANG_GUARD_MS = 60_000;
@@ -9,7 +9,6 @@ const START_BOUND_MS = 77;
 
 vi.setConfig({ testTimeout: HANG_GUARD_MS });
 
-const runningWorkerCount = (): number => (process.report.getReport() as unknown as { workers: unknown[] }).workers.length;
 
 const job: RuleVerifyJob = { unixSockets: { kind: 'limited', allowed: [] },
   input: { rules: [], roots: ['/work'], mode: 'manual', home: '/home/u', deniedLocations: [], cwd: '/work', exemptDirectory: null, enforcement: 'exact-paths', protectedSet: {} as never, secretLocations: [] },
@@ -54,7 +53,7 @@ describe('a verification in its own thread', () => {
   it('gives the verdict, the report and the findings of the thread, which is not the calling thread and receives the job', async () => {
     const verification = await verifyInThread(options(), job, new AbortController().signal);
     expect(verification).toEqual({ verdict: { verdict: 'proved', solver: 'z3 1', refuted: [], unknown: [], notProved: ['false', '/work'] }, report: 'the report of the thread', findings: { exitCode: 0 } });
-    expect(runningWorkerCount()).toBe(0);
+    expect(runningVerificationThreads()).toBe(0);
   });
 
   it('leaves the event loop of the caller free while the thread computes', async () => {
@@ -81,7 +80,7 @@ describe('a verification in its own thread', () => {
     );
     expect(failure).toBeInstanceOf(RuleVerificationFailure);
     expect(failure).toEqual(failureWith(reason));
-    expect(runningWorkerCount()).toBe(0);
+    expect(runningVerificationThreads()).toBe(0);
   });
 
   it('fails with an error when the job cannot be given to a thread', async () => {
@@ -96,11 +95,11 @@ describe('a verification in its own thread', () => {
       () => undefined,
       (error: unknown) => error,
     );
-    expect(runningWorkerCount()).toBe(1);
+    expect(runningVerificationThreads()).toBe(1);
     expect(timers.pending().map((timer) => timer.delayMs)).toEqual([START_BOUND_MS]);
     timers.advance(START_BOUND_MS);
     expect(await outcome).toEqual(failureWith('the verification thread did not start within 77 ms'));
-    expect(runningWorkerCount()).toBe(0);
+    expect(runningVerificationThreads()).toBe(0);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -112,17 +111,17 @@ describe('a verification in its own thread', () => {
     expect(timers.pending()).toEqual([]);
     timers.advance(5 + START_BOUND_MS + 60_000);
     expect((await pending).verdict).toMatchObject({ verdict: 'refuted', refuted: [{ property: 'secret-reach' }], unknown: [{ property: 'bash-admission' }] });
-    expect(runningWorkerCount()).toBe(0);
+    expect(runningVerificationThreads()).toBe(0);
   });
 
   it('ends with the reason of the signal of its asker, and the thread is ended', async () => {
     const asker = new AbortController();
     const timers = createFakeTimers(createFakeClock(0));
     const pending = verifyInThread(options(timers, ENTERED_THEN_SILENT), job, asker.signal);
-    expect(runningWorkerCount()).toBe(1);
+    expect(runningVerificationThreads()).toBe(1);
     asker.abort(new Error('the run was cancelled'));
     await expect(pending).rejects.toThrow('the run was cancelled');
-    expect(runningWorkerCount()).toBe(0);
+    expect(runningVerificationThreads()).toBe(0);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -130,6 +129,6 @@ describe('a verification in its own thread', () => {
     const asker = new AbortController();
     asker.abort(new Error('gone'));
     await expect(verifyInThread(options(), job, asker.signal)).rejects.toThrow('gone');
-    expect(runningWorkerCount()).toBe(0);
+    expect(runningVerificationThreads()).toBe(0);
   });
 });
