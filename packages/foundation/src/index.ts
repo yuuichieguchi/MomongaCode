@@ -107,7 +107,6 @@ export type { OwnedDirectory } from './owned-directory.ts';
 export { createLockCapability, resolveLayoutLocks } from './platform/lock-capability.ts';
 export type { LayoutLocks, LockCapability, LockCapabilityProbe } from './platform/lock-capability.ts';
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
-export { MARKER_STATES } from './marker-state.ts';
 export type { MarkerMode, MarkerState } from './marker-state.ts';
 export { UNNAMED_REASON, commandMayStillRun, refusedReason } from './command-liveness.ts';
 export type { CommandLiveness, GroupLiveness, HolderListing } from './command-liveness.ts';
