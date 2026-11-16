@@ -69,9 +69,9 @@ describe('RulePropose in a delegated run', () => {
 });
 
 describe('a rule retired during a live run', () => {
-  it('gives the model back the tool the rule had hidden at the next build', async () => {
+  it.each([{ observedCapacity: false }, { observedCapacity: true }])('gives the model back the tool the rule had hidden: frozen for the run when observedCapacity is $observedCapacity', async ({ observedCapacity }) => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    env.settings.contextValue = { ...env.settings.contextValue, cachePrefix: false, observedCapacity: false };
+    env.settings.contextValue = { ...env.settings.contextValue, cachePrefix: observedCapacity, observedCapacity };
     const fact = env.store.governing.add({
       kind: 'constraint',
       target: 'glob',
@@ -108,14 +108,23 @@ describe('a rule retired during a live run', () => {
       },
     });
     env.gateway.script.push(callsStep([{ callId: 'call_r_1', name: 'Retire', args: {} }]), textStep('Done.'));
+    const worker = env.worker('w1', { toolList: () => [globbing, retiring], governance: createGovernancePort({ store: env.store, settings: env.settings }) });
     const run = await env.enqueue('Retire the rule');
-    await env.runOnce(env.worker('w1', { toolList: () => [globbing, retiring], governance: createGovernancePort({ store: env.store, settings: env.settings }) }));
+    await env.runOnce(worker);
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     const names = (index: number): string[] => (env.gateway.streams[index]?.body.tools as { name: string }[]).map((tool) => tool.name);
     expect(names(0)).not.toContain('Glob');
     expect(names(0)).toContain('Retire');
-    expect(names(1)).toContain('Glob');
+    if (observedCapacity) expect(names(1)).not.toContain('Glob');
+    else expect(names(1)).toContain('Glob');
+
+    env.gateway.script.push(textStep('Again.'));
+    const next = await env.enqueue('List the tools again');
+    await env.runOnce(worker);
+    expect(env.run(next.id).status).toBe('COMPLETED');
+    const lastStream = env.gateway.streams.length - 1;
+    expect(names(lastStream)).toContain('Glob');
   });
 });
 
