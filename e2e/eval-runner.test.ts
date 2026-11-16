@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EXIT_USAGE } from '@momonga/foundation';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
@@ -132,7 +133,7 @@ describe('momonga eval against real processes', () => {
   it('refuses --record together with --replay', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home } = await prepare([]);
     const result = await runCli(home, ['eval', STARTER_DATASET, '--record', 'a', '--replay', 'b']);
-    expect(result.code).toBe(1);
+    expect(result.code).toBe(EXIT_USAGE);
     expect(result.stderr).toContain('--record and --replay cannot be combined');
   });
 });
