@@ -171,6 +171,16 @@ describe('watchSettings', () => {
     watcher.stop();
   });
 
+  it('a change whose watch event never arrives is applied by the next poll, with the watch working and no warning', async () => {
+    const { timers, calls, warnings, errors, setKey, watcher } = setup();
+    setKey('k2');
+    await timers.advanceAsync(2000 + 200);
+    expect(calls()).toBe(1);
+    expect(warnings).toEqual([]);
+    expect(errors).toEqual([]);
+    watcher.stop();
+  });
+
   it('seeds from initialKey, not from a key read at construction', async () => {
     const { timers, calls, watcher } = setup({ initialKey: 'seed', key: () => 'already-newer' });
     await timers.advanceAsync(2000 + 200);
