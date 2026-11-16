@@ -71,6 +71,7 @@ export const createReaperPass = (options: ReaperPassOptions): ReaperPass => {
       onWarning: warn,
       signal,
       timing: options.reapTiming,
+      ...omitUndefined({ groupPort: options.markerPorts?.groupPort }),
     });
   };
 

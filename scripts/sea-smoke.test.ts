@@ -16,6 +16,10 @@ import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
 const FINAL_TEXT = 'Smoke test answered.';
 
+const SEA_SMOKE_EXECUTABLE_VARIABLE = 'MOMONGA_SEA_SMOKE_EXECUTABLE';
+
+const GIVEN_EXECUTABLE = process.env[SEA_SMOKE_EXECUTABLE_VARIABLE];
+
 const HOST_HAS_SEA_TARGET = releaseTargetOf(process.platform, process.arch) !== undefined;
 
 describe.runIf(HAS_POSIX_SHELL && HOST_HAS_SEA_TARGET)('the single executable built for this platform starts on it', () => {
@@ -24,6 +28,10 @@ describe.runIf(HAS_POSIX_SHELL && HOST_HAS_SEA_TARGET)('the single executable bu
 
   beforeAll(async () => {
     root = createTempRoot();
+    if (GIVEN_EXECUTABLE !== undefined) {
+      binary = path.resolve(GIVEN_EXECUTABLE);
+      return;
+    }
     binary = path.join(root, 'momonga');
     await buildSea({ entry: defaultEntry, output: binary, workDir: path.join(root, 'work'), target: hostSeaTarget() });
   }, UNBOUNDED_BUILD_WAIT_MS);

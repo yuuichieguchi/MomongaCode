@@ -40,13 +40,18 @@ const openSocket = async (socketPath: string): Promise<net.Socket> => {
 
 const PARTIAL_BODY_BYTES = 64;
 
-const REQUEST_ARRIVAL_MS = 500;
+const CONTINUE_LINE = 'HTTP/1.1 100 Continue';
 
 const openNonStreamRequest = async (socketPath: string, home: string): Promise<net.Socket> => {
   const socket = await openSocket(socketPath);
   const capability = fs.readFileSync(personCapabilityFileOf(home), 'utf8');
-  socket.write(`POST /v1/sessions HTTP/1.1\r\nhost: runtime\r\n${PERSON_CAPABILITY_TEST_HEADER}: ${capability}\r\ncontent-type: application/json\r\ncontent-length: ${PARTIAL_BODY_BYTES}\r\n\r\n{"cwd":`);
-  await new Promise((resolve) => setTimeout(resolve, REQUEST_ARRIVAL_MS));
+  let answered = '';
+  socket.on('data', (chunk: Buffer) => {
+    answered += chunk.toString('latin1');
+  });
+  socket.write(`POST /v1/sessions HTTP/1.1\r\nhost: runtime\r\n${PERSON_CAPABILITY_TEST_HEADER}: ${capability}\r\ncontent-type: application/json\r\nexpect: 100-continue\r\ncontent-length: ${PARTIAL_BODY_BYTES}\r\n\r\n`);
+  await waitForCondition(() => answered.startsWith(CONTINUE_LINE), 'the service to take the request and ask for its body');
+  socket.write('{"cwd":');
   return socket;
 };
 
@@ -89,7 +94,7 @@ describe('T-I4-7 (17.1 "Exit", rules 3a and 3b): a retiring runtime exits exactl
       await waitForCondition(() => shutdowns === 1, 'the retiring runtime that holds nothing to ask for its shutdown');
     } else {
       const refreshedBefore = role.refreshes();
-      await waitForCondition(() => role.refreshes() >= refreshedBefore + ROLE_TICKS_WAITED, 'three role ticks of the retiring runtime');
+      await waitForCondition(() => role.refreshes() >= refreshedBefore + ROLE_TICKS_WAITED, 'three reads of the role by the retiring runtime');
       expect(shutdowns).toBe(0);
       if (row.job) expect(jobOf(stack.temp.paths.databases.runtime)?.status).toBe('running');
       hold?.release();

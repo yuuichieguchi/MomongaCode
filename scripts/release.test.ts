@@ -1,4 +1,5 @@
 import { spawnSync } from '@momonga/testkit/child-process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -32,6 +33,9 @@ fi`,
   xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"; i=0; while [ "$i" -lt "\${STUB_NOTARY_PADDING_LINES:-0}" ]; do echo 'padding line of a long notary log'; i=$((i + 1)); done`,
   spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
   zig: '',
+  npx: `exit "\${STUB_SMOKE_EXIT:-0}"`,
+  docker: `cat > /dev/null
+echo "EXIT=\${STUB_CONTAINER_SMOKE_EXIT:-0}"`,
   codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-PQQBSRKD72}" >&2; i=0; while [ "$i" -lt "\${STUB_DISPLAY_PADDING_LINES:-0}" ]; do echo 'padding line of a long codesign display' >&2; i=$((i + 1)); done; fi`,
   'ssh-keygen': `case " $* " in *" verify "*)
   signers=''
@@ -100,6 +104,12 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     git(work, 'push', '--quiet', 'origin', 'main');
   };
 
+  const stubWindowsSha256 = (): string => {
+    const exe = path.join(root, 'stub-windows.exe');
+    spawnSync(path.join(stubs, 'npm'), ['run', 'sea', '--', '--unsigned', '--target', 'win-x64', '--output', exe], { env: { PATH: '/usr/bin:/bin', STUB_LOG: path.join(root, 'stub-windows.log') } });
+    return createHash('sha256').update(fs.readFileSync(exe)).digest('hex');
+  };
+
   const releaseEnv = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
     ...gitEnv(),
     PATH: `${stubs}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
@@ -109,6 +119,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     APPLE_API_KEY: keyFile,
     APPLE_API_KEY_ID: 'FAKEKEYID1',
     APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000',
+    MOMONGA_WINDOWS_SMOKE_SHA256: stubWindowsSha256(),
     ...extra,
   });
 
@@ -196,6 +207,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'ditto -c',
       'xcrun notarytool',
       'spctl --assess',
+      `env MOMONGA_SEA_SMOKE_EXECUTABLE=${work}/dist/release/momonga-darwin-arm64`,
       'npm run',
       'npm run',
       'npm run',
@@ -205,6 +217,9 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       `ripgrep-manifest ${work}/dist/release/momonga-linux-x64`,
       `ripgrep-manifest ${work}/dist/release/momonga-linux-arm64`,
       `ripgrep-manifest ${work}/dist/release/momonga-win-x64.exe`,
+      'docker run',
+      'docker run',
+      'shasum -a',
       'npm run',
       'write_checksums',
       'rm -f',
@@ -236,9 +251,12 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'ditto -c',
       'xcrun notarytool',
       'spctl --assess',
+      'npx vitest',
       'npm run',
       'npm run',
       'npm run',
+      'docker run',
+      'docker run',
       'npm run',
       'ssh-keygen -Y',
       'ssh-keygen -Y',
@@ -257,19 +275,25 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       `xcrun notarytool submit ${binary}.zip --key ${keyFile} --key-id FAKEKEYID1 --issuer 00000000-0000-0000-0000-000000000000 --wait --output-format json `,
     );
     expect(calls[10]).toBe(`spctl --assess --type execute --verbose=4 ${binary} `);
+    expect(calls[11]).toBe('npx vitest run --project packaging scripts/sea-smoke.test.ts ');
     const out = `${work}/dist/release`;
-    expect(calls.slice(11, 14)).toEqual(
+    expect(calls.slice(12, 15)).toEqual(
       ['linux-x64', 'linux-arm64', 'win-x64'].map(
         (target) => `npm run sea -- --unsigned --target ${target} --output ${out}/momonga-${target}${target === 'win-x64' ? '.exe' : ''} ${updateSourceFlags}`,
       ),
     );
-    expect(calls[14]).toBe(`npm run notices -- --output ${out}/THIRD-PARTY-NOTICES.md `);
-    expect(calls[15]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
-    expect(calls[16]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
-    expect(calls[17]).toContain(
+    expect(calls.slice(15, 17).map((line) => line.split(' ').slice(0, 4).join(' '))).toEqual(['docker run --rm -i', 'docker run --rm -i']);
+    expect(calls[15]).toContain('--platform linux/amd64 ');
+    expect(calls[15]).toContain('MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/momonga-linux-x64 node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts');
+    expect(calls[16]).toContain('--platform linux/arm64 ');
+    expect(calls[16]).toContain('MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/momonga-linux-arm64 node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts');
+    expect(calls[17]).toBe(`npm run notices -- --output ${out}/THIRD-PARTY-NOTICES.md `);
+    expect(calls[18]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
+    expect(calls[19]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
+    expect(calls[20]).toContain(
       `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/THIRD-PARTY-NOTICES.md ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes - second change (`,
     );
-    expect(calls[18]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
+    expect(calls[21]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
     expect(originTags()).toBe('v1.2.3\n');
     expect(git(work, 'tag', '--list')).toBe('v1.2.3\n');
     const sums = fs.readFileSync(`${work}/dist/release/SHA256SUMS`, 'utf8').trimEnd().split('\n');
@@ -344,6 +368,30 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(originTags()).toBe('');
   });
 
+  it('stops before publishing when the signed macOS executable does not start on this host', () => {
+    commit('second change');
+    const result = release({ STUB_SMOKE_EXIT: '1' });
+    expect(result.status).not.toBe(0);
+    expect(loggedNames()).not.toContain('gh');
+    expect(originTags()).toBe('');
+  });
+
+  it('stops before publishing when a linux executable does not start in its container', () => {
+    commit('second change');
+    const result = release({ STUB_CONTAINER_SMOKE_EXIT: '1' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('the smoke run of momonga-linux-x64 in a linux/amd64 container did not end with EXIT=0');
+    expect(loggedNames()).not.toContain('gh');
+  });
+
+  it('stops before publishing until the windows executable was started on a Windows host, naming its sha256', () => {
+    commit('second change');
+    const result = release({ MOMONGA_WINDOWS_SMOKE_SHA256: '' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`start momonga-win-x64.exe (sha256 ${stubWindowsSha256()}) on a Windows host`);
+    expect(loggedNames()).not.toContain('gh');
+  });
+
   it('stops at a failed Gatekeeper assessment before publishing', () => {
     commit('second change');
     const result = release({ STUB_SPCTL_EXIT: '1' });
@@ -407,7 +455,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     const binary = `${work}/dist/release/momonga-darwin-arm64`;
     expect(calls[4]).toBe(`npm run sea -- --unsigned --output ${binary} --repo fake-owner/fake-repo --team-id ${TEAM_ID} --release-public-key ${PINNED_KEY} `);
     expect(calls[5]).toContain(`codesign --sign ${SIGNING_IDENTITY} --force`);
-    expect(calls[15]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${work}/dist/release/SHA256SUMS `);
+    expect(calls[18]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${work}/dist/release/SHA256SUMS `);
     expect(calls.join('\n')).not.toContain('env-owner/env-repo');
     expect(calls.join('\n')).not.toContain('FAKE000000');
   });

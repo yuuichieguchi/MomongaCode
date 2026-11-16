@@ -663,6 +663,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         signal: launchSignal,
         timing: reapTiming,
         inspector,
+        ...omitUndefined({ groupPort: options.markerPorts?.groupPort }),
       });
 
     armPromotionBound();

@@ -563,6 +563,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
         onWarning: (detail) => log(settingsWarning({ detail })),
         signal: reapStop.signal,
         inspector: options.inspector,
+        ...omitUndefined({ groupPort: options.markerPorts?.groupPort }),
       });
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
