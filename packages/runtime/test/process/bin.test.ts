@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, ensureMomongaDirs, momongaPaths, fixedSocket } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, parseProgressLine, ensureMomongaDirs, momongaPaths, fixedSocket } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, prepareGenerationForTest, productTestEnv, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import packageJson from '../../package.json' with { type: 'json' };
@@ -34,7 +34,7 @@ describe('runtime bin (real process, §5.3)', () => {
     daemon.child.kill('SIGTERM');
 
     expect(await daemon.waitForExit()).toBe(0);
-    expect(daemon.stdoutLines()).toHaveLength(1);
+    expect(daemon.stdoutLines().filter((line) => parseProgressLine(line) === undefined)).toHaveLength(1);
     for (const line of daemon.stderrLines()) expect(() => JSON.parse(line)).not.toThrow();
     expect(fs.statSync(paths.logFiles.runtime).mode & 0o777).toBe(0o600);
     const log = readJsonLinesFile(paths.logFiles.runtime);
