@@ -2,7 +2,9 @@ import { execFileSync } from '@momonga/testkit/child-process';
 import { TEST_RUN_ENV } from '@momonga/testkit';
 import { E2E_CASES } from './support/cases.ts';
 import { CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './support/cli-bundles.ts';
+import { INJECTION_REPORT_ENV, assembleInjectionReport, openInjectionParts } from './support/inject-report.ts';
 import { BUNDLE_SCRIPT } from './support/launcher.ts';
+import { E2E_FILE_STACK_RATIONALE, hostE2eFileWorkers } from './support/parallelism.ts';
 import { claimE2eRun } from './support/run-setup.ts';
 import { SANDBOX_ENV, encodeSandboxProbe, runSandboxProbe, sandboxLine } from './support/sandbox.ts';
 
@@ -22,5 +24,12 @@ export default function setup(): () => Promise<void> {
   const probe = runSandboxProbe();
   process.env[SANDBOX_ENV] = encodeSandboxProbe(probe);
   console.log(sandboxLine(probe, E2E_CASES));
-  return teardown;
+  console.log(`e2e files at once: ${hostE2eFileWorkers()}, the smaller of the processors and the memory share over one stack (${E2E_FILE_STACK_RATIONALE.join('; ')})`);
+  const report = process.env[INJECTION_REPORT_ENV];
+  if (report === undefined) return teardown;
+  openInjectionParts(report);
+  return async () => {
+    await assembleInjectionReport(report);
+    await teardown();
+  };
 }

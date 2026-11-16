@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths, scopeToGeneration, systemTiming } from '@momonga/foundation';
+import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, momongaPaths, scopeToGeneration, systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { stopSupervisorHolders } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
@@ -10,16 +10,15 @@ import type { LedgerSurvivor, ProcessLedger } from './ledger.ts';
 import { readDb } from './db.ts';
 import { groupAlive } from './process.ts';
 import { removeTree } from './remove-tree.ts';
-import { E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, createHarnessFile, e2eEntryPrefix, e2eTmpRoot, harnessFilePath, readHarnessFile } from './run-env.ts';
+import { E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eEntryPrefix, e2eTmpRoot, harnessFilePath } from './run-env.ts';
 import { E2E_DISPOSE_BOUND_MS, E2E_STOP_SETTLED_BOUNDS_MS, UNTIL_DEFAULT_INTERVAL_MS, abortableWait, withinBound } from './wait.ts';
 
-export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
+export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
 export const PROJECT_DIR_NAME = 'p';
 export const SESSION_TMP_DIR_NAME = 'session-tmp';
 export const UPSTREAM_SOCKET_NAME = 'u.sock';
 export const MCP_RECORD_FILE_NAME = 'mcp.rec';
 export const GRANDCHILD_READY_FILE_NAME = 'gc.ready';
-export const OVERLAP_MESSAGE = 'e2e files overlap';
 
 export type E2eHome = {
   readonly run: string;
@@ -53,8 +52,6 @@ const runTokenFrom = (value: string | undefined): string => {
 
 export const e2eRunToken = (env: Readonly<Record<string, string | undefined>> = process.env): string => runTokenFrom(env[E2E_RUN_ENV]);
 
-export const liveMarkerPath = (tmpRoot: string, run: string): string => harnessFilePath(tmpRoot, run, LIVE_MARKER_SUFFIX);
-
 export const pidsFilePath = (tmpRoot: string, run: string): string => harnessFilePath(tmpRoot, run, PIDS_FILE_SUFFIX);
 
 export const assertInside = (candidate: string, container: string): void => {
@@ -77,35 +74,12 @@ const assertSocketBudget = async (tmpRoot: string, run: string): Promise<void> =
   }
 };
 
-const writeLiveMarker = (marker: string): void => {
-  createHarnessFile(marker, String(process.pid));
-};
-
-const markerOwnerOf = (marker: string): number | undefined => {
-  const text = readHarnessFile(marker).trim();
-  return /^\d+$/.test(text) ? Number(text) : undefined;
-};
-
-const acquireLiveMarker = (marker: string): void => {
-  try {
-    writeLiveMarker(marker);
-    return;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-  }
-  const owner = markerOwnerOf(marker);
-  if (owner !== undefined && owner !== process.pid && isProcessAlive(owner)) throw new Error(`${OVERLAP_MESSAGE}: ${marker} is held by live process ${owner}`);
-  fs.rmSync(marker);
-  writeLiveMarker(marker);
-};
-
 export const createE2eHome = async (options: CreateE2eHomeOptions = {}): Promise<E2eHome> => {
   const run = options.run === undefined ? e2eRunToken() : runTokenFrom(options.run);
   const realTmp = e2eTmpRoot();
   const tmpRoot = options.tmpRoot === undefined ? realTmp : fs.realpathSync(options.tmpRoot);
   assertInside(tmpRoot, realTmp);
   await assertSocketBudget(tmpRoot, run);
-  acquireLiveMarker(liveMarkerPath(tmpRoot, run));
   const root = fs.mkdtempSync(path.join(tmpRoot, e2eEntryPrefix(run)));
   if (root === os.userInfo().homedir) throw new Error(`refusing to use the user home ${root} as an e2e home`);
   const paths = momongaPaths(root, process.platform, process.env);
@@ -210,14 +184,12 @@ const productLogsOf = (home: E2eHome): string =>
 
 const keepHome = (home: E2eHome, outcome: E2eTestOutcome): Error => {
   fs.writeFileSync(path.join(home.root, KEPT_HOME_FILE_NAME), `${outcome.test}\n`, { mode: 0o600 });
-  fs.rmSync(liveMarkerPath(home.tmpRoot, home.run), { force: true });
   return new Error(`${outcome.test} failed; its home is kept at ${home.root}\n${productLogsOf(home)}`);
 };
 
 const removeHome = async (home: E2eHome): Promise<void> => {
   await stopSupervisorHolders(home.root);
   removeTree(home.root);
-  fs.rmSync(liveMarkerPath(home.tmpRoot, home.run), { force: true });
   if (fs.existsSync(home.root)) throw new Error(`e2e root ${home.root} still exists after removal`);
 };
 

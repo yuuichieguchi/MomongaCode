@@ -1,5 +1,6 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
+import { hostE2eFileWorkers } from './e2e/support/parallelism.ts';
 import { RUN_CLASS_KEY } from './scripts/support/run-class.ts';
 
 const CALIBRATION_TESTS = 'packages/*/test/calibration/**/*.test.ts';
@@ -52,9 +53,10 @@ export default defineConfig({
           name: 'e2e',
           provide: { [RUN_CLASS_KEY]: 'heavy' },
           include: ['e2e/**/*.test.ts'],
-          setupFiles: ['test/support/child-process-guard.ts'],
+          setupFiles: ['test/support/child-process-guard.ts', 'e2e/support/file-programs.ts'],
           globalSetup: ['test/support/run-lock.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'e2e/global-setup.ts', 'test/support/lock-proof.ts'],
-          fileParallelism: false,
+          maxWorkers: hostE2eFileWorkers(),
+          sequence: { groupOrder: 1 },
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
           testTimeout: DEFAULT_TEST_TIMEOUT_MS,
         },

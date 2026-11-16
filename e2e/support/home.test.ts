@@ -5,8 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
 import { createTempDir, firstGeneration, registerCleanup, spawnTracked, startLockHolder } from '@momonga/testkit';
-import type { CleanupContext } from '@momonga/testkit';
-import { KEPT_HOME_FILE_NAME, OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
+import { KEPT_HOME_FILE_NAME, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
 import type { E2eTestOutcome } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
 import { E2E_RUN_ENV, currentIdentity, e2eTmpRoot, privateRootName, sharedTempBase } from './run-env.ts';
@@ -17,14 +16,6 @@ const runToken = (): string => {
   const run = process.env[E2E_RUN_ENV];
   if (run === undefined) throw new Error(`${E2E_RUN_ENV} is not set; the e2e global setup did not run`);
   return run;
-};
-
-const liveMarker = (): string => path.join(realTmp(), `mme-${runToken()}-live`);
-
-const ownMarkerCleanup = (context: CleanupContext): void => {
-  registerCleanup(context, () => {
-    fs.rmSync(liveMarker(), { force: true });
-  });
 };
 
 const deadPid = (): number => {
@@ -42,8 +33,7 @@ const passed = (test: string): E2eTestOutcome => ({ test, failed: false });
 const entriesWithPrefix = (dir: string, prefix: string): string[] => fs.readdirSync(dir).filter((entry) => entry.startsWith(prefix));
 
 describe('createE2eHome', () => {
-  it('names the root mme-<run>-<6> directly in the private e2e temp dir and lays out the home', async (context) => {
-    ownMarkerCleanup(context);
+  it('names the root mme-<run>-<6> directly in the private e2e temp dir and lays out the home', async () => {
     const created = await createE2eHome();
     const run = runToken();
     expect(created.run).toBe(run);
@@ -59,14 +49,11 @@ describe('createE2eHome', () => {
     expect(fs.statSync(created.project).mode & 0o777).toBe(0o700);
     expect(fs.statSync(created.sessionTmp).mode & 0o777).toBe(0o700);
     expect(created.paths.root).toBe(path.join(created.root, '.momonga'));
-    expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(process.pid));
     await disposeAll(passed('lays out the home'));
     expect(fs.existsSync(created.root)).toBe(false);
-    expect(fs.existsSync(liveMarker())).toBe(false);
   });
 
-  it('keeps the longest socket within the budget: supervisor.sock is the shared base, the private mme-<uid> directory and 48 bytes', async (context) => {
-    ownMarkerCleanup(context);
+  it('keeps the longest socket within the budget: supervisor.sock is the shared base, the private mme-<uid> directory and 48 bytes', async () => {
     const created = await createE2eHome();
     const longest = Buffer.byteLength(firstGeneration(created.paths).sockets.supervisor);
     const privateRootBytes = Buffer.byteLength(sharedTempBase()) + 1 + Buffer.byteLength(privateRootName(currentIdentity()));
@@ -111,40 +98,19 @@ describe('assertInside', () => {
   });
 });
 
-describe('single-live-home guard', () => {
-  it('throws while a live foreign owner holds the marker', async (context) => {
-    ownMarkerCleanup(context);
-    const owner = spawnTracked(context, 'sleep', ['30']);
-    fs.writeFileSync(liveMarker(), String(owner.pid), { flag: 'wx', mode: 0o600 });
-    const before = entriesWithPrefix(realTmp(), `mme-${runToken()}-`).sort();
-    await expect(createE2eHome()).rejects.toThrow(OVERLAP_MESSAGE);
-    expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(owner.pid));
-    expect(entriesWithPrefix(realTmp(), `mme-${runToken()}-`).sort()).toEqual(before);
-  });
-
-  it('replaces a marker whose owner is dead', async (context) => {
-    ownMarkerCleanup(context);
-    fs.writeFileSync(liveMarker(), String(deadPid()), { flag: 'wx', mode: 0o600 });
-    const created = await createE2eHome();
-    expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(process.pid));
-    expect(fs.existsSync(created.root)).toBe(true);
-  });
-
-  it('replaces an empty or unreadable marker', async (context) => {
-    ownMarkerCleanup(context);
-    fs.writeFileSync(liveMarker(), '', { flag: 'wx', mode: 0o600 });
-    await createE2eHome();
-    expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(process.pid));
-    await disposeAll(passed('replaces an empty marker'));
-    fs.writeFileSync(liveMarker(), 'not a pid', { flag: 'wx', mode: 0o600 });
-    await createE2eHome();
-    expect(fs.readFileSync(liveMarker(), 'utf8')).toBe(String(process.pid));
+describe('the homes of one run beside each other', () => {
+  it('leaves no run-wide marker in the private temp dir, so that the files of a run hold their homes at the same time', async () => {
+    const first = await createE2eHome();
+    const second = await createE2eHome();
+    const entries = entriesWithPrefix(realTmp(), `mme-${runToken()}-`).map((entry) => path.join(realTmp(), entry));
+    expect(entries).toEqual(expect.arrayContaining([first.root, second.root]));
+    expect(entries.filter((entry) => !fs.statSync(entry).isDirectory())).toEqual(entries.filter((entry) => entry.endsWith('-pids')));
+    await disposeAll(passed('two homes of one run'));
   });
 });
 
 describe('the ledger of an e2e home', () => {
-  it('a health reading persists a tool group that only the runtime database names, without disposeAll', async (context) => {
-    ownMarkerCleanup(context);
+  it('a health reading persists a tool group that only the runtime database names, without disposeAll', async () => {
     const created = await createE2eHome();
     const toolGroup = deadPid();
     fs.mkdirSync(path.dirname(created.paths.databases.runtime), { recursive: true, mode: 0o700 });
@@ -170,7 +136,6 @@ describe('the ledger of an e2e home', () => {
 
 describe('disposing a home whose daemon appeared after the ledger was swept', () => {
   it('stops the process that holds the supervisor lock before it removes the home', async (context) => {
-    ownMarkerCleanup(context);
     const created = await createE2eHome();
     let holderPid: number | undefined;
     registerE2eCleanup(async () => {
@@ -208,7 +173,6 @@ describe('registerE2eCleanup and disposeAll', () => {
 
 describe('the cleanup after an e2e test is also a detector', () => {
   it('fails the test with the pgid, the command and the test name of a process group that outlives the stop, and kills it only after naming it', async (context) => {
-    ownMarkerCleanup(context);
     const created = await createE2eHome();
     const survivor = spawnTracked(context, '/bin/sleep', ['300'], { stdio: 'ignore' });
     const pgid = survivor.pid as number;
@@ -223,7 +187,6 @@ describe('the cleanup after an e2e test is also a detector', () => {
   });
 
   it('keeps the home of a failed test and puts the product logs in the failure', async (context) => {
-    ownMarkerCleanup(context);
     const created = await createE2eHome();
     registerCleanup(context, () => fs.rmSync(created.root, { recursive: true, force: true }));
     fs.mkdirSync(path.dirname(created.paths.logFiles.supervisor), { recursive: true, mode: 0o700 });
@@ -238,8 +201,7 @@ describe('the cleanup after an e2e test is also a detector', () => {
     expect(fs.existsSync(path.join(created.root, KEPT_HOME_FILE_NAME))).toBe(true);
   });
 
-  it('removes the home of a passed test', async (context) => {
-    ownMarkerCleanup(context);
+  it('removes the home of a passed test', async () => {
     const created = await createE2eHome();
 
     await disposeAll(passed('the passing test'));
