@@ -73,6 +73,8 @@ export const SELECTED_MARKER = '›';
 
 const HINT_SEPARATOR = ' · ';
 const LIST_FLOOR_ROWS = 3;
+const LIST_MINIMUM_ROWS = 2;
+const TEXT_KEPT_ROWS = 2;
 const BORDER_ROWS = 2;
 const BORDER_COLUMNS = 4;
 const CONTINUATION = '  ';
@@ -240,12 +242,14 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
   const fixed = border + filterRows + (state.confirming === undefined ? 0 : 1) + extraRows + 1;
   const available = Math.max(0, frame.rows - fixed);
   const count = Math.max(1, listed.length);
-  const listRows = count + text.length <= available ? count : Math.min(count, Math.max(LIST_FLOOR_ROWS, available - text.length));
+  const titleRows = Math.min(text.length, TEXT_KEPT_ROWS);
+  const titleKept = available - titleRows >= Math.min(count, LIST_MINIMUM_ROWS);
+  const listRows = count + text.length <= available ? count : Math.min(count, Math.max(LIST_FLOOR_ROWS, available - text.length), available - (titleKept ? titleRows : 0));
   const textRoom = Math.max(0, available - listRows);
   const shown = text.length <= textRoom ? text : text.slice(0, Math.max(0, textRoom - 1));
   const more = text.length - shown.length;
   const moreRow = more > 0 && textRoom > 0;
-  const capacity = Math.max(LIST_FLOOR_ROWS, listRows);
+  const capacity = Math.max(1, listRows);
   const position = Math.max(0, listed.indexOf(state.index));
   const span = spanAt(listed.length, state.scrolled ? state.top : topFor(position, state.top, listed.length, capacity), capacity);
   return {
