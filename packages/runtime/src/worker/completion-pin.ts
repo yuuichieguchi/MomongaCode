@@ -1,5 +1,5 @@
 import { conditionIdOf, readMandate } from '@momonga/protocol';
-import type { CompletionDeclaration, ConditionSource, ConditionWhen, Mandate, MandateHold, MandateScope, PermissionMode, PinnedCompletion, PinnedCondition } from '@momonga/protocol';
+import type { CompletionDeclaration, ConditionSource, ConditionWhen, Mandate, PermissionMode, PinnedCondition, PinnedMandate } from '@momonga/protocol';
 import { readAgentPin } from '@momonga/agents';
 import type { PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
@@ -7,7 +7,7 @@ import { shellCommandSubject } from '@momonga/tools';
 import type { Run, Session } from '@momonga/store';
 import type { SettingsPort } from '../ports.ts';
 
-export type CompletionPin = { mandate?: { completion: PinnedCompletion; scope?: MandateScope; hold?: MandateHold }; verificationRequired?: true };
+export type CompletionPin = { mandate?: PinnedMandate; verificationRequired?: true };
 
 type Layer = { source: ConditionSource; defaultWhen: ConditionWhen; declaration: CompletionDeclaration };
 

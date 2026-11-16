@@ -1,7 +1,7 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { pinnedCompletionOf, pinnedDelegationOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
-import type { Capabilities, OutputFormatterName, PinnedCompletion, PinnedRuleVerdict, TargetAnswers, PinnedDelegation } from '@momonga/protocol';
+import { pinnedDelegationOf, pinnedMandateOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
+import type { Capabilities, OutputFormatterName, PinnedRuleVerdict, TargetAnswers, PinnedDelegation, PinnedMandate } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
 
@@ -27,8 +27,7 @@ export type RunPins = {
   guidelineVersion?: number;
   token?: TokenPin;
   policyVerdict?: PinnedRuleVerdict;
-  mandate?: { completion: PinnedCompletion };
-  delegation?: PinnedDelegation;
+  mandate?: PinnedMandate;
   verificationRequired?: true;
 };
 
@@ -109,8 +108,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
 export const readPins = (value: Record<string, unknown>): RunPins => {
   const { systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token, policyVerdict } = value;
   const model = decodeStoredModel(value, STORED_MODEL_KEYS.pin);
-  const completion = pinnedCompletionOf(value);
-  const delegation = pinnedDelegationOf(value);
+  const mandate = pinnedMandateOf(value);
   if (
     model === undefined ||
     typeof systemPromptDigest !== 'string' ||
@@ -137,8 +135,7 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     ...(guidelineVersion === undefined ? {} : { guidelineVersion }),
     ...(token === undefined ? {} : { token: readTokenPin(token) }),
     ...(policyVerdict === undefined ? {} : { policyVerdict }),
-    ...(completion === undefined ? {} : { mandate: { completion } }),
-    ...(delegation === undefined ? {} : { delegation }),
+    ...(mandate === undefined ? {} : { mandate }),
     ...(verificationRequiredOf(value) ? { verificationRequired: true as const } : {}),
   };
 };

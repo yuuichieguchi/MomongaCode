@@ -1,7 +1,7 @@
 import { parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
-import { pinnedDelegationOf } from '@momonga/protocol';
-import type { HeldCall, HeldCallView, HeldLink, HeldOutcome, PinnedDelegation, QuiescentBehaviour, RunState } from '@momonga/protocol';
+import { delegationOfMandate } from '@momonga/protocol';
+import type { HeldCall, HeldCallView, HeldLink, HeldOutcome, MandateHold, MandateScope, PinnedDelegation, QuiescentBehaviour, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 
 export const REJECTED_OUTPUT = 'A person rejected this call, so it was not run.';
@@ -31,8 +31,8 @@ export const mandateNotice = (pinned: PinnedDelegation, catalogue: MandateCatalo
     'When a call is held or blocked, do not repeat or rephrase it. Continue with work that does not depend on it. When nothing else can be done, say what waits and stop.',
   ].join('\n');
 
-export const delegationOf = (pins: Record<string, unknown>, place: { home: string; cwd: string }, catalogue: MandateCatalogue): { delegation?: Delegation } => {
-  const pinned = pinnedDelegationOf(pins);
+export const delegationOf = (pins: { mandate?: { scope?: MandateScope; hold?: MandateHold } }, place: { home: string; cwd: string }, catalogue: MandateCatalogue): { delegation?: Delegation } => {
+  const pinned = delegationOfMandate(pins.mandate);
   if (pinned === undefined) return {};
   const rules = (['deny', 'ask', 'allow'] as const).flatMap((effect) =>
     pinned.scope[effect].map((text) => parseRule(text, { effect, origin: 'cli', source: MANDATE_SOURCE, settingsRoot: place.cwd, home: place.home, cwd: place.cwd })),

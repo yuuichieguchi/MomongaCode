@@ -432,7 +432,7 @@ const drive = async (
     return;
   }
   const completionPin = pinning?.pin;
-  const { delegation } = delegationOf((pinned ?? completionPin ?? {}) as unknown as Record<string, unknown>, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
+  const { delegation } = delegationOf(pinned ?? completionPin ?? {}, { home: options.home, cwd: session.cwd }, operationCatalogueFacts());
   const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories, delegation }, session);
   const startRefusal = policyRefusal(startVerdict) ?? (await mandateRefusal(options, session, delegation, control.signal));
   if (startRefusal !== undefined) {
