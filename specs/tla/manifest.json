@@ -11,6 +11,7 @@
       "tier": "every-run",
       "distinctStates": 1480910,
       "measuredSeconds": 186.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 202.89,
       "budgetCpuSeconds": 409,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -23,6 +24,7 @@
       "tier": "deep",
       "distinctStates": 62945640,
       "measuredSeconds": 1195.96,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6176.63,
       "budgetCpuSeconds": 12357
     },
@@ -34,6 +36,7 @@
       "tier": "every-run",
       "distinctStates": 58214,
       "measuredSeconds": 6.71,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 9.17,
       "budgetCpuSeconds": 22,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -49,6 +52,7 @@
       "tier": "every-run",
       "distinctStates": 11176,
       "measuredSeconds": 33.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 36.23,
       "budgetCpuSeconds": 76,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -64,6 +68,7 @@
       "tier": "deep",
       "distinctStates": 2076338,
       "measuredSeconds": 6548.56,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 26456.81,
       "budgetCpuSeconds": 52917
     },
@@ -78,6 +83,7 @@
       "tier": "every-run",
       "distinctStates": 57226,
       "measuredSeconds": 718.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 714.82,
       "budgetCpuSeconds": 1433,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -90,6 +96,7 @@
       "tier": "every-run",
       "distinctStates": 1487126,
       "measuredSeconds": 154.59,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 169.98,
       "budgetCpuSeconds": 343,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -105,6 +112,7 @@
       "tier": "every-run",
       "distinctStates": 1555414,
       "measuredSeconds": 166.96,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 175.76,
       "budgetCpuSeconds": 355,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -120,6 +128,7 @@
       "tier": "every-run",
       "distinctStates": 1436890,
       "measuredSeconds": 149.6,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 163.87,
       "budgetCpuSeconds": 331,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -135,6 +144,7 @@
       "tier": "every-run",
       "distinctStates": 1441094,
       "measuredSeconds": 149.85,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 162,
       "budgetCpuSeconds": 327,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -150,6 +160,7 @@
       "tier": "every-run",
       "distinctStates": 1588415,
       "measuredSeconds": 159.61,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 176.82,
       "budgetCpuSeconds": 357,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -165,6 +176,7 @@
       "tier": "every-run",
       "distinctStates": 1328628,
       "measuredSeconds": 139.13,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 149.37,
       "budgetCpuSeconds": 302,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -177,6 +189,7 @@
       "tier": "every-run",
       "distinctStates": 26436,
       "measuredSeconds": 5.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 7.9,
       "budgetCpuSeconds": 19,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -192,6 +205,7 @@
       "tier": "every-run",
       "distinctStates": 24815,
       "measuredSeconds": 3.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.79,
       "budgetCpuSeconds": 15,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -204,6 +218,7 @@
       "tier": "every-run",
       "distinctStates": 1168496,
       "measuredSeconds": 14.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 71.79,
       "budgetCpuSeconds": 147
     },
@@ -215,6 +230,7 @@
       "tier": "every-run",
       "distinctStates": 146076,
       "measuredSeconds": 3.54,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 14.8,
       "budgetCpuSeconds": 33
     },
@@ -226,6 +242,7 @@
       "tier": "every-run",
       "distinctStates": 241340,
       "measuredSeconds": 5.65,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 26.04,
       "budgetCpuSeconds": 56
     },
@@ -240,6 +257,7 @@
       "tier": "every-run",
       "distinctStates": 375,
       "measuredSeconds": 1.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.8,
       "budgetCpuSeconds": 7
     },
@@ -254,6 +272,7 @@
       "tier": "every-run",
       "distinctStates": 973,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.05,
       "budgetCpuSeconds": 8
     },
@@ -268,6 +287,7 @@
       "tier": "every-run",
       "distinctStates": 460,
       "measuredSeconds": 1.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.79,
       "budgetCpuSeconds": 7
     },
@@ -282,6 +302,7 @@
       "tier": "every-run",
       "distinctStates": 133,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.18,
       "budgetCpuSeconds": 8
     },
@@ -293,6 +314,7 @@
       "tier": "every-run",
       "distinctStates": 81268,
       "measuredSeconds": 3.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 14.35,
       "budgetCpuSeconds": 32
     },
@@ -307,6 +329,7 @@
       "tier": "every-run",
       "distinctStates": 6277,
       "measuredSeconds": 1.35,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.92,
       "budgetCpuSeconds": 9
     },
@@ -318,6 +341,7 @@
       "tier": "every-run",
       "distinctStates": 1500,
       "measuredSeconds": 1.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.87,
       "budgetCpuSeconds": 9
     },
@@ -329,6 +353,7 @@
       "tier": "every-run",
       "distinctStates": 838,
       "measuredSeconds": 1.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.61,
       "budgetCpuSeconds": 7
     },
@@ -343,6 +368,7 @@
       "tier": "every-run",
       "distinctStates": 167,
       "measuredSeconds": 1.1,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.43,
       "budgetCpuSeconds": 6
     },
@@ -357,6 +383,7 @@
       "tier": "every-run",
       "distinctStates": 154,
       "measuredSeconds": 1.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.43,
       "budgetCpuSeconds": 6
     },
@@ -371,6 +398,7 @@
       "tier": "every-run",
       "distinctStates": 510,
       "measuredSeconds": 1.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.59,
       "budgetCpuSeconds": 7
     },
@@ -382,6 +410,7 @@
       "tier": "every-run",
       "distinctStates": 118412,
       "measuredSeconds": 3.06,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 11.78,
       "budgetCpuSeconds": 27
     },
@@ -393,6 +422,7 @@
       "tier": "every-run",
       "distinctStates": 1734,
       "measuredSeconds": 1.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.82,
       "budgetCpuSeconds": 9
     },
@@ -407,6 +437,7 @@
       "tier": "every-run",
       "distinctStates": 45,
       "measuredSeconds": 1.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.4,
       "budgetCpuSeconds": 6
     },
@@ -421,6 +452,7 @@
       "tier": "every-run",
       "distinctStates": 12403,
       "measuredSeconds": 1.54,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.92,
       "budgetCpuSeconds": 11
     },
@@ -435,6 +467,7 @@
       "tier": "every-run",
       "distinctStates": 1514,
       "measuredSeconds": 1.3,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.54,
       "budgetCpuSeconds": 9
     },
@@ -446,6 +479,7 @@
       "tier": "deep",
       "distinctStates": 31716688,
       "measuredSeconds": 736.63,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3756.35,
       "budgetCpuSeconds": 7516
     },
@@ -457,6 +491,7 @@
       "tier": "deep",
       "distinctStates": 16966528,
       "measuredSeconds": 331.31,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1545.74,
       "budgetCpuSeconds": 3095
     },
@@ -468,6 +503,7 @@
       "tier": "every-run",
       "distinctStates": 395848,
       "measuredSeconds": 3.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 12.72,
       "budgetCpuSeconds": 29
     },
@@ -482,6 +518,7 @@
       "tier": "every-run",
       "distinctStates": 47141,
       "measuredSeconds": 2.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.92,
       "budgetCpuSeconds": 17
     },
@@ -496,6 +533,7 @@
       "tier": "every-run",
       "distinctStates": 1479,
       "measuredSeconds": 1.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.8,
       "budgetCpuSeconds": 7
     },
@@ -510,6 +548,7 @@
       "tier": "every-run",
       "distinctStates": 668,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.73,
       "budgetCpuSeconds": 7
     },
@@ -524,6 +563,7 @@
       "tier": "every-run",
       "distinctStates": 329,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7
     },
@@ -538,6 +578,7 @@
       "tier": "every-run",
       "distinctStates": 448,
       "measuredSeconds": 1.58,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.91,
       "budgetCpuSeconds": 7
     },
@@ -552,6 +593,7 @@
       "tier": "every-run",
       "distinctStates": 708,
       "measuredSeconds": 1.82,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.04,
       "budgetCpuSeconds": 8
     },
@@ -566,6 +608,7 @@
       "tier": "every-run",
       "distinctStates": 929,
       "measuredSeconds": 1.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2,
       "budgetCpuSeconds": 7
     },
@@ -580,6 +623,7 @@
       "tier": "every-run",
       "distinctStates": 222,
       "measuredSeconds": 1.98,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.81,
       "budgetCpuSeconds": 7
     },
@@ -594,6 +638,7 @@
       "tier": "every-run",
       "distinctStates": 9430,
       "measuredSeconds": 2.09,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.74,
       "budgetCpuSeconds": 9
     },
@@ -611,6 +656,7 @@
       "tier": "every-run",
       "distinctStates": 22539,
       "measuredSeconds": 3.04,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.37,
       "budgetCpuSeconds": 14
     },
@@ -622,6 +668,7 @@
       "tier": "every-run",
       "distinctStates": 21168,
       "measuredSeconds": 2.33,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.3,
       "budgetCpuSeconds": 10
     },
@@ -633,6 +680,7 @@
       "tier": "deep",
       "distinctStates": 2340065,
       "measuredSeconds": 10.69,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 52.78,
       "budgetCpuSeconds": 109
     },
@@ -647,6 +695,7 @@
       "tier": "every-run",
       "distinctStates": 145,
       "measuredSeconds": 1.82,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.85,
       "budgetCpuSeconds": 7
     },
@@ -661,6 +710,7 @@
       "tier": "every-run",
       "distinctStates": 57226,
       "measuredSeconds": 14.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 17.18,
       "budgetCpuSeconds": 38,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -679,6 +729,7 @@
       "tier": "every-run",
       "distinctStates": 54402,
       "measuredSeconds": 13.33,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 14.7,
       "budgetCpuSeconds": 33,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -691,6 +742,7 @@
       "tier": "deep",
       "distinctStates": 14671588,
       "measuredSeconds": 899.69,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1133.64,
       "budgetCpuSeconds": 2271
     },
@@ -702,6 +754,7 @@
       "tier": "deep",
       "distinctStates": 34768,
       "measuredSeconds": 4.57,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.01,
       "budgetCpuSeconds": 16
     },
@@ -713,6 +766,7 @@
       "tier": "deep",
       "distinctStates": 491790,
       "measuredSeconds": 21.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 27.98,
       "budgetCpuSeconds": 59,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.48 at start)"
@@ -725,6 +779,7 @@
       "tier": "deep",
       "distinctStates": 329368,
       "measuredSeconds": 24.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 26.26,
       "budgetCpuSeconds": 56,
       "note": "re-measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
@@ -737,6 +792,7 @@
       "tier": "deep",
       "distinctStates": 6026097,
       "measuredSeconds": 267.09,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 534.53,
       "budgetCpuSeconds": 1073
     },
@@ -751,6 +807,7 @@
       "tier": "deep",
       "distinctStates": 3290482,
       "measuredSeconds": 1833.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1869.33,
       "budgetCpuSeconds": 3742
     },
@@ -765,6 +822,7 @@
       "tier": "deep",
       "distinctStates": 4851,
       "measuredSeconds": 6.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.97,
       "budgetCpuSeconds": 15
     },
@@ -776,6 +834,7 @@
       "tier": "deep",
       "distinctStates": 43664115,
       "measuredSeconds": 2226.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3128.11,
       "budgetCpuSeconds": 6260
     },
@@ -790,6 +849,7 @@
       "tier": "every-run",
       "distinctStates": 243,
       "measuredSeconds": 1.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.6,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 2.54 at start)"
@@ -805,6 +865,7 @@
       "tier": "every-run",
       "distinctStates": 18,
       "measuredSeconds": 3.39,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.6,
       "budgetCpuSeconds": 9
     },
@@ -819,6 +880,7 @@
       "tier": "every-run",
       "distinctStates": 24,
       "measuredSeconds": 1.06,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.32,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.48 at start)"
@@ -831,6 +893,7 @@
       "tier": "every-run",
       "distinctStates": 166400,
       "measuredSeconds": 15.37,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 14.77,
       "budgetCpuSeconds": 33,
       "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
@@ -846,6 +909,7 @@
       "tier": "every-run",
       "distinctStates": 205,
       "measuredSeconds": 3.3,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.87,
       "budgetCpuSeconds": 9,
       "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
@@ -861,6 +925,7 @@
       "tier": "every-run",
       "distinctStates": 31,
       "measuredSeconds": 3.4,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.44,
       "budgetCpuSeconds": 8,
       "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
@@ -876,6 +941,7 @@
       "tier": "every-run",
       "distinctStates": 22,
       "measuredSeconds": 3.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.61,
       "budgetCpuSeconds": 9
     },
@@ -890,6 +956,7 @@
       "tier": "every-run",
       "distinctStates": 201,
       "measuredSeconds": 3.48,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.72,
       "budgetCpuSeconds": 9
     },
@@ -901,6 +968,7 @@
       "tier": "every-run",
       "distinctStates": 342401,
       "measuredSeconds": 88.83,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 96.92,
       "budgetCpuSeconds": 197,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.63 at start)"
@@ -916,6 +984,7 @@
       "tier": "every-run",
       "distinctStates": 6889,
       "measuredSeconds": 4.33,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.92,
       "budgetCpuSeconds": 17
     },
@@ -930,6 +999,7 @@
       "tier": "every-run",
       "distinctStates": 89,
       "measuredSeconds": 3.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.58,
       "budgetCpuSeconds": 9
     },
@@ -944,6 +1014,7 @@
       "tier": "every-run",
       "distinctStates": 71,
       "measuredSeconds": 3.1,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.53,
       "budgetCpuSeconds": 9
     },
@@ -955,6 +1026,7 @@
       "tier": "every-run",
       "distinctStates": 1378,
       "measuredSeconds": 3.43,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.38,
       "budgetCpuSeconds": 10
     },
@@ -966,6 +1038,7 @@
       "tier": "every-run",
       "distinctStates": 889,
       "measuredSeconds": 3.7,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.96,
       "budgetCpuSeconds": 9
     },
@@ -980,6 +1053,7 @@
       "tier": "every-run",
       "distinctStates": 323,
       "measuredSeconds": 5.89,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.67,
       "budgetCpuSeconds": 9
     },
@@ -994,6 +1068,7 @@
       "tier": "every-run",
       "distinctStates": 158,
       "measuredSeconds": 3.61,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.04,
       "budgetCpuSeconds": 10
     },
@@ -1008,6 +1083,7 @@
       "tier": "every-run",
       "distinctStates": 15,
       "measuredSeconds": 3.88,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.48,
       "budgetCpuSeconds": 8
     },
@@ -1022,6 +1098,7 @@
       "tier": "every-run",
       "distinctStates": 46,
       "measuredSeconds": 4.67,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.69,
       "budgetCpuSeconds": 9
     },
@@ -1033,6 +1110,7 @@
       "tier": "deep",
       "distinctStates": 494484,
       "measuredSeconds": 6.37,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 14.45,
       "budgetCpuSeconds": 32
     },
@@ -1044,6 +1122,7 @@
       "tier": "deep",
       "distinctStates": 400994,
       "measuredSeconds": 5.5,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 12.91,
       "budgetCpuSeconds": 29
     },
@@ -1058,6 +1137,7 @@
       "tier": "deep",
       "distinctStates": 1745,
       "measuredSeconds": 1.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.17,
       "budgetCpuSeconds": 8
     },
@@ -1069,6 +1149,7 @@
       "tier": "deep",
       "distinctStates": 1245186,
       "measuredSeconds": 11.97,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 27.57,
       "budgetCpuSeconds": 59
     },
@@ -1083,6 +1164,7 @@
       "tier": "every-run",
       "distinctStates": 245017,
       "measuredSeconds": 2.82,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.79,
       "budgetCpuSeconds": 17
     },
@@ -1097,6 +1179,7 @@
       "tier": "every-run",
       "distinctStates": 19701,
       "measuredSeconds": 1.59,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.97,
       "budgetCpuSeconds": 9
     },
@@ -1111,6 +1194,7 @@
       "tier": "every-run",
       "distinctStates": 25045,
       "measuredSeconds": 1.7,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.49,
       "budgetCpuSeconds": 10
     },
@@ -1125,6 +1209,7 @@
       "tier": "every-run",
       "distinctStates": 28908,
       "measuredSeconds": 1.82,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.1,
       "budgetCpuSeconds": 10
     },
@@ -1139,6 +1224,7 @@
       "tier": "every-run",
       "distinctStates": 83,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.41,
       "budgetCpuSeconds": 6
     },
@@ -1153,6 +1239,7 @@
       "tier": "every-run",
       "distinctStates": 1244,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.6,
       "budgetCpuSeconds": 7
     },
@@ -1167,6 +1254,7 @@
       "tier": "every-run",
       "distinctStates": 90337,
       "measuredSeconds": 2.13,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.62,
       "budgetCpuSeconds": 13
     },
@@ -1181,6 +1269,7 @@
       "tier": "every-run",
       "distinctStates": 143,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.49,
       "budgetCpuSeconds": 6
     },
@@ -1192,6 +1281,7 @@
       "tier": "every-run",
       "distinctStates": 28746,
       "measuredSeconds": 2.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.92,
       "budgetCpuSeconds": 11,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 2.54 at start)"
@@ -1207,6 +1297,7 @@
       "tier": "every-run",
       "distinctStates": 308,
       "measuredSeconds": 3.51,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.93,
       "budgetCpuSeconds": 9
     },
@@ -1221,6 +1312,7 @@
       "tier": "every-run",
       "distinctStates": 4,
       "measuredSeconds": 3.7,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.63,
       "budgetCpuSeconds": 9
     },
@@ -1235,6 +1327,7 @@
       "tier": "every-run",
       "distinctStates": 167,
       "measuredSeconds": 5.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.1,
       "budgetCpuSeconds": 10
     },
@@ -1249,6 +1342,7 @@
       "tier": "every-run",
       "distinctStates": 273,
       "measuredSeconds": 3.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.94,
       "budgetCpuSeconds": 9
     },
@@ -1263,6 +1357,7 @@
       "tier": "every-run",
       "distinctStates": 321,
       "measuredSeconds": 4.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.34,
       "budgetCpuSeconds": 10
     },
@@ -1277,6 +1372,7 @@
       "tier": "every-run",
       "distinctStates": 94,
       "measuredSeconds": 3.81,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.68,
       "budgetCpuSeconds": 9
     },
@@ -1291,6 +1387,7 @@
       "tier": "every-run",
       "distinctStates": 94,
       "measuredSeconds": 3.56,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.73,
       "budgetCpuSeconds": 9
     },
@@ -1305,6 +1402,7 @@
       "tier": "every-run",
       "distinctStates": 94,
       "measuredSeconds": 4.05,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.41,
       "budgetCpuSeconds": 8
     },
@@ -1316,6 +1414,7 @@
       "tier": "deep",
       "distinctStates": 359,
       "measuredSeconds": 3.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.47,
       "budgetCpuSeconds": 8
     },
@@ -1327,6 +1426,7 @@
       "tier": "deep",
       "distinctStates": 371,
       "measuredSeconds": 3.3,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.54,
       "budgetCpuSeconds": 9
     },
@@ -1338,6 +1438,7 @@
       "tier": "deep",
       "distinctStates": 14445,
       "measuredSeconds": 3.89,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.04,
       "budgetCpuSeconds": 14
     },
@@ -1349,6 +1450,7 @@
       "tier": "deep",
       "distinctStates": 12567,
       "measuredSeconds": 3.96,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.61,
       "budgetCpuSeconds": 15
     },
@@ -1363,6 +1465,7 @@
       "tier": "every-run",
       "distinctStates": 57,
       "measuredSeconds": 3.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.5,
       "budgetCpuSeconds": 8
     },
@@ -1374,6 +1477,7 @@
       "tier": "every-run",
       "distinctStates": 327419,
       "measuredSeconds": 4.95,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 21.69,
       "budgetCpuSeconds": 47
     },
@@ -1385,6 +1489,7 @@
       "tier": "every-run",
       "distinctStates": 7197560,
       "measuredSeconds": 121.51,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 591.29,
       "budgetCpuSeconds": 1186
     },
@@ -1399,6 +1504,7 @@
       "tier": "deep",
       "distinctStates": 7197560,
       "measuredSeconds": 1766.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6064.58,
       "budgetCpuSeconds": 12133
     },
@@ -1410,6 +1516,7 @@
       "tier": "deep",
       "distinctStates": 70092132,
       "measuredSeconds": 1618.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5498.24,
       "budgetCpuSeconds": 11000
     },
@@ -1424,6 +1531,7 @@
       "tier": "every-run",
       "distinctStates": 2575,
       "measuredSeconds": 1.77,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.21,
       "budgetCpuSeconds": 10
     },
@@ -1438,6 +1546,7 @@
       "tier": "every-run",
       "distinctStates": 144,
       "measuredSeconds": 1.32,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
     },
@@ -1452,6 +1561,7 @@
       "tier": "every-run",
       "distinctStates": 35,
       "measuredSeconds": 1.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.81,
       "budgetCpuSeconds": 7
     },
@@ -1466,6 +1576,7 @@
       "tier": "every-run",
       "distinctStates": 8073,
       "measuredSeconds": 1.76,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.33,
       "budgetCpuSeconds": 12
     },
@@ -1480,6 +1591,7 @@
       "tier": "every-run",
       "distinctStates": 5394,
       "measuredSeconds": 1.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.16,
       "budgetCpuSeconds": 10
     },
@@ -1494,6 +1606,7 @@
       "tier": "every-run",
       "distinctStates": 320,
       "measuredSeconds": 1.29,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.92,
       "budgetCpuSeconds": 7
     },
@@ -1508,6 +1621,7 @@
       "tier": "every-run",
       "distinctStates": 8291,
       "measuredSeconds": 1.55,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.67,
       "budgetCpuSeconds": 11
     },
@@ -1522,6 +1636,7 @@
       "tier": "every-run",
       "distinctStates": 14447,
       "measuredSeconds": 2.05,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.25,
       "budgetCpuSeconds": 14
     },
@@ -1536,6 +1651,7 @@
       "tier": "every-run",
       "distinctStates": 4977,
       "measuredSeconds": 1.5,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.48,
       "budgetCpuSeconds": 10
     },
@@ -1550,6 +1666,7 @@
       "tier": "every-run",
       "distinctStates": 994,
       "measuredSeconds": 1.44,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.72,
       "budgetCpuSeconds": 9
     },
@@ -1564,6 +1681,7 @@
       "tier": "every-run",
       "distinctStates": 419,
       "measuredSeconds": 1.27,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.17,
       "budgetCpuSeconds": 8
     },
@@ -1578,6 +1696,7 @@
       "tier": "every-run",
       "distinctStates": 1153,
       "measuredSeconds": 1.39,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.66,
       "budgetCpuSeconds": 9
     },
@@ -1589,6 +1708,7 @@
       "tier": "every-run",
       "distinctStates": 609560,
       "measuredSeconds": 8.64,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 36.59,
       "budgetCpuSeconds": 77
     },
@@ -1600,6 +1720,7 @@
       "tier": "deep",
       "distinctStates": 31425144,
       "measuredSeconds": 667.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2587.33,
       "budgetCpuSeconds": 5178
     },
@@ -1614,6 +1735,7 @@
       "tier": "deep",
       "distinctStates": 327419,
       "measuredSeconds": 50.89,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 140.72,
       "budgetCpuSeconds": 285
     },
@@ -1625,6 +1747,7 @@
       "tier": "deep",
       "distinctStates": 253249,
       "measuredSeconds": 5.75,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 18.24,
       "budgetCpuSeconds": 40
     },
@@ -1636,6 +1759,7 @@
       "tier": "every-run",
       "distinctStates": 786,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.66,
       "budgetCpuSeconds": 7
     },
@@ -1647,6 +1771,7 @@
       "tier": "every-run",
       "distinctStates": 162,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.51,
       "budgetCpuSeconds": 7
     },
@@ -1658,6 +1783,7 @@
       "tier": "deep",
       "distinctStates": 8912,
       "measuredSeconds": 1.4,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.33,
       "budgetCpuSeconds": 8
     },
@@ -1672,6 +1798,7 @@
       "tier": "every-run",
       "distinctStates": 13,
       "measuredSeconds": 1.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.41,
       "budgetCpuSeconds": 6
     },
@@ -1686,6 +1813,7 @@
       "tier": "every-run",
       "distinctStates": 86,
       "measuredSeconds": 1.23,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6
     },
@@ -1700,6 +1828,7 @@
       "tier": "every-run",
       "distinctStates": 15,
       "measuredSeconds": 1.16,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.39,
       "budgetCpuSeconds": 6
     },
@@ -1714,6 +1843,7 @@
       "tier": "every-run",
       "distinctStates": 65,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.42,
       "budgetCpuSeconds": 6
     },
@@ -1728,6 +1858,7 @@
       "tier": "every-run",
       "distinctStates": 96,
       "measuredSeconds": 1.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.49,
       "budgetCpuSeconds": 6
     },
@@ -1742,6 +1873,7 @@
       "tier": "every-run",
       "distinctStates": 91,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.44,
       "budgetCpuSeconds": 6
     },
@@ -1756,6 +1888,7 @@
       "tier": "every-run",
       "distinctStates": 15,
       "measuredSeconds": 1.16,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.39,
       "budgetCpuSeconds": 6
     },
@@ -1770,6 +1903,7 @@
       "tier": "every-run",
       "distinctStates": 88,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.47,
       "budgetCpuSeconds": 6
     },
@@ -1781,6 +1915,7 @@
       "tier": "every-run",
       "distinctStates": 7199,
       "measuredSeconds": 1.44,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.54,
       "budgetCpuSeconds": 9
     },
@@ -1792,6 +1927,7 @@
       "tier": "every-run",
       "distinctStates": 3599,
       "measuredSeconds": 1.43,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.47,
       "budgetCpuSeconds": 8
     },
@@ -1803,6 +1939,7 @@
       "tier": "deep",
       "distinctStates": 11106,
       "measuredSeconds": 1.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.67,
       "budgetCpuSeconds": 9
     },
@@ -1817,6 +1954,7 @@
       "tier": "every-run",
       "distinctStates": 82,
       "measuredSeconds": 1.27,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.46,
       "budgetCpuSeconds": 6
     },
@@ -1831,6 +1969,7 @@
       "tier": "every-run",
       "distinctStates": 419,
       "measuredSeconds": 1.16,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.39,
       "budgetCpuSeconds": 6
     },
@@ -1845,6 +1984,7 @@
       "tier": "every-run",
       "distinctStates": 1676,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6
     },
@@ -1859,6 +1999,7 @@
       "tier": "every-run",
       "distinctStates": 905,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.43,
       "budgetCpuSeconds": 6
     },
@@ -1873,6 +2014,7 @@
       "tier": "every-run",
       "distinctStates": 2639,
       "measuredSeconds": 1.34,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.04,
       "budgetCpuSeconds": 8
     },
@@ -1884,6 +2026,7 @@
       "tier": "every-run",
       "distinctStates": 314421,
       "measuredSeconds": 8,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 21.32,
       "budgetCpuSeconds": 46
     },
@@ -1895,6 +2038,7 @@
       "tier": "deep",
       "distinctStates": 13907233,
       "measuredSeconds": 188.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 812.12,
       "budgetCpuSeconds": 1628
     },
@@ -1909,6 +2053,7 @@
       "tier": "every-run",
       "distinctStates": 315,
       "measuredSeconds": 1.49,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.86,
       "budgetCpuSeconds": 7
     },
@@ -1923,6 +2068,7 @@
       "tier": "every-run",
       "distinctStates": 315,
       "measuredSeconds": 1.63,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.11,
       "budgetCpuSeconds": 8
     },
@@ -1937,6 +2083,7 @@
       "tier": "every-run",
       "distinctStates": 413,
       "measuredSeconds": 1.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.28,
       "budgetCpuSeconds": 8
     },
@@ -1951,6 +2098,7 @@
       "tier": "every-run",
       "distinctStates": 884,
       "measuredSeconds": 1.65,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.42,
       "budgetCpuSeconds": 8
     },
@@ -1965,6 +2113,7 @@
       "tier": "every-run",
       "distinctStates": 1359,
       "measuredSeconds": 1.75,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.99,
       "budgetCpuSeconds": 9
     },
@@ -1979,6 +2128,7 @@
       "tier": "every-run",
       "distinctStates": 333,
       "measuredSeconds": 1.53,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.03,
       "budgetCpuSeconds": 8
     },
@@ -1993,6 +2143,7 @@
       "tier": "every-run",
       "distinctStates": 2142,
       "measuredSeconds": 1.86,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.87,
       "budgetCpuSeconds": 9
     },
@@ -2007,6 +2158,7 @@
       "tier": "every-run",
       "distinctStates": 10602,
       "measuredSeconds": 2.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.88,
       "budgetCpuSeconds": 11
     },
@@ -2021,6 +2173,7 @@
       "tier": "every-run",
       "distinctStates": 2159,
       "measuredSeconds": 1.86,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.74,
       "budgetCpuSeconds": 9
     },
@@ -2035,6 +2188,7 @@
       "tier": "every-run",
       "distinctStates": 4606,
       "measuredSeconds": 2.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.22,
       "budgetCpuSeconds": 12
     },
@@ -2049,6 +2203,7 @@
       "tier": "every-run",
       "distinctStates": 1773,
       "measuredSeconds": 1.71,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.55,
       "budgetCpuSeconds": 9
     },
@@ -2063,6 +2218,7 @@
       "tier": "every-run",
       "distinctStates": 457,
       "measuredSeconds": 1.71,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.61,
       "budgetCpuSeconds": 9
     },
@@ -2077,6 +2233,7 @@
       "tier": "every-run",
       "distinctStates": 6734,
       "measuredSeconds": 2.06,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.68,
       "budgetCpuSeconds": 11
     },
@@ -2091,6 +2248,7 @@
       "tier": "every-run",
       "distinctStates": 172717,
       "measuredSeconds": 3.85,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 9.65,
       "budgetCpuSeconds": 23
     },
@@ -2105,6 +2263,7 @@
       "tier": "every-run",
       "distinctStates": 173085,
       "measuredSeconds": 4.44,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 10.44,
       "budgetCpuSeconds": 24
     },
@@ -2116,6 +2275,7 @@
       "tier": "every-run",
       "distinctStates": 2725166,
       "measuredSeconds": 296.95,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 804.18,
       "budgetCpuSeconds": 1612,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 79.97 at start)"
@@ -2131,6 +2291,7 @@
       "tier": "every-run",
       "distinctStates": 3951,
       "measuredSeconds": 1.89,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.79,
       "budgetCpuSeconds": 9
     },
@@ -2145,6 +2306,7 @@
       "tier": "every-run",
       "distinctStates": 25647,
       "measuredSeconds": 3.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.63,
       "budgetCpuSeconds": 15
     },
@@ -2159,6 +2321,7 @@
       "tier": "every-run",
       "distinctStates": 25631,
       "measuredSeconds": 2.67,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.63,
       "budgetCpuSeconds": 15
     },
@@ -2173,6 +2336,7 @@
       "tier": "every-run",
       "distinctStates": 530245,
       "measuredSeconds": 8.93,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 23.58,
       "budgetCpuSeconds": 51
     },
@@ -2187,6 +2351,7 @@
       "tier": "every-run",
       "distinctStates": 822,
       "measuredSeconds": 2.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.46,
       "budgetCpuSeconds": 8
     },
@@ -2201,6 +2366,7 @@
       "tier": "every-run",
       "distinctStates": 3956,
       "measuredSeconds": 1.81,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.55,
       "budgetCpuSeconds": 9
     },
@@ -2215,6 +2381,7 @@
       "tier": "every-run",
       "distinctStates": 3948,
       "measuredSeconds": 1.8,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.51,
       "budgetCpuSeconds": 9
     },
@@ -2226,6 +2393,7 @@
       "tier": "every-run",
       "distinctStates": 423685,
       "measuredSeconds": 7.86,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 34.01,
       "budgetCpuSeconds": 72
     },
@@ -2237,6 +2405,7 @@
       "tier": "deep",
       "distinctStates": 1200836,
       "measuredSeconds": 23.67,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 92.78,
       "budgetCpuSeconds": 189
     },
@@ -2248,6 +2417,7 @@
       "tier": "every-run",
       "distinctStates": 51475,
       "measuredSeconds": 2.8,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 10.56,
       "budgetCpuSeconds": 25
     },
@@ -2259,6 +2429,7 @@
       "tier": "deep",
       "distinctStates": 8358120,
       "measuredSeconds": 158.47,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 779.02,
       "budgetCpuSeconds": 1562
     },
@@ -2273,6 +2444,7 @@
       "tier": "every-run",
       "distinctStates": 38,
       "measuredSeconds": 1.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.87,
       "budgetCpuSeconds": 7
     },
@@ -2287,6 +2459,7 @@
       "tier": "every-run",
       "distinctStates": 131,
       "measuredSeconds": 1.39,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.94,
       "budgetCpuSeconds": 7
     },
@@ -2301,6 +2474,7 @@
       "tier": "every-run",
       "distinctStates": 108,
       "measuredSeconds": 1.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.19,
       "budgetCpuSeconds": 8
     },
@@ -2315,6 +2489,7 @@
       "tier": "every-run",
       "distinctStates": 216,
       "measuredSeconds": 1.9,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.01,
       "budgetCpuSeconds": 8
     },
@@ -2329,6 +2504,7 @@
       "tier": "every-run",
       "distinctStates": 1064,
       "measuredSeconds": 1.92,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.33,
       "budgetCpuSeconds": 8
     },
@@ -2343,6 +2519,7 @@
       "tier": "every-run",
       "distinctStates": 1081,
       "measuredSeconds": 1.75,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.51,
       "budgetCpuSeconds": 9
     },
@@ -2357,6 +2534,7 @@
       "tier": "every-run",
       "distinctStates": 172,
       "measuredSeconds": 1.83,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.2,
       "budgetCpuSeconds": 8
     },
@@ -2371,6 +2549,7 @@
       "tier": "every-run",
       "distinctStates": 838,
       "measuredSeconds": 1.47,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.67,
       "budgetCpuSeconds": 9
     },
@@ -2385,6 +2564,7 @@
       "tier": "every-run",
       "distinctStates": 265,
       "measuredSeconds": 1.4,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.08,
       "budgetCpuSeconds": 8
     },
@@ -2399,6 +2579,7 @@
       "tier": "every-run",
       "distinctStates": 856,
       "measuredSeconds": 1.41,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.32,
       "budgetCpuSeconds": 8
     },
@@ -2413,6 +2594,7 @@
       "tier": "every-run",
       "distinctStates": 297,
       "measuredSeconds": 1.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.07,
       "budgetCpuSeconds": 8
     },
@@ -2427,6 +2609,7 @@
       "tier": "every-run",
       "distinctStates": 45073,
       "measuredSeconds": 2.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 7.59,
       "budgetCpuSeconds": 19
     },
@@ -2441,6 +2624,7 @@
       "tier": "every-run",
       "distinctStates": 9219,
       "measuredSeconds": 1.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.52,
       "budgetCpuSeconds": 13
     },
@@ -2455,6 +2639,7 @@
       "tier": "every-run",
       "distinctStates": 10131,
       "measuredSeconds": 1.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.17,
       "budgetCpuSeconds": 14
     },
@@ -2469,6 +2654,7 @@
       "tier": "every-run",
       "distinctStates": 8816,
       "measuredSeconds": 1.85,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.73,
       "budgetCpuSeconds": 15
     },
@@ -2483,6 +2669,7 @@
       "tier": "every-run",
       "distinctStates": 7400,
       "measuredSeconds": 1.77,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.08,
       "budgetCpuSeconds": 12
     },
@@ -2497,6 +2684,7 @@
       "tier": "every-run",
       "distinctStates": 1025,
       "measuredSeconds": 1.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7
     },
@@ -2511,6 +2699,7 @@
       "tier": "every-run",
       "distinctStates": 23,
       "measuredSeconds": 1.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.49,
       "budgetCpuSeconds": 6
     },
@@ -2528,6 +2717,7 @@
       "tier": "every-run",
       "distinctStates": 922,
       "measuredSeconds": 1.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.63,
       "budgetCpuSeconds": 9
     },
@@ -2542,6 +2732,7 @@
       "tier": "every-run",
       "distinctStates": 84,
       "measuredSeconds": 1.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.44,
       "budgetCpuSeconds": 6
     },
@@ -2556,6 +2747,7 @@
       "tier": "every-run",
       "distinctStates": 247,
       "measuredSeconds": 1.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.57,
       "budgetCpuSeconds": 7
     },
@@ -2567,6 +2759,7 @@
       "tier": "deep",
       "distinctStates": 94,
       "measuredSeconds": 6.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.31,
       "budgetCpuSeconds": 8
     },
@@ -2578,6 +2771,7 @@
       "tier": "deep",
       "distinctStates": 111906,
       "measuredSeconds": 12.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 12.88,
       "budgetCpuSeconds": 29
     },
@@ -2592,6 +2786,7 @@
       "tier": "every-run",
       "distinctStates": 132,
       "measuredSeconds": 2.88,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.32,
       "budgetCpuSeconds": 12
     },
@@ -2606,6 +2801,7 @@
       "tier": "every-run",
       "distinctStates": 669,
       "measuredSeconds": 2.65,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.06,
       "budgetCpuSeconds": 12
     },
@@ -2620,6 +2816,7 @@
       "tier": "every-run",
       "distinctStates": 1335,
       "measuredSeconds": 2.63,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.1,
       "budgetCpuSeconds": 14
     },
@@ -2634,6 +2831,7 @@
       "tier": "every-run",
       "distinctStates": 2779,
       "measuredSeconds": 3.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 8.09,
       "budgetCpuSeconds": 20
     },
@@ -2648,6 +2846,7 @@
       "tier": "every-run",
       "distinctStates": 273,
       "measuredSeconds": 2.23,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.25,
       "budgetCpuSeconds": 12
     },
@@ -2662,6 +2861,7 @@
       "tier": "every-run",
       "distinctStates": 270,
       "measuredSeconds": 2.37,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.54,
       "budgetCpuSeconds": 13
     },
@@ -2676,6 +2876,7 @@
       "tier": "every-run",
       "distinctStates": 144,
       "measuredSeconds": 2.39,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.84,
       "budgetCpuSeconds": 13
     },
@@ -2690,6 +2891,7 @@
       "tier": "every-run",
       "distinctStates": 198,
       "measuredSeconds": 1.71,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.23,
       "budgetCpuSeconds": 10
     },
@@ -2704,6 +2906,7 @@
       "tier": "every-run",
       "distinctStates": 265,
       "measuredSeconds": 1.69,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.27,
       "budgetCpuSeconds": 12
     },
@@ -2718,6 +2921,7 @@
       "tier": "every-run",
       "distinctStates": 63,
       "measuredSeconds": 1.57,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.11,
       "budgetCpuSeconds": 10
     },
@@ -2732,6 +2936,7 @@
       "tier": "every-run",
       "distinctStates": 124,
       "measuredSeconds": 1.69,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.75,
       "budgetCpuSeconds": 11
     },
@@ -2746,6 +2951,7 @@
       "tier": "every-run",
       "distinctStates": 64,
       "measuredSeconds": 1.49,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.87,
       "budgetCpuSeconds": 9
     },
@@ -2757,6 +2963,7 @@
       "tier": "every-run",
       "distinctStates": 18240,
       "measuredSeconds": 10.86,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 40.3,
       "budgetCpuSeconds": 84
     },
@@ -2768,6 +2975,7 @@
       "tier": "every-run",
       "distinctStates": 17280,
       "measuredSeconds": 9.67,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 31.62,
       "budgetCpuSeconds": 67
     },
@@ -2779,6 +2987,7 @@
       "tier": "deep",
       "distinctStates": 129600,
       "measuredSeconds": 92.74,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 384.79,
       "budgetCpuSeconds": 773
     },
@@ -2790,6 +2999,7 @@
       "tier": "deep",
       "distinctStates": 121600,
       "measuredSeconds": 82.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 313.3,
       "budgetCpuSeconds": 630
     },
@@ -2801,6 +3011,7 @@
       "tier": "deep",
       "distinctStates": 46464,
       "measuredSeconds": 14.7,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 69.75,
       "budgetCpuSeconds": 143
     },
@@ -2812,6 +3023,7 @@
       "tier": "deep",
       "distinctStates": 45312,
       "measuredSeconds": 11.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 51.14,
       "budgetCpuSeconds": 106
     },
@@ -2823,6 +3035,7 @@
       "tier": "deep",
       "distinctStates": 27520,
       "measuredSeconds": 13.44,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 63.36,
       "budgetCpuSeconds": 130
     },
@@ -2834,6 +3047,7 @@
       "tier": "deep",
       "distinctStates": 25600,
       "measuredSeconds": 10.73,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 49.97,
       "budgetCpuSeconds": 103
     },
@@ -2845,6 +3059,7 @@
       "tier": "every-run",
       "distinctStates": 4096,
       "measuredSeconds": 3.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 10.98,
       "budgetCpuSeconds": 25
     },
@@ -2856,6 +3071,7 @@
       "tier": "every-run",
       "distinctStates": 3776,
       "measuredSeconds": 2.8,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 10.01,
       "budgetCpuSeconds": 24
     },
@@ -2867,6 +3083,7 @@
       "tier": "deep",
       "distinctStates": 38400,
       "measuredSeconds": 33.35,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 159.41,
       "budgetCpuSeconds": 322
     },
@@ -2878,6 +3095,7 @@
       "tier": "deep",
       "distinctStates": 37760,
       "measuredSeconds": 27.98,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 119.91,
       "budgetCpuSeconds": 243
     },
@@ -2889,6 +3107,7 @@
       "tier": "every-run",
       "distinctStates": 9120,
       "measuredSeconds": 6.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 20.53,
       "budgetCpuSeconds": 45
     },
@@ -2900,6 +3119,7 @@
       "tier": "every-run",
       "distinctStates": 8640,
       "measuredSeconds": 5,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 17.39,
       "budgetCpuSeconds": 38
     },
@@ -2911,6 +3131,7 @@
       "tier": "deep",
       "distinctStates": 18240,
       "measuredSeconds": 9.76,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 41.16,
       "budgetCpuSeconds": 86
     },
@@ -2922,6 +3143,7 @@
       "tier": "deep",
       "distinctStates": 17280,
       "measuredSeconds": 8.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 32.47,
       "budgetCpuSeconds": 68
     },
@@ -2933,6 +3155,7 @@
       "tier": "deep",
       "distinctStates": 13120,
       "measuredSeconds": 7.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 28.55,
       "budgetCpuSeconds": 61
     },
@@ -2944,6 +3167,7 @@
       "tier": "deep",
       "distinctStates": 13120,
       "measuredSeconds": 6.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 23.65,
       "budgetCpuSeconds": 51
     },
@@ -2955,6 +3179,7 @@
       "tier": "deep",
       "distinctStates": 13120,
       "measuredSeconds": 7.41,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 28.72,
       "budgetCpuSeconds": 61
     },
@@ -2966,6 +3191,7 @@
       "tier": "deep",
       "distinctStates": 17280,
       "measuredSeconds": 8.09,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 32.76,
       "budgetCpuSeconds": 69
     },
@@ -2977,6 +3203,7 @@
       "tier": "deep",
       "distinctStates": 71680,
       "measuredSeconds": 42.83,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 156.94,
       "budgetCpuSeconds": 317
     },
@@ -2988,6 +3215,7 @@
       "tier": "deep",
       "distinctStates": 96768,
       "measuredSeconds": 30.97,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 149.53,
       "budgetCpuSeconds": 303
     },
@@ -2999,6 +3227,7 @@
       "tier": "deep",
       "distinctStates": 13120,
       "measuredSeconds": 7.35,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 29.2,
       "budgetCpuSeconds": 62
     },
@@ -3010,6 +3239,7 @@
       "tier": "deep",
       "distinctStates": 17280,
       "measuredSeconds": 6.97,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 28.24,
       "budgetCpuSeconds": 60
     },
@@ -3021,6 +3251,7 @@
       "tier": "every-run",
       "distinctStates": 3712,
       "measuredSeconds": 3.29,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 13.02,
       "budgetCpuSeconds": 30
     },
@@ -3032,6 +3263,7 @@
       "tier": "every-run",
       "distinctStates": 3328,
       "measuredSeconds": 3.11,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 11.19,
       "budgetCpuSeconds": 26
     },
@@ -3043,6 +3275,7 @@
       "tier": "every-run",
       "distinctStates": 33088,
       "measuredSeconds": 2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.5,
       "budgetCpuSeconds": 14
     },
@@ -3054,6 +3287,7 @@
       "tier": "deep",
       "distinctStates": 121624,
       "measuredSeconds": 5.33,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 12.09,
       "budgetCpuSeconds": 28
     },
@@ -3065,6 +3299,7 @@
       "tier": "deep",
       "distinctStates": 17282924,
       "measuredSeconds": 617.37,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1331.31,
       "budgetCpuSeconds": 2666
     },
@@ -3079,6 +3314,7 @@
       "tier": "deep",
       "distinctStates": 33088,
       "measuredSeconds": 3.23,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.83,
       "budgetCpuSeconds": 17
     },
@@ -3093,6 +3329,7 @@
       "tier": "every-run",
       "distinctStates": 119,
       "measuredSeconds": 1.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.78,
       "budgetCpuSeconds": 7
     },
@@ -3107,6 +3344,7 @@
       "tier": "every-run",
       "distinctStates": 1259,
       "measuredSeconds": 1.29,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.29,
       "budgetCpuSeconds": 8
     },
@@ -3121,6 +3359,7 @@
       "tier": "every-run",
       "distinctStates": 1997,
       "measuredSeconds": 1.8,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.95,
       "budgetCpuSeconds": 9
     },
@@ -3135,6 +3374,7 @@
       "tier": "every-run",
       "distinctStates": 266,
       "measuredSeconds": 1.53,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.04,
       "budgetCpuSeconds": 8
     },
@@ -3149,6 +3389,7 @@
       "tier": "every-run",
       "distinctStates": 250,
       "measuredSeconds": 1.46,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.94,
       "budgetCpuSeconds": 7
     },
@@ -3163,6 +3404,7 @@
       "tier": "every-run",
       "distinctStates": 364,
       "measuredSeconds": 1.61,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.1,
       "budgetCpuSeconds": 8
     },
@@ -3177,6 +3419,7 @@
       "tier": "every-run",
       "distinctStates": 17858,
       "measuredSeconds": 17.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.83,
       "budgetCpuSeconds": 13
     },
@@ -3191,6 +3434,7 @@
       "tier": "every-run",
       "distinctStates": 165,
       "measuredSeconds": 2.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.67,
       "budgetCpuSeconds": 7
     },
@@ -3205,6 +3449,7 @@
       "tier": "every-run",
       "distinctStates": 15,
       "measuredSeconds": 2.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.61,
       "budgetCpuSeconds": 7
     },
@@ -3219,6 +3464,7 @@
       "tier": "every-run",
       "distinctStates": 14,
       "measuredSeconds": 2.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.6,
       "budgetCpuSeconds": 7
     },
@@ -3233,6 +3479,7 @@
       "tier": "every-run",
       "distinctStates": 14,
       "measuredSeconds": 2.55,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6
     },
@@ -3247,6 +3494,7 @@
       "tier": "every-run",
       "distinctStates": 22,
       "measuredSeconds": 4.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.69,
       "budgetCpuSeconds": 7
     },
@@ -3261,6 +3509,7 @@
       "tier": "every-run",
       "distinctStates": 77,
       "measuredSeconds": 5.8,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.68,
       "budgetCpuSeconds": 7
     },
@@ -3275,6 +3524,7 @@
       "tier": "every-run",
       "distinctStates": 1450,
       "measuredSeconds": 6.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.23,
       "budgetCpuSeconds": 8
     },
@@ -3286,6 +3536,7 @@
       "tier": "every-run",
       "distinctStates": 11291918,
       "measuredSeconds": 93.41,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 358.27,
       "budgetCpuSeconds": 720,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 5.22 at start)"
@@ -3301,6 +3552,7 @@
       "tier": "every-run",
       "distinctStates": 28,
       "measuredSeconds": 0.84,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.92,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
@@ -3316,6 +3568,7 @@
       "tier": "every-run",
       "distinctStates": 4,
       "measuredSeconds": 0.82,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.89,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
@@ -3331,6 +3584,7 @@
       "tier": "every-run",
       "distinctStates": 4,
       "measuredSeconds": 0.83,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.88,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
@@ -3346,6 +3600,7 @@
       "tier": "every-run",
       "distinctStates": 153,
       "measuredSeconds": 1.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.08,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 5.22 at start)"
@@ -3361,6 +3616,7 @@
       "tier": "every-run",
       "distinctStates": 28,
       "measuredSeconds": 0.83,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.91,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.93 at start)"
@@ -3376,6 +3632,7 @@
       "tier": "every-run",
       "distinctStates": 464,
       "measuredSeconds": 0.89,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.11,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
@@ -3391,6 +3648,7 @@
       "tier": "every-run",
       "distinctStates": 92,
       "measuredSeconds": 0.84,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.96,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
@@ -3406,6 +3664,7 @@
       "tier": "every-run",
       "distinctStates": 171,
       "measuredSeconds": 0.91,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.07,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.54 at start)"
@@ -3418,6 +3677,7 @@
       "tier": "every-run",
       "distinctStates": 2797292,
       "measuredSeconds": 21.03,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 85.49,
       "budgetCpuSeconds": 174,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 7.25 at start)"
@@ -3433,6 +3693,7 @@
       "tier": "every-run",
       "distinctStates": 100,
       "measuredSeconds": 0.84,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.91,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
@@ -3448,6 +3709,7 @@
       "tier": "every-run",
       "distinctStates": 166,
       "measuredSeconds": 0.85,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.97,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
@@ -3463,6 +3725,7 @@
       "tier": "every-run",
       "distinctStates": 24,
       "measuredSeconds": 0.83,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.89,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.93 at start)"
@@ -3478,6 +3741,7 @@
       "tier": "every-run",
       "distinctStates": 587,
       "measuredSeconds": 0.88,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.15,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
@@ -3490,6 +3754,7 @@
       "tier": "every-run",
       "distinctStates": 7232,
       "measuredSeconds": 2.92,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.53,
       "budgetCpuSeconds": 13
     },
@@ -3501,6 +3766,7 @@
       "tier": "every-run",
       "distinctStates": 10442,
       "measuredSeconds": 2.81,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.85,
       "budgetCpuSeconds": 13
     },
@@ -3512,6 +3778,7 @@
       "tier": "every-run",
       "distinctStates": 1816,
       "measuredSeconds": 2.11,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.77,
       "budgetCpuSeconds": 9
     },
@@ -3523,6 +3790,7 @@
       "tier": "every-run",
       "distinctStates": 31596,
       "measuredSeconds": 4.32,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 7.04,
       "budgetCpuSeconds": 18
     },
@@ -3537,6 +3805,7 @@
       "tier": "every-run",
       "distinctStates": 158,
       "measuredSeconds": 1.58,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.71,
       "budgetCpuSeconds": 7
     },
@@ -3551,6 +3820,7 @@
       "tier": "every-run",
       "distinctStates": 88,
       "measuredSeconds": 2.05,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.57,
       "budgetCpuSeconds": 7
     },
@@ -3565,6 +3835,7 @@
       "tier": "every-run",
       "distinctStates": 68,
       "measuredSeconds": 1.53,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.54,
       "budgetCpuSeconds": 7
     },
@@ -3576,6 +3847,7 @@
       "tier": "deep",
       "distinctStates": 80508,
       "measuredSeconds": 6.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 9.04,
       "budgetCpuSeconds": 22
     },
@@ -3587,6 +3859,7 @@
       "tier": "every-run",
       "distinctStates": 1875910,
       "measuredSeconds": 50.3,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 54.07,
       "budgetCpuSeconds": 112,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3602,6 +3875,7 @@
       "tier": "every-run",
       "distinctStates": 368200,
       "measuredSeconds": 7.5,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 9.13,
       "budgetCpuSeconds": 22,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3617,6 +3891,7 @@
       "tier": "every-run",
       "distinctStates": 91,
       "measuredSeconds": 1.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.39,
       "budgetCpuSeconds": 6,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3632,6 +3907,7 @@
       "tier": "every-run",
       "distinctStates": 9676,
       "measuredSeconds": 1.43,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.2,
       "budgetCpuSeconds": 8,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3647,6 +3923,7 @@
       "tier": "every-run",
       "distinctStates": 1059,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.58,
       "budgetCpuSeconds": 7,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3662,6 +3939,7 @@
       "tier": "deep",
       "distinctStates": 702841,
       "measuredSeconds": 463.97,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 409.12,
       "budgetCpuSeconds": 822,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3674,6 +3952,7 @@
       "tier": "deep",
       "distinctStates": 28120104,
       "measuredSeconds": 1286.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1492.52,
       "budgetCpuSeconds": 2989
     },
@@ -3688,6 +3967,7 @@
       "tier": "every-run",
       "distinctStates": 168,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.47,
       "budgetCpuSeconds": 6,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3703,6 +3983,7 @@
       "tier": "every-run",
       "distinctStates": 181,
       "measuredSeconds": 1.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.51,
       "budgetCpuSeconds": 7,
       "measuredNote": "measured warm on the development host after the C23 model edit (one period, observer and log store, OneSetting, NoLiveReferenceDeleted), not in the cold window; to be re-measured"
@@ -3715,6 +3996,7 @@
       "tier": "deep",
       "distinctStates": 450371,
       "measuredSeconds": 582.66,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 600.85,
       "budgetCpuSeconds": 1205
     },
@@ -3726,6 +4008,7 @@
       "tier": "every-run",
       "distinctStates": 91419,
       "measuredSeconds": 5.4,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 7.77,
       "budgetCpuSeconds": 19,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.97 at start)"
@@ -3741,6 +4024,7 @@
       "tier": "every-run",
       "distinctStates": 5539,
       "measuredSeconds": 1.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.6,
       "budgetCpuSeconds": 9,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.67 at start)"
@@ -3756,6 +4040,7 @@
       "tier": "every-run",
       "distinctStates": 311,
       "measuredSeconds": 1.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.9,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.06 at start)"
@@ -3771,6 +4056,7 @@
       "tier": "every-run",
       "distinctStates": 5342,
       "measuredSeconds": 1.74,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.97,
       "budgetCpuSeconds": 9,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.06 at start)"
@@ -3786,6 +4072,7 @@
       "tier": "every-run",
       "distinctStates": 81531,
       "measuredSeconds": 3.6,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.87,
       "budgetCpuSeconds": 15,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 14.44 at start)"
@@ -3801,6 +4088,7 @@
       "tier": "every-run",
       "distinctStates": 37543,
       "measuredSeconds": 2.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.74,
       "budgetCpuSeconds": 11,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 14.44 at start)"
@@ -3816,6 +4104,7 @@
       "tier": "every-run",
       "distinctStates": 287,
       "measuredSeconds": 1.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.63,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.92 at start)"
@@ -3831,6 +4120,7 @@
       "tier": "every-run",
       "distinctStates": 2634,
       "measuredSeconds": 1.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.24,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.92 at start)"
@@ -3846,6 +4136,7 @@
       "tier": "every-run",
       "distinctStates": 15380,
       "measuredSeconds": 3.94,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.95,
       "budgetCpuSeconds": 15,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.29 at start)"
@@ -3861,6 +4152,7 @@
       "tier": "every-run",
       "distinctStates": 822,
       "measuredSeconds": 1.27,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.01,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.21 at start)"
@@ -3876,6 +4168,7 @@
       "tier": "every-run",
       "distinctStates": 101493,
       "measuredSeconds": 4.44,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.79,
       "budgetCpuSeconds": 17,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 13.21 at start)"
@@ -3888,6 +4181,7 @@
       "tier": "every-run",
       "distinctStates": 9060,
       "measuredSeconds": 5.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.36,
       "budgetCpuSeconds": 16
     },
@@ -3899,6 +4193,7 @@
       "tier": "deep",
       "distinctStates": 24166,
       "measuredSeconds": 11.1,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 12.09,
       "budgetCpuSeconds": 28
     },
@@ -3913,6 +4208,7 @@
       "tier": "every-run",
       "distinctStates": 8,
       "measuredSeconds": 1.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.69,
       "budgetCpuSeconds": 7
     },
@@ -3927,6 +4223,7 @@
       "tier": "every-run",
       "distinctStates": 25,
       "measuredSeconds": 1.3,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.74,
       "budgetCpuSeconds": 7
     },
@@ -3941,6 +4238,7 @@
       "tier": "every-run",
       "distinctStates": 211,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.86,
       "budgetCpuSeconds": 7
     },
@@ -3955,6 +4253,7 @@
       "tier": "every-run",
       "distinctStates": 58,
       "measuredSeconds": 1.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.88,
       "budgetCpuSeconds": 7
     },
@@ -3969,6 +4268,7 @@
       "tier": "every-run",
       "distinctStates": 452,
       "measuredSeconds": 1.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.27,
       "budgetCpuSeconds": 8
     },
@@ -3980,6 +4280,7 @@
       "tier": "deep",
       "distinctStates": 265206,
       "measuredSeconds": 49.47,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 115.39,
       "budgetCpuSeconds": 234,
       "note": "deep base (Gens = {1, 2}, MaxT = 21): not re-run after the runtime child was added to the model (formal-models-W2); distinctStates, seconds and CPU seconds are of the model before it, stale"
@@ -3992,6 +4293,7 @@
       "tier": "every-run",
       "distinctStates": 39328,
       "measuredSeconds": 6.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 8.51,
       "budgetCpuSeconds": 21,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 9.01 at start)"
@@ -4004,6 +4306,7 @@
       "tier": "every-run",
       "distinctStates": 60276,
       "measuredSeconds": 9.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 11.12,
       "budgetCpuSeconds": 26,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.45 at start)"
@@ -4019,6 +4322,7 @@
       "tier": "every-run",
       "distinctStates": 691,
       "measuredSeconds": 1.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.39,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.25 at start)"
@@ -4034,6 +4338,7 @@
       "tier": "every-run",
       "distinctStates": 122,
       "measuredSeconds": 0.91,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.05,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.61 at start)"
@@ -4049,6 +4354,7 @@
       "tier": "every-run",
       "distinctStates": 122,
       "measuredSeconds": 0.91,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.06,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.25 at start)"
@@ -4064,6 +4370,7 @@
       "tier": "every-run",
       "distinctStates": 2351,
       "measuredSeconds": 1.06,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.58,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.25 at start)"
@@ -4079,6 +4386,7 @@
       "tier": "every-run",
       "distinctStates": 81444,
       "measuredSeconds": 8.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 10.04,
       "budgetCpuSeconds": 24,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.98 at start)"
@@ -4094,6 +4402,7 @@
       "tier": "every-run",
       "distinctStates": 4791,
       "measuredSeconds": 1.09,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.7,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.61 at start)"
@@ -4109,6 +4418,7 @@
       "tier": "every-run",
       "distinctStates": 123,
       "measuredSeconds": 0.92,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.05,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.98 at start)"
@@ -4124,6 +4434,7 @@
       "tier": "every-run",
       "distinctStates": 122,
       "measuredSeconds": 0.91,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.1,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.25 at start)"
@@ -4139,6 +4450,7 @@
       "tier": "every-run",
       "distinctStates": 132,
       "measuredSeconds": 0.92,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.04,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 8.44 at start)"
@@ -4154,6 +4466,7 @@
       "tier": "every-run",
       "distinctStates": 1345,
       "measuredSeconds": 1.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.46,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 8.44 at start)"
@@ -4169,6 +4482,7 @@
       "tier": "every-run",
       "distinctStates": 1344,
       "measuredSeconds": 1.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.47,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.98 at start)"
@@ -4184,6 +4498,7 @@
       "tier": "every-run",
       "distinctStates": 47871,
       "measuredSeconds": 2.08,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.99,
       "budgetCpuSeconds": 9,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.25 at start)"
@@ -4199,6 +4514,7 @@
       "tier": "every-run",
       "distinctStates": 120,
       "measuredSeconds": 1.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.79,
       "budgetCpuSeconds": 7
     },
@@ -4210,6 +4526,7 @@
       "tier": "every-run",
       "distinctStates": 230182,
       "measuredSeconds": 4.82,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 14.38,
       "budgetCpuSeconds": 32
     },
@@ -4224,6 +4541,7 @@
       "tier": "every-run",
       "distinctStates": 1185,
       "measuredSeconds": 1.67,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.45,
       "budgetCpuSeconds": 8
     },
@@ -4238,6 +4556,7 @@
       "tier": "every-run",
       "distinctStates": 305,
       "measuredSeconds": 1.58,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.11,
       "budgetCpuSeconds": 8
     },
@@ -4249,6 +4568,7 @@
       "tier": "every-run",
       "distinctStates": 502497,
       "measuredSeconds": 8.06,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 25.19,
       "budgetCpuSeconds": 54
     },
@@ -4263,6 +4583,7 @@
       "tier": "every-run",
       "distinctStates": 987,
       "measuredSeconds": 1.69,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.49,
       "budgetCpuSeconds": 8
     },
@@ -4277,6 +4598,7 @@
       "tier": "every-run",
       "distinctStates": 3109839,
       "measuredSeconds": 262.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 284.98,
       "budgetCpuSeconds": 573,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -4289,6 +4611,7 @@
       "tier": "every-run",
       "distinctStates": 1324122,
       "measuredSeconds": 143.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 158.9,
       "budgetCpuSeconds": 321,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -4301,6 +4624,7 @@
       "tier": "every-run",
       "distinctStates": 1120112,
       "measuredSeconds": 122.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 127.96,
       "budgetCpuSeconds": 259,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -4313,6 +4637,7 @@
       "tier": "deep",
       "distinctStates": 4062180,
       "measuredSeconds": 549.92,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 574.08,
       "budgetCpuSeconds": 1152,
       "note": "measured by formal-models-W5; not re-run after the completion check of W6 (deep, carried to formal-models C20)"
@@ -4325,6 +4650,7 @@
       "tier": "every-run",
       "distinctStates": 594108,
       "measuredSeconds": 47.27,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 54.15,
       "budgetCpuSeconds": 112,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -4340,6 +4666,7 @@
       "tier": "every-run",
       "distinctStates": 21,
       "measuredSeconds": 1.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.49,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -4355,6 +4682,7 @@
       "tier": "every-run",
       "distinctStates": 21,
       "measuredSeconds": 1.46,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.48,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -4370,6 +4698,7 @@
       "tier": "every-run",
       "distinctStates": 60471,
       "measuredSeconds": 5.48,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 8.08,
       "budgetCpuSeconds": 20,
       "note": "re-measured by formal-models-W6 (workers 1, 1-minute load 3 to 10)"
@@ -4382,6 +4711,7 @@
       "tier": "every-run",
       "distinctStates": 44668,
       "measuredSeconds": 2.08,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.27,
       "budgetCpuSeconds": 14
     },
@@ -4396,6 +4726,7 @@
       "tier": "every-run",
       "distinctStates": 68,
       "measuredSeconds": 0.86,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.96,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
@@ -4411,6 +4742,7 @@
       "tier": "every-run",
       "distinctStates": 88,
       "measuredSeconds": 0.84,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 0.94,
       "budgetCpuSeconds": 5,
       "note": "re-measured by formal-models-W2 (workers 4, 1-minute load 6.09 at start)"
@@ -4423,6 +4755,7 @@
       "tier": "every-run",
       "distinctStates": 10126392,
       "measuredSeconds": 275.63,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1179.91,
       "budgetCpuSeconds": 2363
     },
@@ -4437,6 +4770,7 @@
       "tier": "every-run",
       "distinctStates": 39478,
       "measuredSeconds": 23.51,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 110.02,
       "budgetCpuSeconds": 224
     },
@@ -4451,6 +4785,7 @@
       "tier": "every-run",
       "distinctStates": 39490,
       "measuredSeconds": 25.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 119.03,
       "budgetCpuSeconds": 242
     },
@@ -4465,6 +4800,7 @@
       "tier": "every-run",
       "distinctStates": 83,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.72,
       "budgetCpuSeconds": 7
     },
@@ -4479,6 +4815,7 @@
       "tier": "every-run",
       "distinctStates": 688,
       "measuredSeconds": 1.33,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.2,
       "budgetCpuSeconds": 8
     },
@@ -4493,6 +4830,7 @@
       "tier": "every-run",
       "distinctStates": 39,
       "measuredSeconds": 1.29,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7
     },
@@ -4507,6 +4845,7 @@
       "tier": "every-run",
       "distinctStates": 2605,
       "measuredSeconds": 1.46,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.54,
       "budgetCpuSeconds": 9
     },
@@ -4524,6 +4863,7 @@
       "tier": "every-run",
       "distinctStates": 73610,
       "measuredSeconds": 26.05,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 121.23,
       "budgetCpuSeconds": 246
     },
@@ -4541,6 +4881,7 @@
       "tier": "every-run",
       "distinctStates": 7376,
       "measuredSeconds": 2.16,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.26,
       "budgetCpuSeconds": 14
     },
@@ -4558,6 +4899,7 @@
       "tier": "every-run",
       "distinctStates": 4438,
       "measuredSeconds": 1.84,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.18,
       "budgetCpuSeconds": 12
     },
@@ -4569,6 +4911,7 @@
       "tier": "deep",
       "distinctStates": 19841688,
       "measuredSeconds": 158.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 821.88,
       "budgetCpuSeconds": 1647
     },
@@ -4580,6 +4923,7 @@
       "tier": "deep",
       "distinctStates": 10211398,
       "measuredSeconds": 130.55,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 673.61,
       "budgetCpuSeconds": 1351
     },
@@ -4594,6 +4938,7 @@
       "tier": "deep",
       "distinctStates": 194518,
       "measuredSeconds": 606.64,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 622.97,
       "budgetCpuSeconds": 1249
     },
@@ -4605,6 +4950,7 @@
       "tier": "every-run",
       "distinctStates": 6752,
       "measuredSeconds": 4.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.34,
       "budgetCpuSeconds": 16
     },
@@ -4619,6 +4965,7 @@
       "tier": "every-run",
       "distinctStates": 116,
       "measuredSeconds": 1.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.92,
       "budgetCpuSeconds": 7
     },
@@ -4633,6 +4980,7 @@
       "tier": "every-run",
       "distinctStates": 41,
       "measuredSeconds": 2.29,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.32,
       "budgetCpuSeconds": 8
     },
@@ -4647,6 +4995,7 @@
       "tier": "every-run",
       "distinctStates": 32,
       "measuredSeconds": 1.43,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.72,
       "budgetCpuSeconds": 7
     },
@@ -4661,6 +5010,7 @@
       "tier": "every-run",
       "distinctStates": 120,
       "measuredSeconds": 1.33,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7
     },
@@ -4675,6 +5025,7 @@
       "tier": "every-run",
       "distinctStates": 179,
       "measuredSeconds": 1.66,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.17,
       "budgetCpuSeconds": 8
     },
@@ -4689,6 +5040,7 @@
       "tier": "every-run",
       "distinctStates": 3954,
       "measuredSeconds": 1.45,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.51,
       "budgetCpuSeconds": 9
     },
@@ -4703,6 +5055,7 @@
       "tier": "every-run",
       "distinctStates": 74,
       "measuredSeconds": 1.28,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.71,
       "budgetCpuSeconds": 7
     },
@@ -4717,6 +5070,7 @@
       "tier": "every-run",
       "distinctStates": 502,
       "measuredSeconds": 1.29,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.9,
       "budgetCpuSeconds": 7
     },
@@ -4728,6 +5082,7 @@
       "tier": "every-run",
       "distinctStates": 11816,
       "measuredSeconds": 6.92,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 9.2,
       "budgetCpuSeconds": 22
     },
@@ -4742,6 +5097,7 @@
       "tier": "every-run",
       "distinctStates": 14989,
       "measuredSeconds": 4.41,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.33,
       "budgetCpuSeconds": 16
     },
@@ -4756,6 +5112,7 @@
       "tier": "every-run",
       "distinctStates": 131,
       "measuredSeconds": 1.32,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.85,
       "budgetCpuSeconds": 7
     },
@@ -4767,6 +5124,7 @@
       "tier": "every-run",
       "distinctStates": 33760,
       "measuredSeconds": 2.38,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.57,
       "budgetCpuSeconds": 11
     },
@@ -4778,6 +5136,7 @@
       "tier": "deep",
       "distinctStates": 2064736,
       "measuredSeconds": 2077.87,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1939.18,
       "budgetCpuSeconds": 3882,
       "measuredNote": "measured on a loaded machine (1-minute load 20 to 43 during the run); to be re-measured on a quiet machine (1-minute load below 15)"
@@ -4790,6 +5149,7 @@
       "tier": "every-run",
       "distinctStates": 2057291,
       "measuredSeconds": 175.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 172.97,
       "budgetCpuSeconds": 349
     },
@@ -4801,6 +5161,7 @@
       "tier": "every-run",
       "distinctStates": 843504,
       "measuredSeconds": 82.81,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 67.22,
       "budgetCpuSeconds": 138
     },
@@ -4812,6 +5173,7 @@
       "tier": "deep",
       "distinctStates": 16633099,
       "measuredSeconds": 4058.7,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2973.55,
       "budgetCpuSeconds": 5951
     },
@@ -4826,6 +5188,7 @@
       "tier": "every-run",
       "distinctStates": 102,
       "measuredSeconds": 1.32,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.08,
       "budgetCpuSeconds": 8
     },
@@ -4840,6 +5203,7 @@
       "tier": "every-run",
       "distinctStates": 348,
       "measuredSeconds": 1.37,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.24,
       "budgetCpuSeconds": 8
     },
@@ -4854,6 +5218,7 @@
       "tier": "every-run",
       "distinctStates": 1111,
       "measuredSeconds": 1.5,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.58,
       "budgetCpuSeconds": 9
     },
@@ -4868,6 +5233,7 @@
       "tier": "every-run",
       "distinctStates": 11,
       "measuredSeconds": 1.3,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
     },
@@ -4882,6 +5248,7 @@
       "tier": "every-run",
       "distinctStates": 16,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.85,
       "budgetCpuSeconds": 7
     },
@@ -4896,6 +5263,7 @@
       "tier": "every-run",
       "distinctStates": 7937,
       "measuredSeconds": 1.73,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.14,
       "budgetCpuSeconds": 10
     },
@@ -4910,6 +5278,7 @@
       "tier": "every-run",
       "distinctStates": 51,
       "measuredSeconds": 1.34,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.98,
       "budgetCpuSeconds": 7
     },
@@ -4924,6 +5293,7 @@
       "tier": "every-run",
       "distinctStates": 7414,
       "measuredSeconds": 1.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.11,
       "budgetCpuSeconds": 10
     },
@@ -4938,6 +5308,7 @@
       "tier": "every-run",
       "distinctStates": 9516,
       "measuredSeconds": 2.08,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.48,
       "budgetCpuSeconds": 10
     },
@@ -4952,6 +5323,7 @@
       "tier": "every-run",
       "distinctStates": 189,
       "measuredSeconds": 1.74,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.39,
       "budgetCpuSeconds": 8
     },
@@ -4966,6 +5338,7 @@
       "tier": "every-run",
       "distinctStates": 653,
       "measuredSeconds": 1.46,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.46,
       "budgetCpuSeconds": 8
     },
@@ -4977,6 +5350,7 @@
       "tier": "every-run",
       "distinctStates": 33917,
       "measuredSeconds": 3.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.93,
       "budgetCpuSeconds": 13
     },
@@ -4991,6 +5365,7 @@
       "tier": "every-run",
       "distinctStates": 186,
       "measuredSeconds": 1.34,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.08,
       "budgetCpuSeconds": 8
     },
@@ -5005,6 +5380,7 @@
       "tier": "every-run",
       "distinctStates": 2483,
       "measuredSeconds": 1.54,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.8,
       "budgetCpuSeconds": 9
     },
@@ -5019,6 +5395,7 @@
       "tier": "every-run",
       "distinctStates": 212,
       "measuredSeconds": 1.34,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.13,
       "budgetCpuSeconds": 8
     },
@@ -5033,6 +5410,7 @@
       "tier": "every-run",
       "distinctStates": 65,
       "measuredSeconds": 1.29,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.92,
       "budgetCpuSeconds": 7
     },
@@ -5044,6 +5422,7 @@
       "tier": "every-run",
       "distinctStates": 111254,
       "measuredSeconds": 3.28,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.03,
       "budgetCpuSeconds": 14
     },
@@ -5055,6 +5434,7 @@
       "tier": "every-run",
       "distinctStates": 408828,
       "measuredSeconds": 8.73,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 11.32,
       "budgetCpuSeconds": 26
     },
@@ -5066,6 +5446,7 @@
       "tier": "every-run",
       "distinctStates": 774,
       "measuredSeconds": 1.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.85,
       "budgetCpuSeconds": 7
     },
@@ -5080,6 +5461,7 @@
       "tier": "every-run",
       "distinctStates": 2300,
       "measuredSeconds": 1.35,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.08,
       "budgetCpuSeconds": 8
     },
@@ -5094,6 +5476,7 @@
       "tier": "every-run",
       "distinctStates": 871,
       "measuredSeconds": 1.3,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.9,
       "budgetCpuSeconds": 7
     },
@@ -5108,6 +5491,7 @@
       "tier": "every-run",
       "distinctStates": 49,
       "measuredSeconds": 1.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.55,
       "budgetCpuSeconds": 7
     },
@@ -5122,6 +5506,7 @@
       "tier": "every-run",
       "distinctStates": 49,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.55,
       "budgetCpuSeconds": 7
     },
@@ -5136,6 +5521,7 @@
       "tier": "every-run",
       "distinctStates": 660,
       "measuredSeconds": 1.34,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.98,
       "budgetCpuSeconds": 7
     },
@@ -5150,6 +5536,7 @@
       "tier": "every-run",
       "distinctStates": 9,
       "measuredSeconds": 1.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.45,
       "budgetCpuSeconds": 6
     },
@@ -5164,6 +5551,7 @@
       "tier": "every-run",
       "distinctStates": 31,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.67,
       "budgetCpuSeconds": 7
     },
@@ -5178,6 +5566,7 @@
       "tier": "every-run",
       "distinctStates": 51,
       "measuredSeconds": 1.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.62,
       "budgetCpuSeconds": 7
     },
@@ -5192,6 +5581,7 @@
       "tier": "every-run",
       "distinctStates": 51,
       "measuredSeconds": 1.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.62,
       "budgetCpuSeconds": 7
     },
@@ -5203,6 +5593,7 @@
       "tier": "every-run",
       "distinctStates": 1535159,
       "measuredSeconds": 23.73,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 41.54,
       "budgetCpuSeconds": 87,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
@@ -5215,6 +5606,7 @@
       "tier": "every-run",
       "distinctStates": 1019647,
       "measuredSeconds": 19.64,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 32.43,
       "budgetCpuSeconds": 68,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
@@ -5230,6 +5622,7 @@
       "tier": "every-run",
       "distinctStates": 309,
       "measuredSeconds": 4.08,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.6,
       "budgetCpuSeconds": 9,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
@@ -5245,6 +5638,7 @@
       "tier": "every-run",
       "distinctStates": 26303,
       "measuredSeconds": 4.79,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.7,
       "budgetCpuSeconds": 15,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
@@ -5257,6 +5651,7 @@
       "tier": "every-run",
       "distinctStates": 664,
       "measuredSeconds": 2.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.01,
       "budgetCpuSeconds": 8,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 38.10 at start)"
@@ -5272,6 +5667,7 @@
       "tier": "every-run",
       "distinctStates": 228,
       "measuredSeconds": 2.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.85,
       "budgetCpuSeconds": 7,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 37.13 at start)"
@@ -5287,6 +5683,7 @@
       "tier": "every-run",
       "distinctStates": 306,
       "measuredSeconds": 1.9,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.42,
       "budgetCpuSeconds": 8,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
@@ -5302,6 +5699,7 @@
       "tier": "every-run",
       "distinctStates": 306,
       "measuredSeconds": 1.9,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.42,
       "budgetCpuSeconds": 8,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
@@ -5317,6 +5715,7 @@
       "tier": "every-run",
       "distinctStates": 36,
       "measuredSeconds": 1.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.79,
       "budgetCpuSeconds": 7
     },
@@ -5328,6 +5727,7 @@
       "tier": "every-run",
       "distinctStates": 33917,
       "measuredSeconds": 3.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.69,
       "budgetCpuSeconds": 13
     },
@@ -5342,6 +5742,7 @@
       "tier": "every-run",
       "distinctStates": 37,
       "measuredSeconds": 1.13,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.42,
       "budgetCpuSeconds": 6
     },
@@ -5353,6 +5754,7 @@
       "tier": "every-run",
       "distinctStates": 34108,
       "measuredSeconds": 9.48,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 11.87,
       "budgetCpuSeconds": 27
     },
@@ -5364,6 +5766,7 @@
       "tier": "every-run",
       "distinctStates": 14580,
       "measuredSeconds": 4.88,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.47,
       "budgetCpuSeconds": 16
     },
@@ -5375,6 +5778,7 @@
       "tier": "deep",
       "distinctStates": 589435,
       "measuredSeconds": 164.07,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 174.95,
       "budgetCpuSeconds": 353
     },
@@ -5389,6 +5793,7 @@
       "tier": "every-run",
       "distinctStates": 7,
       "measuredSeconds": 1.95,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.59,
       "budgetCpuSeconds": 9
     },
@@ -5400,6 +5805,7 @@
       "tier": "every-run",
       "distinctStates": 32629,
       "measuredSeconds": 8.89,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 11.4,
       "budgetCpuSeconds": 26
     },
@@ -5414,6 +5820,7 @@
       "tier": "every-run",
       "distinctStates": 1093,
       "measuredSeconds": 2.31,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.07,
       "budgetCpuSeconds": 10
     },
@@ -5428,6 +5835,7 @@
       "tier": "every-run",
       "distinctStates": 399,
       "measuredSeconds": 2.23,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.89,
       "budgetCpuSeconds": 9
     },
@@ -5442,6 +5850,7 @@
       "tier": "every-run",
       "distinctStates": 7,
       "measuredSeconds": 1.88,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.21,
       "budgetCpuSeconds": 8
     },
@@ -5453,6 +5862,7 @@
       "tier": "every-run",
       "distinctStates": 5572,
       "measuredSeconds": 2.79,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.39,
       "budgetCpuSeconds": 12
     },
@@ -5467,6 +5877,7 @@
       "tier": "every-run",
       "distinctStates": 451,
       "measuredSeconds": 2.09,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.75,
       "budgetCpuSeconds": 9
     },
@@ -5481,6 +5892,7 @@
       "tier": "every-run",
       "distinctStates": 2,
       "measuredSeconds": 2.08,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.3,
       "budgetCpuSeconds": 8
     },
@@ -5495,6 +5907,7 @@
       "tier": "every-run",
       "distinctStates": 9545,
       "measuredSeconds": 3.6,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.92,
       "budgetCpuSeconds": 13
     },
@@ -5506,6 +5919,7 @@
       "tier": "every-run",
       "distinctStates": 30215,
       "measuredSeconds": 8.41,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 10.68,
       "budgetCpuSeconds": 25
     },
@@ -5520,6 +5934,7 @@
       "tier": "every-run",
       "distinctStates": 9545,
       "measuredSeconds": 3.72,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.96,
       "budgetCpuSeconds": 13
     },
@@ -5534,6 +5949,7 @@
       "tier": "every-run",
       "distinctStates": 2315,
       "measuredSeconds": 3.04,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.95,
       "budgetCpuSeconds": 11
     },
@@ -5548,6 +5964,7 @@
       "tier": "every-run",
       "distinctStates": 6,
       "measuredSeconds": 2.05,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.23,
       "budgetCpuSeconds": 8
     },
@@ -5562,6 +5979,7 @@
       "tier": "every-run",
       "distinctStates": 7,
       "measuredSeconds": 1.77,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.61,
       "budgetCpuSeconds": 9
     },
@@ -5573,6 +5991,7 @@
       "tier": "every-run",
       "distinctStates": 14511,
       "measuredSeconds": 4.4,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 6.1,
       "budgetCpuSeconds": 16
     },
@@ -5584,6 +6003,7 @@
       "tier": "every-run",
       "distinctStates": 33122,
       "measuredSeconds": 10.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 11.65,
       "budgetCpuSeconds": 27
     },
@@ -5598,6 +6018,7 @@
       "tier": "every-run",
       "distinctStates": 980,
       "measuredSeconds": 2.23,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.56,
       "budgetCpuSeconds": 11
     },
@@ -5612,6 +6033,7 @@
       "tier": "every-run",
       "distinctStates": 1062,
       "measuredSeconds": 2.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.36,
       "budgetCpuSeconds": 10
     },
@@ -5626,6 +6048,7 @@
       "tier": "every-run",
       "distinctStates": 9533,
       "measuredSeconds": 4.03,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.35,
       "budgetCpuSeconds": 14
     },
@@ -5640,6 +6063,7 @@
       "tier": "deep",
       "distinctStates": 895680,
       "measuredSeconds": 1397.05,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1426.91,
       "budgetCpuSeconds": 2857
     },
@@ -5654,6 +6078,7 @@
       "tier": "deep",
       "distinctStates": 1210465,
       "measuredSeconds": 2972.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2986.27,
       "budgetCpuSeconds": 5976
     },
@@ -5668,6 +6093,7 @@
       "tier": "deep",
       "distinctStates": 317324,
       "measuredSeconds": 466.03,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 456.17,
       "budgetCpuSeconds": 916
     },
@@ -5682,6 +6108,7 @@
       "tier": "every-run",
       "distinctStates": 20877,
       "measuredSeconds": 3.99,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.66,
       "budgetCpuSeconds": 15,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.29 at start)"
@@ -5697,6 +6124,7 @@
       "tier": "every-run",
       "distinctStates": 20512,
       "measuredSeconds": 3.98,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.91,
       "budgetCpuSeconds": 15,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.02 at start)"
@@ -5709,6 +6137,7 @@
       "tier": "every-run",
       "distinctStates": 183842,
       "measuredSeconds": 114.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 120.09,
       "budgetCpuSeconds": 244,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 14.73 at start)"
@@ -5721,6 +6150,7 @@
       "tier": "every-run",
       "distinctStates": 205995,
       "measuredSeconds": 10.86,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 14.38,
       "budgetCpuSeconds": 32,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.91 at start)"
@@ -5733,6 +6163,7 @@
       "tier": "deep",
       "distinctStates": 355213,
       "measuredSeconds": 113.87,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 122.04,
       "budgetCpuSeconds": 248
     },
@@ -5747,6 +6178,7 @@
       "tier": "every-run",
       "distinctStates": 3017,
       "measuredSeconds": 1.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.92,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.34 at start)"
@@ -5762,6 +6194,7 @@
       "tier": "every-run",
       "distinctStates": 4066,
       "measuredSeconds": 1.28,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.45,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
@@ -5777,6 +6210,7 @@
       "tier": "every-run",
       "distinctStates": 42,
       "measuredSeconds": 0.92,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.28,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
@@ -5792,6 +6226,7 @@
       "tier": "every-run",
       "distinctStates": 658,
       "measuredSeconds": 1.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
@@ -5807,6 +6242,7 @@
       "tier": "every-run",
       "distinctStates": 1529,
       "measuredSeconds": 1.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.15,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 7.07 at start)"
@@ -5822,6 +6258,7 @@
       "tier": "every-run",
       "distinctStates": 320,
       "measuredSeconds": 1.01,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.73,
       "budgetCpuSeconds": 7,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.75 at start)"
@@ -5837,6 +6274,7 @@
       "tier": "every-run",
       "distinctStates": 2920,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.19,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.75 at start)"
@@ -5852,6 +6290,7 @@
       "tier": "every-run",
       "distinctStates": 500,
       "measuredSeconds": 1.55,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.21,
       "budgetCpuSeconds": 8
     },
@@ -5863,6 +6302,7 @@
       "tier": "deep",
       "distinctStates": 494247,
       "measuredSeconds": 1279.67,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1312.07,
       "budgetCpuSeconds": 2628,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 16.06 at start)"
@@ -5878,6 +6318,7 @@
       "tier": "every-run",
       "distinctStates": 34938,
       "measuredSeconds": 27.64,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 30.54,
       "budgetCpuSeconds": 65,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 6.75 at start)"
@@ -5890,6 +6331,7 @@
       "tier": "every-run",
       "distinctStates": 587621,
       "measuredSeconds": 33.51,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 37,
       "budgetCpuSeconds": 77,
       "note": "measured with one worker, 1-minute load 10.63 at start"
@@ -5905,6 +6347,7 @@
       "tier": "every-run",
       "distinctStates": 778,
       "measuredSeconds": 1.06,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7,
       "note": "measured with one worker, 1-minute load 10.10 at start"
@@ -5920,6 +6363,7 @@
       "tier": "every-run",
       "distinctStates": 800,
       "measuredSeconds": 1.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.16,
       "budgetCpuSeconds": 8,
       "note": "measured with one worker, 1-minute load 10.10 at start"
@@ -5935,6 +6379,7 @@
       "tier": "every-run",
       "distinctStates": 12,
       "measuredSeconds": 0.96,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.26,
       "budgetCpuSeconds": 6,
       "note": "measured with one worker, 1-minute load 10.10 at start"
@@ -5950,6 +6395,7 @@
       "tier": "every-run",
       "distinctStates": 618,
       "measuredSeconds": 1.09,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.86,
       "budgetCpuSeconds": 7,
       "note": "measured with one worker, 1-minute load 10.10 at start"
@@ -5962,6 +6408,7 @@
       "tier": "every-run",
       "distinctStates": 1872407,
       "measuredSeconds": 101.91,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 113.84,
       "budgetCpuSeconds": 231,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.66 at start)"
@@ -5977,6 +6424,7 @@
       "tier": "every-run",
       "distinctStates": 7882,
       "measuredSeconds": 1.47,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.6,
       "budgetCpuSeconds": 9,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.77 at start)"
@@ -5992,6 +6440,7 @@
       "tier": "every-run",
       "distinctStates": 7878,
       "measuredSeconds": 1.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.39,
       "budgetCpuSeconds": 8,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.77 at start)"
@@ -6007,6 +6456,7 @@
       "tier": "every-run",
       "distinctStates": 7882,
       "measuredSeconds": 1.49,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.62,
       "budgetCpuSeconds": 9,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.77 at start)"
@@ -6022,6 +6472,7 @@
       "tier": "every-run",
       "distinctStates": 407421,
       "measuredSeconds": 14.71,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 18.08,
       "budgetCpuSeconds": 40,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.94 at start)"
@@ -6037,6 +6488,7 @@
       "tier": "every-run",
       "distinctStates": 15650,
       "measuredSeconds": 1.7,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.06,
       "budgetCpuSeconds": 10,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.43 at start)"
@@ -6052,6 +6504,7 @@
       "tier": "every-run",
       "distinctStates": 137,
       "measuredSeconds": 0.97,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.36,
       "budgetCpuSeconds": 6,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.43 at start)"
@@ -6067,6 +6520,7 @@
       "tier": "every-run",
       "distinctStates": 951141,
       "measuredSeconds": 33.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 37.96,
       "budgetCpuSeconds": 79,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.43 at start)"
@@ -6082,6 +6536,7 @@
       "tier": "every-run",
       "distinctStates": 2854857,
       "measuredSeconds": 22.95,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 115.48,
       "budgetCpuSeconds": 234,
       "note": "re-measured by formal-models-W2 (workers 5, 1-minute load 8 at start)"
@@ -6097,6 +6552,7 @@
       "tier": "every-run",
       "distinctStates": 2388813,
       "measuredSeconds": 21.88,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 101.84,
       "budgetCpuSeconds": 207,
       "note": "re-measured by formal-models-W2 (workers 5, 1-minute load 8.18 at start)"
@@ -6112,6 +6568,7 @@
       "tier": "every-run",
       "distinctStates": 951145,
       "measuredSeconds": 32.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 36.48,
       "budgetCpuSeconds": 76,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 4.24 at start)"
@@ -6124,6 +6581,7 @@
       "tier": "every-run",
       "distinctStates": 115968,
       "measuredSeconds": 7.61,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 28.92,
       "budgetCpuSeconds": 61,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 8.18 at start"
@@ -6139,6 +6597,7 @@
       "tier": "every-run",
       "distinctStates": 14,
       "measuredSeconds": 1.16,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6151,6 +6610,7 @@
       "tier": "every-run",
       "distinctStates": 251008,
       "measuredSeconds": 13.85,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 55.31,
       "budgetCpuSeconds": 114,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.45 at start"
@@ -6166,6 +6626,7 @@
       "tier": "every-run",
       "distinctStates": 1082,
       "measuredSeconds": 1.39,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.02,
       "budgetCpuSeconds": 10,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6181,6 +6642,7 @@
       "tier": "every-run",
       "distinctStates": 1084,
       "measuredSeconds": 1.41,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.99,
       "budgetCpuSeconds": 9,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.59 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6196,6 +6658,7 @@
       "tier": "every-run",
       "distinctStates": 154,
       "measuredSeconds": 1.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6211,6 +6674,7 @@
       "tier": "every-run",
       "distinctStates": 194,
       "measuredSeconds": 1.27,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2,
       "budgetCpuSeconds": 7,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.59 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6226,6 +6690,7 @@
       "tier": "every-run",
       "distinctStates": 1483,
       "measuredSeconds": 1.59,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.91,
       "budgetCpuSeconds": 11,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.38 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6241,6 +6706,7 @@
       "tier": "every-run",
       "distinctStates": 1068,
       "measuredSeconds": 1.39,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.89,
       "budgetCpuSeconds": 9,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6256,6 +6722,7 @@
       "tier": "every-run",
       "distinctStates": 1154,
       "measuredSeconds": 1.54,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.43,
       "budgetCpuSeconds": 10,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6268,6 +6735,7 @@
       "tier": "every-run",
       "distinctStates": 115968,
       "measuredSeconds": 7.78,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 30.04,
       "budgetCpuSeconds": 64,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 8.08 at start"
@@ -6283,6 +6751,7 @@
       "tier": "every-run",
       "distinctStates": 566,
       "measuredSeconds": 1.42,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.85,
       "budgetCpuSeconds": 9,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6298,6 +6767,7 @@
       "tier": "every-run",
       "distinctStates": 477,
       "measuredSeconds": 1.37,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.58,
       "budgetCpuSeconds": 9,
       "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
@@ -6313,6 +6783,7 @@
       "tier": "every-run",
       "distinctStates": 61653,
       "measuredSeconds": 2.96,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.7,
       "budgetCpuSeconds": 13,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 3.69 at start)"
@@ -6331,6 +6802,7 @@
       "tier": "every-run",
       "distinctStates": 9393,
       "measuredSeconds": 3.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.74,
       "budgetCpuSeconds": 13,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.7 at start)"
@@ -6349,6 +6821,7 @@
       "tier": "every-run",
       "distinctStates": 10224,
       "measuredSeconds": 3.93,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 5.54,
       "budgetCpuSeconds": 15,
       "note": "re-measured by formal-models-W2 (workers 1, 1-minute load 5.97 at start)"
@@ -6364,6 +6837,7 @@
       "tier": "every-run",
       "distinctStates": 1999,
       "measuredSeconds": 4.68,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 3.09,
       "budgetCpuSeconds": 10,
       "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 173.4 at start (above the gate 15): re-measure in the quiet window"
@@ -6379,6 +6853,7 @@
       "tier": "every-run",
       "distinctStates": 852,
       "measuredSeconds": 2.95,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.85,
       "budgetCpuSeconds": 9,
       "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 173.8 at start (above the gate 15): re-measure in the quiet window"
@@ -6394,6 +6869,7 @@
       "tier": "every-run",
       "distinctStates": 395,
       "measuredSeconds": 5.11,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.75,
       "budgetCpuSeconds": 9,
       "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 187.8 at start (above the gate 15): re-measure in the quiet window"
@@ -6406,6 +6882,7 @@
       "tier": "deep",
       "distinctStates": 5794288,
       "measuredSeconds": 1917.33,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1985.9,
       "budgetCpuSeconds": 3975,
       "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 38.6 at start (above the gate 15): re-measure in the quiet window; tier deep by choice: 5794288 states and about 1986 CPU seconds do not fit the every-run budget"
@@ -6418,6 +6895,7 @@
       "tier": "every-run",
       "distinctStates": 25890,
       "measuredSeconds": 1.63,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.52,
       "budgetCpuSeconds": 9
     },
@@ -6429,6 +6907,7 @@
       "tier": "every-run",
       "distinctStates": 15964,
       "measuredSeconds": 1.53,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.17,
       "budgetCpuSeconds": 8
     },
@@ -6440,6 +6919,7 @@
       "tier": "every-run",
       "distinctStates": 17237,
       "measuredSeconds": 1.51,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.33,
       "budgetCpuSeconds": 8
     },
@@ -6451,6 +6931,7 @@
       "tier": "every-run",
       "distinctStates": 112,
       "measuredSeconds": 1.19,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.56,
       "budgetCpuSeconds": 7
     },
@@ -6462,6 +6943,7 @@
       "tier": "every-run",
       "distinctStates": 1046,
       "measuredSeconds": 1.34,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.74,
       "budgetCpuSeconds": 7
     },
@@ -6476,6 +6958,7 @@
       "tier": "every-run",
       "distinctStates": 39,
       "measuredSeconds": 1.13,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.47,
       "budgetCpuSeconds": 6
     },
@@ -6490,6 +6973,7 @@
       "tier": "every-run",
       "distinctStates": 39,
       "measuredSeconds": 1.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.48,
       "budgetCpuSeconds": 6
     },
@@ -6504,6 +6988,7 @@
       "tier": "every-run",
       "distinctStates": 52,
       "measuredSeconds": 1.17,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.51,
       "budgetCpuSeconds": 7
     },
@@ -6518,6 +7003,7 @@
       "tier": "every-run",
       "distinctStates": 70,
       "measuredSeconds": 1.19,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.4,
       "budgetCpuSeconds": 6
     },
@@ -6532,6 +7018,7 @@
       "tier": "every-run",
       "distinctStates": 8,
       "measuredSeconds": 1.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.44,
       "budgetCpuSeconds": 6
     },
@@ -6546,6 +7033,7 @@
       "tier": "every-run",
       "distinctStates": 279,
       "measuredSeconds": 1.2,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.63,
       "budgetCpuSeconds": 7
     },
@@ -6560,6 +7048,7 @@
       "tier": "every-run",
       "distinctStates": 59,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.52,
       "budgetCpuSeconds": 7
     },
@@ -6574,6 +7063,7 @@
       "tier": "every-run",
       "distinctStates": 1018,
       "measuredSeconds": 1.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.94,
       "budgetCpuSeconds": 7
     },
@@ -6588,6 +7078,7 @@
       "tier": "every-run",
       "distinctStates": 87,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.57,
       "budgetCpuSeconds": 7
     },
@@ -6602,6 +7093,7 @@
       "tier": "every-run",
       "distinctStates": 50,
       "measuredSeconds": 1.23,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.63,
       "budgetCpuSeconds": 7
     },
@@ -6616,6 +7108,7 @@
       "tier": "every-run",
       "distinctStates": 34,
       "measuredSeconds": 1.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.46,
       "budgetCpuSeconds": 6
     },
@@ -6630,6 +7123,7 @@
       "tier": "every-run",
       "distinctStates": 219,
       "measuredSeconds": 1.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.61,
       "budgetCpuSeconds": 7
     },
@@ -6644,6 +7138,7 @@
       "tier": "every-run",
       "distinctStates": 125,
       "measuredSeconds": 1.24,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6
     },
@@ -6658,6 +7153,7 @@
       "tier": "every-run",
       "distinctStates": 1091,
       "measuredSeconds": 1.54,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.22,
       "budgetCpuSeconds": 8
     },
@@ -6672,6 +7168,7 @@
       "tier": "every-run",
       "distinctStates": 491,
       "measuredSeconds": 1.49,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.06,
       "budgetCpuSeconds": 8
     },
@@ -6686,6 +7183,7 @@
       "tier": "every-run",
       "distinctStates": 16,
       "measuredSeconds": 1.98,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.18,
       "budgetCpuSeconds": 8
     },
@@ -6697,6 +7195,7 @@
       "tier": "every-run",
       "distinctStates": 629,
       "measuredSeconds": 1.23,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.73,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
@@ -6712,6 +7211,7 @@
       "tier": "every-run",
       "distinctStates": 6,
       "measuredSeconds": 1.95,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.47,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
@@ -6724,6 +7224,7 @@
       "tier": "deep",
       "distinctStates": 13167,
       "measuredSeconds": 3.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 4.66,
       "budgetCpuSeconds": 13,
       "note": "measured by formal-models-W4 (workers 1, 1-minute load 6.83 at start)"
@@ -6736,6 +7237,7 @@
       "tier": "every-run",
       "distinctStates": 483290,
       "measuredSeconds": 78.41,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 73.12,
       "budgetCpuSeconds": 150,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6748,6 +7250,7 @@
       "tier": "deep",
       "distinctStates": 985905,
       "measuredSeconds": 150.96,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 151.6,
       "budgetCpuSeconds": 307,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6760,6 +7263,7 @@
       "tier": "every-run",
       "distinctStates": 105,
       "measuredSeconds": 1.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.49,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6775,6 +7279,7 @@
       "tier": "deep",
       "distinctStates": 985905,
       "measuredSeconds": 224.27,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 227.88,
       "budgetCpuSeconds": 459,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6790,6 +7295,7 @@
       "tier": "every-run",
       "distinctStates": 137,
       "measuredSeconds": 1.6,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.83,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6805,6 +7311,7 @@
       "tier": "every-run",
       "distinctStates": 3277,
       "measuredSeconds": 1.9,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.39,
       "budgetCpuSeconds": 8,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6820,6 +7327,7 @@
       "tier": "every-run",
       "distinctStates": 41,
       "measuredSeconds": 1.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.61,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6835,6 +7343,7 @@
       "tier": "every-run",
       "distinctStates": 2874,
       "measuredSeconds": 1.36,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.1,
       "budgetCpuSeconds": 8,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6850,6 +7359,7 @@
       "tier": "every-run",
       "distinctStates": 545,
       "measuredSeconds": 1.26,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W6 (workers 1)"
@@ -6862,6 +7372,7 @@
       "tier": "every-run",
       "distinctStates": 3110,
       "measuredSeconds": 1.35,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.09,
       "budgetCpuSeconds": 8,
       "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
@@ -6874,6 +7385,7 @@
       "tier": "deep",
       "distinctStates": 3042008,
       "measuredSeconds": 99.02,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 111.62,
       "budgetCpuSeconds": 227,
       "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
@@ -6889,6 +7401,7 @@
       "tier": "every-run",
       "distinctStates": 9,
       "measuredSeconds": 1.11,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.43,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
@@ -6904,6 +7417,7 @@
       "tier": "every-run",
       "distinctStates": 7,
       "measuredSeconds": 1.12,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.44,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W7 (workers 1, 1-minute load 4 to 5)"
@@ -6916,6 +7430,7 @@
       "tier": "every-run",
       "distinctStates": 348,
       "measuredSeconds": 1.43,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.55,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
@@ -6928,6 +7443,7 @@
       "tier": "deep",
       "distinctStates": 12939,
       "measuredSeconds": 1.46,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.22,
       "budgetCpuSeconds": 8,
       "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
@@ -6943,6 +7459,7 @@
       "tier": "every-run",
       "distinctStates": 50,
       "measuredSeconds": 1.15,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.35,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
@@ -6958,6 +7475,7 @@
       "tier": "every-run",
       "distinctStates": 30,
       "measuredSeconds": 1.11,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.3,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
@@ -6973,6 +7491,7 @@
       "tier": "every-run",
       "distinctStates": 124,
       "measuredSeconds": 1.19,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.4,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W8 (workers 1, 1-minute load 3 to 4)"
@@ -6985,6 +7504,7 @@
       "tier": "every-run",
       "distinctStates": 1636,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.66,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -6997,6 +7517,7 @@
       "tier": "every-run",
       "distinctStates": 1840,
       "measuredSeconds": 1.27,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.7,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7009,6 +7530,7 @@
       "tier": "every-run",
       "distinctStates": 383,
       "measuredSeconds": 1.21,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7021,6 +7543,7 @@
       "tier": "every-run",
       "distinctStates": 50,
       "measuredSeconds": 1.14,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.36,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7036,6 +7559,7 @@
       "tier": "every-run",
       "distinctStates": 1636,
       "measuredSeconds": 1.39,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 2.15,
       "budgetCpuSeconds": 8,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7051,6 +7575,7 @@
       "tier": "every-run",
       "distinctStates": 383,
       "measuredSeconds": 1.25,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.68,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7066,6 +7591,7 @@
       "tier": "every-run",
       "distinctStates": 203,
       "measuredSeconds": 1.22,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.53,
       "budgetCpuSeconds": 7,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7081,6 +7607,7 @@
       "tier": "every-run",
       "distinctStates": 27,
       "measuredSeconds": 1.16,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.39,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7096,6 +7623,7 @@
       "tier": "every-run",
       "distinctStates": 17,
       "measuredSeconds": 1.16,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.37,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7111,6 +7639,7 @@
       "tier": "every-run",
       "distinctStates": 167,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.48,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7126,6 +7655,7 @@
       "tier": "every-run",
       "distinctStates": 77,
       "measuredSeconds": 1.18,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.42,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
@@ -7141,6 +7671,7 @@
       "tier": "every-run",
       "distinctStates": 106,
       "measuredSeconds": 1.19,
+      "measuredReuse": "off",
       "measuredCpuSeconds": 1.45,
       "budgetCpuSeconds": 6,
       "note": "measured by formal-models-W9 (workers 1, 1-minute load 3 to 4)"
