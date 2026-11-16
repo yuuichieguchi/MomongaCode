@@ -46,7 +46,12 @@ export type E2eCaseFile =
   | 'gitpr-crash.test.ts'
   | 'gitpr-delegated.test.ts'
   | 'issue-run.test.ts'
-  | 'interrupt-cleanup.test.ts';
+  | 'interrupt-cleanup.test.ts'
+  | 'composition.test.ts'
+  | 'policy-fingerprint.test.ts'
+  | 'sandbox-off-dialog.test.ts'
+  | 'trace-content.test.ts'
+  | 'user-input-daemon.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -222,6 +227,11 @@ export const E2E_CASES = [
   { id: 'gitpr-delegated-https-egress', file: 'gitpr-delegated.test.ts', title: 'gitpr delegated: inside the sandbox git reaches an https remote only through the egress proxy of the call: the declared host is pushed to, the same server by an undeclared name is refused and sees no request', needsBash: false },
   { id: 'issue-run', file: 'issue-run.test.ts', title: 'issue: momonga --issue under a mandate reads issue #7, branches, commits, pushes, opens a pull request that closes #7, comments on #7, and the run record names #7', needsBash: false },
   { id: 'eval-interrupt-cleanup', file: 'interrupt-cleanup.test.ts', title: 'cancels the run it started, starts no other, removes the workspaces it made and exits 130', needsBash: false },
+  { id: 'composition-defaults', file: 'composition.test.ts', title: 'starts the daemons from the built bundle with the product defaults, and a session without a stated mode runs in the product default mode', needsBash: false },
+  { id: 'policy-fingerprint', file: 'policy-fingerprint.test.ts', title: 'the fingerprint the verify route reports is the fingerprint the run pinned at its start', needsBash: false },
+  { id: 'sandbox-off-dialog', file: 'sandbox-off-dialog.test.ts', title: 'asks before a sign-in when the runtime runs with sandbox none, starts on Cancel, and escape starts no sign-in and opens no browser', needsBash: false },
+  { id: 'trace-content', file: 'trace-content.test.ts', title: 'momonga trace --content reads the message bodies of a run that the gateway stored, through GET /v1/momonga/content', needsBash: false },
+  { id: 'user-input-daemon', file: 'user-input-daemon.test.ts', title: 'a ! command runs in the session folder through the runtime and its output reaches the next run; an @ mention in a trusted folder reaches the model as the file contents', needsBash: true },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

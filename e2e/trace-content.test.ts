@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
@@ -10,7 +11,7 @@ const STORED_REPLY = 'the reply the gateway keeps';
 const CAPTURING = { telemetry: { captureMessageContent: true } };
 
 describe('the gateway content route against a daemon (P-394)', () => {
-  it('momonga trace --content reads the message bodies of a run that the gateway stored, through GET /v1/momonga/content', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('trace-content'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, settings: CAPTURING, script: [textReply(STORED_REPLY)] });
     const runtime = createRuntimeClient(home);

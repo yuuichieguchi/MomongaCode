@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { defaultSandboxSetting } from '@momonga/config';
+import { titleOf } from './support/cases.ts';
 import { CLI_BUNDLE } from './support/cli-bundles.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
@@ -21,7 +22,7 @@ const commandOf = async (pid: number | undefined): Promise<string> => {
 };
 
 describe('the e2e stack is the product composition', () => {
-  it('starts the daemons from the built bundle with the product defaults, and a session without a stated mode runs in the product default mode', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('composition-defaults'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, script: [textReply('composed')] });
 

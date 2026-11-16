@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isPinnedRuleVerdict } from '@momonga/protocol';
+import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
@@ -10,7 +11,7 @@ import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './suppor
 const ALLOW_RULES = { permissions: { allow: ['Bash(git status)', 'Read(./src/**)'] } };
 
 describe('momonga policy verify and a run of the same folder decide the same rule set (P-420)', () => {
-  it('the fingerprint the verify route reports is the fingerprint the run pinned at its start', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('policy-fingerprint'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, settings: ALLOW_RULES, script: [textReply('verified')] });
     const runtime = createRuntimeClient(home);

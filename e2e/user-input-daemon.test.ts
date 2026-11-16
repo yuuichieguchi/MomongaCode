@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
@@ -11,7 +12,7 @@ const NOTE = 'the note the mention attaches';
 const SHELL_OUTPUT = 'shell-output-for-the-model';
 
 describe('the user input of the daemon: ! commands and @ mentions through the runtime the product starts (P-265)', () => {
-  it('a ! command runs in the session folder through the runtime and its output reaches the next run; an @ mention in a trusted folder reaches the model as the file contents', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('user-input-daemon'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, needsBash: true, script: [textReply('seen')] });
     const runtime = createRuntimeClient(home);
