@@ -588,8 +588,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const reportedView = async (runId: string, signal: AbortSignal) => {
-    const { report } = await store.journalFacts.report({ runId }, signal);
-    return { ...toRunView(requireRun(runId)), report };
+    const { report, run } = await store.journalFacts.report({ runId }, signal);
+    return { ...toRunView(run), report };
   };
 
   const createRun: Handler = async (context) => {
