@@ -43,7 +43,14 @@ type Piece = string | InputImagePart;
 
 type Fence = (text: string) => string;
 
-const piecesOfContent = (content: string | readonly ContentPart[], fence: Fence): Piece[] => {
+const FENCE_SLOT = 'momongafenceslot';
+
+const imageElementOf = (fence: Fence, image: InputImagePart): Piece[] => {
+  const [open = '', close = ''] = fence(FENCE_SLOT).split(FENCE_SLOT);
+  return [open, image, close];
+};
+
+const piecesOfContent = (content: string | readonly ContentPart[], fence: Fence, wrapImages: boolean): Piece[] => {
   const textRun = (parts: readonly ContentPart[]): string => fence(textOfContent(parts));
   if (!hasImagePart(content)) return [fence(textOfContent(content))];
   const pieces: Piece[] = [];
@@ -55,7 +62,7 @@ const piecesOfContent = (content: string | readonly ContentPart[], fence: Fence)
   for (const part of content as readonly ContentPart[]) {
     if (isImagePart(part)) {
       flush();
-      pieces.push(part);
+      pieces.push(...(wrapImages ? imageElementOf(fence, part) : [part]));
     } else {
       run.push(part);
     }
@@ -77,10 +84,10 @@ const elementOf = (item: AdapterInputItem, origin: ReasoningOrigin, boundary: st
     case 'function_call':
       return [fenceUntrusted('tool_call', { id: item.call_id, name: item.name }, item.arguments, boundary)];
     case 'function_call_output':
-      return piecesOfContent(item.output, (text) => fenceToolOutput(item.call_id, callNames.get(item.call_id) ?? '', text, boundary));
+      return piecesOfContent(item.output, (text) => fenceToolOutput(item.call_id, callNames.get(item.call_id) ?? '', text, boundary), true);
     case 'message':
       if (item.role === 'system') return undefined;
-      return piecesOfContent(item.content, (text) => fenceUntrusted('item', { role: item.role }, text, boundary));
+      return piecesOfContent(item.content, (text) => fenceUntrusted('item', { role: item.role }, text, boundary), false);
   }
 };
 

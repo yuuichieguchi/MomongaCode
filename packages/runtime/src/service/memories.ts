@@ -53,7 +53,7 @@ const decodeCursor = (raw: string | undefined): MemoryListCursor | null => {
 const projectOf = async (raw: string | undefined, signal: AbortSignal): Promise<string | undefined> => (raw === undefined ? undefined : canonicalProject(raw, 'project', signal));
 
 export type MemoryRoutesDeps = {
-  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes'>;
+  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'getRun' | 'getSession' | 'readRunEventsOfTypes'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
   skillFiles: SkillFileSystem;
@@ -194,7 +194,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     const job = reflection.get(runId);
     return {
       job: job === undefined ? null : { runId: job.runId, state: job.state, attempts: job.attempts, reason: job.lastError, dropped: job.dropped, updatedAt: job.updatedAt },
-      charges: [...deps.store.contextCharges.list({ runIds: [runId] }).filter((entry) => entry.purpose === 'reflection'), ...journalReflectionCharges(runId)],
+      charges: journalReflectionCharges(runId),
       queuedAhead: job === undefined ? 0 : reflection.aheadOf(runId),
     };
   };

@@ -1,4 +1,5 @@
 import type { JobView } from '@momonga/protocol';
+import { BASH_OUTPUT_TOOL_NAME, COMMAND_TOOL_NAME, KILL_BASH_TOOL_NAME } from '@momonga/protocol';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { ReconcileContext, ToolContext } from '../types.ts';
 import { checkWithPatterns, validateUntrusted } from '@momonga/foundation';
@@ -59,9 +60,9 @@ const lineFilterOf = (pattern: string, ctx: ToolContext): LineFilter =>
   createLineFilter(pattern, { signal: ctx.signal, ...(ctx.patternCheckLimitMs === undefined ? {} : { patternCheckLimitMs: ctx.patternCheckLimitMs }) });
 
 export const bashOutputTool = defineTool<BashOutputInput>({
-  name: 'BashOutput',
+  name: BASH_OUTPUT_TOOL_NAME,
   tier: 'optional',
-  companionOf: 'Bash',
+  companionOf: COMMAND_TOOL_NAME,
   description: `Reads the output a background job (started with Bash run_in_background) has produced since the last BashOutput call, and reports whether the job is running, exited or stopped. filter keeps only the output lines that match a regular expression; the other new lines are discarded. With block true the call waits until the job ends or timeout milliseconds pass (default ${DEFAULT_OUTPUT_WAIT_MS}, maximum ${MAX_OUTPUT_WAIT_MS}).`,
   conciseDescription: `Reads the new output of a background job and its state. filter keeps only lines matching a regular expression. With block true it waits until the job ends or timeout ms pass (default ${DEFAULT_OUTPUT_WAIT_MS}, maximum ${MAX_OUTPUT_WAIT_MS}).`,
   conciseParameterDescriptions: {
@@ -85,7 +86,7 @@ export const bashOutputTool = defineTool<BashOutputInput>({
   },
   timeoutMs: 10_000,
   title: (input) => `Read output of ${input.bash_id}`,
-  subject: () => ({ kind: 'none', tool: 'BashOutput' }),
+  subject: () => ({ kind: 'none', tool: BASH_OUTPUT_TOOL_NAME }),
   prepare: async (input: BashOutputInput, ctx: ToolContext) => ({ waitUntil: ctx.clock.now() + (input.timeout ?? DEFAULT_OUTPUT_WAIT_MS) }),
   execute: async (input, ctx, prepared) => {
     const jobs = requireJobs(ctx);
@@ -106,9 +107,9 @@ export const bashOutputTool = defineTool<BashOutputInput>({
 });
 
 export const killBashTool = defineTool<KillBashInput>({
-  name: 'KillBash',
+  name: KILL_BASH_TOOL_NAME,
   tier: 'optional',
-  companionOf: 'Bash',
+  companionOf: COMMAND_TOOL_NAME,
   description: 'Stops a background job started with Bash run_in_background, together with every process it started. Stopping a job that has already ended reports how it ended.',
   conciseDescription: 'Stops a background job and every process it started.',
   conciseParameterDescriptions: { shell_id: 'Job id from Bash' },
@@ -123,7 +124,7 @@ export const killBashTool = defineTool<KillBashInput>({
   },
   timeoutMs: 30_000,
   title: (input) => `Stop ${input.shell_id}`,
-  subject: () => ({ kind: 'none', tool: 'KillBash' }),
+  subject: () => ({ kind: 'none', tool: KILL_BASH_TOOL_NAME }),
   execute: async (input, ctx) => {
     const { view, kill } = await requireJobs(ctx).kill(ctx.runId, input.shell_id);
     if (kill === 'requested') return { status: 'completed', output: `Job ${view.id}: kill requested; it stops when its owner finishes the stop.` };

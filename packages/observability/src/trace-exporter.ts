@@ -51,7 +51,7 @@ const bodiesOf = (span: ReadableSpan, capture: BodyCapture | undefined): BodyRec
     if (content === undefined) return [];
     if (capture === undefined) throw new TypeError(`span ${spanId} carries ${kind} but the store exporter has no body capture`);
     if (typeof content !== 'string') throw new TypeError(`span ${spanId} has a non-string ${kind} attribute`);
-    return [{ traceId, spanId, kind, content, createdAtMs, expiresAtMs: createdAtMs + capture.retentionMs }];
+    return [{ traceId, spanId, kind, content, createdAtMs }];
   });
 };
 

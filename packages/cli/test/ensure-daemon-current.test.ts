@@ -1,6 +1,7 @@
+import { nodeFilesLockedBy } from '../src/node-ports.ts';
 import fs from 'node:fs';
 import { ensureMomongaDirs, momongaPaths, readCurrentGeneration } from '@momonga/foundation';
-import { firstGeneration, registerCleanup, withTempDir, afterMicrotasks, waitFor } from '@momonga/testkit';
+import { firstGeneration, registerCleanup, testKernelLock, withTempDir, afterMicrotasks, waitFor } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { ensureDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
@@ -44,7 +45,7 @@ describe('ensureDaemon and run/current', () => {
       });
       return undefined;
     });
-    const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn, ...installedProgram(VERSION).ports };
+    const ports: DaemonPorts = { files: nodeFilesLockedBy(testKernelLock), version: VERSION, env: { PATH: '/usr/bin' }, home, clock, self: SELF, spawnDetached: spawn, ...installedProgram(VERSION).ports };
 
     let returned = false;
     const pending = ensureDaemon(ports, paths, { bounds: BOUNDS }).finally(() => {

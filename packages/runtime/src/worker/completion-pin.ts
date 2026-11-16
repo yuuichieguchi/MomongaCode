@@ -29,7 +29,7 @@ export const COMPLETION_CONDITION_DENIED_CODE = 'completion_condition_denied';
 const SOURCE_NAMES: Record<ConditionSource, string> = {
   request: 'the mandate of the request',
   profile: 'the front matter of the agent',
-  settings: 'verification.commands of the settings',
+  settings: 'the verification commands or the accepted projectChecks of the settings',
 };
 
 export type DeniedCondition = { command: string; source: ConditionSource; rule: PermissionRule };

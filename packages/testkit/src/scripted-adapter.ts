@@ -1,4 +1,4 @@
-import { ADAPTER_NEUTRAL_ERROR_CODES, ERROR_TYPES, SAMPLING_FIELDS, applyCapabilityOverride } from '@momonga/protocol';
+import { ADAPTER_NEUTRAL_ERROR_CODES, ERROR_TYPES, SAMPLING_FIELDS, imageCapability } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -176,7 +176,10 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
       released.add(gateName);
       for (const wake of gateWaiters.get(gateName)?.splice(0) ?? []) wake();
     },
-    capabilities: async () => applyCapabilityOverride(DEFAULT_SCRIPTED_CAPABILITIES, options.capabilities ?? {}),
+    capabilities: async () => {
+      const { imageInput, imageTokens, ...core } = options.capabilities ?? {};
+      return { ...DEFAULT_SCRIPTED_CAPABILITIES, ...core, ...imageCapability(imageInput ?? DEFAULT_SCRIPTED_CAPABILITIES.imageInput, imageTokens) };
+    },
     toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
     create: (request: AdapterRequest, ctx: AdapterContext) => {
       const plan = options.calls[calls.length];

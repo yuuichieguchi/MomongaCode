@@ -24,6 +24,16 @@ export const lockFormOf = (mechanism: Pick<KernelLockMechanism, 'name'>, kind: E
 
 export const sidecarSuffixOf = (mechanism: Pick<KernelLockMechanism, 'name'>): string => MECHANISM_FORMS[mechanism.name].sidecarSuffix;
 
+const COMPANION_SUFFIXES: Readonly<Record<MechanismName, readonly string[]>> = {
+  'file-lock': [],
+  'sqlite-lock': ['-journal'],
+};
+
+export const sidecarNameSuffixesOf = (mechanism: Pick<KernelLockMechanism, 'name'>): { sidecar: string; companions: readonly string[] } => {
+  const sidecar = sidecarSuffixOf(mechanism);
+  return { sidecar, companions: COMPANION_SUFFIXES[mechanism.name].map((companion) => `${sidecar}${companion}`) };
+};
+
 export const sidecarOf = (mechanism: Pick<KernelLockMechanism, 'name'>, entry: string): string => `${entry}${sidecarSuffixOf(mechanism)}`;
 
 export const claimPathOf = (mechanism: Pick<KernelLockMechanism, 'name'>, entry: string, form: LockForm): string =>

@@ -2,7 +2,7 @@ export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inheritanceWindo
 export { renderMemories } from './memory.ts';
 export { instructionPathsOf, nestedInstructionCandidates, projectRootOf } from './instructions.ts';
 export { textOfContent, textOfItem } from './item-text.ts';
-export { attestedTokens, checkSummary, claimedTokens } from './summary-fidelity.ts';
+export { checkSummary, claimedTokens } from './summary-fidelity.ts';
 export type { FidelityRecord, FidelitySource } from './summary-fidelity.ts';
 export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingState, widestMandatoryWorkingStateMessage, workingStateCapFor, workingStateMessage } from './working-state.ts';
 export type { WorkingStateOptions } from './working-state.ts';

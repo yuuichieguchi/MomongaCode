@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as contextModule from '@momonga/context';
 import { inputCeilingFor } from '@momonga/context';
 import type { Capabilities, RunEventPayload } from '@momonga/protocol';
+import { largestSummaryCapFor } from '@momonga/protocol';
 import { summaryInputCeilingFor } from '../../../context/src/budget.ts';
 import { omittedMarker } from '../../../context/src/tool-output.ts';
 import { generatedRun } from '../../../store/test/support/reference.ts';
@@ -117,8 +118,8 @@ describe('the window request carries W = C + S over the claim targets and the ma
   it('inheritanceWindowFor is the input ceiling plus the summary input ceiling, maximised over targets', async () => {
     const small = capabilitiesFor(8_000);
     const large = capabilitiesFor(200_000);
-    expect(inheritanceWindowFor([small]).windowTokens).toBe(inputCeilingFor(small) + summaryInputCeilingFor(small));
-    expect(inheritanceWindowFor([small, large]).windowTokens).toBe(inputCeilingFor(large) + summaryInputCeilingFor(large));
+    expect(inheritanceWindowFor([small]).windowTokens).toBe(inputCeilingFor(small) + summaryInputCeilingFor(small, largestSummaryCapFor(small)));
+    expect(inheritanceWindowFor([small, large]).windowTokens).toBe(inputCeilingFor(large) + summaryInputCeilingFor(large, largestSummaryCapFor(large)));
     const floor = inheritanceWindowFor([small]).floorTokens;
     expect(Number.isInteger(floor)).toBe(true);
     expect(floor).toBeGreaterThanOrEqual(1);

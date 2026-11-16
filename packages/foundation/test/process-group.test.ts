@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GroupMembersReader, ProcessGroupPort } from '@momonga/foundation';
-import { forceKillGroup, groupAlive, procGroupMembers, systemWaitTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
+import { forceKillGroup, groupAlive, procGroupMembers, sleep, systemWaitTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import { createFakeClock, createSteppingTiming, createTempDir, killGroupsForCleanup, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_WAIT_MS, waitForFile } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -287,7 +287,7 @@ describe('terminateGroup', () => {
     const { pgid } = await spawnForkLoopGroup();
     const counts: number[] = [];
     for (let sample = 0; sample < FORK_LOOP_SAMPLES; sample += 1) {
-      await new Promise((resolve) => setTimeout(resolve, FORK_LOOP_SAMPLE_INTERVAL_MS));
+      await sleep(systemWaitTiming, FORK_LOOP_SAMPLE_INTERVAL_MS);
       counts.push(spawnSync('ps', ['-A', '-o', 'pgid='], { encoding: 'utf8' }).stdout.split('\n').filter((line) => Number(line.trim()) === pgid).length);
     }
     await killGroupsForCleanup([pgid]);

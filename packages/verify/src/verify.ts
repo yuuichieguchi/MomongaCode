@@ -1,10 +1,11 @@
 import type { UnixSocketPolicy } from '@momonga/foundation';
-import { systemClock } from '@momonga/foundation';
+import { systemTiming } from '@momonga/foundation';
 import type { Clock, ProtectedSet, RuleEnforcement, SecretLocation } from '@momonga/foundation';
 import { askedBy, computeFileRules } from '@momonga/policy';
 import type { PermissionRule, PolicyHostFilesystem, SupersededForm } from '@momonga/policy';
 import type { PermissionMode, RuleVerdictPhase } from '@momonga/protocol';
 import { startBudget } from './budget.ts';
+import type { BudgetTiming } from './budget.ts';
 import { alphabetFor } from './char-set.ts';
 import { createCommandModel } from './command-model.ts';
 import { createPathModel } from './path-model.ts';
@@ -30,7 +31,7 @@ export type VerifyRequest = {
   enforcement: RuleEnforcement;
   budgetMs: number;
   signal: AbortSignal;
-  clock?: Clock;
+  clock?: Clock & BudgetTiming;
   hostPhases?: readonly RuleVerdictPhase[];
   supersededForms?: readonly SupersededForm[];
   alwaysOperations?: readonly string[];
@@ -68,7 +69,7 @@ export const needsVerdict = ({ rules, supersededForms, alwaysOperations }: Pick<
 
 export const buildQueryContext = async (api: Z3Api, request: VerifyRequest): Promise<QueryContext> => {
   const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, enforcement, budgetMs, signal } = request;
-  const budget = startBudget(request.clock ?? systemClock, budgetMs);
+  const budget = startBudget(request.clock ?? systemTiming, budgetMs);
   const probes = askedBy(fs, signal);
   const fileRules = await computeFileRules(rules, roots, exemptDirectory, enforcement, probes);
   const locationTexts: string[] = [];
@@ -113,7 +114,7 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
     (scoped: QueryContext) => checkRuleConsistency(scoped),
     (scoped: QueryContext) => checkBashAdmission(scoped),
   ];
-  const clock = request.clock ?? systemClock;
+  const clock = request.clock ?? systemTiming;
   const results: PropertyResult[] = [];
   const timings: RuleVerdictPhase[] = [...(request.hostPhases ?? [])];
   for (const [index, check] of checks.entries()) {

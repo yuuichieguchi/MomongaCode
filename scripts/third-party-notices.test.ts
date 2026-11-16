@@ -105,6 +105,10 @@ describe('the third-party notices of the released executable', () => {
     expect(generated).toContain('## mingw-w64 runtime');
   });
 
+  it('takes the yoga-layout licence as its upstream LICENSE at v3.2.1 has it, with Facebook, Inc. as the copyright holder', () => {
+    expect(read('scripts/third-party-licences/yoga-layout@3.2.1.txt')).toContain('Copyright (c) Facebook, Inc. and its affiliates.');
+  });
+
   it('is the THIRD-PARTY-NOTICES.md of the repository', () => {
     expect(read('THIRD-PARTY-NOTICES.md')).toBe(generated);
   });

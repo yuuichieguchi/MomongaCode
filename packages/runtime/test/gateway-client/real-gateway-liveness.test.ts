@@ -57,7 +57,7 @@ beforeAll(async () => {
     (cleanup) => {
       closeGateway = cleanup;
     },
-    () => startGatewayProcess({
+    () => startGatewayProcess({ platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

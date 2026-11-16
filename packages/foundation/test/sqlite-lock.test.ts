@@ -71,6 +71,16 @@ describe('the lock of a directory that does not enforce BSD locks', () => {
   });
 });
 
+describe('the lock of a directory entry', () => {
+  it('is disposed without removing the directory, which is not a file the claim owns', async (context) => {
+    const entry = path.join(withTempDir(context), 'entry-directory');
+    fs.mkdirSync(entry);
+    const lock = await claimOrThrow(entry);
+    expect(() => lock.dispose?.()).not.toThrow();
+    expect(fs.statSync(entry).isDirectory()).toBe(true);
+  });
+});
+
 describe('the lock used on Linux and Windows, held by another process', () => {
   it('is held and names the holder while the process lives, and is free the moment a killed holder is gone', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');

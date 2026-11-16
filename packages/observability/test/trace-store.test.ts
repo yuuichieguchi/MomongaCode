@@ -45,6 +45,20 @@ describe('openTraceStore', () => {
     }
   });
 
+  it('keeps no expiry for a body: the bodies table has no expiry column or index', () => {
+    const { store, file } = openStore(createFakeClock(START_MS));
+    store.close();
+    const db = new DatabaseSync(file, { readOnly: true });
+    try {
+      const columns = (db.prepare("PRAGMA table_info('bodies')").all() as Array<{ name: string }>).map((column) => column.name);
+      const indexes = (db.prepare("PRAGMA index_list('bodies')").all() as Array<{ name: string }>).map((index) => index.name);
+      expect(columns).not.toContain('expires_at_ms');
+      expect(indexes).not.toContain('bodies_by_expiry');
+    } finally {
+      db.close();
+    }
+  });
+
   it('close is idempotent and reopening keeps the data', async () => {
     const h = harness();
     startAgentSpan(h.telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: RUN_ID }).end(
@@ -188,7 +202,6 @@ describe('body capture', () => {
         kind: CONTENT.ATTR_GEN_AI_INPUT_MESSAGES,
         content: `prompt ${SENTINEL}`,
         createdAtMs: START_MS + 5,
-        expiresAtMs: START_MS + 1005,
       },
       {
         traceId: chat.spanContext().traceId,
@@ -196,7 +209,6 @@ describe('body capture', () => {
         kind: CONTENT.ATTR_GEN_AI_OUTPUT_MESSAGES,
         content: 'answer',
         createdAtMs: START_MS + 5,
-        expiresAtMs: START_MS + 1005,
       },
     ]);
   });

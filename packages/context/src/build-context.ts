@@ -973,20 +973,23 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
             },
           };
     }
-    const target = ports.compactionTarget === undefined ? (input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration)) : await ports.compactionTarget();
+    const role = ports.compactionRole === undefined ? undefined : await ports.compactionRole();
+    const target = role?.capabilities ?? (input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration));
+    const countSummaryInput = (items: readonly InputItem[]): Promise<MeterCount> =>
+      role === undefined ? countInput(items) : role.meter.count({ input: items, tools: [] });
     const summaryCap = Math.min(summaryTokenCapFor(capabilities, roomLeft), largestSummaryCapFor(target));
-    const summaryCeiling = summaryInputCeilingFor(target);
+    const summaryCeiling = summaryInputCeilingFor(target, summaryCap);
     const promptTokens = summaryPromptTokensFor(input.compactionFocus);
     const growth = await workingStateGrowth();
     const item = summaryItemTokensFor(summaryCap) + growth;
-    const layersOnly = (await countInput(layers)).inputTokens;
-    const previousSummary = summaryItems.length === 0 ? 0 : (await countInput([...layers, ...summaryItems])).inputTokens - layersOnly;
+    const layersOnly = (await countSummaryInput(layers)).inputTokens;
+    const previousSummary = summaryItems.length === 0 ? 0 : (await countSummaryInput([...layers, ...summaryItems])).inputTokens - layersOnly;
     const taskTokens = floorTokens - layersOnly;
     let overBudget: CompactionBlock | undefined;
     for (const cutIndex of cuts.toReversed()) {
       const prefix = slots.slice(0, cutIndex + 1);
       const taskInside = prefix.some((slot) => slot.seq > sources.taskSeq);
-      const counted = await countInput([...layers, ...summaryItems, ...prefix.map(shown)]);
+      const counted = await countSummaryInput([...layers, ...summaryItems, ...prefix.map(shown)]);
       const region = counted.inputTokens - layersOnly;
       const regionWithTask = region + (taskInside ? taskTokens : 0);
       if (regionWithTask + promptTokens + summaryCap > summaryCeiling) {

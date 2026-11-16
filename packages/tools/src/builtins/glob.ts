@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { GLOB_TOOL_NAME } from '@momonga/protocol';
 import picomatch from 'picomatch';
 import { mapAsync } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
@@ -19,7 +20,7 @@ export const sortByMtimeThenPath = async (host: Pick<FileSystem, 'stat'>, files:
 };
 
 export const globTool = defineTool<GlobInput>({
-  name: 'Glob',
+  name: GLOB_TOOL_NAME,
   tier: 'essential',
   description: `Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path is a directory, defaults to the working directory, and a relative path is resolved against the working directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns paths relative to the working directory when inside it and absolute otherwise, newest first, at most ${MAX_GLOB_RESULTS}.`,
   conciseDescription: `Finds files by glob pattern, for example "**/*.ts", under path. A relative path is resolved against the working directory, which is also the default. Respects .gitignore, includes dotfiles. Newest first, at most ${MAX_GLOB_RESULTS}.`,
@@ -44,7 +45,7 @@ export const globTool = defineTool<GlobInput>({
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.path ?? '.') }],
   subject: (input, ctx) => ({
     kind: 'path',
-    tool: 'Glob',
+    tool: GLOB_TOOL_NAME,
     paths: [resolvedPathOf(ctx, input.path ?? '.')],
     access: 'read',
   }),
@@ -64,7 +65,7 @@ export const globTool = defineTool<GlobInput>({
       readDenied: ctx.sandboxPolicy.readDenied,
       readAllowed: ctx.sandboxPolicy.readAllowed,
       fileRules: ctx.sandboxPolicy.fileRules,
-      tool: 'Glob',
+      tool: GLOB_TOOL_NAME,
       includeSymlinkedFiles: true,
       signal: walking,
       onUnreadable: () => undefined,

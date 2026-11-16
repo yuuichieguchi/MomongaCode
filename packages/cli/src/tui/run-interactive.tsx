@@ -1,7 +1,6 @@
 import { render } from 'ink';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { systemTiming, resolveLayoutLocks } from '@momonga/foundation';
+import { resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { writeTuiSetting } from '@momonga/config';
 import { TARGET_NOT_READY, reopenSessionCommand } from '@momonga/protocol';
@@ -18,7 +17,7 @@ import type { AutoModePort, ShellPort } from './slash.ts';
 import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPortsOf } from '../commands/auto-mode.ts';
 import { createTuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
-import { createExternalEditor } from './external-editor.ts';
+import { terminalExternalEditor } from './external-editor.ts';
 import { createKeyBindings } from './keys/store.ts';
 import { a11yOf } from './screen/a11y.ts';
 import type { AskedA11y } from './screen/a11y.ts';
@@ -28,7 +27,7 @@ import { MAX_FPS } from './screen/constants.ts';
 import { createScreenInput } from './screen/input.ts';
 import { colorLevelOfDepth, noColorAsked } from './screen/theme.ts';
 import { TerminalFrame } from './terminal/frame.tsx';
-import { hostProcessOn, hostTerminalOutput, NO_DESCRIPTOR_TEXT } from './terminal/host.ts';
+import { hostProcessOn, hostTerminalOutput, launchOnTerminal, NO_DESCRIPTOR_TEXT } from './terminal/host.ts';
 import { createInkStdin } from './terminal/ink-stdin.ts';
 import { createTerminalLayer } from './terminal/layer.ts';
 import type { TerminalOutputPort } from './terminal/layer.ts';
@@ -144,7 +143,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
   };
-  const readStart = (): Promise<TuiStart> => readTuiStart({ home: paths.home, projectDir: ports.cwd, userFile: paths.settingsFile, signal: ports.interrupt });
+  const readStart = (): Promise<TuiStart> => readTuiStart({ home: paths.home, projectDir: ports.cwd, userFile: paths.settingsFile, signal: ports.interrupt, isTrusted: async () => (await backend.trust()).decision === 'trusted' });
   const firstStart = await readStart();
   const start = firstStart.kind === 'loaded' ? firstStart : await repairedStart(ports, terminal, output.port, firstStart, readStart);
   if (start === undefined) {
@@ -174,7 +173,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     input: terminal.stdin,
     output: output.port,
     process: hostProcessOn(ports.platform),
-    timers: systemTiming,
+    timers: ports.timers,
     screen: readerAtStart ? 'scrollback' : tuiSettings.initial.screen,
     screenSetByUser: readerAtStart || setByPerson(start, 'screen'),
     mouse: tuiSettings.initial.mouse,
@@ -185,15 +184,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   else layer.start();
   const moving = wireMove(ports, paths, terminal, layer, (error) => moveFailures.push(error));
   const adopted: { adoption?: TuiAdoption } = adoption.kind === 'record' ? { adoption: { record: adoption.record, attached: () => ports.handover?.removeRecord(adoption.file) } } : {};
-  const externalEditor = createExternalEditor({
-    env: ports.env,
-    temporaryDirectory: () => ports.files.mkdtemp(path.join(ports.tmpdir, 'momonga-draft-')),
-    writePrivate: (file, text) => ports.files.writeTextAtomically(file, text, 0o600),
-    read: (file) => ports.files.readText(file),
-    remove: (directory) => ports.files.rm(directory, { recursive: true }),
-    leaveScreen: layer.leaveForProgram,
-    launch: launchOnTerminal,
-  });
+  const externalEditor = terminalExternalEditor(ports, layer, launchOnTerminal);
   const noColor = noColorAsked(ports.env);
   try {
     const instance = render(
@@ -203,7 +194,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           {...(options.reopen === undefined ? {} : { reopen: options.reopen })}
           tasks={tasks}
-          timers={systemTiming}
+          timers={ports.timers}
           autoMode={autoMode}
           shell={shell}
           externalEditor={externalEditor}
@@ -229,17 +220,9 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
 const repairedStart = async (ports: CliPorts, terminal: Terminal, output: TerminalOutputPort, first: Extract<TuiStart, { kind: 'broken' }>, reread: () => Promise<TuiStart>): Promise<Extract<TuiStart, { kind: 'loaded' }> | undefined> => {
   const failures: unknown[] = [];
   const input = createScreenInput();
-  const layer = createTerminalLayer({ input: terminal.stdin, output, process: hostProcessOn(ports.platform), timers: systemTiming, screen: 'scrollback', screenSetByUser: true, mouse: false, onEvents: input.push, onFailure: (error) => failures.push(error) });
+  const layer = createTerminalLayer({ input: terminal.stdin, output, process: hostProcessOn(ports.platform), timers: ports.timers, screen: 'scrollback', screenSetByUser: true, mouse: false, onEvents: input.push, onFailure: (error) => failures.push(error) });
   layer.start();
-  const editor = createExternalEditor({
-    env: ports.env,
-    temporaryDirectory: () => ports.files.mkdtemp(path.join(ports.tmpdir, 'momonga-draft-')),
-    writePrivate: (file, text) => ports.files.writeTextAtomically(file, text, 0o600),
-    read: (file) => ports.files.readText(file),
-    remove: (directory) => ports.files.rm(directory, { recursive: true }),
-    leaveScreen: layer.leaveForProgram,
-    launch: launchOnTerminal,
-  });
+  const editor = terminalExternalEditor(ports, layer, launchOnTerminal);
   const outcome = Promise.withResolvers<RepairOutcome>();
   try {
     const instance = render(
@@ -258,18 +241,6 @@ const repairedStart = async (ports: CliPorts, terminal: Terminal, output: Termin
     layer.close();
   }
 };
-
-const launchOnTerminal = (argv: readonly string[]): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const [program, ...args] = argv;
-    if (program === undefined) {
-      reject(new Error('no program to launch'));
-      return;
-    }
-    const child = spawn(program, args, { stdio: 'inherit' });
-    child.once('error', reject);
-    child.once('exit', () => resolve());
-  });
 
 const refusalOf = (outcome: TuiOutcome): TuiOutcome =>
   outcome.error instanceof RunApiError && outcome.error.code === TARGET_NOT_READY ? { ...outcome, error: new Error(outcome.error.reason) } : outcome;

@@ -11,7 +11,7 @@ import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistory
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
-import { TEST_BUILTIN_TOOL_OFFER, usageOf, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
+import { TEST_BUILTIN_TOOL_OFFER, usageOf, TEST_CHILD_UNPROTECTED, standInEnv } from '@momonga/testkit';
 import { createBuiltinTools, harnessOutputToolsOf } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
@@ -496,7 +496,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
     env.settings.extraRules.push(...plan.spec.deny.map((rule) => ({ effect: 'deny' as const, rule })));
     const session = env.store.createSession({
       cwd: plan.home.project,
-      env: { HOME: plan.home.home, PATH: SESSION_PATH, TMPDIR: plan.home.sessionTmp },
+      env: { HOME: plan.home.home, ...standInEnv(SESSION_PATH), TMPDIR: plan.home.sessionTmp },
       permissionMode: 'bypassPermissions',
       bypassAllowed: true,
       model: E2E_MODEL,

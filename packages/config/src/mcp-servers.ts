@@ -6,7 +6,8 @@ import { readJsonFile } from './json-file.ts';
 import { approvalDigestOf } from './approval-digest.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { exists, loadLayers } from './layers.ts';
-import { credentialEnvNames } from './models.ts';
+import { credentialEnvNames, plainHttpWarningText } from './models.ts';
+import { transportUrlProblem } from '@momonga/foundation';
 import type { KeptLayers, LayerOptions, LoadedLayers } from './layers.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import type { TrustOracle, UserLayer } from './layers.ts';
@@ -248,6 +249,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, referenceEn
         const expanded = tryExpand(() => expandServer(config, referenceEnv, name, userSettings.source, allowAnyVariable));
         if ('config' in expanded) {
           enabled.push({ name, scope: 'user', config: expanded.config });
+          if ('url' in expanded.config && transportUrlProblem(expanded.config.url) === 'cleartext' && !warnings.includes(plainHttpWarningText(name))) warnings.push(plainHttpWarningText(name));
         } else {
           failed.push({ name, reason: expanded.reason });
           if (!warnings.includes(USER_EXPANSION_NOTE)) warnings.push(USER_EXPANSION_NOTE);

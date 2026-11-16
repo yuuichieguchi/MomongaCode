@@ -11,7 +11,7 @@ export const pageRunBodies = (store: Pick<TraceStore, 'bodiesOfRunAfter'>, runId
   const shown = found.slice(0, limit);
   const last = shown.at(-1);
   return {
-    bodies: shown.map(({ id, body }) => ({ id, spanId: body.spanId, kind: body.kind, content: body.content, createdAtMs: body.createdAtMs, expiresAtMs: body.expiresAtMs })),
+    bodies: shown.map(({ id, body }) => ({ id, spanId: body.spanId, kind: body.kind, content: body.content, createdAtMs: body.createdAtMs })),
     next: found.length > limit && last !== undefined ? last.id : null,
   };
 };

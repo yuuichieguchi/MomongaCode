@@ -59,7 +59,7 @@ const startStack = async (context: CleanupContext, settings: unknown, env: Recor
   prepareHome(home);
   replaceSettings(home, settings);
   const chunks: string[] = [];
-  const handle = await registerOwned(context, () => startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
@@ -380,7 +380,7 @@ const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletion
   prepareHome(home);
   await beforeStart(home);
   replaceSettings(home, keyedTarget(fake));
-  const handle = await registerOwned(context, () => startGatewayProcess({ locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } }));
+  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } }));
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
@@ -449,7 +449,7 @@ describe('S8 gateway: every supervisor reply that is not a value is unset, and i
     await replyingSupervisor(context, home, status, body);
     replaceSettings(home, keyedTarget(a));
     const chunks: string[] = [];
-    const handle = await registerOwned(context, () => startGatewayProcess({
+    const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,
