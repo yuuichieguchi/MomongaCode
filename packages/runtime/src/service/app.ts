@@ -736,7 +736,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
+  const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id, context.req.raw.signal) });
 
   const getRun: Handler = async (context) => json({ run: await reportedView(requireRun(context.req.param('id') ?? '').id, context.req.raw.signal) });
 
