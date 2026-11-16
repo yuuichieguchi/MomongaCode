@@ -34,6 +34,8 @@ const CODE_NAME = /^(?:[a-z_$][\w$]*(?:[.-][\w$]+)*|[A-Z][A-Z0-9_]*|[A-Z][\w$]*\
 
 const SOURCE_FILE = /^packages\/.+\.tsx?$/;
 
+const HAS_WORD = /\p{L}/u;
+
 type ListedText = { readonly design: string; readonly text: string; readonly files: readonly string[]; readonly others: readonly string[] };
 
 const sectionOf = (design: string, heading: string): string => {
@@ -52,7 +54,7 @@ const listedTextsOf = (design: string, section: string): ListedText[] =>
     .flatMap((line) => {
       const quoted = [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1] as string);
       const files = quoted.filter((item) => SOURCE_FILE.test(item));
-      const texts = quoted.filter((item) => !SOURCE_FILE.test(item) && !CODE_NAME.test(item));
+      const texts = quoted.filter((item) => !SOURCE_FILE.test(item) && !CODE_NAME.test(item) && HAS_WORD.test(item));
       return texts.map((text) => ({ design, text, files, others: texts.filter((other) => other !== text) }));
     });
 
@@ -92,8 +94,8 @@ const otherNameFieldsOf = (source: ParsedSource): string[] =>
     .map(({ node }) => `${relativeOf(source.file)}:${lineOf(source, node)}`);
 
 describe('every text the person reads that was approved without a design text is in the design text list and in the code verbatim (cli-tui C51, DECISION-5)', () => {
-  it('reads a listed text from a bullet, with the files it names, and leaves out code names, settings keys and command names', () => {
-    const [first, second, ...rest] = listedTextsOf('planted.md', '- The rows (`packages/cli/src/tui/models/texts.ts`, `HUB_ACTIONS`): `Add a model`, `Programs`, `models.roles`, `/model`, `--start`.');
+  it('reads a listed text from a bullet, with the files it names, and leaves out code names, settings keys, command names and literals with no word', () => {
+    const [first, second, ...rest] = listedTextsOf('planted.md', '- The rows (`packages/cli/src/tui/models/texts.ts`, `HUB_ACTIONS`): `Add a model`, `Programs`, `models.roles`, `/model`, `--start`, data `{}`.');
     expect(rest).toEqual([]);
     expect(first).toEqual({ design: 'planted.md', text: 'Add a model', files: ['packages/cli/src/tui/models/texts.ts'], others: ['Programs'] });
     expect(second?.text).toBe('Programs');
