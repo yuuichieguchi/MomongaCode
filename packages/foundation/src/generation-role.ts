@@ -4,6 +4,11 @@ import type { JsonLogger } from './process-contract.ts';
 
 export type GenerationRole = 'starting' | 'serving' | 'retiring';
 
+const ROLE_ORDER: readonly GenerationRole[] = ['starting', 'serving', 'retiring'];
+
+const furtherRole = (reached: GenerationRole, read: GenerationRole): GenerationRole =>
+  ROLE_ORDER.indexOf(read) > ROLE_ORDER.indexOf(reached) ? read : reached;
+
 export type UnreadableGenerationRole = { kind: 'unreadable'; reason: string };
 
 export const roleOfGeneration = (generation: number, currentGeneration: number | undefined): GenerationRole => {
@@ -36,7 +41,7 @@ export const createRolePort = ({ paths, generation, logger }: RolePortOptions): 
     refresh: async () => {
       const read = await readGenerationRole(paths, generation);
       if (typeof read === 'string') {
-        role = read;
+        role = furtherRole(role, read);
         reportedReason = undefined;
         return role;
       }
