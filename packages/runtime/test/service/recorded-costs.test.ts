@@ -31,8 +31,8 @@ const journalOfOneRun = async (): Promise<{ store: RuntimeStore; runId: string; 
     ...responded(2, 'resp_plan', { unpriced: { code: 'plan', reason: 'plan' } }),
     ...responded(3, 'resp_before_costs'),
     { type: 'usage.charged', purpose: 'compaction', inputTokens: 5, outputTokens: 1, totalTokens: 6, responseId: 'resp_side', cost: HALF_USD },
+    { type: 'usage.charged', purpose: 'reflection', inputTokens: 3, outputTokens: 1, totalTokens: 4, responseId: 'resp_reflect', cost: HALF_USD },
   ]);
-  store.contextCharges.record({ purpose: 'reflection', runId: run.id, project: '/work/a', model: 'fm', inputTokens: 3, outputTokens: 1, totalTokens: 4, detail: { responseId: 'resp_reflect', cost: HALF_USD } });
   store.contextCharges.record({ purpose: 'guideline', runId: null, project: '/work/a', model: 'fm', inputTokens: 3, outputTokens: 1, totalTokens: 4, detail: { responseId: 'resp_runless', cost: TWO_USD } });
   return { store, runId: run.id, sessionId: session.id };
 };
@@ -59,7 +59,7 @@ describe('readRecordedCosts', () => {
       { runId, responseId: 'resp_plan', step: 2, price: { kind: 'unpriced', code: 'plan', reason: 'plan' } },
       { runId, responseId: 'resp_before_costs', step: 3, price: { kind: 'not_recorded' } },
       { runId, responseId: 'resp_side', step: 3, price: { kind: 'priced', cost: HALF_USD } },
-      { runId, responseId: 'resp_reflect', price: { kind: 'priced', cost: HALF_USD } },
+      { runId, responseId: 'resp_reflect', step: 3, price: { kind: 'priced', cost: HALF_USD } },
     ]);
   });
 

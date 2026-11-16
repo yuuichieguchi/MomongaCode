@@ -71,9 +71,8 @@ describe('the last reflection job of a folder', () => {
     expect(settled.json.job).toMatchObject({ runId: run.id, state: 'done' });
     expect(settled.json.charges).toMatchObject([{ purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', totalTokens: 120, detail }]);
 
-    env.store.contextCharges.record({ purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', inputTokens: 50, outputTokens: 5, totalTokens: 55 });
     const retried = await env.http('GET', `/v1/runs/${run.id}/reflection`);
-    expect(retried.json.charges.map((entry: { totalTokens: number }) => entry.totalTokens)).toEqual([55, 120]);
+    expect(retried.json.charges.map((entry: { totalTokens: number }) => entry.totalTokens)).toEqual([120]);
     expectSchema('RunReflection', retried.json);
     expectSchema('RunReflection', settled.json);
   });

@@ -30,7 +30,7 @@ const withUnknownSets = async (newer: boolean) => {
   }).fact;
   const trusted = fs.realpathSync.native(env.dir);
   await env.store.trust.setAsked(trusted, 'trusted', NEVER_CANCELLED);
-  const charge = env.store.contextCharges.record({ purpose: 'reflection', runId: null, project: '/work/a', model: 'fm', inputTokens: 1, outputTokens: 1, totalTokens: 2 });
+  const charge = env.store.contextCharges.record({ purpose: 'guideline', runId: null, project: '/work/a', model: 'fm', inputTokens: 1, outputTokens: 1, totalTokens: 2 });
   env.store.idempotency.begin('idem-1', { expiresAt: Number.MAX_SAFE_INTEGER, meta: {} });
   const db = rawDb(env.dbPath);
   if (newer) recordNewerMigration(db);

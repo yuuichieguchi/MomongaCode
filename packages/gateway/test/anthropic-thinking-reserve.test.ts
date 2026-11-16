@@ -42,7 +42,7 @@ const packagesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..'
 describe('one function decides the output tokens a request may spend', () => {
   it.for([
     path.join('gateway', 'src', 'adapters', 'anthropic', 'request.ts'),
-    path.join('gateway', 'src', 'core', 'unary.ts'),
+    path.join('protocol', 'src', 'budget-constants.ts'),
     path.join('context', 'src', 'budget.ts'),
   ])('%s reads outputTokensFor', (relative) => {
     expect(fs.readFileSync(path.join(packagesDir, relative), 'utf8')).toMatch(/\boutputTokensFor\(/);

@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { applyCapabilityOverride, errorBoundOfShape } from '@momonga/protocol';
+import { errorBoundOfShape, imageCapability } from '@momonga/protocol';
 import type {
   Capabilities,
   CapabilityOverride,
@@ -36,9 +36,8 @@ export const PROJECT = '/proj';
 export const USER_AGENTS = '/home/u/.momonga/AGENTS.md';
 export const ROOT_AGENTS = '/proj/AGENTS.md';
 
-export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOverride = {}): Capabilities =>
-  applyCapabilityOverride(
-    {
+export const capabilitiesFor = (contextWindow: number, { imageInput, imageTokens, ...overrides }: CapabilityOverride = {}): Capabilities =>
+  ({ ...{
       contextWindow,
       maxOutputTokens: 4096,
       toolCalling: 'native',
@@ -52,9 +51,7 @@ export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOver
       usageReported: true,
       maxConcurrency: 1,
       source: 'declared',
-    },
-    overrides,
-  );
+    }, ...overrides, ...imageCapability(imageInput ?? false, imageTokens) })
 
 export const tokensOfText = (text: string): number => Math.ceil(text.length / 4);
 

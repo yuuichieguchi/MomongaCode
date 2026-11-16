@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, outputTokensFor, summaryInputLimitFor, wireUsageOf } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, summaryRequestInputLimitFor, wireUsageOf } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterContext,
@@ -297,10 +297,8 @@ const compactOnce = async (
       renderCompactWire.call(target.adapter, compactRequestFor(target, cap), adapterTargetOf(target), cap, originOf(services, target), capabilities),
     );
   };
-  const fitsWindow = (capabilities: Capabilities, cap: number, counted: CountTokensResult): boolean => {
-    const reasoningTokens = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, cap) - cap;
-    return counted.input_tokens + counted.error_bound <= summaryInputLimitFor(capabilities, cap, reasoningTokens);
-  };
+  const fitsWindow = (capabilities: Capabilities, cap: number, counted: CountTokensResult): boolean =>
+    counted.input_tokens + counted.error_bound <= summaryRequestInputLimitFor(capabilities, cap);
   const parent =
     services.telemetry === undefined || trace.traceparent === undefined
       ? undefined

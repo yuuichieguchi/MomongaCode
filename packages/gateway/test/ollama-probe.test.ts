@@ -5,6 +5,7 @@ import { DEVSTRAL_DIGEST, OLLAMA_MODEL, QWEN_DIGEST, QWEN_MODEL, TRAINED_CONTEXT
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { UNCONFIGURED_NETWORK, testKernelLock } from '@momonga/testkit';
 import { hostProbePorts } from './probe-ports-support.ts';
+import { DeclaredWindowAboveReportedError } from '../src/probe/declared-window.ts';
 
 const probe = (origin: string, dir: string, contextWindow: number, model = OLLAMA_MODEL) =>
   probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: origin }), model }, model, contextWindow });
@@ -72,6 +73,19 @@ describe('the Ollama probe', () => {
   it('accepts a window equal to the trained length', async () => {
     const fake = await startFakeOllama();
     await expect(probe(fake.origin, makeDir(), TRAINED_CONTEXT_LENGTH)).resolves.toMatchObject({ identity: DEVSTRAL_DIGEST });
+  });
+
+  it('refuses a declared window above the trained length with the declared-window rule, naming both numbers', async () => {
+    const fake = await startFakeOllama();
+
+    const failure = await probe(fake.origin, makeDir(), TRAINED_CONTEXT_LENGTH + 1).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(DeclaredWindowAboveReportedError);
+    expect(String(failure)).toContain(String(TRAINED_CONTEXT_LENGTH + 1));
+    expect(String(failure)).toContain(String(TRAINED_CONTEXT_LENGTH));
   });
 
   it('rejects a window above the trained length and saves no record', async () => {
