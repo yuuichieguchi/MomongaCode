@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH } from '@momonga/sandbox';
 
 export type TestProject = 'unit' | 'e2e' | 'packaging' | 'calibration';
 
@@ -17,9 +18,8 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 export const REQUIRED_TOOLS: readonly RequiredTool[] = [
   { name: 'bun', path: path.join(ROOT, 'compliance', 'open-responses', 'node_modules', '.bin', 'bun'), platforms: ['darwin', 'linux'], projects: [], setup: 'npm ci --prefix compliance/open-responses' },
-  { name: 'bwrap', path: '/usr/bin/bwrap', platforms: ['linux'], projects: ['unit', 'e2e'], setup: 'install bubblewrap (apt-get install bubblewrap)' },
-  { name: 'sandbox-exec', path: '/usr/bin/sandbox-exec', platforms: ['darwin'], projects: ['unit', 'e2e'], setup: 'macOS ships /usr/bin/sandbox-exec; a host without it cannot run these tests' },
-  { name: 'script', path: '/usr/bin/script', platforms: ['darwin', 'linux'], projects: ['e2e'], setup: 'install util-linux (Linux) for /usr/bin/script' },
+  { name: 'bwrap', path: DEFAULT_BWRAP_PATH, platforms: ['linux'], projects: ['unit', 'e2e'], setup: 'install bubblewrap (apt-get install bubblewrap)' },
+  { name: 'sandbox-exec', path: DEFAULT_SANDBOX_EXEC_PATH, platforms: ['darwin'], projects: ['unit', 'e2e'], setup: 'macOS ships sandbox-exec; a host without it cannot run these tests' },
 ];
 
 export const HOST: ToolHost = { exists: (file) => fs.existsSync(file), platform: process.platform };
