@@ -3,7 +3,7 @@ import type { ChildProcessByStdio } from '@momonga/testkit/child-process';
 import { createTerminalScreen } from '@momonga/testkit/terminal-screen';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { CLI_BUNDLE, CLI_FAKES_BUNDLE, cliEnv, fakePortsEnv } from './cli.ts';
+import { CLI_BUNDLE, CLI_FAKES_BUNDLE, cliEnv, commandOf, fakePortsEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
 import { requirePosixHost } from './posix-host.ts';
 import type { E2eHome } from './home.ts';
@@ -65,14 +65,14 @@ export const answerTrust = async (pty: PtySession, row: keyof typeof TRUST_ROWS)
   pty.write(KEYS.enter);
 };
 
-export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true; bundle?: string } = {}): Promise<PtySession> => {
+export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true; bundle?: string; executable?: string } = {}): Promise<PtySession> => {
   requirePosixHost('the pty helper (e2e/support/pty.ts)');
-  const bundle = options.bundle ?? (options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE);
+  const [file, argv] = commandOf(options, args, options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE);
   const childEnv = options.fakes === true ? { ...fakePortsEnv(home), ...env } : env;
   const ptyEnv = { ...cliEnv(home, childEnv), TERM: 'xterm-256color' };
   const child: ChildProcessByStdio<Writable, Readable, null> = spawn(
     PYTHON_BINARY,
-    [PTY_HOST, String(PTY_COLUMNS), String(PTY_ROWS), process.execPath, bundle, ...args],
+    [PTY_HOST, String(PTY_COLUMNS), String(PTY_ROWS), file, ...argv],
     { cwd: home.project, env: ptyEnv, detached: true, stdio: ['pipe', 'pipe', 'ignore'] },
   );
   const terminal = createTerminalScreen({ columns: PTY_COLUMNS, rows: PTY_ROWS });
