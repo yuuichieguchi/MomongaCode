@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { shortTempBase } from '@momonga/foundation';
 import { TEST_RUN_ENV, testRunToken, testTempBases, withTempDir } from '@momonga/testkit';
 import { UNRECORDED_CREATOR, assertNoLeakedTempDirs, claimRunToken, leakedTempDirs, leakedTempEntries, newRunToken } from './support/leak-guard.ts';
-import { TEMP_LEDGER_ENV, readTempLedger, recordTempEntry } from './support/temp-ledger.ts';
+import { TEMP_LEDGER_ENV, creatorOf, readTempLedger, recordTempEntry } from './support/temp-ledger.ts';
 import type { TempEntry } from './support/temp-ledger.ts';
 
 const madeBy = (entry: string, creator: string): TempEntry => ({ path: entry, creator });
@@ -108,6 +108,19 @@ describe('the run token is claimed with the ledger of the run', () => {
     recordTempEntry(ledger, madeBy('/tmp/with space', 'a.test.ts > one'));
     recordTempEntry(ledger, { path: '/tmp/with\nnewline', creator: undefined });
     expect(readTempLedger(ledger)).toEqual([madeBy('/tmp/with space', 'a.test.ts > one'), { path: '/tmp/with\nnewline', creator: undefined }]);
+  });
+});
+
+describe('the creator a ledger entry names', () => {
+  const repository = '/repo';
+  const stack = ['Error', '    at recorded (/repo/test/support/temp-entry-recorder.ts:30:5)', '    at createTempDir (/repo/packages/testkit/src/test-support.ts:111:30)', '    at startStack (/repo/packages/runtime/test/process/run-helpers.ts:40:7)', '    at /repo/packages/runtime/test/process/a.test.ts:9:3', '    at node:internal/x:1:1'].join('\n');
+
+  it('names the test file and test while a test runs', () => {
+    expect(creatorOf({ testPath: '/repo/packages/x/test/a.test.ts', currentTestName: 'makes a folder' }, stack, repository)).toBe('packages/x/test/a.test.ts > makes a folder');
+  });
+
+  it('names the call site in the repository when no test runs, past the recorder itself', () => {
+    expect(creatorOf({ testPath: undefined, currentTestName: undefined }, stack, repository)).toBe('no running test, called from packages/runtime/test/process/run-helpers.ts:40');
   });
 });
 
