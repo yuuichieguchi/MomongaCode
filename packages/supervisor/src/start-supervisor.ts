@@ -180,7 +180,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const { startupTimeoutMs } = resolveStartTiming(options);
   const env = { ...(options.env ?? process.env) };
   const homePaths = momongaPaths(canonicalHome, process.platform, env);
-  const secretStoreEnv = secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) });
+  const secretStoreEnv = await secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) });
   const paths = scopeToGeneration(homePaths, options.generation);
   const { lockMechanism, inspector } = options;
   const lockOptions = { mechanism: lockMechanism };

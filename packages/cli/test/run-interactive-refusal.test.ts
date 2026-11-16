@@ -21,7 +21,7 @@ describe('runInteractive started by a move whose record is refused', () => {
     context.onTestFinished(() => fs.closeSync(descriptor));
     const rawModes: boolean[] = [];
     const stderr: string[] = [];
-    const started: HandoverStart = { file: path.join(home, 'record.json'), session: undefined, parsed: { kind: 'refused', reason: REFUSAL_REASON }, terminal: undefined };
+    const started: HandoverStart = { file: path.join(home, 'record.json'), parsed: { kind: 'refused', reason: REFUSAL_REASON }, terminal: undefined };
     const ports = { home, cwd: home, env: {}, platform: process.platform, stderr: { write: (text: string) => void stderr.push(text) }, handover: { started } } as unknown as CliPorts;
     const terminal = { stdin: { setRawMode: (on: boolean) => void rawModes.push(on) }, stdout: { fd: descriptor, columns: 80, rows: 24 }, colourOff: () => undefined } as unknown as Terminal;
 

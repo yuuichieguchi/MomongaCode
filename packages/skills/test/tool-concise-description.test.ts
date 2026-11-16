@@ -8,7 +8,7 @@ const HOME = '/home/u';
 
 const activationToolSet = async (): Promise<ToolSet> => {
   const fileSystem = fakeSkillFileSystem({ [`${HOME}/.agents/skills/pdf/SKILL.md`]: skillFile('pdf', 'Extract PDF text') });
-  const set = await createSkillLoader({ home: HOME, fileSystem }).load({ projectRoot: '/work/app', trusted: true });
+  const set = await createSkillLoader({ home: HOME, fileSystem }).load({ projectRoot: '/work/app', trusted: true, signal: new AbortController().signal });
   const tool = set.activationTool({ isActive: () => false, admit: async () => ({ admitted: true }) });
   if (tool === undefined) throw new Error('expected an activation tool');
   const registry = createToolRegistry();

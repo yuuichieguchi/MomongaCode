@@ -55,6 +55,16 @@ describe('one proof decides the lock of a directory', () => {
     expect(fs.readdirSync(systemTempRoot()).filter((name) => name.startsWith('momonga-lock-proof'))).toEqual(before);
   });
 
+  it('gives each lock directory the mechanism its own proof decides, not the mechanism of the call locks', async () => {
+    const home = makeShortHomeDirectory();
+    const paths = momongaLayout(home, process.platform, {});
+    await ensureMomongaDirs(paths);
+    const locks = resolveLayoutLocks(paths);
+    const sessions = paths.tmp.sessions;
+    expect(locks.mechanismOf(paths.callLocks).name).toBe(locks.mechanism.name);
+    expect(locks.mechanismOf(sessions).name).toBe((await locks.capability.of(sessions)) === 'proved' ? 'file-lock' : 'sqlite-lock');
+  });
+
   it.runIf(process.platform === 'darwin')('a layout on a filesystem that enforces BSD locks gets the file lock', async () => {
     const home = makeShortHomeDirectory();
     const paths = momongaLayout(home, process.platform, {});

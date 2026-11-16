@@ -53,7 +53,7 @@ export type ProjectAgentFile = { name: string; text: string; source: string };
 
 export type ProjectAgentApproved = (agent: { name: string; text: string }) => boolean;
 
-export type AgentLoadRequest = { projectRoot: string; trusted: boolean; projectAgentApproved: ProjectAgentApproved };
+export type AgentLoadRequest = { projectRoot: string; trusted: boolean; projectAgentApproved: ProjectAgentApproved; signal: AbortSignal };
 
 export type AgentLoader = { load(request: AgentLoadRequest): Promise<AgentSet> };
 

@@ -26,7 +26,7 @@ export type SkillSet = {
   recoveryTool(): AnyTool | undefined;
 };
 
-export type SkillLoadRequest = { projectRoot: string; trusted: boolean };
+export type SkillLoadRequest = { projectRoot: string; trusted: boolean; signal: AbortSignal };
 
 export type SkillLoader = { load(request: SkillLoadRequest): Promise<SkillSet> };
 

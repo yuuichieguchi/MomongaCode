@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { parseOutsideJson } from '@momonga/foundation';
-import { MEMORY_SCOPES, MEMORY_STATES, USER_SHELL_RUN_ACTIVE_CODE, WORDS } from '@momonga/protocol';
+import { MEMORY_SCOPES, MEMORY_STATES, WORDS } from '@momonga/protocol';
 import type { AddMemoryRequest, ContextChargeView, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, MemoryListCursor, RuntimeStore } from '@momonga/store';
@@ -16,7 +16,6 @@ import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
 import { canonicalProject } from './project-query.ts';
 import { JSON_MEDIA_TYPES, readJson, validateBody } from './request.ts';
-import { isTerminalStatus } from './views.ts';
 
 const json = (body: unknown, status: number): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -61,7 +60,6 @@ export type MemoryRoutesDeps = {
   maxBodyBytes: number;
   closeSignal: AbortSignal;
   home: string;
-  refuseWhileRetiring(): void;
 };
 
 export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDeps): void => {
@@ -201,18 +199,8 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
 
   const reflectionOfRun: Handler = (context) => json(runReflectionView(context.req.param('id') ?? ''), 200);
 
-  const requestReflection: Handler = (context) => {
-    const runId = context.req.param('id') ?? '';
-    const run = deps.store.getRun(runId);
-    if (run === undefined) throw notFound(`${WORDS.run} ${runId} does not exist`);
-    if (!isTerminalStatus(run.status)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, `${WORDS.run} ${runId} has not ended; its reflection can be asked for when it has`);
-    deps.refuseWhileRetiring();
-    reflection.enqueue(runId);
-    return json(runReflectionView(runId), 202);
-  };
-
   route('/v1/reflection', { GET: latestReflection });
-  route('/v1/runs/:id/reflection', { GET: reflectionOfRun, POST: requestReflection });
+  route('/v1/runs/:id/reflection', { GET: reflectionOfRun });
   route('/v1/memories', { GET: listMemories, POST: addMemory }, { person: ['POST'] });
   route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory }, { person: ['DELETE'] });
   route('/v1/memories/:id/history', { GET: memoryHistory });

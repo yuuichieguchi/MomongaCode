@@ -1,10 +1,9 @@
 import path from 'node:path';
-import { newCallId, reapMarkedProcesses } from '@momonga/foundation';
+import { ABANDON_KILL_GRACE_MS, newCallId, reapMarkedProcesses } from '@momonga/foundation';
 import { VERIFICATION_FEEDBACK_PREFIX, conditionOwed, failureBeforeRound, openRoundOf } from '@momonga/protocol';
 import type { ConditionResult, PinnedCondition, RunEventPayload, VerificationOutcome } from '@momonga/protocol';
 import { EarlierAttemptNotStoppedError, runSandboxedCommand, verificationMarkerName } from '@momonga/tools';
 import type { SandboxedCommandResult } from '@momonga/tools';
-import { MARKER_REAP_KILL_GRACE_MS } from '../process/constants.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { cancelIfInterrupted } from './context-step.ts';
 import { runStopHooks, withSessionCommands } from './hook-step.ts';
@@ -69,7 +68,7 @@ const reapStaleCheck = async (ctx: ClaimContext, marker: string): Promise<void> 
   const warnings: string[] = [];
   const { removed } = await reapMarkedProcesses({
     marker,
-    killGraceMs: MARKER_REAP_KILL_GRACE_MS,
+    killGraceMs: ABANDON_KILL_GRACE_MS,
     label: 'completion check',
     onWarning: (message) => warnings.push(message),
     signal: ctx.control.signal,

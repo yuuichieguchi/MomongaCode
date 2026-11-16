@@ -15,7 +15,7 @@ const satisfiable = async (arith: ProofArith): Promise<boolean> => {
   return (await solver.check()) === 'sat';
 };
 
-describe('HB8: the database wait and the lease, the lock wait and the previous close', () => {
+describe('HB8: the database wait, the lease and the previous close', () => {
   const z3 = useZ3();
 
   it('reads today the constants the proofs start from', () => {
@@ -60,7 +60,7 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
   );
 
   it(
-    'L2 proves that the previous generation closes in at least 15000 ms for every drain timeout d >= 0, so no lock wait below 15000 ms is sound',
+    'L2 proves that the previous generation closes in at least 15000 ms for every drain timeout d >= 0, so no database wait below 15000 ms is sound',
     async () => {
       const arith = proofArith(z3.engine().api, 'L2');
       const drain = arith.int('d');

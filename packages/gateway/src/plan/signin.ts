@@ -2,10 +2,11 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { PlanProfile } from '@momonga/config';
 import { CLIENT_NAME, isRecord, parseOutsideJson, systemRandom } from '@momonga/foundation';
 import type { Clock, FileSystem, KernelLockMechanism } from '@momonga/foundation';
-import { PLAN_SIGN_IN_FAILURES, PLAN_SIGN_IN_FAILURE_RULES, PLAN_SIGN_IN_PENDING_CODE, PLAN_SIGN_OUT_IN_PROGRESS_CODE, PLAN_DISABLED_STATE, PLAN_SIGN_IN_FAILURE, PLAN_SIGN_IN_OUTCOMES, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME, INVALID_GRANT_REASON } from '@momonga/protocol';
-import type { NamedPlanAccountRef, PlanSignInBeginRequest, PlanSignInBeginResponse, PlanSignInFailure, PlanSignInIdentityUnconfirmed } from '@momonga/protocol';
+import { PLAN_REVOCATION_UNCONFIRMED, PLAN_SIGN_IN_FAILURES, PLAN_SIGN_IN_FAILURE_RULES, PLAN_SIGN_IN_PENDING_CODE, PLAN_SIGN_OUT_IN_PROGRESS_CODE, PLAN_DISABLED_STATE, PLAN_SIGN_IN_FAILURE, PLAN_SIGN_IN_OUTCOMES, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME, INVALID_GRANT_REASON } from '@momonga/protocol';
+import type { NamedPlanAccountRef, PlanRevocationAnswer, PlanSignInBeginRequest, PlanSignInBeginResponse, PlanSignInFailure, PlanSignInIdentityUnconfirmed } from '@momonga/protocol';
 import { GatewayError, invalidRequest } from '../core/errors.ts';
-import { PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
+import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
+import type { WaitPolicy } from '../core/retry.ts';
 import { hostIdentityFailure } from './auth-source.ts';
 import { endCodeOf, eventScalar, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
@@ -16,6 +17,7 @@ import { createIdTokenVerifier, idTokenFacts } from './id-token.ts';
 import type { IdTokenFacts, IdTokenVerifier } from './id-token.ts';
 import type { PlanOutbound } from './outbound.ts';
 import { boundedSend, refreshRequiredFor, tokenResponseOf } from './refresh.ts';
+import { revokeRefreshToken } from './revoke.ts';
 import type { PlanFetch, PlanSleep, RefreshTokens } from './refresh.ts';
 import { createSerial } from './serial.ts';
 import { OAUTH_ACCESS_DENIED, OAUTH_INVALID_GRANT } from './oauth-wire.ts';
@@ -159,9 +161,43 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return attempt;
   };
 
+  const revokeDropped = (attempt: Attempt): void => {
+    const exchanged = attempt.exchanged;
+    const refreshToken = exchanged?.tokens.refresh_token;
+    if (exchanged === undefined || refreshToken === undefined) return;
+    const retry = GATEWAY_CONFIG_DEFAULTS.retry;
+    const waitPolicy: WaitPolicy = { totalWaitMs: retry.totalWaitMs, baseMs: retry.baseMs, maxMs: retry.maxMs, random: systemRandom.float };
+    const report = (revocation: PlanRevocationAnswer, code?: string): void =>
+      events('plan.sign_in_revoke', { profile: attempt.profile.id, account: attempt.account, revocation, ...(code === undefined ? {} : { code }) });
+    options
+      .outbound(options.lifetime, (fetch) =>
+        revokeRefreshToken({
+          ports: { fetch, sleep: options.sleep },
+          clock: options.clock,
+          profile: attempt.profile,
+          clientId: exchanged.clientId,
+          refreshToken,
+          attempts: retry.maxAttempts,
+          attemptTimeoutMs: PLAN_SESSION_DEFAULTS.revocationTimeoutMs,
+          waitPolicy,
+          maxBodyBytes: PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
+          signal: options.lifetime,
+        }),
+      )
+      .then(
+        (revocation) => report(revocation),
+        (error: unknown) => report(PLAN_REVOCATION_UNCONFIRMED, endCodeOf(error)),
+      );
+  };
+
+  const discard = (attempt: Attempt): void => {
+    consume(attempt.id);
+    revokeDropped(attempt);
+  };
+
   const removeExpired = (): void => {
     const now = options.clock.now();
-    for (const attempt of [...attempts.values()]) if (now >= attempt.expiresAt) consume(attempt.id);
+    for (const attempt of [...attempts.values()]) if (now >= attempt.expiresAt) discard(attempt);
   };
 
   let completing = 0;
@@ -182,7 +218,8 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     removeExpired();
     const key = attemptKey(profile.id, request.account);
     const replaced = pendingByAccount.get(key);
-    if (replaced !== undefined) attempts.delete(replaced);
+    const dropped = replaced === undefined ? undefined : attempts.get(replaced);
+    if (dropped !== undefined) discard(dropped);
     const attempt: Attempt = {
       id: randomToken(PLAN_SIGN_IN_DEFAULTS.randomStateBytes),
       key,
@@ -331,11 +368,11 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     await options.sessions.pointerReady();
     const waitingAttempt = attempts.get(attemptId);
     if (waitingAttempt === undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.attemptNotFound, undefined);
-    if (options.clock.now() >= waitingAttempt.expiresAt) {
-      consume(attemptId);
-      throw signInFailure(PLAN_SIGN_IN_FAILURE.attemptExpired, waitingAttempt.profile);
-    }
     const { exchanged } = waitingAttempt;
+    if (options.clock.now() >= waitingAttempt.expiresAt) {
+      discard(waitingAttempt);
+      throw signInFailure(exchanged === undefined ? PLAN_SIGN_IN_FAILURE.attemptExpired : PLAN_SIGN_IN_FAILURE.identityLate, waitingAttempt.profile);
+    }
     if (exchanged === undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.identityNotExchanged, waitingAttempt.profile);
     consume(attemptId);
     removeExpired();
@@ -411,7 +448,12 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return install(attempt, exchanged, signal);
   };
 
-  const cancel = (attemptId: string): boolean => consume(attemptId) !== undefined;
+  const cancel = (attemptId: string): boolean => {
+    const attempt = attempts.get(attemptId);
+    if (attempt === undefined) return false;
+    discard(attempt);
+    return true;
+  };
 
   return { begin, complete, confirm, cancel, waiting, resetHost };
 };
