@@ -147,8 +147,16 @@ DeclaredEdges ==
 
 (* The journal event type of every event kind of the model *)
 ProtocolEvent ==
-    [S |-> "run.started", F |-> "attempt.failed", L |-> "attempt.lost", T |-> "run.status",
-     Q |-> "model.requested", R |-> "model.responded", O |-> "tool.started", C |-> "tool.completed"]
+    [S |-> {"run.started"}, F |-> {"attempt.failed"}, L |-> {"attempt.lost"}, T |-> {"run.status"},
+     Q |-> {"model.requested"}, R |-> {"model.responded"}, O |-> {"tool.started"},
+     C |-> {"tool.completed", "tool.reconciled"}]
+
+KindsTheFoldNeverReads == {"Q"}
+
+FoldReadsOutsideModel ==
+    {"tool.call", "verification.completed", "tool.held", "tool.held.resolved", "run.quiescent",
+     "tool.permission.requested", "tool.permission.resolved", "tool.unknown.requested",
+     "tool.elicitation.requested", "mcp.authorization.required"}
 
 VARIABLES st, owner, tok, live, rnw, origin, att, fa, nclaim, clk, ev,
           pc, wtok, wtake, wfail,

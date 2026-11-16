@@ -15,7 +15,7 @@ const definitionOf = (name: string): string => {
   if (start === -1) throw new Error(`${name} is not defined in RunRecord.tla`);
   const blank = spec.indexOf('\n\n', start);
   const oneLine = /^\w+ == \{[^}]*\}$/m.exec(spec.slice(start));
-  const end = oneLine === null ? blank : start + oneLine[0].length;
+  const end = oneLine === null || oneLine.index !== 0 ? blank : start + oneLine[0].length;
   return spec.slice(start, end === -1 ? undefined : end);
 };
 
@@ -54,11 +54,36 @@ describe('RunRecord.tla against the implementation', () => {
     expect([...new Set(codeEdges().map(([from, to]) => `${from}->${to}`))].filter((edge) => !declared.has(edge)).sort()).toEqual([]);
   });
 
-  it('maps every event kind of the model to a protocol event type', () => {
-    const mapped = stringsIn(definitionOf('ProtocolEvent'));
+  const foldSource = fs.readFileSync(path.join(root, 'packages', 'reliability', 'src', 'fold-facts.ts'), 'utf8');
+  const protocolRunTypes = fs.readFileSync(path.join(root, 'packages', 'protocol', 'src', 'run-types.ts'), 'utf8');
+
+  const foldReads = (): string[] => {
+    const switchStart = foldSource.indexOf('switch (event.type)');
+    if (switchStart === -1) throw new Error('fold-facts.ts has no switch over event.type');
+    const switchBody = foldSource.slice(switchStart, foldSource.indexOf('default:', switchStart));
+    const holdEnding = /const isHoldEnding = [^;]*;/s.exec(protocolRunTypes)?.[0];
+    if (holdEnding === undefined) throw new Error('run-types.ts has no isHoldEnding');
+    return [...new Set([...[...switchBody.matchAll(/case '([\w.]+)':/g)].map((match) => match[1] as string), ...[...holdEnding.matchAll(/'([\w.]+)'/g)].map((match) => match[1] as string)])].sort();
+  };
+
+  const kindTypes = (): Map<string, string[]> =>
+    new Map([...definitionOf('ProtocolEvent').matchAll(/(\w+) \|-> \{([^}]*)\}/g)].map((match) => [match[1] as string, stringsIn(match[2] as string)] as const));
+
+  it('maps every event kind of the model to protocol event types', () => {
     const known: readonly string[] = EVENT_TYPES;
+    const mapped = [...kindTypes().values()].flat();
     expect(mapped).toContain('attempt.lost');
     expect(mapped.filter((type) => !known.includes(type))).toEqual([]);
+    expect(stringsIn(definitionOf('FoldReadsOutsideModel')).filter((type) => !known.includes(type))).toEqual([]);
+  });
+
+  it('every event type the fold reads is the type of a model kind or declared as changing no modelled state, and every declared type and every kind the fold of the model reads is read by the fold', () => {
+    const outside = stringsIn(definitionOf('FoldReadsOutsideModel'));
+    const unread = new Set(stringsIn(definitionOf('KindsTheFoldNeverReads')));
+    const modelled = [...kindTypes()].filter(([kind]) => !unread.has(kind)).flatMap(([, types]) => types);
+    expect(outside.filter((type) => modelled.includes(type))).toEqual([]);
+    expect([...new Set([...modelled, ...outside])].sort()).toEqual(foldReads());
+    expect([...kindTypes()].filter(([kind]) => unread.has(kind)).flatMap(([, types]) => types).filter((type) => foldReads().includes(type))).toEqual([]);
   });
 
   it('ties Takeover of the model to the SQL predicate of the store and to the claim statement that counts a failed attempt', () => {

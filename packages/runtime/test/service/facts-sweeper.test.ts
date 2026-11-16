@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { cfgNames } from '../../../../test/formal/cfg-names.ts';
 import * as runtime from '@momonga/runtime';
 import { FACTS_SWEEP_BATCH_RUNS, INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
 import type { RunCallView, RunFactsView } from '@momonga/protocol';
@@ -205,5 +207,109 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
     expect(requested[1]?.[0]).toBe('r2');
     expect(fake.commits.flatMap((commit) => commit.unavailable)).toEqual([]);
     expect([...new Set(fake.covered())].sort()).toEqual(['r1', 'r2', 'r3', 'r4']);
+  });
+
+  describe('the sweeper on the cases of specs/tla/FactsSweeper.tla, through the real store', () => {
+    const model = cfgNames(path.resolve(import.meta.dirname, '..', '..', '..', '..', 'specs', 'tla'), 'FactsSweeper');
+    const runCount = (model.constants['Runs'] ?? '').split(',').length;
+    const batchSize = Number(model.constants['BatchSize']);
+
+    const world = async () => {
+      const { dbPath, store, clock } = harness();
+      const timers = createFakeTimers(clock);
+      const session = newSession(store).id;
+      const terminalEvent = new Map<string, number>();
+      const sessionOf = new Map<string, string>();
+      const complete = async (sessionId = session): Promise<string> => {
+        const run = await enqueue(store, sessionId);
+        const claim = mustClaim(store, 'w1');
+        expect((await store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
+        const last = rawDb(dbPath).prepare('SELECT MAX(id) AS id FROM events WHERE run_id = ?').get(run.id) as { id: number };
+        terminalEvent.set(run.id, last.id);
+        sessionOf.set(run.id, sessionId);
+        return run.id;
+      };
+      const facts = (store as unknown as { runFacts: { get(runId: string): { kind: string } | undefined; cursor(): { definitionsVersion: number; afterEventId: number } } }).runFacts;
+      const invariantProblems = (poison: ReadonlySet<string>, label: string): string[] => {
+        const problems: string[] = [];
+        const terminal = new Set(terminalEvent.keys());
+        for (const row of rawDb(dbPath).prepare('SELECT run_id FROM run_facts').all() as Array<{ run_id: string }>) {
+          if (!terminal.has(row.run_id) || store.getRun(row.run_id) === undefined) problems.push(`${label}: RowsOnlyForTerminal, a row for ${row.run_id}`);
+        }
+        const cursor = facts.cursor();
+        for (const [runId, eventId] of terminalEvent) {
+          if (store.getRun(runId) === undefined) continue;
+          const row = facts.get(runId);
+          if (row?.kind === 'unavailable' && !poison.has(runId)) problems.push(`${label}: UnavailableOnlyOwn, ${runId}`);
+          if (cursor.definitionsVersion === INDICATOR_DEFINITIONS_VERSION && eventId <= cursor.afterEventId && row === undefined) problems.push(`${label}: CursorCovered, ${runId} at ${eventId} under ${cursor.afterEventId}`);
+        }
+        return problems;
+      };
+      return { dbPath, store, clock, timers, session, sessionOf, complete, facts, terminalEvent, invariantProblems };
+    };
+
+    const threadOf = (sessionOf: ReadonlyMap<string, string>, poison: ReadonlySet<string>, infraAt: number | undefined, onAsk: (runId: string) => Promise<void> = async () => undefined) => {
+      const FactsRefused = factsRefusedError();
+      let asked = 0;
+      return {
+        runFacts: async (runId: string) => {
+          asked += 1;
+          await onAsk(runId);
+          if (asked === infraAt) throw new storeModule.JournalThreadError('journal thread was silent for 1000 ms');
+          if (poison.has(runId)) throw new FactsRefused('the fold refused the journal');
+          return recordOf(fullRow(runId, sessionOf.get(runId) as string));
+        },
+      };
+    };
+
+    it(`every poison set of ${runCount} runs, an infrastructure failure at each request, and a definitions version change: the invariants hold after every tick and every terminal run gets its row (Coverage)`, async () => {
+      const problems: string[] = [];
+      for (let mask = 0; mask < 2 ** runCount; mask += 1) {
+        for (let infraAt = 0; infraAt <= runCount; infraAt += 1) {
+          for (const upgrade of [false, true]) {
+            const scene = await world();
+            const ids: string[] = [];
+            for (let index = 0; index < runCount; index += 1) ids.push(await scene.complete());
+            const poison = new Set(ids.filter((_, index) => (mask & (1 << index)) !== 0));
+            const label = `poison ${mask} infra ${infraAt} upgrade ${upgrade}`;
+            const sweeper = startFactsSweeper({ store: scene.store as RuntimeStore, thread: threadOf(scene.sessionOf, poison, infraAt === 0 ? undefined : infraAt), timers: scene.timers, intervalMs: 1000, batchSize, onError: () => undefined });
+            for (let round = 0; round < runCount * 2 + 2; round += 1) {
+              if (upgrade && round === 1) rawDb(scene.dbPath).prepare('UPDATE facts_cursor SET definitions_version = definitions_version - 1').run();
+              await tick(scene.timers);
+              problems.push(...scene.invariantProblems(poison, `${label} round ${round}`));
+            }
+            await sweeper.close();
+            for (const runId of ids) {
+              const row = scene.facts.get(runId);
+              if (row === undefined || (row.kind === 'unavailable') !== poison.has(runId)) problems.push(`${label}: Coverage, ${runId} has ${row?.kind ?? 'no row'}`);
+            }
+          }
+        }
+      }
+      expect(problems).toEqual([]);
+    });
+
+    it('a closed session that the retention sweep deletes while its run is in a batch leaves no row behind, and the other runs are still covered', async () => {
+      const periodMs = 100_000;
+      const scene = await world();
+      const closed = await scene.complete();
+      scene.clock.advance(periodMs + 1);
+      const other = newSession(scene.store).id;
+      const kept = await scene.complete(other);
+      const thread = threadOf(scene.sessionOf, new Set(), undefined, async (runId) => {
+        if (runId === closed) await scene.store.retention.sweep({ periodMs, purges: [] }, new AbortController().signal);
+      });
+      const sweeper = startFactsSweeper({ store: scene.store as RuntimeStore, thread, timers: scene.timers, intervalMs: 1000, batchSize, onError: () => undefined });
+      const problems: string[] = [];
+      for (let round = 0; round < 4; round += 1) {
+        await tick(scene.timers);
+        for (let settle = 0; settle < 8; settle += 1) await afterMicrotasks();
+        problems.push(...scene.invariantProblems(new Set(), `round ${round}`));
+      }
+      await sweeper.close();
+      expect(scene.store.getRun(closed)).toBeUndefined();
+      expect(problems).toEqual([]);
+      expect(scene.facts.get(kept)?.kind).toBe('facts');
+    });
   });
 });
