@@ -240,6 +240,11 @@ const conciseNetworkOf = (offer: BuiltinToolOffer): string => {
   return `The sandbox has no network; set network to "open" when the command needs it. ${settingSentenceOf(offer)}`;
 };
 
+const networkAlternativesOf = (offer: BuiltinToolOffer): unknown[] => [
+  { enum: ['open'] },
+  ...(takesHosts(offer.sandbox) ? [{ type: 'object', properties: { hosts: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } }, required: ['hosts'], additionalProperties: false }] : []),
+];
+
 const networkParameterOf = (offer: BuiltinToolOffer): string => {
   if (!keepsCommandsOffTheNetwork(offer.sandbox)) return `Network access the command needs. "open": unrestricted, which a command without a sandbox has in any case; a list of hosts cannot be kept without a sandbox. ${settingSentenceOf(offer)}`;
   const hosts = takesHosts(offer.sandbox) ? ' {"hosts": ["registry.example.org", "example.org:443"]}: only those hosts (a name or an IP address, optionally with :port), through a proxy.' : '';
@@ -276,10 +281,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
       description: { type: 'string', description: 'Short description of what the command does' },
       run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
       network: {
-        anyOf: [
-          { enum: ['open'] },
-          { type: 'object', properties: { hosts: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } }, required: ['hosts'], additionalProperties: false },
-        ],
+        anyOf: networkAlternativesOf(offer),
         description: networkParameterOf(offer),
       },
     },
