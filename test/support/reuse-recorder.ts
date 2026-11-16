@@ -86,6 +86,15 @@ const start = (): void => {
       return original.apply(this, args);
     };
     keepingProperties(replacement, original);
+    const promised = (original as unknown as Holder)[promisify.custom] as Call | undefined;
+    if (promised !== undefined) {
+      Object.defineProperty(replacement, promisify.custom, {
+        value: function recordingPromisedLaunch(this: unknown, ...args: unknown[]): unknown {
+          startsProcesses = true;
+          return promised.apply(this, args);
+        },
+      });
+    }
     holder[name] = replacement;
   };
   for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) launching(childProcess as unknown as Holder, name);
