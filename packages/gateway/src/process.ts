@@ -676,6 +676,7 @@ const createProbedOllamaAdapter = async (
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
   const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
   const loaded = await readRecord();
+  const metered = isMeteredTarget(target) ? { display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   const subject = ollamaProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
@@ -691,8 +692,10 @@ const createProbedOllamaAdapter = async (
         contextWindow: target.capabilities.contextWindow,
         userDialects,
         ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+        ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, DEFAULT_SAMPLES) }),
       }),
     currency,
+    ...(metered === undefined ? {} : { metered: { measurement: metered, samples: DEFAULT_SAMPLES } }),
   });
   const probed = createProbedOllamaTarget({
     targetName: display,
