@@ -132,6 +132,55 @@ describe('the automatic probe through its one interface, with an adapter no othe
     expect(autoProbe.openFlights()).toBe(0);
   });
 
+  describe('admits a flight again after the precondition is answered (UpdateSwitch GwFlightStart)', () => {
+    const PROBING = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling' } };
+
+    const heldPrecondition = (role: { value: 'serving' | 'retiring' }) => {
+      const dir = path.join(makeDir(), 'probe');
+      const { state, subject } = lantern(dir);
+      const asked: Array<{ answer: (verdict: PreconditionVerdict) => void; signal: AbortSignal }> = [];
+      const held: ProbeSubject<LanternKey, LanternReport> = {
+        ...subject,
+        precondition: { boundMs: 600_000, check: (signal) => new Promise((resolve, reject) => {
+          asked.push({ answer: resolve, signal });
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }) },
+      };
+      const clock = createFakeClock(START_MS);
+      const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir, clock, timers: createFakeTimers(clock), retryAfterMs: 120_000, onEvent: () => undefined, role: { current: () => role.value } });
+      return { dir, state, held, asked, autoProbe };
+    };
+
+    it('starts no flight when a user stop arrives while the precondition is asked, and answers as the check before it does', async () => {
+      const { dir, state, held, asked, autoProbe } = heldPrecondition({ value: 'serving' });
+      const ensured = autoProbe.ensure(held, KEY);
+      await until(() => asked.length === 1, 'the precondition is asked');
+      const closed = autoProbe.close();
+
+      expect(await ensured).toEqual(PROBING);
+      await closed;
+      expect(state.measures).toBe(0);
+      expect(autoProbe.openFlights()).toBe(0);
+      expect(fs.existsSync(dir)).toBe(false);
+      expect(await autoProbe.ensure(held, KEY)).toEqual(PROBING);
+    });
+
+    it('starts no flight when the generation becomes retiring while the precondition is asked, and answers as the check before it does', async () => {
+      const role = { value: 'serving' as 'serving' | 'retiring' };
+      const { dir, state, held, asked, autoProbe } = heldPrecondition(role);
+      const ensured = autoProbe.ensure(held, KEY);
+      await until(() => asked.length === 1, 'the precondition is asked');
+      role.value = 'retiring';
+      asked[0]?.answer({ kind: 'met' });
+
+      expect(await ensured).toEqual(PROBING);
+      expect(state.measures).toBe(0);
+      expect(autoProbe.openFlights()).toBe(0);
+      expect(fs.existsSync(dir)).toBe(false);
+      expect(await autoProbe.ensure(held, KEY)).toEqual(PROBING);
+    });
+  });
+
   it('starts no flight while its gateway is retiring', async () => {
     const dir = makeDir();
     const { state, subject } = lantern(dir);

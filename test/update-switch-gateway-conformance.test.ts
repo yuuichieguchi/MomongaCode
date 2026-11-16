@@ -63,7 +63,11 @@ describe('UpdateSwitch.tla and the gateway agree', () => {
 
   it('a flight starts only while serving and not during a user stop', () => {
     expect(definitionOf('GwFlightStart')).toContain('gw[g] = "serving" /\\ ~dr[g]');
-    expect(sourceOf('gateway', 'src', 'probe', 'auto-probe.ts')).toContain("if (inFlight.has(flight) || stop.signal.aborted || options.role?.current() === 'retiring') return probing(options.retryAfterMs);");
+    const autoProbe = sourceOf('gateway', 'src', 'probe', 'auto-probe.ts');
+    expect(autoProbe).toContain("const admitsFlight = (name: string): boolean => !flights.has(name) && !stop.signal.aborted && options.role?.current() !== 'retiring';");
+    expect(autoProbe).toContain('const name = identityOf(key);\n      if (!admitsFlight(name)) return probingFor(name, subject.unknown);');
+    expect(autoProbe).toContain('const verdict = await verdictWithin(subject.precondition);\n      if (!admitsFlight(name)) return probingFor(name, subject.unknown);');
+    expect(autoProbe).toContain('await ensurePrivateProbeDirectory(options.dir);\n    if (!admitsFlight(name)) return;\n');
   });
 
   it('the gateway and the runtime tick by the one constant of foundation', () => {

@@ -177,7 +177,7 @@ export type AutoProbe = {
 
 const errorOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
-const BOUND_EXPIRED = Symbol('bound expired');
+const NO_VERDICT = Symbol('no verdict');
 
 type Flight = { done: Promise<void>; startedMs: number; ask: MeasuringAsk; step: { name: string; boundMs: number } | null };
 
@@ -200,19 +200,22 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
     return { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: Math.ceil(boundMs / MS_PER_SECOND), measuring: measuringOf(flight, ask) };
   };
 
-  const verdictWithin = async (precondition: ProbePrecondition): Promise<PreconditionVerdict | typeof BOUND_EXPIRED> => {
+  const admitsFlight = (name: string): boolean => !flights.has(name) && !stop.signal.aborted && options.role?.current() !== 'retiring';
+
+  const verdictWithin = async (precondition: ProbePrecondition): Promise<PreconditionVerdict | typeof NO_VERDICT> => {
     const bound = options.timers.timeoutSignal(precondition.boundMs);
     const signal = AbortSignal.any([bound, stop.signal]);
     try {
       return await settledOrAborted(precondition.check(signal), signal);
     } catch (error) {
-      if (bound.aborted && !stop.signal.aborted) return BOUND_EXPIRED;
+      if (bound.aborted || stop.signal.aborted) return NO_VERDICT;
       throw error;
     }
   };
 
   const startFlight = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, key: Key, name: string): Promise<void> => {
     await ensurePrivateProbeDirectory(options.dir);
+    if (!admitsFlight(name)) return;
     const flight: Flight = { done: Promise.resolve(), startedMs: options.clock.monotonicMs(), ask: subject.unknown, step: null };
     const progress: MeasurementProgress = {
       step: (stepName, boundMs) => {
@@ -240,17 +243,17 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
   return {
     ensure: async (subject, key) => {
       const name = identityOf(key);
-      if (flights.has(name) || stop.signal.aborted || options.role?.current() === 'retiring') return probingFor(name, subject.unknown);
+      if (!admitsFlight(name)) return probingFor(name, subject.unknown);
       const pending = starting.get(name);
       if (pending !== undefined) {
         await pending;
         return probingFor(name, subject.unknown);
       }
       const verdict = await verdictWithin(subject.precondition);
-      if (verdict !== BOUND_EXPIRED && verdict.kind === 'refused') throw targetNotReadyError(subject.target, verdict);
+      if (!admitsFlight(name)) return probingFor(name, subject.unknown);
+      if (verdict !== NO_VERDICT && verdict.kind === 'refused') throw targetNotReadyError(subject.target, verdict);
       const failure = failures.get(name);
       if (failure !== undefined) throw targetProbeFailedError(failure);
-      if (flights.has(name)) return probingFor(name, subject.unknown);
       const already = starting.get(name);
       if (already !== undefined) {
         await already;
