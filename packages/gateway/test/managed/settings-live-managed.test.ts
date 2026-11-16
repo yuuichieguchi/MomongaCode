@@ -7,7 +7,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitF
 import type { FakeFm } from '@momonga/testkit';
 import { getJson, makeDir, postJson, registerCleanup, userInput, listedCountersOf } from '../gateway-helpers.ts';
 import { startGatewayProcess } from '@momonga/gateway';
-import { PROCESS_VERSION, baseEnv, clientFor, homePaths, isAlive, makeHome, modelsOf } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, homePaths, isAlive, makeHome, modelsOf, until } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -42,6 +42,26 @@ const replaceSettings = (home: string, value: unknown): void => {
 const ask = (model: string) => ({ model, input: userInput('hello') });
 
 const targetsDirectory = (home: string): string => path.join(momongaPaths(home, process.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
+
+const BOUNDED_STEPS_OF_AN_EDIT_SEQUENCE = 5;
+const STEP_BOUND_MS = REAL_PROCESS_TEST_TIMEOUT_MS / BOUNDED_STEPS_OF_AN_EDIT_SEQUENCE;
+
+type SettledStatus = { settled(): boolean; within(step: string): Promise<number> };
+
+const settledStatus = (pending: Promise<number>): SettledStatus => {
+  let status: number | undefined;
+  void pending.then((value) => {
+    status = value;
+  });
+  return {
+    settled: () => status !== undefined,
+    within: async (step) => {
+      await until(() => status !== undefined, step, STEP_BOUND_MS);
+      if (status === undefined) throw new Error(`${step}: no status`);
+      return status;
+    },
+  };
+};
 
 type Setup = { fm: FakeFm; dumpFile: string; home: string };
 
@@ -117,27 +137,21 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     try {
       replaceSettings(home, settingsWith(512));
       const handle = await launch(home);
+      registerCleanup(release);
       const statusOf = (pending: Promise<{ status: number }>) => pending.then((response) => response.status, () => -1);
-      let firstSettled = false;
-      const first = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))).finally(() => {
-        firstSettled = true;
-      });
-      await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
+      const first = settledStatus(statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))));
+      await until(() => serves(dumpFile).length === 1, 'the first incarnation to start', STEP_BOUND_MS);
       fm.configure({ envDumpFile: dumpFile, serve: {} });
       replaceSettings(home, settingsWith(256));
-      let secondStatus = 0;
-      void statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))).then((status) => {
-        secondStatus = status;
-      });
-      await waitFor(() => secondStatus !== 0, { description: 'the request of the epoch of b to end while the call pinned to apple-1 is still running' });
-      expect(secondStatus).toBe(200);
+      const second = settledStatus(statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))));
+      expect(await second.within('the request of the epoch of b to end while the call pinned to apple-1 is still running')).toBe(200);
       replaceSettings(home, settingsWith(512));
-      const third = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system')));
-      expect(await third, 'the return to a shares the gate of a, which its first call holds').toBe(429);
-      expect(firstSettled, 'the first call still holds the gate of a when the third request is refused').toBe(false);
+      const third = settledStatus(statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))));
+      expect(await third.within('the request of the return to a to be answered'), 'the return to a shares the gate of a, which its first call holds').toBe(429);
+      expect(first.settled(), 'the first call still holds the gate of a when the third request is refused').toBe(false);
       expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
       release();
-      expect(await first).toBe(200);
+      expect(await first.within('the first call to end after its reply is released')).toBe(200);
     } finally {
       release();
     }
