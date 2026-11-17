@@ -65,7 +65,7 @@ const stream = (text: string): AsyncIterable<Uint8Array> => ({
 
 type Spawned = { command: SandboxCommand; policy: SandboxPolicy; config: string[] };
 
-const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxCommand) => string): { sandbox: Sandbox; spawned: Spawned[] } => {
+const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxCommand) => string, stderrText = ''): { sandbox: Sandbox; spawned: Spawned[] } => {
   const spawned: Spawned[] = [];
   const sandbox: Sandbox = {
     kind,
@@ -74,7 +74,7 @@ const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxComman
       const configFile = command.env?.['RIPGREP_CONFIG_PATH'];
       spawned.push({ command, policy, config: configFile === undefined ? [] : fs.readFileSync(configFile, 'utf8').split('\n') });
       const text = stdout(command);
-      return { pid: 999_990, pgid: 999_990, rebind: () => undefined, stdout: stream(text), stderr: stream(''), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null, stop: 'confirmed' }) };
+      return { pid: 999_990, pgid: 999_990, rebind: () => undefined, stdout: stream(text), stderr: stream(stderrText), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null, stop: 'confirmed' }) };
     },
   };
   return { sandbox, spawned };
@@ -337,6 +337,13 @@ describe('Grep parses each --null record path up to its NUL', () => {
     const output = failedWith(outcome);
     expect(output).not.toMatch(/^Internal error/);
     expect(output).toContain(`${inProject(tools, project)}/notes.txt`);
+  });
+
+  it('puts what ripgrep wrote to stderr into the error of a malformed record', async () => {
+    const { tools, project } = await newlineFixture();
+    const { sandbox } = recordingSandbox('none', (): string => `${project}/notes.txt\u0000garbage\n`, 'rg: unclosed group\n');
+    const outcome = await tools.run('Grep', { pattern: 'SECRET', path: project, output_mode: 'count' }, await withRules(tools, [], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
+    expect(failedWith(outcome)).toContain('rg: unclosed group');
   });
 });
 

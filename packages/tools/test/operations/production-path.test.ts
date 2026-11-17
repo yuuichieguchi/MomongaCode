@@ -51,6 +51,7 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
     runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, drainIdleMs: () => 1000, credentialRoot: world.base }),
     forge: NO_FORGE,
     settings: { protectedRefs: ['release/*'] },
+    platform: process.platform, shell: async () => '/bin/sh',
   });
   const toolSet = await toolSetOf(...tools);
   const rule = ruleFor(layout);
@@ -163,6 +164,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
       runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir, drainIdleMs: () => 1000, credentialRoot: world.base }),
       forge: NO_FORGE,
       settings: {},
+      platform: process.platform, shell: async () => '/bin/sh',
     });
     const tool = tools.find((candidate) => candidate.name === 'GitCommit');
     if (tool === undefined || tool.prepare === undefined || tool.reconcile === undefined) throw new Error('GitCommit has no prepare or reconcile');
