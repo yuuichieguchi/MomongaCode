@@ -7,7 +7,7 @@ import { provideEmbeddedWindowsKeeper } from '../src/keeper/host.ts';
 import { nodeSourceKeeperFiles } from '../src/node-ports.ts';
 import { sourceBuiltWindowsKeeper } from '../src/keeper/source.ts';
 import type { SourceKeeperPorts } from '../src/keeper/source.ts';
-import { createTempDir, testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock, writeLeftoverEntry } from '@momonga/testkit';
 
 const dirs: string[] = [];
 
@@ -126,7 +126,7 @@ describe('a from-source run builds the keeper on first need and checks it like t
     const directory = path.join(world.ports.executablesRoot, `windows-keeper-${SHA.slice(0, 16)}`);
     fs.mkdirSync(directory, { recursive: true });
     const dead = path.join(directory, 'momonga-keeper.exe.partial-0123456789abcdef');
-    fs.writeFileSync(dead, 'MZ half written');
+    writeLeftoverEntry(world.ports.lock, dead, 'MZ half written');
     await sourceBuiltWindowsKeeper(world.ports)();
     expect(fs.existsSync(dead)).toBe(false);
   });
