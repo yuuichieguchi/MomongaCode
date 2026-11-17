@@ -34,7 +34,7 @@ import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
-import { chatCompletions } from './support/upstream.ts';
+import { chatCompletions, reportedTokensOfRequest } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 import { firstGeneration } from '@momonga/testkit';
 
@@ -187,7 +187,8 @@ const assertAcceptance = async (
   const { W, R } = budgetFor(capabilities, 0);
   expect(W).toBe(ACCEPTANCE_WINDOW);
   expect(R).toBe(EXPECTED_OUTPUT_RESERVE);
-  for (const post of posts) expect(wireTokensOfBody(post.body)).toBeLessThanOrEqual(W - R);
+  for (const post of posts.filter((post) => isCompactionRequest(post.body))) expect(wireTokensOfBody(post.body)).toBeLessThanOrEqual(W - R);
+  for (const post of modelPosts) expect(reportedTokensOfRequest(post.body)).toBeLessThanOrEqual(W - R);
   expect(modelPosts).toHaveLength(requested.length);
   for (const [index, event] of requested.entries()) {
     const counted = await count.count(event.data['body']);
