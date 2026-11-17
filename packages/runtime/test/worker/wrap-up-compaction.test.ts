@@ -8,11 +8,12 @@ import { bigStep, padOf, withinTurnWorker } from './within-turn-support.ts';
 
 const CONTEXT_WINDOW = 4000;
 const STEPS_BELOW_HIGH_WATER = 5;
+const STEP_SCALE_FOR_SUMMARY_ITEM = 1.06;
 
 const stepPadChars = (): number => {
   const ceiling = inputCeilingFor(capabilitiesFor(CONTEXT_WINDOW));
   const highWaterTokens = Math.floor((COMPACT_AT.num * ceiling) / COMPACT_AT.den);
-  const stepTokens = Math.floor(highWaterTokens / (STEPS_BELOW_HIGH_WATER + 0.5));
+  const stepTokens = Math.floor((highWaterTokens / (STEPS_BELOW_HIGH_WATER + 0.5)) * STEP_SCALE_FOR_SUMMARY_ITEM);
   const envelopeTokens = tokensForText(JSON.stringify({ name: 'Big', arguments: JSON.stringify({ letter: 'a', size: 0, pad: '' }) }));
   return (stepTokens - envelopeTokens) * ESTIMATED_CHARACTERS_PER_TOKEN;
 };
