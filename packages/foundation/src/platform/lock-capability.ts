@@ -4,7 +4,9 @@ import type { DirectoryIdentity, FileSystemSync } from '../node-file-system.ts';
 import { NAME_SUFFIX_BYTES } from '../random.ts';
 import type { Random } from '../random.ts';
 import { systemRandom } from '../system-random.ts';
-import { nodeFileLockOps, resolveKernelLock } from './kernel-lock.ts';
+import { FileLockUnavailableError, nodeFileLockOps, resolveKernelLock } from './kernel-lock.ts';
+import { HOST_PLATFORM, openLockFlagsOn } from './open-lock-flags.ts';
+import type { OpenLockFlags } from './open-lock-flags.ts';
 import type { FileLockOps, KernelLockMechanism } from './kernel-lock.ts';
 
 export type LockCapability = 'proved' | 'unenforced' | 'unmeasured';
@@ -26,6 +28,7 @@ export type LockCapabilityOptions = {
   random?: Random;
   files?: ProofDirectoryFiles;
   uid?: () => number | undefined;
+  platform?: string;
 };
 
 export const UNMEASURED_CAPABILITY: LockCapabilityProbe = {
@@ -34,15 +37,12 @@ export const UNMEASURED_CAPABILITY: LockCapabilityProbe = {
   contradicted: () => undefined,
 };
 
-export const O_SHLOCK = 0x10;
-export const O_EXLOCK = 0x20;
-
 const WOULD_BLOCK = 'EAGAIN';
 const NOT_ENFORCED_CODES = ['ENOTSUP', 'EOPNOTSUPP', 'EINVAL'];
 const PROOF_MODE = 0o600;
 
-const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
-const createLockedFlags = (access: number): number => access | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | O_EXLOCK | OPEN_FLAGS.nonBlocking;
+const sharedProbeFlags = (flags: OpenLockFlags): number => OPEN_FLAGS.readOnly | flags.shared | OPEN_FLAGS.nonBlocking;
+const createLockedFlags = (flags: OpenLockFlags, access: number): number => access | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | flags.exclusive | OPEN_FLAGS.nonBlocking;
 
 const codeOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
 
@@ -76,6 +76,7 @@ const linkStaged = (files: StagingFiles, staged: string, file: string): void => 
 
 export const createLockedFile = (
   ops: FileLockOps,
+  platform: string,
   file: string,
   access: number,
   mode: number,
@@ -83,8 +84,10 @@ export const createLockedFile = (
   files: StagingFiles = nodeFileSystemSync,
   random: Random = systemRandom,
 ): number => {
+  const flags = openLockFlagsOn(platform);
+  if (flags === undefined) throw new FileLockUnavailableError(platform);
   const staged = stagingPathOf(file, random);
-  const descriptor = ops.open(staged, createLockedFlags(access), mode);
+  const descriptor = ops.open(staged, createLockedFlags(flags, access), mode);
   let linked = false;
   try {
     initialize(staged);
@@ -102,10 +105,10 @@ export const createLockedFile = (
 
 const statIdentity = (dir: string): DirectoryIdentity => nodeFileSystemSync.identitySync(dir);
 
-const sharedOpenIsRefused = (ops: FileLockOps, file: string): boolean => {
+const sharedOpenIsRefused = (ops: FileLockOps, file: string, flags: OpenLockFlags): boolean => {
   let descriptor: number;
   try {
-    descriptor = ops.open(file, sharedProbeFlags());
+    descriptor = ops.open(file, sharedProbeFlags(flags));
   } catch (error) {
     if (codeOf(error) === WOULD_BLOCK) return true;
     throw error;
@@ -114,12 +117,12 @@ const sharedOpenIsRefused = (ops: FileLockOps, file: string): boolean => {
   return false;
 };
 
-const removeFreeLeftovers = (ops: FileLockOps, proofDir: string, own: string): void => {
+const removeFreeLeftovers = (ops: FileLockOps, proofDir: string, own: string, flags: OpenLockFlags): void => {
   for (const name of nodeFileSystemSync.readdirSync(proofDir)) {
     const file = path.join(proofDir, name);
     if (file === own) continue;
     try {
-      if (!sharedOpenIsRefused(ops, file)) nodeFileSystemSync.rmSync(file);
+      if (!sharedOpenIsRefused(ops, file, flags)) nodeFileSystemSync.rmSync(file);
     } catch (error) {
       if (codeOf(error) !== 'ENOENT') throw error;
     }
@@ -130,26 +133,28 @@ type Proof = { kind: 'proved' } | { kind: 'unenforced' } | { kind: 'failed'; cau
 
 const openFailure = (error: unknown): Proof => (NOT_ENFORCED_CODES.includes(codeOf(error) ?? '') ? { kind: 'unenforced' } : { kind: 'failed', cause: error });
 
-const prove = (ops: FileLockOps, random: Random, proofDir: string): Proof => {
+const prove = (ops: FileLockOps, random: Random, proofDir: string, platform: string): Proof => {
+  const flags = openLockFlagsOn(platform);
+  if (flags === undefined) return { kind: 'unenforced' };
   const file = path.join(proofDir, random.uuid());
   let creator: number | undefined;
   try {
     try {
-      creator = createLockedFile(ops, file, OPEN_FLAGS.readOnly, PROOF_MODE);
+      creator = createLockedFile(ops, platform, file, OPEN_FLAGS.readOnly, PROOF_MODE);
     } catch (error) {
       return openFailure(error);
     }
     let refused: boolean;
     try {
-      refused = sharedOpenIsRefused(ops, file);
+      refused = sharedOpenIsRefused(ops, file, flags);
     } catch (error) {
       return openFailure(error);
     }
     if (!refused) return { kind: 'unenforced' };
     ops.close(creator);
     creator = undefined;
-    if (sharedOpenIsRefused(ops, file)) return { kind: 'failed', cause: new Error(`${file} still refuses a shared lock after its only holder closed it`) };
-    removeFreeLeftovers(ops, proofDir, file);
+    if (sharedOpenIsRefused(ops, file, flags)) return { kind: 'failed', cause: new Error(`${file} still refuses a shared lock after its only holder closed it`) };
+    removeFreeLeftovers(ops, proofDir, file, flags);
     return { kind: 'proved' };
   } catch (error) {
     return { kind: 'failed', cause: error };
@@ -193,6 +198,7 @@ export const createLockCapability = ({
   random = systemRandom,
   files = nodeFileSystemSync,
   uid = hostUid,
+  platform = HOST_PLATFORM,
 }: LockCapabilityOptions): LockCapabilityProbe => {
   const cache = new Map<string, Cached>();
   const inflight = new Map<string, Promise<Measurement>>();
@@ -207,7 +213,7 @@ export const createLockCapability = ({
       return { kind: 'failed', cause: error };
     }
     if (!usable) return { kind: 'unprovable' };
-    const proof = prove(ops, random, proofDir);
+    const proof = prove(ops, random, proofDir, platform);
     if (proof.kind !== 'failed') cache.set(dir, { identity, result: proof.kind });
     return proof;
   };

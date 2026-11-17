@@ -3,7 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { LOCK_DATABASE_SUFFIX, ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
+import { FileLockUnavailableError, HOST_PLATFORM, LOCK_DATABASE_SUFFIX, ensureMomongaDirs, kernelLockNamed, momongaPaths, openLockFlagsOn, sidecarOf, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import { registerCleanup, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
@@ -251,8 +251,19 @@ describe('update http', () => {
   });
 });
 
+const FILE_LOCK_DEFINED_HERE = openLockFlagsOn(HOST_PLATFORM) !== undefined;
+
+const LOCK_MECHANISMS = (['file-lock', 'sqlite-lock'] as const).filter((mechanism) => mechanism === 'sqlite-lock' || FILE_LOCK_DEFINED_HERE);
+
+describe('a file lock on a host without the open flags is refused, not built', () => {
+  it('kernelLockNamed refuses the file-lock mechanism exactly where the host does not define its open flags', () => {
+    if (FILE_LOCK_DEFINED_HERE) expect(kernelLockNamed('file-lock').name).toBe('file-lock');
+    else expect(() => kernelLockNamed('file-lock')).toThrow(FileLockUnavailableError);
+  });
+});
+
 describe('the aside install.ps1 leaves beside a running momonga.exe', () => {
-  for (const mechanism of ['file-lock', 'sqlite-lock'] as const) {
+  for (const mechanism of LOCK_MECHANISMS) {
     it(`is removed by the one update sweep once no process holds it (${mechanism})`, async (context) => {
       const directory = withTempDir(context);
       const aside = path.join(directory, `${STAGING_PREFIX}0123456789abcdef0123456789abcdef`);
@@ -302,7 +313,7 @@ describe('publishing over a running executable', () => {
     expect(fs.readFileSync(path.join(directory, asides[0] as string), 'utf8')).toBe('old');
   });
 
-  for (const mechanism of ['file-lock', 'sqlite-lock'] as const) {
+  for (const mechanism of LOCK_MECHANISMS) {
     it(`names the aside of the running file as a locked entry that the sweep keeps while its process runs and removes after it ends (${mechanism})`, async (context) => {
       const { directory, target, staged } = await setup(context);
       const child = spawnTracked(context, process.execPath, [ASIDE_ENTRY, mechanism, target, staged], { stdio: ['pipe', 'pipe', 'pipe'] });

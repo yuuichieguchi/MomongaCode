@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { bsdFileLock, sqliteFileLock } from '@momonga/foundation';
+import { kernelLockNamed, sqliteFileLock } from '@momonga/foundation';
 import type { KernelLockMechanism, LockCapability } from '@momonga/foundation';
 import { HEAVY_STEPS, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
 import { createTempRoot, removeTempRoot } from './temp.ts';
@@ -15,7 +15,7 @@ type Acquired = Extract<Outcome, { kind: 'acquired' }>;
 
 const MECHANISMS: Array<[string, KernelLockMechanism]> = [
   ['sqliteFileLock', sqliteFileLock],
-  ...(process.platform === 'darwin' ? ([['bsdFileLock', bsdFileLock]] as Array<[string, KernelLockMechanism]>) : []),
+  ...(process.platform === 'darwin' ? ([['file-lock', kernelLockNamed('file-lock')]] as Array<[string, KernelLockMechanism]>) : []),
 ];
 
 let root = '';

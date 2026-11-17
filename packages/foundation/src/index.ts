@@ -93,7 +93,8 @@ export type {
   ProcessLock,
   ProcessLockInspection,
 } from './process-lock.ts';
-export { bsdFileLock, createFileLock, kernelLockNamed, nodeFileLockOps } from './platform/kernel-lock.ts';
+export { FileLockUnavailableError, createFileLock, kernelLockNamed, nodeFileLockOps } from './platform/kernel-lock.ts';
+export { HOST_PLATFORM, openLockFlagsOn } from './platform/open-lock-flags.ts';
 export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf } from './platform/lock-form.ts';
 export type { LockForm } from './platform/lock-form.ts';
 export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordFields, handoverRecordOwner } from './handover-leftovers.ts';

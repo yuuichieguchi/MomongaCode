@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { bsdFileLock } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { writeInWriterChild } from '@momonga/tools';
 import type { WriterLaunch } from '@momonga/tools';
@@ -59,7 +59,7 @@ describe.runIf(HAS_REAL_SANDBOX)(`the writer child under the ${HOST_SANDBOX_KIND
     fs.writeFileSync(outside, 'kept\n');
     const answer = await writeInWriterChild(
       { sandbox, sandboxPolicy, launch: TEST_WRITER_LAUNCH, cwd: layout.project, env: { PATH: '/usr/bin:/bin' }, signal: new AbortController().signal },
-      { target: outside, content: 'overwritten\n', mode: 0o644, lock: bsdFileLock.name },
+      { target: outside, content: 'overwritten\n', mode: 0o644, lock: testKernelLock().name },
     );
     expect(answer.kind).toBe('failed');
     expect(fs.readFileSync(outside, 'utf8')).toBe('kept\n');
@@ -74,7 +74,7 @@ describe.runIf(HAS_REAL_SANDBOX)(`the writer child under the ${HOST_SANDBOX_KIND
     const inside = path.join(fs.realpathSync(layout.project), 'made.txt');
     const answer = await writeInWriterChild(
       { sandbox, sandboxPolicy, launch: TEST_WRITER_LAUNCH, cwd: layout.project, env: { PATH: '/usr/bin:/bin' }, signal: new AbortController().signal },
-      { target: inside, content: 'inside\n', mode: 0o644, lock: bsdFileLock.name },
+      { target: inside, content: 'inside\n', mode: 0o644, lock: testKernelLock().name },
     );
     expect(answer).toEqual({ kind: 'written' });
     expect(fs.readFileSync(inside, 'utf8')).toBe('inside\n');

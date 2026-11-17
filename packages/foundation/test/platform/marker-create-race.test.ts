@@ -54,7 +54,7 @@ describe('T7 (b) on a kernel that creates the file before it locks it, a probe t
     const ops = twoStepCreateLockOps((probing) => {
       for (const name of fs.readdirSync(proofDir)) sightings.push(stalledSharedProbe(probing, path.join(proofDir, name)));
     });
-    expect(await createLockCapability({ proofDir, ops }).of(markerDir)).toBe('proved');
+    expect(await createLockCapability({ proofDir, platform: 'darwin', ops }).of(markerDir)).toBe('proved');
     expect(sightings).not.toContain('unlocked');
   });
 });

@@ -1,13 +1,14 @@
 import path from 'node:path';
 import { OPEN_FLAGS, nodeFileSystem } from '../node-file-system.ts';
-import { O_SHLOCK } from './lock-capability.ts';
 import type { LockCapabilityProbe } from './lock-capability.ts';
+import { HOST_PLATFORM, openLockFlagsOn } from './open-lock-flags.ts';
+import type { OpenLockFlags } from './open-lock-flags.ts';
 import type { MarkerState } from '../marker-state.ts';
 import type { MarkerStateOptions, ProcessInspector, UninspectableProcess } from './inspector-types.ts';
 
 export type BaseInspector = Omit<ProcessInspector, 'markerState'>;
 
-const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
+const sharedProbeFlags = (flags: OpenLockFlags): number => OPEN_FLAGS.readOnly | flags.shared | OPEN_FLAGS.nonBlocking;
 
 const raceAbort = async <T>(pending: Promise<T>, signal: AbortSignal): Promise<T | 'unknown'> => {
   let release: () => void = () => undefined;
@@ -23,9 +24,10 @@ const raceAbort = async <T>(pending: Promise<T>, signal: AbortSignal): Promise<T
   }
 };
 
-const lockState = async (marker: string): Promise<MarkerState> => {
+const lockState = async (marker: string, flags: OpenLockFlags | undefined): Promise<MarkerState> => {
+  if (flags === undefined) return 'unknown';
   try {
-    await nodeFileSystem.openThenClose(marker, sharedProbeFlags());
+    await nodeFileSystem.openThenClose(marker, sharedProbeFlags(flags));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'EAGAIN') return 'held';
@@ -52,12 +54,13 @@ export const withListedState = (base: BaseInspector): ProcessInspector => ({
   markerState: (marker, { signal }) => listedState(base, marker, signal),
 });
 
-export const withMarkerState = (base: ProcessInspector, capability: LockCapabilityProbe): ProcessInspector => {
+export const withMarkerState = (base: ProcessInspector, capability: LockCapabilityProbe, platform: string = HOST_PLATFORM): ProcessInspector => {
+  const flags = openLockFlagsOn(platform);
   const locking = new Map<string, Promise<MarkerState>>();
   const viaLock = (marker: string): Promise<MarkerState> => {
     const running = locking.get(marker);
     if (running !== undefined) return running;
-    const started = lockState(marker);
+    const started = lockState(marker, flags);
     locking.set(marker, started);
     const clear = (): void => void locking.delete(marker);
     started.then(clear, clear);

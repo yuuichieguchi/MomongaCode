@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { bsdFileLock, createLockCapability, sqliteFileLock } from '@momonga/foundation';
+import { createLockCapability, kernelLockNamed, sqliteFileLock } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism, LockCapabilityProbe } from '@momonga/foundation';
 
 export type RunClass = 'heavy' | 'light';
@@ -159,7 +159,7 @@ const mechanismFor = async (request: RunLockRequest): Promise<KernelLockMechanis
   await fs.promises.mkdir(request.proofDir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   const capability = await (request.capability ?? capabilityMeasuredIn(request.proofDir)).of(request.dir);
   if (capability === 'unmeasured') throw new Error(`the lock capability of ${request.dir} could not be measured`);
-  return capability === 'proved' ? bsdFileLock : sqliteFileLock;
+  return capability === 'proved' ? kernelLockNamed('file-lock') : sqliteFileLock;
 };
 
 type AttemptContext = {
