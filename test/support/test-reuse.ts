@@ -8,7 +8,7 @@ export { OBSERVED_DIR, REUSE_STORE, TEST_REUSE_ENV, observedFileOf, testReuseMod
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-export const REUSE_RECORD_FORMAT = 'momonga-test-reuse/1';
+export const REUSE_RECORD_FORMAT = 'momonga-test-reuse/2';
 
 export const WHOLE_RUN_ENV = 'MOMONGA_WHOLE_RUN';
 
@@ -16,7 +16,7 @@ export type ReuseGlobals = {
   readonly node: string;
   readonly platform: string;
   readonly arch: string;
-  readonly harness: Readonly<Record<string, string>>;
+  readonly harness: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly env: Readonly<Record<string, string>>;
 };
 
@@ -33,11 +33,17 @@ export type ReuseRecord = {
 
 export type Observation = { readonly project: string; readonly file: string; readonly inputs: readonly string[]; readonly whole: boolean };
 
+const harnessOfProject = (globals: ReuseGlobals, project: string): Readonly<Record<string, string>> => {
+  const harness = globals.harness[project];
+  if (harness === undefined) throw new Error(`the test reuse plan has no harness files for project ${project}`);
+  return harness;
+};
+
 const keyOf = (globals: ReuseGlobals, project: string, file: string, inputs: readonly string[], whole: boolean, digests: RepoDigests): string =>
   sha256Hex(
     canonicalJson({
       format: REUSE_RECORD_FORMAT,
-      globals,
+      globals: { ...globals, harness: harnessOfProject(globals, project) },
       project,
       file,
       inputs: [...inputs].sort().map((input) => [input, digests.digestOf(input)]),
@@ -97,15 +103,61 @@ export const trackedFilesOf = (root: string): string[] => execFileSync('git', ['
 
 export const HARNESS_INPUTS = ['package.json', 'package-lock.json', 'tsconfig.json', 'vitest.config.ts'] as const;
 
-const HARNESS_DIRECTORIES = ['test/support/', 'scripts/support/', 'e2e/support/'];
+export type HarnessSpec = { readonly shared: readonly string[]; readonly projects: Readonly<Record<string, readonly string[]>> };
+
+const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"]([^'"]+)['"]/g;
+const WORKSPACE_SCOPE = '@momonga/';
+
+const workspaceEntriesOf = (root: string): ReadonlyMap<string, string> => {
+  const entries = new Map<string, string>();
+  for (const dir of fs.readdirSync(path.join(root, 'packages'), { withFileTypes: true })) {
+    const manifest = path.join(root, 'packages', dir.name, 'package.json');
+    if (!dir.isDirectory() || !fs.existsSync(manifest)) continue;
+    const parsed: unknown = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null || !('name' in parsed) || typeof parsed.name !== 'string' || !('exports' in parsed)) continue;
+    const exported: unknown = parsed.exports;
+    if (typeof exported !== 'object' || exported === null) throw new Error(`${manifest}: exports is not a map of subpaths`);
+    for (const [subpath, target] of Object.entries(exported)) {
+      if (typeof target !== 'string') throw new Error(`${manifest}: the export ${subpath} is not a path`);
+      entries.set(subpath === '.' ? parsed.name : `${parsed.name}${subpath.slice(1)}`, path.join(root, 'packages', dir.name, target));
+    }
+  }
+  return entries;
+};
+
+const importsOf = (file: string, workspace: ReadonlyMap<string, string>): string[] =>
+  [...fs.readFileSync(file, 'utf8').matchAll(SPECIFIER)].flatMap(([, specifier = '']) => {
+    if (specifier.startsWith('./') || specifier.startsWith('../')) return /\.[cm]?[jt]sx?$/.test(specifier) ? [path.resolve(path.dirname(file), specifier)] : [];
+    if (!specifier.startsWith(WORKSPACE_SCOPE)) return [];
+    const entry = workspace.get(specifier);
+    if (entry === undefined) throw new Error(`${file} imports ${specifier}, which no workspace package exports`);
+    return [entry];
+  });
+
+const closureOf = (root: string, entries: readonly string[], workspace: ReadonlyMap<string, string>): string[] => {
+  const seen = new Set<string>(entries.map((entry) => path.join(root, entry)));
+  let frontier = [...seen];
+  while (frontier.length > 0) {
+    const next = frontier.flatMap((file) => (/\.[cm]?[jt]sx?$/.test(file) ? importsOf(file, workspace) : [])).filter((file) => !seen.has(file));
+    for (const file of next) seen.add(file);
+    frontier = [...new Set(next)];
+  }
+  return [...seen].map((file) => path.relative(root, file).split(path.sep).join('/')).sort();
+};
+
+export const harnessOf = (root: string, spec: HarnessSpec): Record<string, string[]> => {
+  const workspace = workspaceEntriesOf(root);
+  const shared = closureOf(root, spec.shared, workspace);
+  return Object.fromEntries(Object.entries(spec.projects).map(([project, entries]) => [project, [...new Set([...shared, ...closureOf(root, entries, workspace)])].sort()]));
+};
 
 const IGNORED_ENV = new Set([TEST_REUSE_ENV, WHOLE_RUN_ENV, 'MOMONGA_TLC_REUSE', 'MOMONGA_RUN_LOCK_WAIT_SECONDS']);
 
-export const globalsOf = (tracked: readonly string[], digests: RepoDigests, env: Env): ReuseGlobals => ({
+export const globalsOf = (harness: Readonly<Record<string, readonly string[]>>, digests: RepoDigests, env: Env): ReuseGlobals => ({
   node: process.version,
   platform: process.platform,
   arch: process.arch,
-  harness: Object.fromEntries([...HARNESS_INPUTS, ...tracked.filter((file) => HARNESS_DIRECTORIES.some((directory) => file.startsWith(directory)))].sort().map((file) => [file, digests.digestOf(file)])),
+  harness: Object.fromEntries(Object.entries(harness).map(([project, files]) => [project, Object.fromEntries([...files].sort().map((file) => [file, digests.digestOf(file)]))])),
   env: Object.fromEntries(
     Object.entries(env)
       .filter((entry): entry is [string, string] => entry[0].startsWith('MOMONGA_') && !IGNORED_ENV.has(entry[0]) && entry[1] !== undefined)
@@ -167,19 +219,20 @@ const PLAN = Symbol.for('momonga.testReusePlan');
 
 type PlanHolder = { [PLAN]?: ReusePlan };
 
-const planOf = (root: string, projects: readonly string[], env: Env): ReusePlan => {
+const planOf = (root: string, spec: HarnessSpec, env: Env): ReusePlan => {
   const mode = testReuseModeOf(env);
-  if (mode === 'off') return { mode, root, digests: { digestOf: () => 'absent', treeDigest: () => '' }, globals: globalsOf([], { digestOf: () => 'absent', treeDigest: () => '' }, env), replayed: new Map() };
+  const projects = Object.keys(spec.projects);
+  if (mode === 'off') return { mode, root, digests: { digestOf: () => 'absent', treeDigest: () => '' }, globals: globalsOf({}, { digestOf: () => 'absent', treeDigest: () => '' }, env), replayed: new Map() };
   const tracked = trackedFilesOf(root);
   const digests = createRepoDigests(root, tracked);
-  const globals = globalsOf(tracked, digests, env);
+  const globals = globalsOf(harnessOf(root, spec), digests, env);
   const replayed = new Map(projects.map((project) => [project, recordsOfProject(root, project).filter((record) => record.project === project && isReplayable(record, digests, globals)).map((record) => record.file).sort()] as const));
   return { mode, root, digests, globals, replayed };
 };
 
-export const testReusePlan = (root: string, projects: readonly string[], env: Env = process.env): ReusePlan => {
+export const testReusePlan = (root: string, spec: HarnessSpec, env: Env = process.env): ReusePlan => {
   const holder = globalThis as PlanHolder;
-  holder[PLAN] ??= planOf(root, projects, env);
+  holder[PLAN] ??= planOf(root, spec, env);
   return holder[PLAN];
 };
 
