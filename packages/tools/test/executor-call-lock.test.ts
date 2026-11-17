@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Timing } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir, sleepDrivenTiming, testProcessInspector, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, lockFileOf, startLockHolder, withTempDir, sleepDrivenTiming, testProcessInspector, testKernelLock, writeLeftoverEntry } from '@momonga/testkit';
 import { heldCallWaitMs, sweepCallLocks } from '@momonga/tools';
 import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -232,11 +232,10 @@ describe('the per-call lock of the executor', () => {
     const mechanism = testKernelLock();
     const held = await mechanism.claim(path.join(dir, 'live.lock'));
     if (held.kind !== 'claimed') throw new Error('the first claim of a fresh lock file was refused');
-    fs.writeFileSync(path.join(dir, 'stale.lock'), '');
+    writeLeftoverEntry(mechanism, path.join(dir, 'stale.lock'));
     try {
       await sweepCallLocks({ dir, mechanism });
-      const liveFile = lockFormOf(mechanism, 'file') === 'entry' ? path.join(dir, 'live.lock') : sidecarOf(mechanism, path.join(dir, 'live.lock'));
-      expect(fs.existsSync(liveFile)).toBe(true);
+      expect(fs.existsSync(lockFileOf(mechanism, path.join(dir, 'live.lock')))).toBe(true);
       expect(fs.readdirSync(dir).every((name) => name.startsWith('live.lock'))).toBe(true);
     } finally {
       held.lock.dispose();

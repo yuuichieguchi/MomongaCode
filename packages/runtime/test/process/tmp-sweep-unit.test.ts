@@ -6,7 +6,7 @@ import type { KernelLockMechanism } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../../src/process/tmp-sweep.ts';
 import { makeDir, makeTempHome, START_MS } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
-import { testKernelLock, expectedKernelLockOn } from '@momonga/testkit';
+import { testKernelLock, expectedKernelLockOn, writeLeftoverEntry } from '@momonga/testkit';
 
 const DAY_MS = 86_400_000;
 const NOW = START_MS + 30 * DAY_MS;
@@ -81,7 +81,7 @@ describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
     const spawnRoot = temp.paths.tmp.spawn;
     fs.writeFileSync(path.join(makeDir(abandonedDirectory(spawnRoot, 'rg-1'), 'nested'), 'f'), 'x');
     abandonedDirectory(spawnRoot, 'rg-2');
-    fs.writeFileSync(path.join(spawnRoot, 'stray-file'), 'x');
+    writeLeftoverEntry(testKernelLock(), path.join(spawnRoot, 'stray-file'), 'x');
     const warned = warnings();
 
     await sweepSpawnTmp({ lock: testKernelLock(), dir: spawnRoot, onWarning: warned.onWarning });
@@ -229,7 +229,7 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     fs.writeFileSync(outsideFile, 'kept too');
     fs.symlinkSync(outside, path.join(temp.paths.tmp.sessions, sessionId(1)));
     fs.symlinkSync(outsideFile, path.join(temp.paths.tmp.sessions, sessionId(2)));
-    fs.writeFileSync(path.join(temp.paths.tmp.sessions, sessionId(3)), 'stray');
+    writeLeftoverEntry(testKernelLock(), path.join(temp.paths.tmp.sessions, sessionId(3)), 'stray');
 
     const { result } = sweep(temp, activityStore({}));
 
