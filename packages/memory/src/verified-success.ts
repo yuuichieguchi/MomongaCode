@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { isRecord, jsonValueOrText } from '@momonga/foundation';
 import { callInputTracker, completionMutates, conditionOwed, pinnedMandateOf, reconciliationMutates } from '@momonga/protocol';
-import type { ConditionResult, MutationFacts, PinnedCompletion, RunEvent } from '@momonga/protocol';
+import type { ConditionResult, MutationFacts, PinnedCompletion, RunEvent, ToolFile } from '@momonga/protocol';
 
 export type VerifiedSuccessInput = {
   status: string;
@@ -31,11 +31,9 @@ const factsOfCall = (call: CallEvent, input: unknown): CallFacts => ({
   ...(call.sideEffect === undefined ? {} : { sideEffect: call.sideEffect }),
 });
 
-const writtenPaths = (call: CallFacts, event: Extract<RunEvent, { type: 'tool.completed' }>): string[] | undefined => {
-  if (event.files === undefined) return WRITING_KINDS.includes(call.kind) ? call.paths : undefined;
-  const written = event.files.filter((file) => file.access === 'write').map((file) => file.path);
-  return written.length === 0 ? undefined : written;
-};
+const declaredPathsOf = (call: CallFacts): string[] | undefined => (WRITING_KINDS.includes(call.kind) ? call.paths : undefined);
+
+const changedPathsOf = (files: readonly ToolFile[]): string[] => files.filter((file) => file.access !== 'read').map((file) => file.path);
 
 export type PassingCheck = { command: string; conditionId: string; seq: number };
 
@@ -65,17 +63,23 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
   let completion: PinnedCompletion | undefined;
   let lastMutationSeq = 0;
   let manifestWritten = false;
-  const mutated = (seq: number, call: CallFacts, command: string | undefined, paths: readonly string[] | undefined): void => {
+  const namesManifest = (paths: readonly string[]): boolean => paths.some((changed) => manifests.has(path.basename(changed)));
+  const mutated = (seq: number, call: CallFacts, command: string | undefined, observed: string[] | undefined): void => {
     lastMutationSeq = seq;
+    if (observed !== undefined) {
+      if (namesManifest(observed)) manifestWritten = true;
+      return;
+    }
     if (command !== undefined) {
       if (!input.commands.includes(command)) manifestWritten = true;
       return;
     }
-    if (paths === undefined) {
+    const declared = declaredPathsOf(call);
+    if (declared === undefined) {
       if (runsCommands(call)) manifestWritten = true;
       return;
     }
-    if (paths.some((written) => manifests.has(path.basename(written)))) manifestWritten = true;
+    if (namesManifest(declared)) manifestWritten = true;
   };
   const inputs = callInputTracker(jsonValueOrText);
   const add = (event: RunEvent): void => {
@@ -106,12 +110,12 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
       }
       case 'tool.reconciled': {
         const call = calls.get(event.callId);
-        if (call !== undefined && reconciliationMutates(call, event.outcome)) mutated(event.seq, call, event.command, WRITING_KINDS.includes(call.kind) ? call.paths : undefined);
+        if (call !== undefined && reconciliationMutates(call, event.outcome)) mutated(event.seq, call, event.command, event.files === undefined ? undefined : changedPathsOf(event.files));
         return;
       }
       case 'tool.completed': {
         const call = calls.get(event.callId);
-        if (call !== undefined && completionMutates(call, event)) mutated(event.seq, call, event.command, writtenPaths(call, event));
+        if (call !== undefined && completionMutates(call, event)) mutated(event.seq, call, event.command, event.files === undefined ? undefined : changedPathsOf(event.files));
         return;
       }
       case 'verification.completed':
