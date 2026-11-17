@@ -235,7 +235,9 @@ describe('the per-call lock of the executor', () => {
     fs.writeFileSync(path.join(dir, 'stale.lock'), '');
     try {
       await sweepCallLocks({ dir, mechanism });
-      expect(fs.readdirSync(dir)).toEqual(['live.lock']);
+      const liveFile = lockFormOf(mechanism, 'file') === 'entry' ? path.join(dir, 'live.lock') : sidecarOf(mechanism, path.join(dir, 'live.lock'));
+      expect(fs.existsSync(liveFile)).toBe(true);
+      expect(fs.readdirSync(dir).every((name) => name.startsWith('live.lock'))).toBe(true);
     } finally {
       held.lock.dispose();
     }

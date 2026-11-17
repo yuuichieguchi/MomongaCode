@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { handoverLeftovers, handoverRecordOwner, isProcessAlive, momongaPaths, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
+import { claimPathOf, handoverLeftovers, handoverRecordOwner, isProcessAlive, momongaPaths, nodeFileSystem, pidNamespaceOf, sweepLeftovers } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { nodeRecordFiles } from '../../src/node-ports.ts';
 import { spawn } from '@momonga/testkit/child-process';
@@ -109,7 +109,7 @@ describe('16.8: the record names its owner and is held by its writer', () => {
     const file = recordFileOf(paths, 'attach', 'session-1');
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const lock = testKernelLock();
-    const outcome = await lock.claim(`${file}.lock`);
+    const outcome = await lock.claim(claimPathOf(lock, file, 'sidecar'));
     if (outcome.kind !== 'claimed') throw new Error('the test could not claim the lock of the record');
     fs.writeFileSync(file, textOf(process.pid), { mode: 0o600 });
     outcome.lock.release();
