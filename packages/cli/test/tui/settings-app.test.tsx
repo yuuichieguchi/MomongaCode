@@ -236,6 +236,21 @@ describe('/config, the settings screen', () => {
     started.app.unmount();
   });
 
+  it('writes an edit to a layer that a higher layer shadows, says which layer and file shadow it, and shows the value in effect as unchanged', async () => {
+    const place = freshPlace();
+    writeSettings(localFileOf(place), { context: { cachePrefix: true } });
+    const started = await startAt(place);
+    await open(started);
+    await openRow(started, 'Cache prefix', SAVE_TO_TITLE);
+    await press(started, '1', '› 1. user');
+    const frame = await press(started, KEYS.enter, `Saved to user.`);
+    expect(stored(place.userFile)).toEqual({ context: { cachePrefix: false } });
+    expect(unwrapped(frame).replaceAll(' ', '')).toContain(`local sets it in ${localFileOf(place)}, so the value in effect is still on.`.replaceAll(' ', ''));
+    expect(unwrapped(frame)).toContain('Cache prefix on local');
+    expect(unwrapped(frame)).not.toContain(APPLIES_NOW);
+    started.app.unmount();
+  });
+
   it('opens a structured value as JSON, shows a JSON error, and writes nothing the loader refuses', async () => {
     const place = freshPlace();
     const started = await startAt(place);
