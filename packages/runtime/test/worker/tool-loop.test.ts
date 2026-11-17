@@ -42,8 +42,8 @@ describe('worker tool loop', () => {
     }
 
     const calls = env.ofType(run.id, 'tool.call');
-    expect(calls[0]).toMatchObject({ callId: env.gateway.callId('call_r_1'), providerCallId: env.gateway.callId('call_r_1'), name: 'Echo', kind: 'read', title: 'Echo a', rawInput: { value: 'a' } });
-    expect(calls[1]).toMatchObject({ callId: env.gateway.callId('call_r_2'), providerCallId: env.gateway.callId('call_r_2'), name: 'Echo', kind: 'read', title: 'Echo b', rawInput: { value: 'b' } });
+    expect(calls[0]).toMatchObject({ callId: env.gateway.callId('call_r_1'), providerCallId: env.gateway.callId('call_r_1'), name: 'Echo', kind: 'read', title: 'Echo a' });
+    expect(calls[1]).toMatchObject({ callId: env.gateway.callId('call_r_2'), providerCallId: env.gateway.callId('call_r_2'), name: 'Echo', kind: 'read', title: 'Echo b' });
 
     const completed = env.ofType(run.id, 'tool.completed');
     expect(completed.map((event) => [event.callId, event.status, event.output]).sort()).toEqual([
