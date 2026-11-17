@@ -10,7 +10,7 @@ import type { KeptRecords, KeptSettings } from './kept-settings.ts';
 import { keptOrThrow } from './last-good.ts';
 import type { Kept } from './last-good.ts';
 import { layoutOf } from './layout.ts';
-import { readUserJsonFile, readUserLayer, userLayerFrom, userSettingsFile } from './layers.ts';
+import { readUserJsonFile, readUserLayer, userLayerFrom, userModelsOf, userSettingsFile } from './layers.ts';
 import type { UserLayer } from './layers.ts';
 import { mergingLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
@@ -52,6 +52,8 @@ export const loadUserSettings = async ({ home, env, signal, planProfiles, files 
 };
 
 export type UserModels = { resolved: ResolvedModels; sandbox?: SandboxSetting; autoModeClassifier?: string };
+
+export const emptyUserModels = (): UserModels => ({ resolved: userModelsOf(undefined, { source: 'settings', warnings: [] }) });
 
 export const loadUserModels = async ({ home, signal, files }: Omit<LoadUserSettingsOptions, 'planProfiles' | 'env'>): Promise<UserModels> => {
   const user = await readUserLayer(home, askerOf(signal, files));
