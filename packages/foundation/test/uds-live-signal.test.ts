@@ -2,7 +2,8 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isUnixSocketLive, listenUnix } from '@momonga/foundation';
 import { createTempDir, testKernelLock } from '@momonga/testkit';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -88,5 +89,20 @@ describe.skipIf(process.platform === 'win32')('the socket liveness check takes t
     cleanups.unshift(() => closeServer(claimant));
     await expect(listenAt(claimant, socketPath)).rejects.toBeInstanceOf(Error);
     expect(claimant.listening).toBe(false);
+  });
+
+  it('answers not live when the connect is reset: a listener that is ending accepts nothing (design-managed-servers section 8)', async () => {
+    const socketPath = await listening();
+    const reset = Object.assign(new Error(`connect ECONNRESET ${socketPath}`), { code: 'ECONNRESET', syscall: 'connect' });
+    const probe = Object.assign(new EventEmitter(), { destroy: () => undefined });
+    const connect = vi.spyOn(net, 'connect').mockImplementation((() => {
+      setImmediate(() => probe.emit('error', reset));
+      return probe;
+    }) as unknown as typeof net.connect);
+    try {
+      await expect((isUnixSocketLive as unknown as LiveCheck)(socketPath, new AbortController().signal)).resolves.toBe(false);
+    } finally {
+      connect.mockRestore();
+    }
   });
 });
