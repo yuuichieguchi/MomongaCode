@@ -195,7 +195,7 @@ export { NoCurrentGenerationError, currentSocketResolver, publishCurrentGenerati
 export type { CurrentGeneration } from './current-generation.ts';
 export type { HomePaths, LayoutEnvironment, MomongaPaths, SessionScratch } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
-export { OperationLimitError, operationLimit, settledOrAborted } from './operation-limit.ts';
+export { LONGEST_LIMIT_MS, OperationLimitError, operationLimit, settledOrAborted } from './operation-limit.ts';
 export type { LimitTiming, OperationLimit } from './operation-limit.ts';
 export { SecretStoreAbsentError, SecretStoreAnswerError, StoreCallEndedError, endedStoreCall, limitEndOf, limitEndText } from './secret-store-failures.ts';
 export { createSecretKeyFile } from './secret-key-file.ts';

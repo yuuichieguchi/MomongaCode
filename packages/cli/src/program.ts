@@ -1,6 +1,6 @@
 import { colourOffWhenAsked } from './tui/screen/theme.ts';
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
-import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
+import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, LONGEST_LIMIT_MS, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
 import { DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, PROMPT_TEXT_MAX_CHARS, TRACE_CONTENT_PAGE_OPTION, issueRunInput, messageOf, probeStepBoundMs } from '@momonga/protocol';
 import type { Mandate, PermissionMode } from '@momonga/protocol';
@@ -100,6 +100,8 @@ const integerArgument =
     if (!Number.isInteger(value) || value < minimum) throw new InvalidArgumentError(`expected an integer of at least ${minimum}`);
     return value;
   };
+
+const LARGEST_HOST_TIMER_SECONDS = Math.floor(LONGEST_LIMIT_MS / 1000);
 
 const integerBetween =
   (minimum: number, maximum: number) =>
@@ -343,7 +345,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .command('probe <model>')
     .description('measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record the result for the gateway (an Ollama server: trained context length, tools, vision, thinking and model digest; a managed or OpenAI-compatible server: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage)')
     .option('--samples <count>', 'samples per measured rate', integerArgument(1))
-    .option('--step-timeout <seconds>', 'the bound of each measuring step, in seconds', integerBetween(1, Math.floor(2_147_483_647 / 1000)), DEFAULT_PROBE_STEP_SECONDS)
+    .option('--step-timeout <seconds>', 'the bound of each measuring step, in seconds', integerBetween(1, LARGEST_HOST_TIMER_SECONDS), DEFAULT_PROBE_STEP_SECONDS)
     .option('--yes', 'consent to measure a model paid for by use, up to the bound of requests and tokens the measurement can send')
     .action(async (model: string, options: { samples?: number; stepTimeout: number; yes?: true }) => {
       deps.complete(

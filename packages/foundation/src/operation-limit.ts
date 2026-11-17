@@ -2,7 +2,7 @@ import { systemTiming } from './system-timing.ts';
 import type { Timing } from './timing.ts';
 
 const SHORTEST_LIMIT_MS = 1;
-const LONGEST_LIMIT_MS = 2_147_483_647;
+export const LONGEST_LIMIT_MS = 2_147_483_647;
 
 export class OperationLimitError extends Error {
   readonly limitMs: number;
