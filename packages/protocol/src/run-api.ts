@@ -665,6 +665,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       mutated: { type: 'boolean', const: true },
       command: string,
       windowShared: { type: 'boolean', const: true },
+      filesComplete: boolean,
       observedTrees: closed({ from: string, to: string }, ['from', 'to']),
       outputIncomplete: constant('residue'),
       memories: { type: 'array', items: string },

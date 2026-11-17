@@ -77,9 +77,13 @@ export const commandThrough = (name: string, command: string, options: BashOptio
   };
 };
 
-export const observedWrites = (step: Step, files: { path: string; access: 'read' | 'write' | 'remove' }[]): Step => {
+export type ObservedOptions = { complete?: boolean | 'unstated'; shared?: boolean };
+
+export const observedWrites = (step: Step, files: { path: string; access: 'read' | 'write' | 'remove' }[], options: ObservedOptions = {}): Step => {
   if (step.step !== 'call') throw new Error('only a call has observed files');
-  return { ...step, end: { ...step.end, files: files.map((file): ToolFile => ({ path: `${PROJECT}/${file.path}`, access: file.access })) } };
+  const complete = options.complete === 'unstated' ? {} : { filesComplete: options.complete !== false };
+  const shared = options.shared === true ? { windowShared: true } : {};
+  return { ...step, end: { ...step.end, files: files.map((file): ToolFile => ({ path: `${PROJECT}/${file.path}`, access: file.access })), ...complete, ...shared } };
 };
 
 export const reconciled = (step: Step, outcome: 'already_applied' | 'not_applied' | 'unknown'): Step => {

@@ -52,7 +52,7 @@ afterEach(() => {
 
 describe('the observer store under retention', () => {
   it('keeps the objects of marks newer than the cutoff', async () => {
-    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true }, LAUNCH).mark(signal());
+    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true, manifests: [] }, LAUNCH).mark(signal());
     const before = looseObjects();
     expect(before).toBeGreaterThan(0);
 
@@ -62,7 +62,7 @@ describe('the observer store under retention', () => {
   });
 
   it('removes the objects of marks older than the cutoff from every observer store', async () => {
-    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true }, LAUNCH).mark(signal());
+    await createGitWorkTreeObserver({ storeRoot, cwd: project, trusted: true, manifests: [] }, LAUNCH).mark(signal());
     expect(looseObjects()).toBeGreaterThan(0);
 
     await pruneGitObserverStores({ storeRoot, cutoffMs: systemClock.now() + HOUR_MS }, LAUNCH, signal());

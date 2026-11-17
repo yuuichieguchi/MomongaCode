@@ -87,6 +87,23 @@ describe('isVerifiedSuccess', () => {
       expect(verdict([observedWrites(edit('rm -rf build'), [{ path: 'src/a.ts', access: 'write' }, { path: 'Makefile', access: 'remove' }]), ...pass()])).toBe(false);
     });
 
+    it('latches when the observer did not mark the observation complete, whatever the observed files show, so a manifest it cannot see cannot slip through', () => {
+      expect(verdict([observedWrites(edit(), [{ path: 'src/a.ts', access: 'write' }], { complete: false }), ...pass()])).toBe(false);
+      expect(verdict([observedWrites(edit('rm -rf build'), [], { complete: false }), ...pass()])).toBe(false);
+    });
+
+    it('latches when a call that runs commands carries files with no completeness statement, so the files are not taken as observed', () => {
+      expect(verdict([observedWrites(edit(), [{ path: 'src/a.ts', access: 'write' }], { complete: 'unstated' }), ...pass()])).toBe(false);
+    });
+
+    it('latches when the window was shared with another call, so the files are not this call alone', () => {
+      expect(verdict([observedWrites(edit(), [{ path: 'src/a.ts', access: 'write' }], { complete: false, shared: true }), ...pass()])).toBe(false);
+    });
+
+    it('is verified when the observation is complete and holds no manifest, and the declared check passes after it', () => {
+      expect(verdict([observedWrites(edit(), [{ path: 'src/a.ts', access: 'write' }]), ...pass()])).toBe(true);
+    });
+
     it('latches when its written files were not observed, so a check after it does not verify the run', () => {
       expect(verdict([edit(), ...pass()])).toBe(false);
       expect(verdict([write('src/a.ts'), edit(), ...pass()])).toBe(false);

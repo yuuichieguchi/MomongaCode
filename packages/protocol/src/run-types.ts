@@ -343,6 +343,7 @@ export type RunEventPayload =
       mutated?: true;
       command?: string;
       windowShared?: true;
+      filesComplete?: boolean;
       observedTrees?: { from: string; to: string };
       outputIncomplete?: 'residue';
       memories?: string[];

@@ -850,7 +850,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   };
   const tools: ToolRuntimePort = {
     inspector: testProcessInspector(),
-    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(env.layout.root, 'observer'), cwd: target.cwd, trusted: false }, TEST_UNPROTECTED_LAUNCH),
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeRoot: path.join(env.layout.root, 'observer'), cwd: target.cwd, trusted: false, manifests: [] }, TEST_UNPROTECTED_LAUNCH),
     envFor: (target: Session) => ({ ...target.env }),
     toolSet: async (_runId: string, toolSetOptions: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }) =>
       snapshotToolbox(toolSetOptions.additionalTools, toolSetOptions.only),
