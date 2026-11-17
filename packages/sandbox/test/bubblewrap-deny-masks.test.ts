@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { nodeFilesystemPort, planBubblewrap } from '@momonga/sandbox';
+import { MASK_ARGUMENT_CEILING, SandboxPolicyError, nodeFilesystemPort, planBubblewrap } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir } from './helpers.ts';
@@ -58,6 +58,7 @@ describe('the read masks of a deny set', () => {
     const masks = masksOf(args);
     expect(masks.tmpfs).toEqual([tree]);
     expect(masks.devNull).toEqual([]);
+    expect(args.length).toBeLessThan(MASK_ARGUMENT_CEILING);
   });
 
   it('keeps a per-file mask for each denied file when the directory holds an allowed file too', async () => {
@@ -95,5 +96,17 @@ describe('the read masks of a deny set', () => {
     const remount = args.findIndex((value, index) => value === '--remount-ro' && args[index + 1] === tree);
     expect(mount).toBeGreaterThan(-1);
     expect(remount).toBeGreaterThan(mount);
+  });
+
+  it('refuses a deny set whose masks exceed the ceiling with the typed policy error, before any spawn', async () => {
+    fs.writeFileSync(path.join(tree, 'keep.txt'), 'x');
+    writeFiles(tree, Math.floor(MASK_ARGUMENT_CEILING / 3) + 1, '.env');
+    const error = await plan(await readDenyPolicy(['tree/*.env'])).then(
+      () => undefined,
+      (failure: unknown) => failure,
+    );
+    expect(error).toBeInstanceOf(SandboxPolicyError);
+    expect(error).toMatchObject({ code: 'deny_set_exceeds_argument_ceiling' });
+    expect((error as Error).message).toContain(String(MASK_ARGUMENT_CEILING));
   });
 });

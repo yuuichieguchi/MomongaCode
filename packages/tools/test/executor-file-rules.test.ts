@@ -7,6 +7,7 @@ import { resolveCanonicalPath, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSet, PathResolution } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
+import { MASK_ARGUMENT_CEILING } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import type { CallOutcome } from '@momonga/tools';
 import { createReadAccessMatcher } from '../src/read-access.ts';
@@ -170,6 +171,27 @@ describe('executor guards read the user file rules', () => {
     const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(many/*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
     const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
+  });
+
+  const crowdedGrep = async (): Promise<{ tools: Builtins; visible: string; run: () => Promise<unknown> }> => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const crowded = path.join(tools.layout.project, 'crowded');
+    fs.mkdirSync(crowded);
+    const visible = tools.write(path.join('crowded', 'keep.txt'), 'secret');
+    for (let index = 0; index <= Math.floor(MASK_ARGUMENT_CEILING / 3); index += 1) fs.writeFileSync(path.join(crowded, `secret-${index}.env`), 'secret');
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(crowded/*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    return { tools, visible, run: async () => tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options) };
+  };
+
+  it.runIf(HAS_RG && process.platform === 'linux')('refuses a Grep whose deny set needs more mask arguments than bubblewrap can take, with the typed policy error and no spawn, under the real sandbox', async () => {
+    const { run } = await crowdedGrep();
+    const error = await rejectionOf(run());
+    expect(error).toMatchObject({ name: 'SandboxPolicyError', code: 'deny_set_exceeds_argument_ceiling' });
+  });
+
+  it.runIf(HAS_RG && process.platform === 'darwin')('runs a Grep whose deny set is above the bubblewrap ceiling under seatbelt, which names no file per denied path, and keeps the denied files out', async () => {
+    const { tools, visible, run } = await crowdedGrep();
+    expect(resultOf((await run()) as CallOutcome).output).toBe(inProject(tools, visible));
   });
 
   it.runIf(HAS_RG)('keeps the exclusion of denied files whose names hold a line break or end in whitespace, and keeps a visible file beside them, under the real sandbox', async () => {

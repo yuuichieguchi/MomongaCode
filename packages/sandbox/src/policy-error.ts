@@ -16,7 +16,8 @@ export type SandboxPolicyErrorCode =
   | 'network_port_invalid'
   | 'network_relay_missing'
   | 'socket_filter_unsupported'
-  | 'socket_guard_missing';
+  | 'socket_guard_missing'
+  | 'deny_set_exceeds_argument_ceiling';
 
 export class SandboxPolicyError extends Error {
   readonly code: SandboxPolicyErrorCode;

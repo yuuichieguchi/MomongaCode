@@ -19,6 +19,26 @@ import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, Sandbo
 
 export const DEFAULT_BWRAP_PATH = '/usr/bin/bwrap';
 
+export const BWRAP_MAX_ARGS = 9000;
+
+export const BWRAP_SANDBOX_FIXED_ARGUMENTS = 16;
+
+export const MASK_ARGUMENT_CEILING = BWRAP_MAX_ARGS - BWRAP_SANDBOX_FIXED_ARGUMENTS;
+
+export const KERNEL_ARGUMENT_BYTES = 1048576;
+
+const MOUNT_OPTIONS: ReadonlySet<string> = new Set(['--bind', '--ro-bind', '--tmpfs']);
+
+const assertWithinArgumentCeiling = (args: readonly string[]): void => {
+  const bytes = args.reduce((sum, value) => sum + Buffer.byteLength(value) + 1, 0);
+  if (args.length <= MASK_ARGUMENT_CEILING && bytes <= KERNEL_ARGUMENT_BYTES) return;
+  const masks = args.filter((value) => MOUNT_OPTIONS.has(value)).length;
+  throw new SandboxPolicyError(
+    'deny_set_exceeds_argument_ceiling',
+    `the denied paths need ${masks} mounts (${args.length} bubblewrap arguments, ${bytes} bytes), and the sandbox can pass at most ${MASK_ARGUMENT_CEILING} arguments (${KERNEL_ARGUMENT_BYTES} bytes) to bubblewrap for them, so the command was not started`,
+  );
+};
+
 export type EntryKind = 'file' | 'directory';
 
 export type Unreachable = 'unreachable';
@@ -426,6 +446,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     ...unique(maskedDirectories).flatMap((directory) => ['--remount-ro', directory]),
     ...(options.cwd === undefined ? [] : ['--chdir', options.cwd]),
   ];
+  assertWithinArgumentCeiling(args);
   const reserved = unique(placeholders);
   return {
     args,
