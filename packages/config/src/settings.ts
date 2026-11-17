@@ -204,6 +204,7 @@ export type ResolvedChatCompletionsTarget = {
   toolCalling: ToolCallingSetting;
   billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
+  writtenCapabilities: DeclaredTargetCapabilities;
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };
@@ -221,6 +222,7 @@ export type ResolvedOpenResponsesTarget = {
   toolCalling: 'native' | 'none';
   billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
+  writtenCapabilities: DeclaredTargetCapabilities;
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };
@@ -260,6 +262,7 @@ export type ResolvedAnthropicTarget = {
   billing: TargetBilling;
   apiVersion: AnthropicApiVersion;
   capabilities: TargetCapabilities & { maxConcurrency: number };
+  writtenCapabilities: DeclaredTargetCapabilities;
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };
@@ -273,6 +276,7 @@ export type ResolvedOllamaTarget = {
   socketPath?: string;
   billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
+  writtenCapabilities: DeclaredTargetCapabilities;
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };

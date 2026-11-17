@@ -5,11 +5,11 @@ import type { OllamaEndpointRecord } from './endpoint-record.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import { jsonModeCapabilityOf } from './json-mode.ts';
-import type { DeclaredCapabilities } from './decide.ts';
+import type { DeclaredCapabilities, WrittenCapabilities } from './decide.ts';
 import { memoizedVerification } from './endpoint-target.ts';
 import { recordForIdentity } from './record.ts';
 import type { MeasuringAsk } from './auto-probe.ts';
-import { declaredLayerOf, measuringAskOf, reportedLayerOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
+import { measuringAskOf, reportedLayerOf, sourcedCapabilities, unknownFieldsOf, writtenLayerFor } from './sources.ts';
 import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 
 export type ProbedOllamaTargetOptions = {
@@ -17,6 +17,7 @@ export type ProbedOllamaTargetOptions = {
   endpoint: string;
   model: string;
   declared: DeclaredCapabilities;
+  written: WrittenCapabilities;
   toolCalling: ToolCallingDeclaration;
   record: OllamaEndpointRecord | null;
   readRecord: () => Promise<OllamaEndpointRecord | null>;
@@ -43,7 +44,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
   const fromSources = async (): Promise<Capabilities> => {
     reportedOnce ??= await options.readReported();
     const reported = reportedOnce;
-    const served = sourcedCapabilities(declared, options.toolCalling, reported);
+    const served = sourcedCapabilities(declared, options.written, options.toolCalling, reported);
     if (served !== undefined) return served;
     throw targetProbingError(await options.startProbe(measuringAskOf(options.targetName, unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
   };
@@ -65,7 +66,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
       const { report } = record;
       return mergeCapabilities({
         defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, report) },
-        declared: declaredLayerOf(declared, options.toolCalling),
+        declared: writtenLayerFor(options.written, options.toolCalling),
         reported: reportedLayerOf(reportedOnce),
         probed: {
           toolCalling: report.nativeTools.accepted ? 'native' : 'none',
