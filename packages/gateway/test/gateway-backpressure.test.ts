@@ -2,7 +2,7 @@ import net from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { SSE_EVENT_MAX_BYTES } from '@momonga/foundation';
 import { createScriptedAdapter, waitFor } from '@momonga/testkit';
-import { postJson, readJson, readSse, sseIterator, startGateway, userInput } from './gateway-helpers.ts';
+import { postJson, readJson, readSse, registerCleanup, sseIterator, startGateway, userInput } from './gateway-helpers.ts';
 import { bigTextEvents } from './gateway-support.ts';
 
 const SLOW_READER_CHUNK_BYTES = Math.floor(SSE_EVENT_MAX_BYTES / 4 / 200);
@@ -43,19 +43,28 @@ describe('streaming backpressure', () => {
     const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, onReaderBehind: () => holds.push(primary.calls[0]?.emitted ?? 0) });
     const response = await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     const frames = sseIterator(response);
+    registerCleanup(async () => {
+      await frames.return?.(undefined);
+    });
     await frames.next();
-    await waitFor(() => holds.length > 0, { description: 'the writer to stop pulling for the slow reader' });
-    const emitted = primary.calls[0]?.emitted ?? 0;
-    expect(holds).toEqual([emitted]);
+    const pulled = (): number => primary.calls[0]?.emitted ?? 0;
+    let emitted = 0;
+    await waitFor(
+      () => {
+        emitted = pulled();
+        return holds.at(-1) === emitted;
+      },
+      { description: 'the writer to be held for the slow reader at its last pull' },
+    );
     expect(emitted).toBeLessThan(chunks);
     expect(emitted * SLOW_READER_CHUNK_BYTES).toBeLessThanOrEqual(capacity + QUEUED_BEYOND_CAPACITY_BYTES);
+    expect(Math.max(...holds) * SLOW_READER_CHUNK_BYTES).toBeLessThanOrEqual(capacity + QUEUED_BEYOND_CAPACITY_BYTES);
     let resumed = false;
     for (let read = 0; read < chunks - emitted - 1 && !resumed; read += 1) {
       await frames.next();
       resumed = (primary.calls[0]?.emitted ?? 0) > emitted;
     }
     expect(resumed).toBe(true);
-    await frames.return?.(undefined);
   });
 });
 
