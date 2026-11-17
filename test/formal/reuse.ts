@@ -11,7 +11,6 @@ import type { TlcFacts } from './verdict.ts';
 export const REUSE_ENV = 'MOMONGA_TLC_REUSE';
 
 export const RAN_REASONS = [
-  'deep tier',
   'reuse off',
   'JAVA_TOOL_OPTIONS is set',
   '_JAVA_OPTIONS is set',
@@ -150,19 +149,16 @@ export const createJavaIdentityReader = (options: { env: Env; timer?: LimitTimer
 export type KeyParts = {
   readonly format: typeof KEY_FORMAT;
   readonly config: string;
-  readonly harness: Readonly<Record<string, string>>;
   readonly jar: string;
   readonly java: JavaIdentity;
-  readonly workers: number;
+  readonly workers: number | null;
   readonly args: readonly string[];
   readonly cfg: string;
   readonly modules: readonly (readonly [string, string])[];
   readonly inputs: readonly (readonly [string, string])[];
 };
 
-const KEY_FORMAT = 'momonga-tlc-key/2';
-
-export const HARNESS_FILES = ['scripts/tlc.sh', 'test/formal/runner.ts', 'test/formal/verdict.ts', 'test/formal/manifest-reader.ts', 'test/formal/cfg-names.ts', 'test/formal/reuse.ts', 'test/formal/check-entry.ts', 'test/formal/tier.ts'] as const;
+const KEY_FORMAT = 'momonga-tlc-key/3';
 
 const JAR_FILE = '.cache/tla/tla2tools.jar';
 
@@ -194,8 +190,6 @@ const digestOfFile = (file: string): Promise<string> =>
 
 const absoluteOf = (repoRoot: string, relative: string): string => path.join(repoRoot, ...relative.split('/'));
 
-export const harnessDigests = async (repoRoot: string): Promise<Record<string, string>> =>
-  Object.fromEntries(await Promise.all(HARNESS_FILES.map(async (file) => [file, await digestOfFile(absoluteOf(repoRoot, file))] as const)));
 
 export const jarDigest = (repoRoot: string): Promise<string> => digestOfFile(absoluteOf(repoRoot, JAR_FILE));
 
@@ -290,14 +284,14 @@ export type KeyRequest = { readonly repoRoot: string; readonly entry: ManifestEn
 export const keyPartsOf = async ({ repoRoot, entry, args, workers, java }: KeyRequest): Promise<KeyParts | { unreadable: string }> => {
   const specDir = absoluteOf(repoRoot, SPEC_DIR);
   try {
-    const [harness, jar, cfg, modules, inputs] = await Promise.all([
-      harnessDigests(repoRoot),
+    const [jar, cfg, modules, inputs] = await Promise.all([
       jarDigest(repoRoot),
       digestOfFile(path.join(specDir, `${entry.config}.cfg`)),
       moduleDigests(specDir, moduleOf(entry.config)),
       inputDigests(specDir),
     ]);
-    return { format: KEY_FORMAT, config: entry.config, harness, jar, java, workers, args: [...args], cfg, modules, inputs };
+    const invocationWorkers = entry.expect === 'holds' ? null : workers;
+    return { format: KEY_FORMAT, config: entry.config, jar, java, workers: invocationWorkers, args: [...args], cfg, modules, inputs };
   } catch (error) {
     if (error instanceof UnreadableInput) return { unreadable: path.relative(repoRoot, error.file).split(path.sep).join('/') };
     throw error;

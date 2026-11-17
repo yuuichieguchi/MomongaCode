@@ -21,7 +21,7 @@ describe('CI configuration', () => {
     for (const script of ['typecheck', 'test', 'test:e2e', 'test:packaging']) {
       expect(workflow).toContain(`run: npm ${script === 'test' ? '' : 'run '}${script}`);
     }
-    expect(packageJson.scripts['test:packaging']).toBe('vitest run --project packaging');
+    expect(packageJson.scripts['test:packaging']).toBe('MOMONGA_WHOLE_RUN=1 vitest run --project packaging');
   });
 
   it('provides Java and the pinned TLC jar before the unit tests, from the one script that pins it', () => {
@@ -67,9 +67,9 @@ describe('CI configuration', () => {
   };
 
   it('pins the reuse of model-checking results in each script that runs the tier: off in test and test:tlc-deep, on in test:reuse', () => {
-    expect(scriptParts('test')).toEqual({ assignments: { [TEST_REUSE_ENV]: '0', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit --project e2e --project packaging' });
-    expect(scriptParts('test:reuse')).toEqual({ assignments: { [TEST_REUSE_ENV]: '1', MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit --project e2e --project packaging' });
-    expect(scriptParts('test:tlc-deep')).toEqual({ assignments: { MOMONGA_TLC_TIER: 'deep', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit test/formal' });
+    expect(scriptParts('test')).toEqual({ assignments: { [TEST_REUSE_ENV]: '0', MOMONGA_TLC_REUSE: '0', MOMONGA_WHOLE_RUN: '1' }, command: 'vitest run --project unit --project e2e --project packaging' });
+    expect(scriptParts('test:reuse')).toEqual({ assignments: { [TEST_REUSE_ENV]: '1', MOMONGA_TLC_REUSE: '1', MOMONGA_WHOLE_RUN: '1' }, command: 'vitest run --project unit --project e2e --project packaging' });
+    expect(scriptParts('test:tlc-deep')).toEqual({ assignments: { MOMONGA_TLC_TIER: 'deep', MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit test/formal' });
   });
 
   it('names the reuse variable in no other script, and never in the gate, CI or the container', () => {

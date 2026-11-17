@@ -23,7 +23,7 @@ export type TierOptions = {
 const RESULTS_DIR = 'tlc-results';
 
 const storeOutsideReuseMode = (): never => {
-  throw new Error('the result store belongs to a reuse-mode run of the every-run tier');
+  throw new Error('the result store belongs to a reuse-mode run');
 };
 
 const noStore: ResultStore = { read: storeOutsideReuseMode, write: storeOutsideReuseMode, removeOrphans: storeOutsideReuseMode };
@@ -43,13 +43,15 @@ export const describeTier = (options: TierOptions): void => {
   const entries = options.entries instanceof Error ? [] : options.entries;
   const now = options.now ?? ((): Date => new Date());
 
-  describe(`TLC over every ${tier} configuration in the manifest`, () => {
+  const suite = tier === 'deep' ? describe.concurrent : describe;
+
+  suite(`TLC over every ${tier} configuration in the manifest`, () => {
     const report = createTierReport(tier);
     let opened: TierSession | undefined;
 
     const openSession = (): TierSession => {
       const mode = reuseModeOf(env);
-      const reuses = mode === 'on' && tier === 'every-run';
+      const reuses = mode === 'on';
       return {
         mode,
         reuses,
@@ -82,7 +84,7 @@ export const describeTier = (options: TierOptions): void => {
         titleOf(entry),
         async () => {
           const { mode, store, java } = session();
-          const outcome = await checkEntry({ entry, script, repoRoot, tier, mode, env, store, java, limitMs, now });
+          const outcome = await checkEntry({ entry, script, repoRoot, mode, env, store, java, limitMs, now });
           report.add(entry.config, outcome);
           const limits = options.modules.find((module) => module.module === moduleOf(entry.config));
           if (limits === undefined) throw new Error(`${entry.config}: the manifest has no modules entry for ${moduleOf(entry.config)}`);
