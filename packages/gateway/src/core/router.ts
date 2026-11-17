@@ -313,7 +313,7 @@ export const createRouter = (options: RouterOptions): Router => {
       if (error instanceof ClientDisconnectedError) throw error;
       if (error instanceof GatewayError) {
         if (first) throw error;
-        return { model: target.name, measuring: false, facts: { outputBounded: false } };
+        return { model: target.name, measuring: false, facts: { outputBounded: false, contextWindow: undefined, maxOutputTokens: undefined } };
       }
       throw plainError(target.adapter.classify(error));
     }
