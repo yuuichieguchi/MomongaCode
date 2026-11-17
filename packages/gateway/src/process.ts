@@ -175,21 +175,15 @@ import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
 import { createRedactor } from './core/redaction.ts';
 import type { Redactor } from './core/redaction.ts';
 import type { GatewayEpoch, GatewayEpochs } from './core/services.ts';
-import { systemProcessPorts } from './process-ports.ts';
-import type { ProcessFilePorts } from './process-ports.ts';
+import type { ProcessFilePorts, ProcessPorts } from './process-ports.ts';
 import type { GatewayConfig, GatewayEpochsShared, GatewayTimers } from './types.ts';
 
-export type StartGatewayProcessOptions = {
+export type StartGatewayProcessOptions = ProcessPorts & {
   home: string;
   generation: number;
   env: Readonly<Record<string, string | undefined>>;
   version: string;
-  clock?: MonotonicClock;
-  timers?: GatewayTimers;
-  random?: () => number;
-  files?: ProcessFilePorts;
   platform: NodeJS.Platform;
-  pid?: number;
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
   secretStore?: SecretStore;
@@ -197,7 +191,7 @@ export type StartGatewayProcessOptions = {
   spawn?: SpawnFn;
   logger?: JsonLogger;
   stdout?: TextStream;
-  signal?: AbortSignal;
+  signal: AbortSignal;
   locks: LayoutLocks;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
@@ -934,12 +928,8 @@ const adapterClosable = (adapter: ProviderAdapter): Closable => ({ close: async 
 const unmanagedPart = (key: string, adapter: ProviderAdapter, counter: string): TargetPart => ({ key, adapter, counter, closables: [adapterClosable(adapter)] });
 
 export const startGatewayProcess = async (options: StartGatewayProcessOptions): Promise<GatewayProcess> => {
-  const clock = options.clock ?? systemProcessPorts.clock;
-  const timers = options.timers ?? systemProcessPorts.timers;
-  const random = options.random ?? systemProcessPorts.random;
-  const files = options.files ?? systemProcessPorts.files;
+  const { clock, timers, random, files, pid } = options;
   const platform = options.platform;
-  const pid = options.pid ?? systemProcessPorts.pid;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const { signal } = options;
   const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, platform, options.env), generation: options.generation, logger });
@@ -952,7 +942,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const endpointScope = await step('endpoint-scope', () => endpointScopeOf(paths, platform, { files: nodeFileSystem, random: systemRandom, lock: kernelLock }));
   const own = generationLayout(options.home, options.generation, platform, endpointScope);
   const inspector = layoutProcessInspector(options.locks.capability);
-  const managedLaunch = await step('managed-launch', () => noneSandboxLaunchOf({ home: options.home, platform, env: options.env, paths: files.paths(AbortSignal.any(signal === undefined ? [] : [signal])), isUsableBinary: files.isUsableBinary }));
+  const managedLaunch = await step('managed-launch', () => noneSandboxLaunchOf({ home: options.home, platform, env: options.env, paths: files.paths(AbortSignal.any([signal])), isUsableBinary: files.isUsableBinary }));
   const lock = await step('lock', () => (options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, { mechanism: kernelLock })))(own.locks.gateway));
   const cleanups: Array<(values: StopValues | undefined) => void | Promise<void>> = [() => lock.release()];
   const lifetime = new AbortController();

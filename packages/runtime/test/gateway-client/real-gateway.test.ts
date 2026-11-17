@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../../gateway/src/process-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -54,7 +55,7 @@ beforeAll(async () => {
     (cleanup) => {
       closeGateway = cleanup;
     },
-    () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION }),
+    () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION }),
   );
   expect(Buffer.byteLength(gateway.socketPath)).toBeLessThan(104);
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
