@@ -8157,13 +8157,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 2064736,
-      "measuredSeconds": 451.85,
+      "distinctStates": 13472,
+      "measuredSeconds": 3.09,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1885.09,
-      "budgetCpuSeconds": 3774,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.09 at start)",
-      "identity": "3527bf354f328205bbc6a312a169153b05d2d472edbcf7895e990e9ea378fd26"
+      "measuredCpuSeconds": 8.82,
+      "budgetCpuSeconds": 21,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.99 at start)",
+      "identity": "64500b996d76a6ffb4636b16a83ebba51cf824fbd8f3a46bbc2d39259343aa39"
     },
     {
       "config": "SettingsSwap",
