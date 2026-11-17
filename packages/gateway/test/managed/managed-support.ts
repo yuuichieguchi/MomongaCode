@@ -156,10 +156,12 @@ export const POLL_MS = 25;
 export const createManualTimers = () => {
   let clock = 0;
   let nextId = 1;
+  let polls = 0;
   const pending = new Map<number, PendingTimer>();
   const timers: ManagedTimers = {
     setTimeout: (callback, ms) => {
       if (ms === POLL_MS) {
+        polls += 1;
         setImmediate(callback);
         return 0;
       }
@@ -176,6 +178,7 @@ export const createManualTimers = () => {
   return {
     timers,
     delays: (): number[] => [...pending.values()].map((timer) => timer.ms),
+    polls: (): number => polls,
     fire: (ms: number): void => {
       const timer = [...pending.values()].find((candidate) => candidate.ms === ms);
       if (timer === undefined) throw new Error(`no pending timer with delay ${ms}`);

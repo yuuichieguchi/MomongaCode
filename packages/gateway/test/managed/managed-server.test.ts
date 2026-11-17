@@ -67,10 +67,6 @@ const setup = ({ kind, exec, child, socketPath, lockPath, spawned = [], onSpawn 
 
 const asking = (): AbortSignal => new AbortController().signal;
 
-const settleRounds = async (): Promise<void> => {
-  for (let round = 0; round < 20; round += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
 describe.each(SERVER_KINDS)('one managed server mechanism, driven by the description of $label (design-managed-servers sections 3.2, 7.1, 8, 13)', (kind) => {
   it('launches the binary with the description argv, the socket substituted for {socket}, and is ready only when the description readiness route answers', async () => {
     const { server, spawn, socket } = setup({ kind });
@@ -242,7 +238,7 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
         throw error;
       },
     );
-    await settleRounds();
+    await vi.waitFor(() => expect(newer.manual.polls()).toBeGreaterThan(0));
     expect(outcome).toBe('pending');
     expect(spawned).toHaveLength(1);
     await older.server.stop();
