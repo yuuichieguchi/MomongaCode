@@ -3,11 +3,10 @@ import path from 'node:path';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimPathOf, lockFormOf, sidecarNameSuffixesOf } from './platform/lock-form.ts';
-import type { EntryKind, LockForm } from './platform/lock-form.ts';
+import type { LockForm } from './platform/lock-form.ts';
 
 export type LeftoverFiles = Pick<FileSystem, 'readdir'> & {
   rm(entry: string): Promise<void>;
-  kindOf?(entry: string): Promise<EntryKind>;
 };
 
 export type LeftoverDirectory = {
@@ -27,12 +26,9 @@ export type SweepLeftoversOptions = {
   warn?(message: string): void;
 };
 
-const kindOfEntry = async (entry: string): Promise<EntryKind> => ((await nodeFileSystem.lstat(entry)).isDirectory() ? 'directory' : 'file');
-
 export const nodeLeftoverFiles: LeftoverFiles = {
   readdir: (directory) => nodeFileSystem.readdir(directory),
   rm: (entry) => nodeFileSystem.rm(entry, { recursive: true }),
-  kindOf: kindOfEntry,
 };
 
 type Unit = { name: string; entry: boolean; sidecar: boolean; companions: string[] };
@@ -77,13 +73,9 @@ const unitsOf = (names: readonly string[], registered: LeftoverDirectory, suffix
   return [...units.values()];
 };
 
-const formOfEntry = async (lock: KernelLockMechanism, entry: string, files: LeftoverFiles): Promise<LockForm | undefined> => {
-  try {
-    return lockFormOf(lock, await (files.kindOf ?? kindOfEntry)(entry));
-  } catch (error) {
-    if (codeOf(error) === 'ENOENT') return undefined;
-    throw error;
-  }
+const formOfUnit = (lock: KernelLockMechanism, unit: Unit): LockForm | 'unproved' => {
+  if (unit.sidecar) return 'sidecar';
+  return lockFormOf(lock, 'file') === 'entry' ? 'entry' : 'unproved';
 };
 
 const CANNOT_CARRY_ENTRY_LOCK: readonly string[] = ['EISDIR', 'ELOOP'];
@@ -136,9 +128,9 @@ const retentionOf = async (registered: LeftoverDirectory, unit: Unit, held: Held
 };
 
 const sweepUnit = async (registered: LeftoverDirectory, lock: KernelLockMechanism, files: LeftoverFiles, unit: Unit, onEntryError: EntryErrors): Promise<UnitOutcome> => {
+  const form = formOfUnit(lock, unit);
+  if (form === 'unproved') return 'kept';
   const entry = path.join(registered.directory, unit.name);
-  const form = unit.sidecar ? 'sidecar' : await reportedOr<LockForm | undefined>(entry, onEntryError, undefined, () => formOfEntry(lock, entry, files));
-  if (form === undefined) return 'kept';
   const held = await reportedOr<HeldKernelLock | undefined>(entry, onEntryError, undefined, async () => {
     const outcome = await claimUnit(lock, entry, form);
     return outcome.kind === 'claimed' ? outcome.lock : undefined;
