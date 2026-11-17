@@ -12,6 +12,7 @@ const FORGE_VARIABLE = 'MOMONGA_TEST_FORGE_ACCESS';
 const FORGE_HOST = 'git.invalid';
 const REMOTE_URL = `https://${FORGE_HOST}/owner/repo.git`;
 const HELPER_REFUSAL = 'started without the executable that answers the credential prompt';
+const GIT_CONFIGURATION_ERROR = /Unsupported SSL backend|bad config|unable to parse|is not a valid|fatal: unknown/i;
 
 const textReply = (text: string) => ({ kind: 'stream' as const, chunks: [{ delta: { role: 'assistant', content: text }, finishReason: 'stop' }] });
 
@@ -57,6 +58,7 @@ describe('a credentialed git operation through the runtime process, composed as 
     const [output] = completedOutputs(stack.temp, run.id);
     expect(output).toBeDefined();
     expect(output).not.toContain(HELPER_REFUSAL);
+    expect(output).not.toMatch(GIT_CONFIGURATION_ERROR);
     expect(output).toContain('GitFetch did not reach its goal');
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });

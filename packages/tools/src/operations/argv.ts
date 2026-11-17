@@ -95,18 +95,11 @@ const TRUST_FILE_NAME = 'ca.pem';
 export const PATH_VALUED_HTTP_KEYS: readonly string[] = [
   'http.sslCert',
   'http.sslKey',
-  'http.sslCertType',
-  'http.sslKeyType',
-  'http.sslCertPasswordProtected',
   'http.sslCAPath',
-  'http.sslBackend',
-  'http.sslCipherList',
-  'http.sslVersion',
   'http.pinnedPubkey',
   'http.proxySSLCert',
   'http.proxySSLKey',
   'http.proxySSLCAInfo',
-  'http.proxySSLCertPasswordProtected',
 ];
 
 export const trustConfigOf = (bundle: string): ConfigEntry[] => [
