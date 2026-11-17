@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Awaitable, PlaceholderForm } from '@momonga/foundation';
 
-export type PlaceholderIdentity = { device: string; inode: string; changed: string };
+export type PlaceholderIdentity = { device: string; inode: string; born: string; changed: string };
 
 export type PlaceholderRecord = { path: string; intentMs: number; form: PlaceholderForm; identity: PlaceholderIdentity | null };
 
@@ -42,9 +42,11 @@ const lstatOrAbsent = async (target: string): Promise<fs.BigIntStats | undefined
   }
 };
 
+const NO_BIRTH_TIME = '0';
+
 export const identityOf = async (target: string): Promise<PlaceholderIdentity> => {
   const stat = await fs.promises.lstat(target, { bigint: true });
-  return { device: String(stat.dev), inode: String(stat.ino), changed: String(stat.ctimeNs) };
+  return { device: String(stat.dev), inode: String(stat.ino), born: String(stat.birthtimeNs), changed: String(stat.ctimeNs) };
 };
 
 const hasForm = async (target: string, stat: fs.BigIntStats, form: PlaceholderForm): Promise<boolean> => {
@@ -53,11 +55,23 @@ const hasForm = async (target: string, stat: fs.BigIntStats, form: PlaceholderFo
   return stat.isFile() && stat.size === BigInt(bytes.length) && (await fs.promises.readFile(target)).equals(bytes);
 };
 
-export const isStillThePlaceholder = async (target: string, identity: PlaceholderIdentity, form: PlaceholderForm = EMPTY_FILE_FORM): Promise<boolean> => {
-  const stat = await lstatOrAbsent(target);
+export type PlaceholderStatRead = (target: string) => Promise<fs.BigIntStats | undefined>;
+
+const bornAsRecorded = (stat: fs.BigIntStats, identity: PlaceholderIdentity, form: PlaceholderForm): boolean => {
+  if (identity.born === NO_BIRTH_TIME) return form.kind !== 'directory';
+  return String(stat.birthtimeNs) === identity.born;
+};
+
+export const isStillThePlaceholder = async (
+  target: string,
+  identity: PlaceholderIdentity,
+  form: PlaceholderForm = EMPTY_FILE_FORM,
+  read: PlaceholderStatRead = lstatOrAbsent,
+): Promise<boolean> => {
+  const stat = await read(target);
   if (stat === undefined || !(await hasForm(target, stat, form))) return false;
   const unchanged = form.kind === 'directory' || String(stat.ctimeNs) === identity.changed;
-  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode && unchanged;
+  return String(stat.dev) === identity.device && String(stat.ino) === identity.inode && bornAsRecorded(stat, identity, form) && unchanged;
 };
 
 export const removePlaceholderEntry = async (target: string, form: PlaceholderForm): Promise<void> => {
@@ -78,13 +92,15 @@ const syncDirectory = async (directory: string): Promise<void> => {
 
 const parseIdentity = (file: string, value: unknown): PlaceholderIdentity | null => {
   if (value === null) return null;
-  const { device, inode, changed } = (value ?? {}) as Record<string, unknown>;
+  const { device, inode, born, changed } = (value ?? {}) as Record<string, unknown>;
   if (typeof device !== 'string' || typeof inode !== 'string') {
     throw new Error(`the placeholder record ${file} has an identity without a device or an inode`);
   }
+  if (born === undefined) return null;
+  if (typeof born !== 'string') throw new Error(`the placeholder record ${file} has an identity whose birth time is not a string`);
   if (changed === undefined) return null;
   if (typeof changed !== 'string') throw new Error(`the placeholder record ${file} has an identity whose change time is not a string`);
-  return { device, inode, changed };
+  return { device, inode, born, changed };
 };
 
 const parseForm = (file: string, value: unknown): PlaceholderForm => {

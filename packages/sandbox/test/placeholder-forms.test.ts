@@ -43,9 +43,9 @@ describe('the journal record carries the form', () => {
     const first = createPlaceholderJournal(journalDirectory);
     await first.intend('/w/.git', 100, DIRECTORY_FORM);
     await first.intend('/w/.git/commondir', 200, COMMONDIR_FORM);
-    await first.complete('/w/.git', { device: '1', inode: '2', changed: '3' });
+    await first.complete('/w/.git', { device: '1', inode: '2', born: '4', changed: '3' });
     expect((await createPlaceholderJournal(journalDirectory).records())).toEqual([
-      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2', changed: '3' } },
+      { path: '/w/.git', intentMs: 100, form: DIRECTORY_FORM, identity: { device: '1', inode: '2', born: '4', changed: '3' } },
       { path: '/w/.git/commondir', intentMs: 200, form: COMMONDIR_FORM, identity: null },
     ]);
   });
@@ -71,6 +71,35 @@ describe('the journal record carries the form', () => {
 });
 
 describe('isStillThePlaceholder judges by form and identity', () => {
+  const statAt = async (target: string, birthtimeNs: bigint): Promise<fs.BigIntStats> => {
+    const real = await fs.promises.lstat(target, { bigint: true });
+    return Object.assign(Object.create(Object.getPrototypeOf(real)), real, { birthtimeNs }) as fs.BigIntStats;
+  };
+
+  it('refuses a directory at the same path and inode whose birth time differs: a new directory the kernel reused the inode of', async () => {
+    const target = path.join(work, '.git');
+    makeForm(target, DIRECTORY_FORM);
+    const identity = await identityOf(target);
+    const reborn = await statAt(target, (await fs.promises.lstat(target, { bigint: true })).birthtimeNs + 1n);
+    expect(await isStillThePlaceholder(target, identity, DIRECTORY_FORM, async () => reborn)).toBe(false);
+    expect(await isStillThePlaceholder(target, identity, DIRECTORY_FORM)).toBe(true);
+  });
+
+  it('refuses a file at the same path and inode whose birth time differs', async () => {
+    const target = path.join(work, 'commondir');
+    makeForm(target, COMMONDIR_FORM);
+    const identity = await identityOf(target);
+    const reborn = await statAt(target, (await fs.promises.lstat(target, { bigint: true })).birthtimeNs + 1n);
+    expect(await isStillThePlaceholder(target, identity, COMMONDIR_FORM, async () => reborn)).toBe(false);
+  });
+
+  it('never takes a directory for the placeholder when the file system gave no birth time to record', async () => {
+    const target = path.join(work, '.git');
+    makeForm(target, DIRECTORY_FORM);
+    const identity = { ...(await identityOf(target)), born: '0' };
+    expect(await isStillThePlaceholder(target, identity, DIRECTORY_FORM)).toBe(false);
+  });
+
   it('accepts a file with exactly the bytes of its form and its recorded identity', async () => {
     const target = path.join(work, 'commondir');
     makeForm(target, COMMONDIR_FORM);
