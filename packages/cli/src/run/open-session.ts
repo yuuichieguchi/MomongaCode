@@ -24,7 +24,7 @@ export type ListedModels = Pick<MomongaModelList, 'data' | 'start'>;
 
 export type Reopening = { reopen: HeadlessReopen; modelList(): Promise<ListedModels> } | { reopen?: undefined };
 
-export type OpenSessionOptions = SessionOptions & Reopening & { onNewer?: NewerListener };
+export type OpenSessionOptions = Omit<SessionOptions, 'signal'> & { signal: AbortSignal } & Reopening & { onNewer?: NewerListener };
 
 export class NoModelConnected extends Error {
   readonly code = TARGET_NOT_READY;
@@ -98,7 +98,7 @@ export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'p
     }
     const created = await client.createSession({
       cwd: ports.cwd,
-      env: await environmentSnapshot(ports, options.signal ?? ports.interrupt),
+      env: await environmentSnapshot(ports, options.signal),
       terminalUi: false,
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),

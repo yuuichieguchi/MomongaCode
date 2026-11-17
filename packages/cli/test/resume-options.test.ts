@@ -40,7 +40,7 @@ const CONNECTED: Pick<MomongaModelList, 'data' | 'start'> = { data: [{ id: MODEL
 const NOT_CONNECTED: Pick<MomongaModelList, 'data' | 'start'> = { data: [], start: null };
 
 const reopened = async (runtime: RealRuntime, id: string, typed: SessionOptions, listed = CONNECTED) => {
-  const session = await openSession(runtime.ports, runtime.paths, { reopen: { kind: 'id', id }, modelList: async () => listed, ...typed });
+  const session = await openSession(runtime.ports, runtime.paths, { signal: new AbortController().signal, reopen: { kind: 'id', id }, modelList: async () => listed, ...typed });
   closers.push(() => session.close());
   return session.created.session;
 };
