@@ -14,6 +14,12 @@
       "packages/cli/src/commands/report.ts": {
         "limit": 1
       },
+      "packages/cli/src/keeper/source.ts": {
+        "directory": 1
+      },
+      "packages/cli/src/plan/sign-in.ts": {
+        "gateway": 1
+      },
       "packages/eval/src/context-improve.ts": {
         "benchmark": 5,
         "cap": 4
@@ -33,6 +39,9 @@
       "packages/store/src/retention.ts": {
         "job": 1,
         "limit": 2
+      },
+      "packages/store/src/schema.ts": {
+        "job": 1
       }
     },
     "burnDown": {
