@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, acquireProcessLock, inspectProcessLock, isProcessAlive, listenUnix } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, leaveHolderRecord, registerCleanup, withTempDir, realProcessTestSignal, testKernelLock } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -24,7 +24,7 @@ describe('acquireProcessLock', () => {
     const lockPath = path.join(withTempDir(context), 'gateway.lock');
     const lock = await acquireProcessLock(lockPath, undefined, { mechanism: testKernelLock() });
     registerCleanup(context, () => lock.release());
-    expect(fs.readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    expect(await testKernelLock().readHolder(lockPath)).toBe(String(process.pid));
     expect(await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: process.pid });
   });
 
@@ -73,11 +73,11 @@ describe('acquireProcessLock', () => {
 
   it('ignores a pid left in the file by a dead holder', async (context) => {
     const lockPath = path.join(withTempDir(context), 'gateway.lock');
-    fs.writeFileSync(lockPath, String(await deadPid()), { mode: 0o600 });
+    leaveHolderRecord(testKernelLock(), lockPath, String(await deadPid()));
     expect(await inspectProcessLock(lockPath, { mechanism: testKernelLock() })).toEqual({ state: 'free' });
     const lock = await acquireProcessLock(lockPath, undefined, { mechanism: testKernelLock() });
     registerCleanup(context, () => lock.release());
-    expect(fs.readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    expect(await testKernelLock().readHolder(lockPath)).toBe(String(process.pid));
   });
 
   it.skipIf(!FILE_LOCK)('keeps the lock file in place on release so that no second inode can ever be locked beside it', async (context) => {

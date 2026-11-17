@@ -73,3 +73,10 @@ export const writeLeftoverEntry = (lock: KernelLockMechanism, file: string, cont
   fs.writeFileSync(file, content, { mode: 0o600 });
   outcome.lock.release();
 };
+
+export const leaveHolderRecord = (lock: KernelLockMechanism, lockPath: string, text: string): void => {
+  const outcome = lock.claimSync?.(lockPath);
+  if (outcome?.kind !== 'claimed') throw new Error(`the lock of ${lockPath} could not be claimed by the test`);
+  outcome.lock.writeHolder(text);
+  outcome.lock.release();
+};

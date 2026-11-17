@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { generationLayout, generationMarkerDirectories, momongaPaths, parseReadyLine, inspectProcessLock, scopeToGeneration, syncPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerOwned, createFakeKernelLock, createFakeClock, createFakeTimers, driveFakeTime, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration, testKernelLock, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerOwned, createFakeKernelLock, createFakeClock, createFakeTimers, driveFakeTime, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration, lockFileOf, leaveHolderRecord, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { GENERATION_POLL_INTERVAL_MS, ORPHAN_POLL_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
@@ -49,7 +49,7 @@ describe('startSupervisor', () => {
         socketPath = firstGeneration(paths).sockets.supervisor;
         writeMarker(paths, 'runtime-old');
       },
-      onStdout: () => order.push(`listening lock=${fs.existsSync(lockPath)} socket=${fs.existsSync(socketPath)}`),
+      onStdout: () => order.push(`listening lock=${fs.existsSync(lockFileOf(testKernelLock(), lockPath))} socket=${fs.existsSync(socketPath)}`),
       overrides: { watchSettings: true, settingsWatch: seam },
     });
     await pumpUntil(h.timers, () => order.includes('watch'), { realWork: h.realWork, maxMs: 5000 });
@@ -123,11 +123,11 @@ describe('startSupervisor', () => {
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
         fs.mkdirSync(firstGeneration(paths).dir, { recursive: true, mode: 0o700 });
-        fs.writeFileSync(`${firstGeneration(paths).sockets.supervisor}.lock`, '999999', { mode: 0o600 });
+        leaveHolderRecord(testKernelLock(), `${firstGeneration(paths).sockets.supervisor}.lock`, '999999');
       },
     });
     expect(fs.statSync(firstGeneration(h.paths).sockets.supervisor).isSocket()).toBe(true);
-    expect(fs.readFileSync(`${firstGeneration(h.paths).sockets.supervisor}.lock`, 'utf8').trim()).toBe(String(process.pid));
+    expect((await testKernelLock().readHolder(`${firstGeneration(h.paths).sockets.supervisor}.lock`))?.trim()).toBe(String(process.pid));
     expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health')).status).toBe(200);
   });
 

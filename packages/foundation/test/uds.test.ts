@@ -6,18 +6,19 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, inspectProcessLock, listenUnix, setSocketBind, fixedSocket } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, realProcessTestSignal, registerCleanup, testKernelLock, withTempDir } from '@momonga/testkit';
+import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, leaveHolderRecord, leaveLockFile, realProcessTestSignal, registerCleanup, testKernelLock, withTempDir } from '@momonga/testkit';
 import { startHolder } from './support/lock-processes.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SQLITE_JOURNAL_SUFFIX = '-journal';
+const SQLITE_HOLDER_SUFFIX = '-holder';
 
 const filesBesideHeldSocket = (socketName: string): string[] => {
   const lock = `${socketName}.lock`;
   if (testKernelLock().name === 'file-lock') return [socketName, lock];
   const database = `${lock}${LOCK_DATABASE_SUFFIX}`;
-  return [socketName, lock, database, `${database}${SQLITE_JOURNAL_SUFFIX}`];
+  return [socketName, database, `${database}${SQLITE_JOURNAL_SUFFIX}`, `${database}${SQLITE_HOLDER_SUFFIX}`];
 };
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -199,11 +200,11 @@ describe('listenUnix locking', () => {
     const socketPath = path.join(makeDir(), 'dead.sock');
     const finished = spawnSync(process.execPath, ['-e', '']);
     const deadPid = finished.pid;
-    fs.writeFileSync(`${socketPath}.lock`, String(deadPid), { mode: 0o600 });
+    leaveHolderRecord(testKernelLock(), `${socketPath}.lock`, String(deadPid));
     const server = echoServer();
     await listenUnix(server, socketPath, { mechanism: testKernelLock() }, realProcessTestSignal());
     expect(server.listening).toBe(true);
-    expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.pid));
+    expect(await testKernelLock().readHolder(`${socketPath}.lock`)).toBe(String(process.pid));
   });
 
   it('rejects when the lock is held by a live process', async (context) => {
@@ -219,7 +220,7 @@ describe('listenUnix locking', () => {
     const dir = makeDir();
     const socketPath = path.join(dir, 'takeover.sock');
     const finished = spawnSync(process.execPath, ['-e', '']);
-    fs.writeFileSync(`${socketPath}.lock`, String(finished.pid), { mode: 0o600 });
+    leaveHolderRecord(testKernelLock(), `${socketPath}.lock`, String(finished.pid));
     const children = [0, 1, 2, 3].map(() =>
       spawn(process.execPath, ['--input-type=module', '-e', holderScript(socketPath)], {
         stdio: ['pipe', 'pipe', 'inherit'],
@@ -230,7 +231,7 @@ describe('listenUnix locking', () => {
     expect(outcomes.filter((outcome) => outcome === 'won')).toHaveLength(1);
     expect(outcomes.filter((outcome) => outcome === 'lost')).toHaveLength(3);
     const winner = children[outcomes.indexOf('won')];
-    expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(winner?.pid));
+    expect(await testKernelLock().readHolder(`${socketPath}.lock`)).toBe(String(winner?.pid));
     expect(fs.readdirSync(dir).sort()).toEqual(filesBesideHeldSocket('takeover.sock'));
   });
 
@@ -244,11 +245,11 @@ describe('listenUnix locking', () => {
   it('ignores an empty lock file that has no holder', async () => {
     const socketPath = path.join(makeDir(), 'garbled.sock');
     const lockPath = `${socketPath}.lock`;
-    fs.writeFileSync(lockPath, '', { mode: 0o600 });
+    leaveLockFile(testKernelLock(), lockPath);
     const server = echoServer();
     await listenUnix(server, socketPath, { mechanism: testKernelLock() }, realProcessTestSignal());
     expect(server.listening).toBe(true);
-    expect(fs.readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    expect(await testKernelLock().readHolder(lockPath)).toBe(String(process.pid));
   });
 
   it('names the socket, the holder and the lock path when another process holds the lock', async (context) => {
