@@ -10,11 +10,11 @@ const verificationOf = async (tree: ReturnType<typeof makeTree>, trust = trustin
 };
 
 describe('standing completion conditions from verification.commands', () => {
-  it('declares no standing condition when no layer sets verification.commands, even though the memory gate has default commands', async () => {
+  it('declares no standing condition when no layer sets verification.commands, and no default commands', async () => {
     const tree = makeTree();
     const verification = await verificationOf(tree);
     expect(verification.conditions).toEqual([]);
-    expect(verification.commands).toEqual(expect.arrayContaining(['npm test']));
+    expect(verification.commands).toBeUndefined();
   });
 
   it('declares the commands a trusted project sets as standing conditions, in order', async () => {

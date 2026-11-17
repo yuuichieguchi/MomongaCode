@@ -10,7 +10,7 @@ export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export { isRecord, parseBoundedJson, parseShippedManifest, spanValueOfJsonText } from './json.ts';
+export { isRecord, jsonValueOrText, parseBoundedJson, parseShippedManifest, spanValueOfJsonText } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput } from './json-reply.ts';
@@ -32,7 +32,7 @@ export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './ud
 export type { SocketResolver, UdsClient, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
 export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
-export { LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+export { DEFAULT_LOCK_TIMEOUT_MS, LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockPorts } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
 export type { CredentialEntry, CredentialStore, ListableCredentialStore } from './credential-store.ts';

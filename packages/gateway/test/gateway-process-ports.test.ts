@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../src/process-ports.ts';
 import { request } from 'undici';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
@@ -16,7 +17,7 @@ describe('gateway process ports', () => {
     writeSettings(home, { models: modelsOf({ primary: ccTarget('/nonexistent/upstream.sock') }) });
     const lines: string[] = [];
     const asked: string[] = [];
-    const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+    const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,

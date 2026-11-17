@@ -1,5 +1,6 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { appendPermissionRule, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
+import { appendPermissionRule, editSettings, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
 import { distrusting, localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, userSettingsPath, writeJson } from './helpers.ts';
 import { testKernelLock } from '@momonga/testkit';
 
@@ -45,5 +46,34 @@ describe('local settings in an untrusted project', () => {
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
     expect(result.warnings.some((w) => w.includes(file))).toBe(true);
+  });
+});
+
+describe('an edit of a key that the local file shadows', () => {
+  const FILE_OPTIONS = { env: process.env, lock: testKernelLock(), signal: NEVER_ABORTED };
+
+  it('writes the user file and names the local file that shadows the key in an untrusted folder', async () => {
+    const tree = makeTree();
+    const user = writeJson(userSettingsPath(tree), { context: { loopGuidance: true } });
+    const local = writeJson(localSettingsPath(tree), { context: { loopGuidance: false } });
+    const result = await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['context', 'loopGuidance'], value: true }, { ...FILE_OPTIONS, trusted: false });
+    expect(JSON.parse(fs.readFileSync(user, 'utf8'))).toEqual({ context: { loopGuidance: true } });
+    expect(result.shadowedBy).toEqual({ layer: 'local', file: local });
+  });
+
+  it('reports no shadow when the local file does not set the key', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { context: { loopGuidance: true } });
+    writeJson(localSettingsPath(tree), { context: { cachePrefix: true } });
+    const result = await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['context', 'loopGuidance'], value: false }, { ...FILE_OPTIONS, trusted: false });
+    expect(result.shadowedBy).toBeUndefined();
+  });
+
+  it('does not name a project file that an untrusted folder does not apply', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { context: { loopGuidance: true } });
+    writeJson(projectSettingsPath(tree), { context: { loopGuidance: false } });
+    const result = await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['context', 'loopGuidance'], value: true }, { ...FILE_OPTIONS, trusted: false });
+    expect(result.shadowedBy).toBeUndefined();
   });
 });

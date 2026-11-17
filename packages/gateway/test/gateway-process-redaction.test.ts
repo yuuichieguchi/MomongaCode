@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../src/process-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -70,7 +71,7 @@ const startKeyedStack = async (
     models: modelsOf({ primary: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   const log = captureLog();
-  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+  const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
@@ -308,7 +309,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   await placeFakeFm(home, fm.binaryPath);
-  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+  const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

@@ -378,7 +378,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     resumeSession: async (id) => {
       record(`resume:${id}`);
-      return adopt(await resolveSession(stored, session.cwd, id));
+      return adopt(await resolveSession(stored, session.cwd, id, process.platform));
     },
     continueSession: async () => {
       record('continue');
@@ -626,7 +626,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     dismissedNotices: async () => ({}),
     dismissNotice: async () => undefined,
     settings: async () => readSettingsSnapshot({ env: process.env, ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted', signal: new AbortController().signal }),
-    editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { env: process.env, lock: testKernelLock(), signal }),
+    editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { env: process.env, trusted: (options.trust?.decision ?? 'trusted') === 'trusted', lock: testKernelLock(), signal }),
     mcpServers: async () => {
       record('mcpServers');
       return options.mcpServers ?? [];

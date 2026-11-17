@@ -20,6 +20,11 @@ const TOO_DEEP_PLACEHOLDERS: Readonly<Record<JsonTextKind, string>> = {
   text: `[text nests deeper than ${MAX_JSON_DEPTH} levels]`,
 };
 
+export const jsonValueOrText = (text: string): unknown => {
+  const parsed = parseBoundedJson(text);
+  return parsed.kind === 'value' ? parsed.value : parsed.text;
+};
+
 export const spanValueOfJsonText = (text: string, kind: JsonTextKind): unknown => {
   const parsed = parseBoundedJson(text);
   if (parsed.kind === 'value') return parsed.value;

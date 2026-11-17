@@ -1,13 +1,14 @@
 import { textOfItem } from '@momonga/context';
-import { isRecord } from '@momonga/foundation';
+import { isRecord, jsonValueOrText } from '@momonga/foundation';
 import { createCallRunTracker } from '@momonga/memory';
-import { EXECUTED_TEXT_EVENT_TYPES, readExecutedText, tokenMatcherOf } from '@momonga/protocol';
+import { EXECUTED_TEXT_EVENT_TYPES, callInputTracker, readExecutedText, tokenMatcherOf } from '@momonga/protocol';
 import type { ClaimedToken, ExecutedTextHandlers, FidelityClaim, RunEvent } from '@momonga/protocol';
 import { VERDICT_RANKS } from '@momonga/store';
 import type { FidelityVerdict, FidelityVerdictRow, VerdictRank } from '@momonga/store';
 
 export const FIDELITY_EVENT_TYPES = [
   ...EXECUTED_TEXT_EVENT_TYPES,
+  'model.responded',
   'user.message',
   'plan.updated',
   'instructions.loaded',
@@ -76,6 +77,7 @@ const ownRankOf = (entry: Entry): number => (entry.executedAt !== null ? EXECUTE
 const rankOf = (entry: Entry): number => Math.max(entry.inh, ownRankOf(entry));
 
 export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string, record: RecordPort): FidelityFold => {
+  const inputs = callInputTracker(jsonValueOrText);
   const entries: Entry[] = tokens.map((entry) => ({
     ...entry,
     matcher: tokenMatcherOf(entry.token, cwd),
@@ -122,7 +124,7 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string,
 
   const executedText: ExecutedTextHandlers<Phase> = {
     'tool.call': (event, phase) => {
-      calls.set(event.callId, { leaves: stringLeavesOf(event.rawInput), seq: event.seq, phase });
+      calls.set(event.callId, { leaves: stringLeavesOf(inputs.inputOf(event)), seq: event.seq, phase });
     },
     'tool.started': () => undefined,
     'tool.completed': (event, phase) => {
@@ -152,6 +154,7 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string,
 
   const process = (event: RunEvent, phase: Phase): void | Promise<void> => {
     ran.observe(event);
+    inputs.observe(event);
     if (readExecutedText(event, executedText, phase)) return;
     const executed = (text: string): void => offer(text, 'executed', phase, event.seq);
     const stated = (text: string): void => offer(text, 'stated', phase, event.seq);

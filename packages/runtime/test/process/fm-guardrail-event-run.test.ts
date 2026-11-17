@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../../gateway/src/process-ports.ts';
 import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -64,7 +65,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     await prepareGeneration(temp);
-    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
+    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
     onCleanup(async () => {
       await gateway.close();
     });

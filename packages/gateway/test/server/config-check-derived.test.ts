@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../src/process-ports.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -15,7 +16,7 @@ const startWith = async (context: Parameters<typeof registerCleanup>[0], target:
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
   writeSettings(home, { models: modelsOf({ local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...target } }) });
-  const started = registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+  const started = registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

@@ -232,7 +232,7 @@ describe('config: the settings writers write asynchronously under the signal of 
     const file = userSettingsPath(tree);
     writeText(file, '{"autoUpdates":false}');
     const reason = new Error('the asker left');
-    await expect(editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { env: process.env, lock: testKernelLock(), signal: abortedWith(reason) })).rejects.toBe(reason);
+    await expect(editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { env: process.env, trusted: true, lock: testKernelLock(), signal: abortedWith(reason) })).rejects.toBe(reason);
     expect(fs.readFileSync(file, 'utf8')).toBe('{"autoUpdates":false}');
   });
 
@@ -241,8 +241,8 @@ describe('config: the settings writers write asynchronously under the signal of 
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false });
     const synchronous = synchronousFileCalls();
-    await editSettings({ home: tree.home, projectDir: tree.project }, 'project', { kind: 'set', path: ['env', 'TZ'], value: 'UTC' }, { env: process.env, lock: testKernelLock(), signal: unaborted() });
-    await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { env: process.env, lock: testKernelLock(), signal: unaborted() });
+    await editSettings({ home: tree.home, projectDir: tree.project }, 'project', { kind: 'set', path: ['env', 'TZ'], value: 'UTC' }, { env: process.env, trusted: true, lock: testKernelLock(), signal: unaborted() });
+    await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { env: process.env, trusted: true, lock: testKernelLock(), signal: unaborted() });
     expect(synchronous()).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ autoUpdates: true });
   });

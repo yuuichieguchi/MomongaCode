@@ -1,3 +1,5 @@
+import { systemProcessPorts } from '../src/process-ports.ts';
+import type { ProcessPorts } from '../src/process-ports.ts';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -6,7 +8,7 @@ import { ConfigError } from '@momonga/config';
 import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIRST_GENERATION, fixedSocket, fixedRolePort, parseProgressLine } from '@momonga/foundation';
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
-import type { GatewayProcess } from '@momonga/gateway';
+import type { GatewayProcess, StartGatewayProcessOptions } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir, registerOwned, testLocks, testKernelLock, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -105,8 +107,10 @@ const closeQuietly = async (handle: GatewayProcess): Promise<void> => {
   await handle.close().catch(() => undefined);
 };
 
-const start = async (context: CleanupContext, options: Parameters<typeof startGatewayProcess>[0]): Promise<GatewayProcess> => {
-  return registerOwned(context, () => startGatewayProcess({ stdout: capture(), ...options }), closeQuietly);
+type StartOptions = Partial<ProcessPorts> & Partial<Pick<StartGatewayProcessOptions, 'signal' | 'stdout'>> & Omit<StartGatewayProcessOptions, keyof ProcessPorts | 'signal' | 'stdout'>;
+
+const start = async (context: CleanupContext, options: StartOptions): Promise<GatewayProcess> => {
+  return registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal, stdout: capture(), ...options }), closeQuietly);
 };
 
 const rejectionOf = async (started: Promise<GatewayProcess>): Promise<unknown> => {
@@ -144,7 +148,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     const log = capture();
     const logger = createJsonLogger({ service: 'gateway', clock: systemClock, stream: log });
 
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, logger, stdout: capture() }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, logger, stdout: capture() }), closeQuietly));
 
     expect(error).toBe(original);
     expect(error).not.toBeInstanceOf(AggregateError);
@@ -160,7 +164,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     const home = withTempDir(context, { asHome: true });
     prepareGenerationHome(home);
     writeSettings(home, { models: modelsOf({ '9-bad-name': { adapter: 'managed', server: 'fm', model: 'system' } }) });
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }), closeQuietly));
     expect(error).toBeInstanceOf(ConfigError);
     expect((await inspectProcessLock(homePaths(home).lock, { mechanism: testKernelLock() })).state).toBe('free');
   });
@@ -197,7 +201,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     controller.abort(reason);
     const stdout = capture();
 
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({...systemProcessPorts,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);
@@ -211,7 +215,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
     control.afterCreateGateway = () => controller.abort(reason);
     const stdout = capture();
 
-    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
+    const error = await rejectionOf(registerOwned(context, () => startGatewayProcess({...systemProcessPorts,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout, signal: controller.signal }), closeQuietly));
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);

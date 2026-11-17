@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../src/process-ports.ts';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
@@ -79,7 +80,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
   prepareHome(home);
   writeSettings(home, settings);
   const log = captureLog();
-  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+  const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

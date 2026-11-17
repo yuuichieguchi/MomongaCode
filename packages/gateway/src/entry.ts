@@ -4,6 +4,7 @@ import { CHILD_ENTRY_FLAGS, EntryUsageError, gatewayMaxCloseMs, generationLayout
 import type { EntryIo, FlagSpec, JsonLogger, SecretStore } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startGatewayProcess } from './process.ts';
+import { systemProcessPorts } from './process-ports.ts';
 
 export const GATEWAY_ENTRY_FLAGS = {
   ...CHILD_ENTRY_FLAGS,
@@ -36,6 +37,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
         throw new EntryUsageError('--debug-tcp-port and --debug-tcp-token-file must be given together');
       }
       const handle = await startGatewayProcess({
+        ...systemProcessPorts,
         home: home,
         generation: flags.generation,
         env,

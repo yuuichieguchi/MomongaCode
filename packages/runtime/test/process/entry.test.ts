@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../../gateway/src/process-ports.ts';
 import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -163,7 +164,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'fake.sock') });
     registerCleanup(context, () => fake.close());
     writeUserSettings(home, { sandbox: 'none', runtime: { drainTimeoutMs: 300_000 }, ...modelSettings(fake.socketPath) });
-    const gateway = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+    const gateway = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,

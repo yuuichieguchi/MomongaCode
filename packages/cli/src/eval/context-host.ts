@@ -17,10 +17,11 @@ import { ADAPTERS, MODEL_ROLES, planModelsEdit, probeRecordKeyOf, registeredServ
 import type { ModelRole, ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, STARTUP_TIMEOUT_MS, claimPathOf, fixedSocket, generationLayout, isRecord, momongaLayout, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError } from '@momonga/foundation';
+import { FIRST_GENERATION, claimPathOf, fixedSocket, generationLayout, isRecord, momongaLayout, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
+import { daemonReadyBoundMs } from '../daemon/ensure-daemon.ts';
 import { commandStoreFailureOf, withinCommandLimit } from '../command-limit.ts';
 import type { EventFollow, ReflectionSettle } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
@@ -483,7 +484,7 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
     const follow: EventFollow = {
       clock: { now: () => effects.now(), sleep: (milliseconds, signal) => effects.after(milliseconds, signal ?? options.interrupt) },
       random: () => effects.random(),
-      reconnectBoundMs: STARTUP_TIMEOUT_MS,
+      reconnectBoundMs: await daemonReadyBoundMs(),
       restoreConnection: () => effects.startDaemon(root, paths, daemonEnv),
     };
     return {

@@ -5,7 +5,7 @@ import type { BashOnTimeout, ContextSettings, MemorySettings, RipgrepSetting, To
 
 export type ResolvedMemorySettings = { reflection: { enabled: boolean; maxTokens?: number }; forgetAfterDays: number; repositoryFacts: boolean };
 
-export type ResolvedVerificationSettings = { commands: string[]; manifests: string[]; conditions: string[]; required: boolean };
+export type ResolvedVerificationSettings = { commands?: string[]; manifests: string[]; conditions: string[]; required: boolean };
 
 export type ResolvedContextSettings = {
   adaptiveBudget: boolean;
@@ -39,17 +39,6 @@ export const DEFAULT_UPDATE_STALL_TIMEOUT_MS = 30_000;
 
 export const DEFAULT_FORGET_AFTER_DAYS = 90;
 
-export const DEFAULT_VERIFICATION_COMMANDS: readonly string[] = [
-  'npm test',
-  'pnpm test',
-  'yarn test',
-  'cargo test',
-  'pytest',
-  'go test ./...',
-  'swift test',
-  'make test',
-];
-
 export const DEFAULT_VERIFICATION_MANIFESTS: readonly string[] = [
   'package.json',
   'pnpm-lock.yaml',
@@ -67,7 +56,6 @@ export const defaultMemorySettings = (): ResolvedMemorySettings => ({
 });
 
 export const defaultVerificationSettings = (): ResolvedVerificationSettings => ({
-  commands: [...DEFAULT_VERIFICATION_COMMANDS],
   manifests: [...DEFAULT_VERIFICATION_MANIFESTS],
   conditions: [],
   required: false,
@@ -111,8 +99,9 @@ export const mergeMemorySettings = (base: ResolvedMemorySettings, layer: MemoryS
 
 export const mergeVerificationSettings = (base: ResolvedVerificationSettings, layer: VerificationSettings | undefined): ResolvedVerificationSettings => {
   if (layer === undefined) return base;
+  const commands = layer.commands ?? base.commands;
   return {
-    commands: layer.commands ?? base.commands,
+    ...(commands === undefined ? {} : { commands }),
     manifests: layer.manifests ?? base.manifests,
     conditions: base.conditions,
     required: layer.required ?? base.required,

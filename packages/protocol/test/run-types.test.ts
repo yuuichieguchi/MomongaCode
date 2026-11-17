@@ -226,7 +226,7 @@ describe('run event payloads', () => {
       kind: ToolKind;
       sideEffect?: 'read_only' | 'write' | 'exec';
       title: string;
-      rawInput: unknown;
+      rawInput?: unknown;
       locations?: { path: string; line?: number }[];
     }>();
     expectTypeOf<Payload<'tool.permission.requested'>>().toEqualTypeOf<{
