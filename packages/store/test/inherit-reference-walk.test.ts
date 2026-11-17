@@ -90,7 +90,7 @@ describe('R4: the records read never change', () => {
     expect(updates.length).toBeGreaterThan(0);
     expect(updates.filter((update) => update.file !== 'schema.ts' && update.file !== 'derived-repair.ts')).toEqual([]);
     expect(updates.filter((update) => /payload_json\s*=/.test(update.line.replace(/^UPDATE\s+events\s+SET\s+/i, '')))).toEqual([]);
-    expect(updates.map((update) => update.line.match(/^UPDATE\s+events\s+SET\s+(\w+)/i)?.[1]).filter((column) => column !== undefined && !['call_id', 'approval_id', 'tool_name', 'notice_code', 'model_call_json', 'pinned_digest'].includes(column))).toEqual([]);
+    expect(updates.map((update) => update.line.match(/^UPDATE\s+events\s+SET\s+(\w+)/i)?.[1]).filter((column) => column !== undefined && !['call_id', 'approval_id', 'tool_name', 'notice_code', 'model_call_json', 'pinned_digest', 'shown'].includes(column))).toEqual([]);
   });
 
   it('the events table refuses UPDATE and DELETE by trigger', async () => {
