@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, SUMMARY_PROMPT_TOKENS, largestSummaryCapFor } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, largestSummaryCapFor, summaryPromptTokensFor, tokensForText } from '@momonga/protocol';
 import type { InputItem } from '@momonga/protocol';
 import { summaryInputCeilingFor } from '../../../context/src/budget.ts';
-import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
+import { omittedMarker } from '../../../context/src/tool-output.ts';
+import { defaultContextSettings } from '@momonga/config';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 import { bigStep, inputOf, padOf, withinTurnWorker } from './within-turn-support.ts';
@@ -12,14 +13,26 @@ const STEPS_SHRUNK_TO_ONE = 'recent steps of the current turn were reduced from 
 
 const CONTEXT_WINDOW = 4000;
 const PADDED_STEPS_COMPACTED = 3;
-const REGION_FRAME_TOKENS = 368;
-const HEADROOM_TOKENS_PER_STEP = 20;
+const SHORT_STEPS_COMPACTED = 2;
+const EMPTY_OUTPUT_TOKENS = 24;
+const TASK = 'Fill the context';
+
+const stepItemsTokens = (pad: string): number => {
+  const callId = `call_${'0'.repeat(32)}`;
+  return tokensForText(JSON.stringify([
+    { type: 'function_call', id: 'fc_k0', call_id: callId, name: 'Big', arguments: JSON.stringify({ letter: 'a', size: 0, pad }), status: 'completed' },
+    { type: 'function_call_output', call_id: callId, output: omittedMarker(EMPTY_OUTPUT_TOKENS, 'a'.repeat(64), undefined) },
+  ]));
+};
 
 const padCharsFittingOneSummaryRequest = (): number => {
   const capabilities = capabilitiesFor(CONTEXT_WINDOW);
-  const regionRoom = summaryInputCeilingFor(capabilities, largestSummaryCapFor(capabilities)) - SUMMARY_PROMPT_TOKENS - largestSummaryCapFor(capabilities) - REGION_FRAME_TOKENS;
-  const tokensPerStep = Math.floor(regionRoom / PADDED_STEPS_COMPACTED) - HEADROOM_TOKENS_PER_STEP;
-  return tokensPerStep * ESTIMATED_CHARACTERS_PER_TOKEN;
+  const summaryCap = largestSummaryCapFor(capabilities);
+  const taskTokens = tokensForText(JSON.stringify({ type: 'message', role: 'user', content: [{ type: 'input_text', text: TASK }] }));
+  const shortStepsTokens = (SHORT_STEPS_COMPACTED) * stepItemsTokens('');
+  const regionRoom = summaryInputCeilingFor(capabilities, summaryCap) - summaryPromptTokensFor(undefined) - summaryCap - taskTokens - shortStepsTokens;
+  const tokensPerStep = Math.floor(regionRoom / PADDED_STEPS_COMPACTED);
+  return (tokensPerStep - stepItemsTokens('')) * ESTIMATED_CHARACTERS_PER_TOKEN;
 };
 
 const callIdsIn = (items: readonly InputItem[]): string[] =>
@@ -28,7 +41,7 @@ const callIdsIn = (items: readonly InputItem[]): string[] =>
 describe('a compaction that runs at a reduced protection level', () => {
   it('journals exactly one recent_steps_shrunk notice naming the reduced step count, although the rebuild after it fits at level 0', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(CONTEXT_WINDOW) });
-    env.settings.contextValue = TOKEN_SETTINGS_OFF;
+    env.settings.contextValue = defaultContextSettings();
     env.gateway.script.push(
       bigStep('t0', { letter: 'a', size: 0, pad: 'x' }),
       bigStep('t1', { letter: 'a', size: 0, pad: 'y' }),
@@ -36,7 +49,7 @@ describe('a compaction that runs at a reduced protection level', () => {
       textStep('done'),
     );
     env.gateway.compactSummaries.push('S1');
-    const run = await env.enqueue('Fill the context');
+    const run = await env.enqueue(TASK);
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
