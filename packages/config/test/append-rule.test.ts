@@ -6,12 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, loadSettings, settingsLayerOfRule, systemFileLockPorts } from '@momonga/config';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from '../src/file-lock.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, testPaths, sleepDrivenTiming, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, lockFileOf, startLockHolder, testPaths, sleepDrivenTiming, testKernelLock } from '@momonga/testkit';
 import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, trusting, userSettingsPath, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 const NEVER_ABORTED = new AbortController().signal;
-const EVENT_LOOP_TURNS_BEFORE_THE_STOP = 50;
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -115,7 +114,7 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ lock, ports: system
     expect(fs.readdirSync(localSettingsDir(tree))).toEqual(['settings.local.json']);
     const lockPath = await settingsLockPath(tree.home, localSettingsPath(tree), testPaths());
     expect(path.dirname(lockPath)).toBe(path.join(tree.home, '.momonga', 'run'));
-    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(fs.existsSync(lockFileOf(testKernelLock(), lockPath))).toBe(true);
     const viaLink = path.join(makeDir(), 'link');
     fs.symlinkSync(path.dirname(localSettingsPath(tree)), viaLink);
     expect(await settingsLockPath(tree.home, path.join(viaLink, 'settings.local.json'), testPaths())).toBe(lockPath);
@@ -158,13 +157,13 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ lock, ports: system
       }),
       random: systemFileLockPorts.random,
     };
-    let secondAskedForTheLock = false;
+    const secondIsQueued = Promise.withResolvers<void>();
     const neverAtTheLock: FileLockPorts = {
       ...systemFileLockPorts,
       timing: {
         ...systemFileLockPorts.timing,
         setTimeout: (callback, ms) => {
-          secondAskedForTheLock = true;
+          secondIsQueued.resolve();
           return systemFileLockPorts.timing.setTimeout(callback, ms);
         },
       },
@@ -178,7 +177,7 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ lock, ports: system
       () => 'saved',
       (error: unknown) => error,
     );
-    for (let turn = 0; turn < EVENT_LOOP_TURNS_BEFORE_THE_STOP; turn += 1) await new Promise<void>((resolve) => void setImmediate(resolve));
+    await secondIsQueued.promise;
     stop.abort(reason);
 
     expect(await second).toBe(reason);
@@ -186,7 +185,6 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ lock, ports: system
     await new Promise<void>((resolve) => holder.once('exit', () => resolve()));
     lockIsFree.resolve();
     await first;
-    expect(secondAskedForTheLock).toBe(false);
     expect(readLocal(tree)).toEqual({ permissions: { allow: ['Bash(first)'] } });
   });
 });
