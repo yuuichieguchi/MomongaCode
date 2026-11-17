@@ -9,7 +9,7 @@ import { copyProbeRecord } from '../src/eval/context-effects.ts';
 import { withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { createTempDir, testEndpointScope } from '@momonga/testkit';
+import { TEST_UNPROTECTED_LAUNCH, createTempDir, testEndpointScope } from '@momonga/testkit';
 
 const roots: string[] = [];
 
@@ -48,7 +48,7 @@ describe('the CLI readers resolve a declared server through the registry of the 
   it('gateway probe (R8, gateway.ts) treats a model of a declared server as probeable and reaches its row-0 check', async () => {
     const missing = path.join(temporary(), 'absent-server');
     const home = declaredHome(missing);
-    const ports = { home, env: {}, stdout: sink(), stderr: sink(), files: nodeFiles, endpointScope: testEndpointScope } as unknown as CliPorts;
+    const ports = { home, env: {}, stdout: sink(), stderr: sink(), files: nodeFiles, endpointScope: testEndpointScope, hostLaunch: async () => TEST_UNPROTECTED_LAUNCH } as unknown as CliPorts;
     const paths = momongaPaths(home, process.platform, {});
     await ensureMomongaDirs(paths);
     const error = await probeModel(ports, paths, 'fake-1', { interrupt: AbortSignal.timeout(30_000), stepTimeoutMs: 120_000, consented: false }).then(
