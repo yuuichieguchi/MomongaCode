@@ -295,11 +295,13 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     const controller = new AbortController();
     const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', 'sleep 30 & sleep 30'], cwd: work, env: BASE_ENV }, policy(), controller.signal);
     spawned.push(proc);
-    const abortedAt = Date.now();
+    const settled: { exit?: Awaited<SandboxedProcess['exited']> } = {};
     controller.abort();
-    const exit = await (await proc).exited;
-    expect(Date.now() - abortedAt).toBeLessThanOrEqual(groupTerminationBoundMs(KILL_GRACE_MS));
-    expect(exit.stop).toBe('confirmed');
+    void (await proc).exited.then((exit) => {
+      settled.exit = exit;
+    });
+    await waitFor(() => settled.exit !== undefined, { boundMs: groupTerminationBoundMs(KILL_GRACE_MS), description: 'the process group ends within the stop bound' });
+    expect(settled.exit?.stop).toBe('confirmed');
   });
 
   it('gives a running command that ignores SIGTERM the whole kill grace, because bwrap itself, which would end the sandbox at once, is not sent SIGTERM', async () => {
