@@ -1614,6 +1614,7 @@ export function App(props: AppProps) {
     panel: panel === undefined ? undefined : (panelRows ?? 0),
   };
   const allocation = allocate(rows, rowRequests);
+  const transcriptAllocation = panel === undefined ? allocation : allocate(rows, { ...rowRequests, panel: 0 });
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const transcriptWidth = fullscreen ? Math.max(1, columns - SCROLLBAR_COLUMNS) : columns;
   const view = useTranscriptView({
@@ -1622,6 +1623,7 @@ export function App(props: AppProps) {
     fullscreen: fullscreen && !switching,
     width: transcriptWidth,
     allocation,
+    viewport: transcriptAllocation.viewport,
     copyOnSelect,
     now,
     copy: (text) => backend.copyToClipboard(text),
@@ -1751,7 +1753,7 @@ export function App(props: AppProps) {
         transcript: fullscreen && toolView.shown ? (
           toolView.view
         ) : fullscreen ? (
-          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : drawnTranscriptRows(allocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
+          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
         ),

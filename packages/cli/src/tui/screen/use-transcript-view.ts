@@ -26,6 +26,7 @@ export type TranscriptViewHost = {
   fullscreen: boolean;
   width: number;
   allocation: RowAllocation;
+  viewport: number;
   copyOnSelect: boolean;
   now(): number;
   copy(text: string): Promise<CopyOutcome>;
@@ -45,7 +46,7 @@ type Held = { epoch: number; position: Position; selection: Selection | undefine
 
 export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState => {
   const { store, terminal, width, allocation } = host;
-  const height = allocation.viewport;
+  const height = host.viewport;
   const { keys } = host;
   const { screenReader, reducedMotion } = host.a11y;
   const [, redraw] = useReducer((count: number) => count + 1, 0);
@@ -106,7 +107,7 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
 
   const press = (event: MouseEvent): void => {
     const hit = regionAt(allocation, event.row);
-    if (hit?.region === 'viewport' && !clamped(source, held.position).following && hit.row === height - 1) {
+    if (hit?.region === 'viewport' && !clamped(source, held.position).following && hit.row === allocation.viewport - 1) {
       change({ position: moved(source, held.position, height, { kind: 'bottom' }), selection: undefined, toast: undefined, drag: undefined });
       return;
     }
