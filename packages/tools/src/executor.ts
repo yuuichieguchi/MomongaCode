@@ -451,7 +451,7 @@ type OpenWindow = { kind: 'open'; mark: WorkTreeMark; sharedAtStart: boolean } |
 
 type Observed<T> = { kind: 'observed'; value: T } | { kind: 'not_observed'; reason: string };
 
-type WindowEffects = Pick<ToolResult, 'files' | 'windowShared' | 'observedTrees'> & { note?: string };
+type WindowEffects = Pick<ToolResult, 'files' | 'windowShared' | 'filesComplete' | 'observedTrees'> & { note?: string };
 
 const NOT_OBSERVED_LEAD = 'file effects were not observed';
 
@@ -721,6 +721,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.mutated === undefined ? {} : { mutated: result.mutated }),
       ...(result.command === undefined ? {} : { command: result.command }),
       ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
+      ...(result.filesComplete === undefined ? {} : { filesComplete: result.filesComplete }),
       ...(result.observedTrees === undefined ? {} : { observedTrees: result.observedTrees }),
       ...(result.outputIncomplete === undefined ? {} : { outputIncomplete: result.outputIncomplete }),
       ...(result.memories === undefined ? {} : { memories: result.memories }),
@@ -1514,6 +1515,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       files: await observedToolFiles(options.files, closed.value.files, batch.signal),
       observedTrees: { from: window.mark.tree, to: closed.value.mark.tree },
       ...(window.sharedAtStart || sharedAtEnd ? { windowShared: true as const } : {}),
+      filesComplete: closed.value.complete && !window.sharedAtStart && !sharedAtEnd,
       ...(closed.value.oversized.length === 0 ? {} : { note: oversizedNote(closed.value.oversized) }),
     };
   };

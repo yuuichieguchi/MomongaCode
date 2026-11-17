@@ -159,7 +159,7 @@ export type ToolRuntimePort = {
   lockCapability?: LockCapabilityProbe;
   inspector: ProcessInspector;
   sessionState(session: Session): ToolSessionState;
-  workTreeObserver(session: Session, trusted: boolean): WorkTreeObserver;
+  workTreeObserver(session: Session, trusted: boolean, manifests: readonly string[]): WorkTreeObserver;
 };
 
 export type TraceSpan = {

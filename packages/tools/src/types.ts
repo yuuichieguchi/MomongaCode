@@ -37,6 +37,7 @@ export type ToolResult = {
   mutated?: true;
   command?: string;
   windowShared?: true;
+  filesComplete?: boolean;
   observedTrees?: ObservedTrees;
   outputIncomplete?: 'residue';
   detached?: true;

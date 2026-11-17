@@ -32,7 +32,10 @@ const put = (name: string, content: string): string => {
 
 const signal = (): AbortSignal => new AbortController().signal;
 
-const observerFor = (cwd: string, trusted = true): WorkTreeObserver => createGitWorkTreeObserver({ storeRoot, cwd, trusted }, TEST_UNPROTECTED_LAUNCH);
+const MANIFESTS = ['package.json', 'Makefile'];
+
+const observerFor = (cwd: string, trusted = true, manifests: readonly string[] = MANIFESTS): WorkTreeObserver =>
+  createGitWorkTreeObserver({ storeRoot, cwd, trusted, manifests }, TEST_UNPROTECTED_LAUNCH);
 
 const sorted = (files: readonly ObservedFile[]): ObservedFile[] => [...files].sort((a, b) => a.path.localeCompare(b.path) || a.change.localeCompare(b.change));
 
@@ -206,6 +209,56 @@ describe('the git work-tree observer on a real temporary repository', () => {
     const closed = await observer.changedSince(opening!, signal());
     expect(sorted(closed.files)).toEqual([{ path: path.join(project, 'src/a.ts'), change: 'write' }]);
     expect(closed.oversized).toEqual([path.join(project, 'big.bin')]);
+  });
+
+  it('marks a window complete when nothing it could hide is a manifest of the verification', async () => {
+    const opening = await observerFor(project).mark(signal());
+    put('src/a.ts', 'two\n');
+    expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(true);
+  });
+
+  it('marks a window complete when the only ignored file is not named as a manifest', async () => {
+    const opening = await observerFor(project).mark(signal());
+    put('build/out.js', 'generated\n');
+    expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(true);
+  });
+
+  it('marks a window incomplete when an ignored file with a manifest name exists at its close, so a manifest the observer cannot see may have changed', async () => {
+    const opening = await observerFor(project).mark(signal());
+    put('build/package.json', '{}\n');
+    const closed = await observerFor(project).changedSince(opening!, signal());
+    expect(closed.complete).toBe(false);
+    expect(sorted(closed.files)).toEqual([]);
+  });
+
+  it('marks a window incomplete when an ignored manifest existed at its open and was removed in the window', async () => {
+    put('build/Makefile', 'all:\n');
+    const opening = await observerFor(project).mark(signal());
+    fs.rmSync(path.join(project, 'build/Makefile'));
+    expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(false);
+  });
+
+  it('marks a window incomplete when a manifest over the size bound is rewritten in it, which the file list does not show', async () => {
+    put('package.json', 'x'.repeat(OBSERVED_UNTRACKED_FILE_MAX_BYTES + 1));
+    const opening = await observerFor(project).mark(signal());
+    put('package.json', 'y'.repeat(OBSERVED_UNTRACKED_FILE_MAX_BYTES + 2));
+    expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(false);
+  });
+
+  it('marks a window complete when the file over the size bound is not named as a manifest', async () => {
+    const opening = await observerFor(project).mark(signal());
+    put('big.bin', 'x'.repeat(OBSERVED_UNTRACKED_FILE_MAX_BYTES + 1));
+    expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(true);
+  });
+
+  it('marks a window incomplete when a nested repository holds part of the work tree, because its edits are not seen', async () => {
+    const opening = await observerFor(project).mark(signal());
+    put('vendor/lib/package.json', '{}\n');
+    gitOk(path.join(project, 'vendor/lib'), 'init', '-q');
+    gitOk(path.join(project, 'vendor/lib'), 'add', '.');
+    gitOk(path.join(project, 'vendor/lib'), 'commit', '-q', '-m', 'lib');
+    put('vendor/lib/src/x.ts', 'x\n');
+    expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(false);
   });
 
   it('a git command that fails is an error naming the reason, not an observation of nothing', async () => {

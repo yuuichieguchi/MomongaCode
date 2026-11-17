@@ -51,7 +51,7 @@ describe('every process a tool starts outside the command sandbox goes through t
     const project = repository();
     const storeRoot = path.join(root, 'state', 'observer');
     const { launch, launched } = recordingLaunch();
-    const observer = workTreeObserverOn({ child: nodeChildPorts(), files: nodeFileSystem, searchPath: '/usr/bin:/bin', processId: process.pid, launch }, { storeRoot, cwd: project, trusted: true });
+    const observer = workTreeObserverOn({ child: nodeChildPorts(), files: nodeFileSystem, searchPath: '/usr/bin:/bin', processId: process.pid, launch }, { storeRoot, cwd: project, trusted: true, manifests: [] });
 
     const mark = await observer.mark(new AbortController().signal);
 

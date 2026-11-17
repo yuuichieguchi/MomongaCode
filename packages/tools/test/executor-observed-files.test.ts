@@ -11,7 +11,7 @@ const PATH_SCHEMA = { type: 'object', properties: { file_path: { type: 'string' 
 
 type Scripted = ObservedFile[] | undefined;
 
-const scriptedObserver = (script: Scripted[]) => {
+const scriptedObserver = (script: Scripted[], completeness: boolean[] = []) => {
   const counts = { mark: 0, changedSince: 0 };
   let next = 0;
   const observer: WorkTreeObserver = {
@@ -24,7 +24,7 @@ const scriptedObserver = (script: Scripted[]) => {
       const files = script[counts.changedSince] ?? [];
       counts.changedSince += 1;
       next += 1;
-      return { files, mark: { id: `m${next}` } as unknown as WorkTreeMark, oversized: [] };
+      return { files, mark: { id: `m${next}` } as unknown as WorkTreeMark, oversized: [], complete: completeness[counts.changedSince - 1] ?? true };
     },
   };
   return { observer, counts, trees: () => counts.mark + counts.changedSince };
@@ -63,11 +63,11 @@ const read = () => makeTool('Read', { execute: async () => ({ status: 'completed
 
 const resultOf = (outcome: CallOutcome | undefined) => {
   if (outcome?.kind !== 'result') throw new Error(`expected a result, got ${outcome?.kind}`);
-  return outcome.result as typeof outcome.result & { command?: string; windowShared?: true };
+  return outcome.result as typeof outcome.result & { command?: string; windowShared?: true; filesComplete?: boolean };
 };
 
-const setup = (script: Scripted[]) => {
-  const scripted = scriptedObserver(script);
+const setup = (script: Scripted[], completeness: boolean[] = []) => {
+  const scripted = scriptedObserver(script, completeness);
   const harness = makeHarness({ executor: { workTreeObserver: scripted.observer } as never });
   return { ...scripted, harness };
 };
@@ -151,6 +151,31 @@ describe('marks per batch are counted, never timed', () => {
 });
 
 describe('a window shared with a background job or a child run', () => {
+  it('sets filesComplete when the observer marks the window complete and no other call shared it', async () => {
+    const { harness } = setup([[]]);
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')]));
+    expect(resultOf(outcome).filesComplete).toBe(true);
+  });
+
+  it('keeps the files and sets filesComplete false when the observer does not mark the window complete', async () => {
+    const script: Scripted[] = [];
+    const { harness } = setup(script, [false]);
+    const file = path.join(harness.layout.project, 'out.txt');
+    script.push([{ path: file, change: 'write' }]);
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make', file }, 'allow_once')]));
+    expect(resultOf(outcome).files).toEqual([{ path: file, sha256: sha256Hex('make'), access: 'write' }]);
+    expect(resultOf(outcome).filesComplete).toBe(false);
+  });
+
+  it('sets filesComplete false when the window was shared with another call, even if the observer marks it complete', async () => {
+    const { harness } = setup([[]]);
+    const [outcome] = await harness.executor.runBatch(
+      await harness.input(await toolSetOf(sh([])), [call('c1', 'Sh', { command: 'make' }, 'allow_once')], { windowShared: () => true } as never),
+    );
+    expect(resultOf(outcome).windowShared).toBe(true);
+    expect(resultOf(outcome).filesComplete).toBe(false);
+  });
+
   it('sets windowShared when the predicate is true at the end of the window', async () => {
     const answers = [false, true];
     const { harness } = setup([[]]);

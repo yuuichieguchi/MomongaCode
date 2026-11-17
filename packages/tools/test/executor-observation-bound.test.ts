@@ -47,7 +47,7 @@ describe('the observation of file effects is charged to its own bound, not to th
   it('a mark that takes most of the tool limit leaves the tool its whole limit', async () => {
     const result = await runWith({
       mark: () => resolvedAfter((TOOL_TIMEOUT_MS * 3) / 4, MARK),
-      changedSince: async () => ({ files: [], mark: MARK, oversized: [] }),
+      changedSince: async () => ({ files: [], mark: MARK, oversized: [], complete: true }),
     });
 
     expect(result).toMatchObject({ status: 'completed', output: 'ran', files: [] });
@@ -56,7 +56,7 @@ describe('the observation of file effects is charged to its own bound, not to th
   it('a mark that never ends is stopped by its own bound and the result says file effects were not observed', async () => {
     const result = await runWith({
       mark: (signal) => untilAborted(signal),
-      changedSince: async () => ({ files: [], mark: MARK, oversized: [] }),
+      changedSince: async () => ({ files: [], mark: MARK, oversized: [], complete: true }),
     });
 
     expect(result.status).toBe('completed');
@@ -79,7 +79,7 @@ describe('the observation of file effects is charged to its own bound, not to th
   it('files the repository does not track and that are over the size bound are named as not observed', async () => {
     const result = await runWith({
       mark: async () => MARK,
-      changedSince: async () => ({ files: [], mark: MARK, oversized: ['/p/big.bin'] }),
+      changedSince: async () => ({ files: [], mark: MARK, oversized: ['/p/big.bin'], complete: true }),
     });
 
     expect(result.output).toContain('\nfile effects were not observed for files over');

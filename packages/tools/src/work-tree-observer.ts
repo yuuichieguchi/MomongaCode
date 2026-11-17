@@ -5,11 +5,11 @@ import type { FileSystem, ReadHandle } from '@momonga/foundation';
 import type { ToolFile } from '@momonga/protocol';
 import type { ChildLaunch, ChildPorts } from './ports.ts';
 
-export type WorkTreeMark = { readonly tree: string; readonly oversized: readonly string[] };
+export type WorkTreeMark = { readonly tree: string; readonly oversized: readonly string[]; readonly unseen: boolean };
 
 export type ObservedFile = { path: string; change: 'write' | 'remove' };
 
-export type ObservedWindow = { files: ObservedFile[]; mark: WorkTreeMark; oversized: string[] };
+export type ObservedWindow = { files: ObservedFile[]; mark: WorkTreeMark; oversized: string[]; complete: boolean };
 
 export type WorkTreeObserver = {
   mark(signal: AbortSignal): Promise<WorkTreeMark | undefined>;
@@ -23,7 +23,7 @@ export class WorkTreeObservationError extends Error {
   }
 }
 
-export type GitWorkTreeObserverOptions = { storeRoot: string; cwd: string; trusted: boolean };
+export type GitWorkTreeObserverOptions = { storeRoot: string; cwd: string; trusted: boolean; manifests: readonly string[] };
 
 export type WorkTreeObserverPorts = {
   child: Pick<ChildPorts, 'spawn'>;
@@ -40,6 +40,7 @@ export const OBSERVED_UNTRACKED_FILE_MAX_BYTES = 2 * OBSERVED_FILE_HASH_PAGE_BYT
 export const observerStoreOf = (storeRoot: string, repositoryRoot: string): string => path.join(storeRoot, sha256Hex(repositoryRoot));
 
 const GIT_DIRECTORY_ENTRY = '.git';
+const GITLINK_MODE = '160000 ';
 const STORE_DIRECTORY_MODE = 0o700;
 const TREE_ID = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
 const ABSENT_CODES: readonly string[] = ['ENOENT', 'ENOTDIR'];
@@ -90,6 +91,8 @@ const repositoryRootOf = async (files: Pick<FileSystem, 'lstat'>, cwd: string): 
 
 const fieldsOf = (output: Buffer): string[] => output.toString('utf8').split('\0').filter((field) => field !== '');
 
+const manifestPathspecs = (manifests: readonly string[]): string[] => manifests.map((name) => `:(glob)**/${name}`);
+
 const changesOf = (workTree: string, nameStatus: string): ObservedFile[] => {
   const fields = nameStatus.split('\0');
   const files: ObservedFile[] = [];
@@ -103,7 +106,7 @@ const changesOf = (workTree: string, nameStatus: string): ObservedFile[] => {
 
 type Store = { workTree: string; runGit: GitRun };
 
-export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cwd, trusted }: GitWorkTreeObserverOptions): WorkTreeObserver => {
+export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cwd, trusted, manifests }: GitWorkTreeObserverOptions): WorkTreeObserver => {
   observersCreated += 1;
   const observerNumber = observersCreated;
   let opened: Promise<Store | undefined> | undefined;
@@ -137,12 +140,24 @@ export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cw
     return oversized;
   };
 
+  const hiddenManifestsOf = async (store: Store, signal: AbortSignal): Promise<string[]> => {
+    if (manifests.length === 0) return [];
+    return fieldsOf(await store.runGit(['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', ...manifestPathspecs(manifests)], signal));
+  };
+
+  const nestedRepositoriesOf = async (store: Store, signal: AbortSignal): Promise<string[]> =>
+    fieldsOf(await store.runGit(['ls-files', '--stage', '-z'], signal)).filter((entry) => entry.startsWith(GITLINK_MODE));
+
   const snapshot = async (store: Store, signal: AbortSignal): Promise<WorkTreeMark> => {
     const oversized = await oversizedOf(store, signal);
     await store.runGit(['add', '-A', '--', '.', ...oversized.map((relative) => `:(exclude,literal)${relative}`)], signal);
     const tree = (await store.runGit(['write-tree'], signal)).toString('utf8').trim();
     if (!TREE_ID.test(tree)) throw new WorkTreeObservationError(`git write-tree answered ${JSON.stringify(tree)}, which is not a tree id`);
-    return { tree, oversized: oversized.map((relative) => path.join(store.workTree, relative)) };
+    const hidden = await hiddenManifestsOf(store, signal);
+    const nested = await nestedRepositoriesOf(store, signal);
+    const oversizedManifests = oversized.filter((relative) => manifests.includes(path.basename(relative)));
+    const unseen = hidden.length > 0 || nested.length > 0 || oversizedManifests.length > 0;
+    return { tree, oversized: oversized.map((relative) => path.join(store.workTree, relative)), unseen };
   };
 
   const storeOf = (signal: AbortSignal): Promise<Store | undefined> => {
@@ -164,7 +179,7 @@ export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cw
       const closing = await snapshot(store, signal);
       const diff = await store.runGit(['diff-tree', '-r', '--name-status', '-z', '--no-renames', mark.tree, closing.tree], signal);
       const before = new Set(mark.oversized);
-      return { files: changesOf(store.workTree, diff.toString('utf8')), mark: closing, oversized: closing.oversized.filter((file) => !before.has(file)) };
+      return { files: changesOf(store.workTree, diff.toString('utf8')), mark: closing, oversized: closing.oversized.filter((file) => !before.has(file)), complete: !mark.unseen && !closing.unseen };
     },
   };
 };

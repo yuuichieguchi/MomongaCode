@@ -10,11 +10,11 @@ const countingObserver = (): WorkTreeObserver => {
   let made = 0;
   const nextMark = (): WorkTreeMark => {
     made += 1;
-    return { tree: treeOf(made), oversized: [] };
+    return { tree: treeOf(made), oversized: [], unseen: false };
   };
   return {
     mark: async () => nextMark(),
-    changedSince: async () => ({ files: [], mark: nextMark(), oversized: [] }),
+    changedSince: async () => ({ files: [], mark: nextMark(), oversized: [], complete: true }),
   };
 };
 

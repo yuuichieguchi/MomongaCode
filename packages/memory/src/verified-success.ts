@@ -35,6 +35,12 @@ const declaredPathsOf = (call: CallFacts): string[] | undefined => (WRITING_KIND
 
 const changedPathsOf = (files: readonly ToolFile[]): string[] => files.filter((file) => file.access !== 'read').map((file) => file.path);
 
+const observedPathsOf = (call: CallFacts, event: { files?: ToolFile[]; filesComplete?: boolean }): string[] | undefined => {
+  if (event.files === undefined || event.filesComplete === false) return undefined;
+  if (event.filesComplete === undefined && runsCommands(call)) return undefined;
+  return changedPathsOf(event.files);
+};
+
 export type PassingCheck = { command: string; conditionId: string; seq: number };
 
 export type VerifiedSuccessAnalysis = { verified: boolean; passingChecks: PassingCheck[] };
@@ -110,12 +116,12 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
       }
       case 'tool.reconciled': {
         const call = calls.get(event.callId);
-        if (call !== undefined && reconciliationMutates(call, event.outcome)) mutated(event.seq, call, event.command, event.files === undefined ? undefined : changedPathsOf(event.files));
+        if (call !== undefined && reconciliationMutates(call, event.outcome)) mutated(event.seq, call, event.command, observedPathsOf(call, event));
         return;
       }
       case 'tool.completed': {
         const call = calls.get(event.callId);
-        if (call !== undefined && completionMutates(call, event)) mutated(event.seq, call, event.command, event.files === undefined ? undefined : changedPathsOf(event.files));
+        if (call !== undefined && completionMutates(call, event)) mutated(event.seq, call, event.command, observedPathsOf(call, event));
         return;
       }
       case 'verification.completed':

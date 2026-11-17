@@ -266,6 +266,7 @@ describe('run event payloads', () => {
       mutated?: true;
       command?: string;
       windowShared?: true;
+      filesComplete?: boolean;
       observedTrees?: { from: string; to: string };
       outputIncomplete?: 'residue';
       memories?: string[];

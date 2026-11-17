@@ -329,11 +329,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     lockCapability,
     inspector,
     sessionState: (session) => sessionStates.get(session),
-    workTreeObserver: (session, trusted) => {
-      const key = `${trusted ? 'trusted' : 'untrusted'}\n${session.cwd}`;
+    workTreeObserver: (session, trusted, manifests) => {
+      const key = `${trusted ? 'trusted' : 'untrusted'}\n${session.cwd}\n${manifests.join('\n')}`;
       const known = observers.get(key);
       if (known !== undefined) return known;
-      const created = createGitWorkTreeObserver({ storeRoot: observerStoreRoot(paths), cwd: session.cwd, trusted }, options.childLaunch);
+      const created = createGitWorkTreeObserver({ storeRoot: observerStoreRoot(paths), cwd: session.cwd, trusted, manifests }, options.childLaunch);
       observers.set(key, created);
       return created;
     },
