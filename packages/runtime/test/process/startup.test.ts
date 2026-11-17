@@ -7,7 +7,7 @@ import { nodeChildPorts } from '@momonga/tools';
 import { FIRST_GENERATION, ProcessLockHeldError, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, lockFileOf, startLockHolder, firstGeneration, registerOwned, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, lockFileOf, startLockHolder, firstGeneration, prepareGenerationForTest, registerOwned, testKernelLock } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings, onCleanup } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -287,6 +287,19 @@ describe('startRuntimeProcess startup (system timers)', () => {
       await failureOf(started);
       expect(fs.existsSync(leftover)).toBe(false);
       expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'warn', msg: expect.stringContaining(leftover) }));
+    });
+
+    it('is kept at start while another runtime of the home is live, and not removed by the start', async (context) => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: 'none' });
+      const leftover = await leave(temp);
+      prepareGenerationForTest(temp.home, FIRST_GENERATION + 1, RUNTIME_VERSION);
+      await startLockHolder(context, generationLayout(path.dirname(temp.paths.root), FIRST_GENERATION + 1).locks.runtime);
+      fs.writeFileSync(firstGeneration(temp.paths).sockets.runtime, 'not a socket');
+      const { started, logger } = startBare(temp, { sandboxExecPath: '/bin/true', platform: 'linux' });
+      await failureOf(started);
+      expect(fs.existsSync(leftover)).toBe(true);
+      expect(logger.entries).not.toContainEqual(expect.objectContaining({ msg: expect.stringContaining(leftover) }));
     });
 
     it('is removed even when bwrap is missing and the start fails because of it', async () => {

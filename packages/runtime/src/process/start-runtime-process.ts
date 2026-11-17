@@ -438,6 +438,19 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const journalDirectory = placeholderJournalDirectoryOf(paths);
+    const otherRuntimeLive = async (): Promise<boolean> => {
+      for (const generation of (await fileSystem.readdir(sharedPaths.run)).map(generationOfDirectoryName)) {
+        if (generation === undefined || generation === options.generation) continue;
+        if ((await inspectProcessLock(generationLayout(canonicalHome, generation).locks.runtime, { mechanism: kernelLock })).state !== 'free') return true;
+      }
+      return false;
+    };
+    const recoverLeftoverPlaceholders = async (recover: () => Promise<{ removed: string[]; unrecovered: string[] }>): Promise<ServingTaskOutcome> => {
+      if (platform !== 'linux') return 'done';
+      if (await otherRuntimeLive()) return 'again';
+      reportRecoveredPlaceholders(await recover());
+      return 'done';
+    };
     const { helperSelf } = options;
     const childLaunch: ChildLaunch = await hostNoneSandboxLaunch({ home: canonicalHome, platform, env: process.env }, startDeadlineSignal(signal));
     const noneProtection = childLaunch.protection;
@@ -467,7 +480,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'sandbox', run: () => sandboxes.retireAll() });
     await step('sandbox', async () => {
-      if (platform === 'linux') reportRecoveredPlaceholders(await recoverPlaceholders(createPlaceholderJournal(journalDirectory)));
+      await recoverLeftoverPlaceholders(() => recoverPlaceholders(createPlaceholderJournal(journalDirectory)));
       (await sandboxes.admit(startDeadlineSignal(signal))).release();
     });
 
@@ -890,13 +903,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const requireService = (): RunService => runService;
-    const otherRuntimeLive = async (): Promise<boolean> => {
-      for (const generation of (await fileSystem.readdir(sharedPaths.run)).map(generationOfDirectoryName)) {
-        if (generation === undefined || generation === options.generation) continue;
-        if ((await inspectProcessLock(generationLayout(canonicalHome, generation).locks.runtime, { mechanism: kernelLock })).state !== 'free') return true;
-      }
-      return false;
-    };
     const fidelityBound = async (): Promise<number | undefined> => {
       let bound = FIDELITY_FOLD_VERSION;
       for (const listed of await listGenerations(sharedPaths, { lock: kernelLock })) {
@@ -1094,13 +1100,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           {
             name: 'placeholder-recovery',
             intervalMs: Number.POSITIVE_INFINITY,
-            run: async (): Promise<ServingTaskOutcome> => {
-              if (platform !== 'linux') return 'done';
-              if (await otherRuntimeLive()) return 'again';
-              const { sandbox } = sandboxes.current();
-              reportRecoveredPlaceholders(await (sandbox.recover === undefined ? recoverPlaceholders(createPlaceholderJournal(journalDirectory)) : sandbox.recover()));
-              return 'done';
-            },
+            run: (): Promise<ServingTaskOutcome> =>
+              recoverLeftoverPlaceholders(() => {
+                const { sandbox } = sandboxes.current();
+                return sandbox.recover === undefined ? recoverPlaceholders(createPlaceholderJournal(journalDirectory)) : sandbox.recover();
+              }),
           },
         ],
       });
