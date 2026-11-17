@@ -133,9 +133,15 @@ const startLockHolderFixture = async (home: E2eHome, lockPath: string): Promise<
   return pid;
 };
 
-const writeStaleLock = (lockPath: string, pid: number): void => {
+const writeStaleLock = async (lockPath: string, pid: number): Promise<void> => {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(lockPath, String(pid), { mode: 0o600 });
+  const outcome = await testKernelLock().claim(lockPath);
+  if (outcome.kind !== 'claimed') throw new Error(`the lock ${lockPath} of a fresh home was held`);
+  try {
+    outcome.lock.writeHolder(String(pid));
+  } finally {
+    outcome.lock.release();
+  }
 };
 
 const openClient = (home: E2eHome, generation: number = FIRST_GENERATION): SupervisorClient => {
@@ -593,8 +599,8 @@ describe('supervisor cases', () => {
     const runtimeGhost = await startSleepFixture(home);
     const gatewayGhost = await startSleepFixture(home);
     prepareGenerationForTest(home.home, FIRST_GENERATION, cliPackage.version);
-    writeStaleLock(firstGeneration(home.paths).locks.runtime, runtimeGhost);
-    writeStaleLock(firstGeneration(home.paths).locks.gateway, gatewayGhost);
+    await writeStaleLock(firstGeneration(home.paths).locks.runtime, runtimeGhost);
+    await writeStaleLock(firstGeneration(home.paths).locks.gateway, gatewayGhost);
 
     const stack = await startStack({ home, preparedGeneration: FIRST_GENERATION });
     const health = await stack.client.health();
@@ -604,7 +610,7 @@ describe('supervisor cases', () => {
       expect(child).toMatchObject({ state: 'ready', restarts: 0, consecutiveFailures: 0 });
       expect(child.lastExit).toBeUndefined();
       expect(await inspectProcessLock(firstGeneration(home.paths).locks[role], { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: pidOf(health, role) });
-      expect(fs.readFileSync(firstGeneration(home.paths).locks[role], 'utf8').trim()).toBe(String(pidOf(health, role)));
+      expect((await testKernelLock().readHolder(firstGeneration(home.paths).locks[role]))?.trim()).toBe(String(pidOf(health, role)));
       expect(ofChild(records, 'child.spawn', role)).toHaveLength(1);
       expect(ofChild(records, 'child.exit', role)).toEqual([]);
       expect(ofChild(records, 'child.external', role)).toEqual([]);
