@@ -57,15 +57,25 @@ export const withFileLock = async <T>(lockPath: string, task: () => Promise<T>, 
   }
 };
 
-export type KeyedSerializer = <T>(key: string, task: () => Promise<T>, signal: AbortSignal) => Promise<T>;
+export type KeyedSerializer = <T>(key: string, task: () => Promise<T>, signal: AbortSignal, onQueued?: () => void) => Promise<T>;
 
 const settledEitherWay = (): void => undefined;
 
 export const createKeyedSerializer = (): KeyedSerializer => {
   const queues = new Map<string, Promise<void>>();
-  return <T>(key: string, task: () => Promise<T>, signal: AbortSignal): Promise<T> => {
+  const outstanding = new Map<string, number>();
+  return <T>(key: string, task: () => Promise<T>, signal: AbortSignal, onQueued?: () => void): Promise<T> => {
     const previous = queues.get(key) ?? Promise.resolve();
+    const before = outstanding.get(key) ?? 0;
+    if (before > 0) onQueued?.();
+    outstanding.set(key, before + 1);
     const run = settledOrAborted(previous, signal).then(task);
+    const finished = (): void => {
+      const left = (outstanding.get(key) ?? 1) - 1;
+      if (left === 0) outstanding.delete(key);
+      else outstanding.set(key, left);
+    };
+    run.then(finished, finished);
     const settled = previous.then(() => run.then(settledEitherWay, settledEitherWay));
     queues.set(key, settled);
     void settled.then(() => {

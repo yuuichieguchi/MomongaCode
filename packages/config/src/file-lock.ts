@@ -18,7 +18,10 @@ const turnWithin = <T>(key: string, file: string, signal: AbortSignal, timing: T
   const turn = new AbortController();
   const forward = (): void => turn.abort(signal.reason);
   signal.addEventListener('abort', forward, { once: true });
-  const bound = timing.setTimeout(() => turn.abort(new LockWaitTimeoutError(file, timeoutMs, String(process.pid))), timeoutMs);
+  let bound: unknown;
+  const boundQueuedWait = (): void => {
+    bound = timing.setTimeout(() => turn.abort(new LockWaitTimeoutError(file, timeoutMs, String(process.pid))), timeoutMs);
+  };
   const run = serializeInProcess(
     key,
     () => {
@@ -27,6 +30,7 @@ const turnWithin = <T>(key: string, file: string, signal: AbortSignal, timing: T
       return work();
     },
     turn.signal,
+    boundQueuedWait,
   );
   const release = (): void => {
     timing.clearTimeout(bound);
