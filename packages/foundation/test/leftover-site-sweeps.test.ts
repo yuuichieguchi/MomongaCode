@@ -66,14 +66,14 @@ describe('lock-capability.ts:43,79: two creators of one locked file never remove
     const descriptors: number[] = [];
     const secondCreator = (): void => {
       try {
-        descriptors.push(createLockedFile(recording, 'darwin', file, OPEN_FLAGS.readOnly, 0o600));
+        descriptors.push(createLockedFile(recording, file, OPEN_FLAGS.readOnly, 0o600));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
     };
     try {
       descriptors.push(
-        createLockedFile(recording, 'darwin', file, OPEN_FLAGS.readOnly, 0o600, (firstStaged) => {
+        createLockedFile(recording, file, OPEN_FLAGS.readOnly, 0o600, (firstStaged) => {
           secondCreator();
           firstStagedSurvived = fs.existsSync(firstStaged);
         }),

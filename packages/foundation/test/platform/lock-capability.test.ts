@@ -36,12 +36,12 @@ describe.runIf(process.platform === 'darwin')('T3 the lock is trusted only where
 describe('T3 lock proof and detection', () => {
   it('(b) a filesystem whose second open never refuses the shared lock is unenforced', async () => {
     const { proofDir, markerDir } = directories();
-    expect(await createLockCapability({ proofDir, platform: 'darwin', ops: lockIgnoringOps() }).of(markerDir)).toBe('unenforced');
+    expect(await createLockCapability({ proofDir, ops: lockIgnoringOps() }).of(markerDir)).toBe('unenforced');
   });
 
   it.for(['ENOTSUP', 'EOPNOTSUPP', 'EINVAL'])('(c) a filesystem that rejects the lock flags with %s is unenforced', async (code) => {
     const { proofDir, markerDir } = directories();
-    expect(await createLockCapability({ proofDir, platform: 'darwin', ops: lockRejectingOps(code) }).of(markerDir)).toBe('unenforced');
+    expect(await createLockCapability({ proofDir, ops: lockRejectingOps(code) }).of(markerDir)).toBe('unenforced');
   });
 
   it('(d) the proof directory is <run>/lock-proof and lies under no marker directory a sweep is given', () => {
@@ -56,7 +56,7 @@ describe('T3 lock proof and detection', () => {
   it('(d) a proof never creates a file in the marker directory it measures', async () => {
     const { proofDir, markerDir } = directories();
     const { ops, opened } = countingOps(lockIgnoringOps());
-    await createLockCapability({ proofDir, platform: 'darwin', ops }).of(markerDir);
+    await createLockCapability({ proofDir, ops }).of(markerDir);
     expect(opened.length).toBeGreaterThan(0);
     expect(opensIn(opened, markerDir)).toBe(0);
     expect(fs.readdirSync(markerDir)).toEqual([]);
@@ -88,7 +88,7 @@ describe('T3 lock proof and detection', () => {
         return nodeFileLockOps.open(file, flags, mode);
       },
     };
-    const capability = createLockCapability({ proofDir, platform: 'darwin', ops });
+    const capability = createLockCapability({ proofDir, ops });
     expect(await capability.of(markerDir)).toBe('unmeasured');
     expect(() => capability.decide(markerDir)).toThrow(LockProofFailedError);
     expect(() => capability.decide(markerDir)).toThrow(/EIO/);
@@ -97,7 +97,7 @@ describe('T3 lock proof and detection', () => {
   it.runIf(process.platform === 'darwin')('(e) a measurement is cached: a second use with the same st_dev runs no second proof', async () => {
     const { proofDir, markerDir } = directories();
     const { ops, opened } = countingOps(nodeFileLockOps);
-    const capability = createLockCapability({ proofDir, platform: 'darwin', ops, statDirectory: realIdentity });
+    const capability = createLockCapability({ proofDir, ops, statDirectory: realIdentity });
     expect(await capability.of(markerDir)).toBe('proved');
     const afterFirst = opensIn(opened, proofDir);
     expect(afterFirst).toBeGreaterThan(0);
@@ -111,7 +111,7 @@ describe('T3 lock proof and detection', () => {
     const switchable = switchableOps(lockIgnoringOps(counted.ops));
     let device = 7n;
     const statDirectory = (_dir: string) => ({ dev: device, ino: 11n });
-    const capability = createLockCapability({ proofDir, platform: 'darwin', ops: switchable.ops, statDirectory });
+    const capability = createLockCapability({ proofDir, ops: switchable.ops, statDirectory });
     expect(await capability.of(markerDir)).toBe('unenforced');
     const afterFirst = opensIn(counted.opened, proofDir);
     expect(await capability.of(markerDir)).toBe('unenforced');
@@ -134,7 +134,7 @@ describe('T3 lock proof and detection', () => {
         return nodeFileLockOps.open(lockPath, flags & ~LOCK_FLAG_BITS, mode);
       },
     };
-    const capability = createLockCapability({ proofDir, platform: 'darwin', ops });
+    const capability = createLockCapability({ proofDir, ops });
     expect(await capability.of(markerDir)).toBe('unmeasured');
     failing = false;
     const before = attempts;
@@ -150,7 +150,7 @@ describe('T3 lock proof and detection', () => {
 
   it('(g) a host that does not define the flags takes no lock on open, and is unenforced; the module has no platform branch', async () => {
     const { proofDir, markerDir } = directories();
-    expect(await createLockCapability({ proofDir, platform: 'darwin', ops: lockIgnoringOps() }).of(markerDir)).toBe('unenforced');
+    expect(await createLockCapability({ proofDir, ops: lockIgnoringOps() }).of(markerDir)).toBe('unenforced');
     expect(fs.readFileSync(SOURCE, 'utf8')).not.toContain('process.platform');
   });
 });

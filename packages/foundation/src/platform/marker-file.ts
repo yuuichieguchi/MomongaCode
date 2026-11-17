@@ -2,11 +2,11 @@ import path from 'node:path';
 import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
 import type { MarkerMode } from '../marker-state.ts';
 import { EMPTY_RECORD_TEXT } from './marker-record.ts';
+import { O_SHLOCK } from './kernel-lock.ts';
 import { createLockedFile } from './lock-capability.ts';
 import type { LockCapabilityProbe, StagingFiles } from './lock-capability.ts';
-import { FileLockUnavailableError, nodeFileLockOps } from './kernel-lock.ts';
+import { nodeFileLockOps } from './kernel-lock.ts';
 import type { FileLockOps } from './kernel-lock.ts';
-import { HOST_PLATFORM, openLockFlagsOn } from './open-lock-flags.ts';
 
 export interface MarkerHandle {
   readonly fd: number;
@@ -14,22 +14,17 @@ export interface MarkerHandle {
   close(): void;
 }
 
-export type CreateMarkerOptions = { capability: LockCapabilityProbe; ops?: FileLockOps; files?: StagingFiles; platform?: string };
+export type CreateMarkerOptions = { capability: LockCapabilityProbe; ops?: FileLockOps; files?: StagingFiles };
 
 const MARKER_MODE = 0o600;
 
 const createPlainFlags = (): number => OPEN_FLAGS.readWrite | OPEN_FLAGS.create | OPEN_FLAGS.exclusive;
-const selfCheckFlags = (platform: string): number => {
-  const flags = openLockFlagsOn(platform);
-  if (flags === undefined) throw new FileLockUnavailableError(platform);
-  return OPEN_FLAGS.readOnly | flags.shared | OPEN_FLAGS.nonBlocking;
-};
+const selfCheckFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
 
-const selfCheckHolds = (ops: FileLockOps, marker: string, platform: string): boolean => {
-  const flags = selfCheckFlags(platform);
+const selfCheckHolds = (ops: FileLockOps, marker: string): boolean => {
   let descriptor: number;
   try {
-    descriptor = ops.open(marker, flags);
+    descriptor = ops.open(marker, selfCheckFlags());
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'EAGAIN';
   }
@@ -93,11 +88,11 @@ const openPlainWithRecord = (ops: FileLockOps, marker: string): number => {
   }
 };
 
-export const createMarker = async (marker: string, { capability, ops = nodeFileLockOps, files = nodeFileSystemSync, platform = HOST_PLATFORM }: CreateMarkerOptions): Promise<MarkerHandle> => {
+export const createMarker = async (marker: string, { capability, ops = nodeFileLockOps, files = nodeFileSystemSync }: CreateMarkerOptions): Promise<MarkerHandle> => {
   const dir = path.dirname(marker);
   if ((await capability.of(dir)) !== 'proved') return handleOf(ops, openPlainWithRecord(ops, marker), 'listed');
-  const fd = createLockedFile(ops, platform, marker, OPEN_FLAGS.readOnly, MARKER_MODE, writeEmptyRecord, files);
-  if (selfCheckHolds(ops, marker, platform)) return handleOf(ops, fd, 'locked');
+  const fd = createLockedFile(ops, marker, OPEN_FLAGS.readOnly, MARKER_MODE, writeEmptyRecord, files);
+  if (selfCheckHolds(ops, marker)) return handleOf(ops, fd, 'locked');
   capability.contradicted(dir);
   return handleOf(ops, fd, 'listed');
 };

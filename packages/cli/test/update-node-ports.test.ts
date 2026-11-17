@@ -3,10 +3,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { FileLockUnavailableError, HOST_PLATFORM, LOCK_DATABASE_SUFFIX, ensureMomongaDirs, kernelLockNamed, momongaPaths, openLockFlagsOn, sidecarOf, systemTiming } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, createLockCapability, ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
-import { describe, expect, it } from 'vitest';
+import { createTempDir, registerCleanup, removeTempDir, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
+import { afterAll, describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { MAX_REDIRECTS, STAGING_PREFIX, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, transferOptionsOf } from '../src/update/node-ports.ts';
@@ -14,6 +14,15 @@ import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const ASIDE_ENTRY = path.join(import.meta.dirname, 'update-aside-entry.ts');
+
+const probeDirectory = createTempDir();
+const proofDirectory = createTempDir();
+afterAll(() => {
+  removeTempDir(probeDirectory);
+  removeTempDir(proofDirectory);
+});
+const HOST_PROVES_FILE_LOCK = (await createLockCapability({ proofDir: proofDirectory }).of(probeDirectory)) === 'proved';
+const LOCK_MECHANISMS = (['file-lock', 'sqlite-lock'] as const).filter((mechanism) => mechanism === 'sqlite-lock' || HOST_PROVES_FILE_LOCK);
 
 const unusedPort = (name: string): never =>
   new Proxy(() => undefined, {
@@ -249,17 +258,6 @@ describe('update http', () => {
 
     expect(seen['user-agent']).toBe('momonga/1.0.0');
     expect(seen['accept']).toBe('x/y');
-  });
-});
-
-const FILE_LOCK_DEFINED_HERE = openLockFlagsOn(HOST_PLATFORM) !== undefined;
-
-const LOCK_MECHANISMS = (['file-lock', 'sqlite-lock'] as const).filter((mechanism) => mechanism === 'sqlite-lock' || FILE_LOCK_DEFINED_HERE);
-
-describe('a file lock on a host without the open flags is refused, not built', () => {
-  it('kernelLockNamed refuses the file-lock mechanism exactly where the host does not define its open flags', () => {
-    if (FILE_LOCK_DEFINED_HERE) expect(kernelLockNamed('file-lock').name).toBe('file-lock');
-    else expect(() => kernelLockNamed('file-lock')).toThrow(FileLockUnavailableError);
   });
 });
 
