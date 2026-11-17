@@ -11,15 +11,15 @@ const GATE_PROJECTS = '--project unit --project e2e --project packaging';
 
 describe('the merge gate', () => {
   it('runs the unit, the e2e and the packaging projects in one invocation, with the formal models and the unchanged test files reused', () => {
-    expect(scripts()['test:reuse']).toBe(`${TEST_REUSE_ENV}=1 MOMONGA_TLC_REUSE=1 vitest run ${GATE_PROJECTS}`);
+    expect(scripts()['test:reuse']).toBe(`${TEST_REUSE_ENV}=1 MOMONGA_TLC_REUSE=1 MOMONGA_WHOLE_RUN=1 vitest run ${GATE_PROJECTS}`);
   });
 
   it('runs the same three projects without reuse for the release', () => {
-    expect(scripts()['test']).toBe(`${TEST_REUSE_ENV}=0 MOMONGA_TLC_REUSE=0 vitest run ${GATE_PROJECTS}`);
+    expect(scripts()['test']).toBe(`${TEST_REUSE_ENV}=0 MOMONGA_TLC_REUSE=0 MOMONGA_WHOLE_RUN=1 vitest run ${GATE_PROJECTS}`);
   });
 
   it('keeps the single runs of the e2e and the packaging projects', () => {
-    expect(scripts()['test:e2e']).toBe('vitest run --project e2e');
-    expect(scripts()['test:packaging']).toBe('vitest run --project packaging');
+    expect(scripts()['test:e2e']).toBe('MOMONGA_WHOLE_RUN=1 vitest run --project e2e');
+    expect(scripts()['test:packaging']).toBe('MOMONGA_WHOLE_RUN=1 vitest run --project packaging');
   });
 });
