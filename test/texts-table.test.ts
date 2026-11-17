@@ -32,7 +32,7 @@ const PLACEHOLDER = /<[^>]+>/g;
 
 const CODE_NAME = /^(?:[a-z_$][\w$]*(?:[.-][\w$]+)*|[A-Z][A-Z0-9_]*|[A-Z][\w$]*\.[\w$]+|--?[\w-]+|\/[\w-]+)$/;
 
-const SOURCE_FILE = /^packages\/.+\.tsx?$/;
+const SOURCE_FILE = /^packages\/.+\.tsx?(:\d+)?$/;
 
 const HAS_WORD = /\p{L}/u;
 
@@ -53,7 +53,7 @@ const listedTextsOf = (design: string, section: string): ListedText[] =>
     .filter((line) => line.startsWith('- '))
     .flatMap((line) => {
       const quoted = [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1] as string);
-      const files = quoted.filter((item) => SOURCE_FILE.test(item));
+      const files = quoted.filter((item) => SOURCE_FILE.test(item)).map((item) => item.replace(/:\d+$/, ''));
       const texts = quoted.filter((item) => !SOURCE_FILE.test(item) && !CODE_NAME.test(item) && HAS_WORD.test(item));
       return texts.map((text) => ({ design, text, files, others: texts.filter((other) => other !== text) }));
     });
@@ -66,9 +66,7 @@ const fragmentsOf = ({ text, others }: ListedText): string[] =>
     .map((fragment) => fragment.trim())
     .filter((fragment) => fragment !== '');
 
-const PRESENT_MISMATCHES: Readonly<Record<string, string>> = {
-  'design-model-names-2026-11-10.md: Start wait in minutes: (missing: in minutes:)': 'cli-tui: the design names models-writers.ts; the code composes the question in packages/cli/src/tui/models/fields.ts',
-};
+const PRESENT_MISMATCHES: Readonly<Record<string, string>> = {};
 
 const sourceTextOf = (file: string): string => fs.readFileSync(path.join(ROOT, file), 'utf8');
 
