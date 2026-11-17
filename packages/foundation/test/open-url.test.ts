@@ -88,11 +88,12 @@ describe('P-C7: the opener starts the program, never waits for it, and reports a
     const exited = deferredEnd();
     const signalled = deferredEnd();
     const ends = [exited.end, signalled.end];
-    const { launch } = scriptedLaunch(() => ends.shift() ?? never());
+    const { launch, launches } = scriptedLaunch(() => ends.shift() ?? never());
     const open = createBrowserOpener({ env: { PATH: bin }, launch, files: nodeFileSystem });
     const exitedCalls: string[] = [];
     const signalledCalls: string[] = [];
     open(URL_TO_OPEN, new AbortController().signal, (message) => exitedCalls.push(message));
+    await vi.waitFor(() => expect(launches).toHaveLength(1));
     open(URL_TO_OPEN, new AbortController().signal, (message) => signalledCalls.push(message));
     exited.resolve({ exitCode: 3, signal: null });
     signalled.resolve({ exitCode: null, signal: 'SIGTERM' });
