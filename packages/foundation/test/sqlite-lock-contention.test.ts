@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
-import { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, LOCK_HOLDER_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from '@momonga/foundation';
 import type { SqliteLockOps } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
 
@@ -122,15 +122,15 @@ describe('disposing a lock on a platform that cannot remove an open file', () =>
     const outcome = await createSqliteFileLock(ops).claim(lockPath);
     if (outcome.kind !== 'claimed') throw new Error('the lock was not free');
     outcome.lock.writeHolder('1');
-    return { dispose: () => outcome.lock.dispose(), events };
+    return { dispose: () => outcome.lock.dispose(), events, databasePath, holderPath: `${databasePath}${LOCK_HOLDER_SUFFIX}` };
   };
 
   it('removes the holder record while the lock is held and the database after it is closed', async (context) => {
-    const { dispose, events } = await disposeWith(context, undefined);
+    const { dispose, events, holderPath, databasePath } = await disposeWith(context, undefined);
 
     dispose();
 
-    expect(events).toEqual(['runtime.lock while open', 'runtime.lock.sqlite while closed']);
+    expect(events).toEqual([`${path.basename(holderPath)} while open`, `${path.basename(databasePath)} while closed`]);
   });
 
   it('treats a database that is still in use as a successor holding it, and leaves it', async (context) => {

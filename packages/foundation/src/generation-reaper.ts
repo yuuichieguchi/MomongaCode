@@ -15,7 +15,7 @@ import {
 } from './momonga-paths.ts';
 import type { GenerationLayout, GenerationMember, MarkerKind, MomongaPaths } from './momonga-paths.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { claimPathOf, sidecarSuffixOf } from './platform/lock-form.ts';
+import { lockPathNameOf } from './platform/lock-form.ts';
 import { readAttemptRecord, readMarkerGroup } from './platform/marker-record.ts';
 import type { RetryKind } from './platform/marker-record.ts';
 import { survivorNoticeText } from './process-markers.ts';
@@ -140,13 +140,6 @@ const namesIn = async (files: GenerationReaperFiles, directory: string): Promise
     if (missing(error)) return [];
     throw error;
   }
-};
-
-const lockFileSuffixOf = (lock: KernelLockMechanism): string => (claimPathOf(lock, '', 'sidecar') === '' ? sidecarSuffixOf(lock) : '');
-
-const lockPathNameOf = (lock: KernelLockMechanism, name: string): string => {
-  const suffix = lockFileSuffixOf(lock);
-  return suffix !== '' && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
 };
 
 const memberOf = (lock: KernelLockMechanism, name: string): GenerationMember | undefined => generationMemberOf(name) ?? generationMemberOf(lockPathNameOf(lock, name));
