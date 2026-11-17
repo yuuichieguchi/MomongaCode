@@ -43,11 +43,11 @@ const isTask = (item: InputItem): boolean => JSON.stringify(item) === JSON.strin
 
 describe('proactive compaction inside one turn', () => {
   it('hints the latest step-end cut before the protected steps when the region passes the gain rule', async () => {
-    const history = stepsOf([1400, 1400, 1400, 1400, 1400, 1400]);
+    const history = stepsOf([1500, 1500, 1500, 1500, 1500, 1500]);
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
-    expect(built.inputTokens).toBe(2378);
-    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2378, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } , rebuilt: { before: expect.any(Array), after: expect.any(Array), tools: expect.any(Array) } });
+    expect(built.inputTokens).toBe(2528);
+    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2528, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } , rebuilt: { before: expect.any(Array), after: expect.any(Array), tools: expect.any(Array) } });
   });
 
   it('gives no hint when the region is below twice the summary item', async () => {
@@ -59,7 +59,7 @@ describe('proactive compaction inside one turn', () => {
   });
 
   it('never hints a proactive compaction at a level above 0', async () => {
-    const history = stepsOf([1400, 1400, 1400, 1400, 1400, 1400]);
+    const history = stepsOf([1500, 1500, 1500, 1500, 1500, 1500]);
     const atLevel0 = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
     const atLevel1 = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
@@ -218,9 +218,9 @@ describe('compaction input is the rendered context', () => {
 
   it('renders an output above the item cap identically in two builds and never puts it in the compaction input above the cap', async () => {
     const history = [
-      argsCall(1, 'c0', 1400),
+      argsCall(1, 'c0', 1500),
       output(2, 'c0', 'ok'),
-      argsCall(3, 'c1', 1400),
+      argsCall(3, 'c1', 1500),
       output(4, 'c1', 'ok'),
       call(5, 'c2'),
       output(6, 'c2', 'r'.repeat(4000)),
