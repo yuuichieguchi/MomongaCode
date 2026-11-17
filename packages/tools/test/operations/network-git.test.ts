@@ -164,6 +164,33 @@ describe('a setting of the repository that changes who vouches for the forge', (
   });
 });
 
+describe('a path-valued http key git cannot take empty is refused before any credentialed process', () => {
+  const httpsWorld = (): GitWorld => {
+    const world = makeGitWorld();
+    world.git(world.work, 'remote', 'set-url', 'origin', 'https://forge.example/acme/widgets.git');
+    return world;
+  };
+
+  it.each([
+    ['GitPush', { remote: 'origin', branch: 'main' }],
+    ['GitFetch', { remote: 'origin', branch: 'main' }],
+  ])('%s refuses a repository setting of each key, and no credentialed git runs', async (name, input) => {
+    for (const key of ['http.sslCert', 'http.sslCAPath', 'http.pinnedPubkey', 'http.https://forge.example/.sslCert', 'http.https://forge.example/.pinnedPubkey']) {
+      const world = httpsWorld();
+      world.git(world.work, 'config', key, '/planted/file.pem');
+      const runner = countingRunner();
+      const outcome = await settle(async () => {
+        await partsOf(operationTool(name, { runArgv: runner.run }), input, contextFor(world.work, world.env)).prepare();
+        return { status: 'completed', output: '' };
+      });
+      expect(outcome.status, key).toBe('threw');
+      expect(outcome.output, key).toContain(key.split('.').at(-1)?.toLowerCase() ?? '');
+      expect(runner.credentialed, key).toEqual(runner.credentialed.map(() => false));
+      expect(runner.calls.some((argv) => argv.includes('ls-remote') || argv.includes('push') || argv.includes('fetch')), key).toBe(false);
+    }
+  });
+});
+
 describe('what an operation reads about the repository before its permission is decided', () => {
   it('reads through the argv runner of the operations, with the read-only environment and no network', async () => {
     const world = makeGitWorld();
