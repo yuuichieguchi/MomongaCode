@@ -1,26 +1,57 @@
+import net from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { SSE_EVENT_MAX_BYTES } from '@momonga/foundation';
 import { createScriptedAdapter, waitFor } from '@momonga/testkit';
 import { postJson, readJson, readSse, sseIterator, startGateway, userInput } from './gateway-helpers.ts';
 import { bigTextEvents } from './gateway-support.ts';
 
-const SLOW_READER_CHUNKS = 200;
-const SLOW_READER_CHUNK_BYTES = Math.floor(SSE_EVENT_MAX_BYTES / 4 / SLOW_READER_CHUNKS);
+const SLOW_READER_CHUNK_BYTES = Math.floor(SSE_EVENT_MAX_BYTES / 4 / 200);
+const WRITE_BLOCK_BYTES = 16 * 1024;
+const WRITE_ATTEMPTS_BOUND = 100_000;
+const STREAM_TO_CAPACITY_RATIO = 4;
+const QUEUED_BEYOND_CAPACITY_BYTES = 64 * 1024;
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const writableCapacityBytes = async (): Promise<number> => {
+  const server = net.createServer();
+  const accepted = new Promise<net.Socket>((resolve) => server.once('connection', resolve));
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const client = net.connect((server.address() as net.AddressInfo).port, '127.0.0.1');
+  client.on('error', () => undefined);
+  client.pause();
+  const writer = await accepted;
+  writer.on('error', () => undefined);
+  const block = Buffer.alloc(WRITE_BLOCK_BYTES, 0x61);
+  let written = 0;
+  for (let attempt = 0; ; attempt += 1) {
+    if (attempt >= WRITE_ATTEMPTS_BOUND) throw new Error('the socket never blocked a writer that does not stop');
+    written += block.length;
+    if (!writer.write(block)) break;
+  }
+  const capacity = written - writer.writableLength;
+  writer.destroy();
+  client.destroy();
+  server.close();
+  return capacity;
+};
+
 describe('streaming backpressure', () => {
-  it('does not pull the adapter far ahead of a slow reader on a non-idempotent stream', async () => {
-    const primary = createScriptedAdapter({ calls: [{ events: bigTextEvents(SLOW_READER_CHUNKS, SLOW_READER_CHUNK_BYTES) }] });
+  it('stops producing for a slow reader before the stream is produced, and within what the socket takes', async () => {
+    const capacity = await writableCapacityBytes();
+    const chunks = Math.ceil((STREAM_TO_CAPACITY_RATIO * capacity) / SLOW_READER_CHUNK_BYTES);
+    const primary = createScriptedAdapter({ calls: [{ events: bigTextEvents(chunks, SLOW_READER_CHUNK_BYTES) }] });
     const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     const frames = sseIterator(response);
     await frames.next();
     await pause(300);
-    expect(primary.calls[0]?.emitted).toBeLessThan(60);
+    const emitted = primary.calls[0]?.emitted ?? 0;
+    expect(emitted).toBeLessThan(chunks);
+    expect(emitted * SLOW_READER_CHUNK_BYTES).toBeLessThanOrEqual(capacity + QUEUED_BEYOND_CAPACITY_BYTES);
     let count = 1;
     for (let step = await frames.next(); step.done !== true; step = await frames.next()) count += 1;
-    expect(count).toBeGreaterThan(SLOW_READER_CHUNKS);
+    expect(count).toBeGreaterThan(emitted);
   });
 });
 
