@@ -157,13 +157,13 @@ describe('request schemas', () => {
 
 describe('response schemas', () => {
   it('describes the health body', () => {
-    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, interrupts: [], sandbox: 'seatbelt' };
+    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, interrupts: [], retention: { days: 30, lastSweep: null }, sandbox: 'seatbelt' };
     expect(accepts('Health', health)).toBe(true);
     expect(accepts('Health', { ...health, apiVersion: 2 })).toBe(false);
   });
 
-  it('Health accepts the eleven fields, and rejects a missing or extra field, an unknown state, role and sandbox', () => {
-    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, interrupts: [], sandbox: 'seatbelt' };
+  it('Health accepts the twelve fields, and rejects a missing or extra field, an unknown state, role and sandbox', () => {
+    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', role: 'serving', steps: 0, jobs: 0, interrupts: [], retention: { days: 30, lastSweep: null }, sandbox: 'seatbelt' };
     expect(accepts('Health', health)).toBe(true);
     expect(accepts('Health', { ...health, state: 'draining', sandbox: 'none' })).toBe(true);
     expect(accepts('Health', { ...health, state: 'retiring', role: 'retiring', steps: 2, jobs: 1 })).toBe(true);
