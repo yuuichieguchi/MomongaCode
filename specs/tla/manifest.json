@@ -2174,10 +2174,11 @@
       "abstractions": [
         "a run is its status, events, approvals, idempotency entries, effects, deadline and child links: the content of model calls and tool calls is not modelled",
         "workers, steps and attempts are bounded (Workers, MaxStep, MaxAttempts, MaxTotalAttempts); the rule verdict is an atom",
-        "the state space is bounded by the constants of its configurations; the base row RunRecovery sets Workers = {w1, w2}, NoOwner = NoOwner, MaxStep = 1, MaxAttempts = 2, MaxTotalAttempts = 3, UnfencedEffect = FALSE, NoCallLock = FALSE, NoReapBeforeReconcile = FALSE, StatusEdgesRecorded = TRUE, Gen2Workers = {}, Promotes = FALSE, GenDies = FALSE, KeepsLockWhileChild = TRUE, NoUnknownGate = FALSE, NeedsVerdict = FALSE, RuleVerdicts = {\"proved\"}, RefusingProps = {FALSE}, UngatedRules = FALSE, RefusesNotes = FALSE, ParentCalls = {\"none\", \"exec\", \"rec\"}"
+        "the state space is bounded by the constants of its configurations; the base row RunRecovery sets Workers = {w1, w2}, NoOwner = NoOwner, MaxStep = 1, MaxAttempts = 2, MaxTotalAttempts = 3, UnfencedEffect = FALSE, NoCallLock = FALSE, NoReapBeforeReconcile = FALSE, StatusEdgesRecorded = TRUE, Gen2Workers = {}, Promotes = FALSE, GenDies = FALSE, KeepsLockWhileChild = TRUE, NoUnknownGate = FALSE, NeedsVerdict = FALSE, RuleVerdicts = {\"proved\"}, RefusingProps = {FALSE}, UngatedRules = FALSE, RefusesNotes = FALSE, ParentCalls = {\"none\", \"exec\", \"rec\"}",
+        "a parent waiting for a child (WAITING_TOOL) is woken only when the child ends: a timed wake of the product repeats the same yield, which changes the refund and the run status but no child or journal state, and the run deadline (Deadline) bounds it; the number of yields is bounded by the child ends and the steps, so no yield constant is needed"
       ],
       "notProved": [
-        "liveness at the deep constants within a run's bound (RunRecovery.children and liveSpawn are deep rows, one stopped before it finished)",
+        "liveness at the deep constants within a run's bound (RunRecovery.liveSpawnSmall is the liveness row, with one attempt)",
         "behaviour beyond the constants of its configurations",
         "that the code follows the model beyond what its tie tests check: packages/runtime/test/worker/terminals-cancelling-spec, packages/store/test/spec-conformance, test/spec-drift-completion, test/spec-drift-live-timeout, test/spec-drift, test/update-switch-runtime-conformance (test files)"
       ]
@@ -2387,29 +2388,17 @@
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.83 at start)"
     },
     {
-      "config": "RunRecovery.children",
-      "role": "check",
-      "expect": "holds",
-      "args": [],
-      "tier": "deep",
-      "distinctStates": 62945640,
-      "measuredSeconds": 1195.96,
-      "measuredReuse": "off",
-      "measuredCpuSeconds": 6176.63,
-      "budgetCpuSeconds": 12357
-    },
-    {
       "config": "RunRecovery.childrenSmall",
       "role": "check",
       "expect": "holds",
       "args": [],
       "tier": "deep",
       "distinctStates": 58214,
-      "measuredSeconds": 2.9,
+      "measuredSeconds": 4.35,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 10.51,
-      "budgetCpuSeconds": 25,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.04 at start)"
+      "measuredCpuSeconds": 12.69,
+      "budgetCpuSeconds": 29,
+      "note": "measured cold by fix-formal-models builder (scripts/tlc.sh -workers 5 under the heavy run lock, nice 15, /usr/bin/time -l: user 11.83 + sys 0.86 CPU s; TLC finished in 02s after a 406 s lock wait, wall excludes the wait)"
     },
     {
       "config": "RunRecovery.liveNone",
@@ -2426,21 +2415,6 @@
       "measuredCpuSeconds": 37.43,
       "budgetCpuSeconds": 78,
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.95 at start)"
-    },
-    {
-      "config": "RunRecovery.liveSpawn",
-      "role": "check",
-      "expect": "holds",
-      "args": [
-        "-lncheck",
-        "final"
-      ],
-      "tier": "deep",
-      "distinctStates": 2076338,
-      "measuredSeconds": 6548.56,
-      "measuredReuse": "off",
-      "measuredCpuSeconds": 26456.81,
-      "budgetCpuSeconds": 52917
     },
     {
       "config": "RunRecovery.liveSpawnSmall",
@@ -6749,11 +6723,11 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 59282,
-      "measuredSeconds": 4.48,
+      "distinctStates": 44008,
+      "measuredSeconds": 5.04,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 18.25,
-      "budgetCpuSeconds": 40,
+      "measuredCpuSeconds": 16.88,
+      "budgetCpuSeconds": 37,
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.53 at start)"
     },
     {
@@ -8830,11 +8804,11 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 69567,
-      "measuredSeconds": 4.6,
+      "distinctStates": 55905,
+      "measuredSeconds": 4.78,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 18.24,
-      "budgetCpuSeconds": 40,
+      "measuredCpuSeconds": 17.53,
+      "budgetCpuSeconds": 39,
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.25 at start)"
     },
     {
@@ -8846,10 +8820,10 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 69649,
-      "measuredSeconds": 4.39,
+      "distinctStates": 58185,
+      "measuredSeconds": 4.72,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 17.89,
+      "measuredCpuSeconds": 17.69,
       "budgetCpuSeconds": 39,
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.25 at start)"
     },
@@ -9546,10 +9520,10 @@
       ],
       "tier": "deep",
       "distinctStates": 71885,
-      "measuredSeconds": 9.42,
+      "measuredSeconds": 10.9,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 41.1,
-      "budgetCpuSeconds": 86,
+      "measuredCpuSeconds": 45.6,
+      "budgetCpuSeconds": 95,
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.71 at start)"
     },
     {
