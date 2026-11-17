@@ -84,7 +84,7 @@ describe('a changed declared model gives a new probe key (19.4, T2; R-S19-13)', 
     expect(a.kind).toBe('known');
     expect(b.kind).toBe('known');
     expect((a as KnownProbeKey).digest).not.toBe((b as KnownProbeKey).digest);
-    expect(JSON.parse((a as KnownProbeKey).canonical)).toEqual({ subject: 'mine', model: 'a', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
+    expect(JSON.parse((a as KnownProbeKey).canonical)).toEqual({ subject: 'mine', model: 'a', binarySha256: sha256OfFile(binary) });
   });
 });
 

@@ -107,6 +107,31 @@ describe('the layout of the full screen', () => {
     app.unmount();
   });
 
+  it('fills the transcript in every frame when a panel shrinks, with no blank row above the panel', async () => {
+    const { app, backend } = await start({}, {}, { columns: 60, rows: 16 });
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: numbered(40) }));
+    const askFor = (callId: string, approvalId: string, options: readonly unknown[]): void => {
+      backend.emit(frame({ type: 'tool.call', callId, providerCallId: callId, name: 'Bash', kind: 'execute', title: `Bash ${callId}`, rawInput: { command: 'ls' } }));
+      backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason: 'asks', options, shown: { title: 'approval', input: {} } }));
+    };
+    const ALLOW = { optionId: 'o1', name: 'Allow once', kind: 'allow_once' };
+    const REJECT = { optionId: 'o3', name: 'Reject once', kind: 'reject_once' };
+    askFor('c1', 'ap1', [ALLOW, REJECT, { optionId: 'o4', name: 'Always reject', kind: 'reject_always' }, { optionId: 'o5', name: 'Allow always', kind: 'allow_always' }, { optionId: 'o6', name: 'Skip', kind: 'reject_once' }, { optionId: 'o7', name: 'Stop', kind: 'reject_once' }]);
+    askFor('c2', 'ap2', [ALLOW, REJECT]);
+    await untilFrame(app, (now) => now.includes('Permission requested: Bash c1') && now.includes('to choose'));
+    const before = app.frames.length;
+    app.stdin.write(KEYS.enter);
+    backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
+    await untilFrame(app, (now) => now.includes('Permission requested: Bash c2') && now.includes('to choose'));
+    for (const shown of app.frames.slice(before).map(linesOf)) {
+      expect(shown).toHaveLength(16);
+      expect(shown.filter((line) => line.trim() === '')).toEqual([]);
+    }
+    app.unmount();
+  });
+
   it('lists the running subagents below the footer, one row each', async () => {
     let now = 1000;
     const { app, backend } = await start({}, { now: () => now }, { columns: 60, rows: 30 });
