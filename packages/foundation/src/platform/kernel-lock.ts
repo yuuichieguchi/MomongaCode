@@ -4,8 +4,6 @@ import { fstatIdentity, lstatIdentity, sameFile } from './file-identity.ts';
 import type { LockFileIdentity } from './file-identity.ts';
 import type { LockCapabilityProbe } from './lock-capability.ts';
 import { sqliteFileLock } from './sqlite-lock.ts';
-import { HOST_PLATFORM, openLockFlagsOn } from './open-lock-flags.ts';
-import type { OpenLockFlags } from './open-lock-flags.ts';
 
 export { HOLDER_READ_MAX_BYTES };
 
@@ -13,15 +11,6 @@ export class LockAdoptionError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'LockAdoptionError';
-  }
-}
-
-export class FileLockUnavailableError extends Error {
-  readonly platform: string;
-  constructor(platform: string) {
-    super(`the file lock needs the open flags O_SHLOCK and O_EXLOCK, which ${platform} does not define: the file-lock mechanism is not built there`);
-    this.name = 'FileLockUnavailableError';
-    this.platform = platform;
   }
 }
 
@@ -57,6 +46,9 @@ export interface KernelLockMechanism {
   readonly adoptInherited: ((request: InheritedLockRequest) => HeldKernelLock) | undefined;
 }
 
+export const O_SHLOCK = 0x10;
+export const O_EXLOCK = 0x20;
+
 const WOULD_BLOCK = 'EAGAIN';
 const LOCK_FILE_MODE = 0o600;
 
@@ -74,14 +66,14 @@ export const nodeFileLockOps: FileLockOps = {
   lstat: lstatIdentity,
 };
 
-const sharedProbeFlags = (flags: OpenLockFlags): number => OPEN_FLAGS.readOnly | flags.shared | OPEN_FLAGS.nonBlocking | OPEN_FLAGS.noFollow;
+const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking | OPEN_FLAGS.noFollow;
 
-const exclusiveClaimFlags = (flags: OpenLockFlags): number => OPEN_FLAGS.readWrite | OPEN_FLAGS.create | flags.exclusive | OPEN_FLAGS.nonBlocking | OPEN_FLAGS.noFollow;
+const exclusiveClaimFlags = (): number => OPEN_FLAGS.readWrite | OPEN_FLAGS.create | O_EXLOCK | OPEN_FLAGS.nonBlocking | OPEN_FLAGS.noFollow;
 
-const holdsExclusively = (ops: FileLockOps, lockPath: string, flags: OpenLockFlags): boolean => {
+const holdsExclusively = (ops: FileLockOps, lockPath: string): boolean => {
   let descriptor: number;
   try {
-    descriptor = ops.open(lockPath, sharedProbeFlags(flags));
+    descriptor = ops.open(lockPath, sharedProbeFlags());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === WOULD_BLOCK) return true;
     throw error;
@@ -106,9 +98,9 @@ const heldFile = (ops: FileLockOps, lockPath: string, descriptor: number): HeldK
   };
 };
 
-const probeFile = (ops: FileLockOps, lockPath: string, flags: OpenLockFlags): boolean => {
+const probeFile = (ops: FileLockOps, lockPath: string): boolean => {
   try {
-    return holdsExclusively(ops, lockPath, flags);
+    return holdsExclusively(ops, lockPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw error;
@@ -116,15 +108,15 @@ const probeFile = (ops: FileLockOps, lockPath: string, flags: OpenLockFlags): bo
 };
 
 const claimFile =
-  (ops: FileLockOps, flags: OpenLockFlags) =>
+  (ops: FileLockOps) =>
   (lockPath: string): ClaimOutcome => {
     for (;;) {
       let descriptor: number;
       try {
-        descriptor = ops.open(lockPath, exclusiveClaimFlags(flags), LOCK_FILE_MODE);
+        descriptor = ops.open(lockPath, exclusiveClaimFlags(), LOCK_FILE_MODE);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== WOULD_BLOCK) throw error;
-        if (probeFile(ops, lockPath, flags)) return { kind: 'held' };
+        if (probeFile(ops, lockPath)) return { kind: 'held' };
         continue;
       }
       if (sameFile(ops.fstat(descriptor), ops.lstat(lockPath))) return { kind: 'claimed', lock: heldFile(ops, lockPath, descriptor) };
@@ -154,23 +146,20 @@ const adoptFile =
     return lock;
   };
 
-export const createFileLock = (ops: FileLockOps, platform: string = HOST_PLATFORM): KernelLockMechanism => {
-  const flags = openLockFlagsOn(platform);
-  if (flags === undefined) throw new FileLockUnavailableError(platform);
-  return {
-    name: 'file-lock',
-    claim: async (lockPath) => claimFile(ops, flags)(lockPath),
-    claimSync: claimFile(ops, flags),
-    isHeld: async (lockPath) => probeFile(ops, lockPath, flags),
-    readHolder: readHolderFile,
-    readHolderSync: readHolderFileSync,
-    claimInheritable: claimFile(ops, flags),
-    adoptInherited: adoptFile(ops),
-  };
-};
+export const createFileLock = (ops: FileLockOps): KernelLockMechanism => ({
+  name: 'file-lock',
+  claim: async (lockPath) => claimFile(ops)(lockPath),
+  claimSync: claimFile(ops),
+  isHeld: async (lockPath) => probeFile(ops, lockPath),
+  readHolder: readHolderFile,
+  readHolderSync: readHolderFileSync,
+  claimInheritable: claimFile(ops),
+  adoptInherited: adoptFile(ops),
+});
 
-export const kernelLockNamed = (name: KernelLockMechanism['name'], platform: string = HOST_PLATFORM): KernelLockMechanism =>
-  name === 'file-lock' ? createFileLock(nodeFileLockOps, platform) : sqliteFileLock;
+export const bsdFileLock: KernelLockMechanism = createFileLock(nodeFileLockOps);
 
-export const resolveKernelLock = (dir: string, { capability, platform = HOST_PLATFORM }: { capability: LockCapabilityProbe; platform?: string }): KernelLockMechanism =>
-  kernelLockNamed(capability.decide(dir) === 'proved' ? 'file-lock' : 'sqlite-lock', platform);
+export const kernelLockNamed = (name: KernelLockMechanism['name']): KernelLockMechanism => (name === 'file-lock' ? bsdFileLock : sqliteFileLock);
+
+export const resolveKernelLock = (dir: string, { capability }: { capability: LockCapabilityProbe }): KernelLockMechanism =>
+  kernelLockNamed(capability.decide(dir) === 'proved' ? 'file-lock' : 'sqlite-lock');

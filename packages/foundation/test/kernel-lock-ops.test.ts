@@ -33,7 +33,7 @@ describe('the darwin claim when the holder goes away during the race', () => {
   it('retries the claim when the lock file was unlinked between the refused open and the probe', async () => {
     const ops = scriptedOps(['EAGAIN', 'ENOENT', DESCRIPTOR]);
 
-    const outcome = await createFileLock(ops, 'darwin').claim(LOCK_PATH);
+    const outcome = await createFileLock(ops).claim(LOCK_PATH);
 
     expect(outcome.kind).toBe('claimed');
     expect(outcome.kind === 'claimed' ? outcome.lock.descriptor : undefined).toBe(DESCRIPTOR);
@@ -43,7 +43,7 @@ describe('the darwin claim when the holder goes away during the race', () => {
   it('gives up a lock on a file that was unlinked and replaced while the claim was being granted, and claims the new one', async () => {
     const ops = scriptedOps([DESCRIPTOR, DESCRIPTOR + 1], (opens) => (opens === 1 ? { dev: 1n, ino: 2n } : SAME_FILE));
 
-    const outcome = await createFileLock(ops, 'darwin').claim(LOCK_PATH);
+    const outcome = await createFileLock(ops).claim(LOCK_PATH);
 
     expect(outcome.kind === 'claimed' ? outcome.lock.descriptor : undefined).toBe(DESCRIPTOR + 1);
     expect(ops.closed).toEqual([DESCRIPTOR]);
@@ -52,7 +52,7 @@ describe('the darwin claim when the holder goes away during the race', () => {
   it('retries when the path names nothing any more', async () => {
     const ops = scriptedOps([DESCRIPTOR, DESCRIPTOR + 1], (opens) => (opens === 1 ? undefined : SAME_FILE));
 
-    const outcome = await createFileLock(ops, 'darwin').claim(LOCK_PATH);
+    const outcome = await createFileLock(ops).claim(LOCK_PATH);
 
     expect(outcome.kind === 'claimed' ? outcome.lock.descriptor : undefined).toBe(DESCRIPTOR + 1);
   });
@@ -60,7 +60,7 @@ describe('the darwin claim when the holder goes away during the race', () => {
   it('does the same through the synchronous claim used for a hand-off', () => {
     const ops = scriptedOps(['EAGAIN', 'ENOENT', DESCRIPTOR]);
 
-    const claim = createFileLock(ops, 'darwin').claimInheritable;
+    const claim = createFileLock(ops).claimInheritable;
 
     expect(claim?.(LOCK_PATH).kind).toBe('claimed');
   });

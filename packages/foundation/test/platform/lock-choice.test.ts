@@ -97,7 +97,7 @@ describe('one proof decides the lock of a directory', () => {
 
   it('a private proof directory of this account is measured', async () => {
     const { proofDir, lockDir } = directories(0o700);
-    expect(await createLockCapability({ proofDir, platform: 'darwin', ops: lockIgnoringOps() }).of(lockDir)).toBe('unenforced');
+    expect(await createLockCapability({ proofDir, ops: lockIgnoringOps() }).of(lockDir)).toBe('unenforced');
   });
 
   it('a proof that fails gives no lock: the failure is reported with the directory and its cause', async () => {
@@ -108,7 +108,7 @@ describe('one proof decides the lock of a directory', () => {
         throw Object.assign(new Error('EMFILE: injected'), { code: 'EMFILE' });
       },
     };
-    const capability = createLockCapability({ proofDir, platform: 'darwin', ops });
+    const capability = createLockCapability({ proofDir, ops });
     expect(await capability.of(lockDir)).toBe('unmeasured');
     expect(() => resolveKernelLock(lockDir, { capability })).toThrow(LockProofFailedError);
     expect(() => resolveKernelLock(lockDir, { capability })).toThrow(`Whether ${lockDir} enforces file locks could not be measured in ${proofDir}: EMFILE: injected`);
