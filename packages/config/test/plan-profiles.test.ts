@@ -7,6 +7,12 @@ const profile = (): PlanProfile => planProfileOf('chatgpt');
 const clone = (): Record<string, unknown> => structuredClone(profile()) as unknown as Record<string, unknown>;
 
 describe('the shipped plan profiles', () => {
+  it('states an expired sign-in with no command: the surface names its own sign-in command where the message is shown', () => {
+    const rejected = profile().errorRules.filter((rule) => rule.code === 'plan_credential_rejected');
+    expect(rejected).toHaveLength(2);
+    for (const rule of rejected) expect(rule.message).toBe('The sign-in of this account has expired');
+  });
+
   it('holds exactly one profile, keyed by its id', () => {
     expect(Object.keys(PLAN_PROFILES)).toEqual(['chatgpt']);
     expect(profile().id).toBe('chatgpt');

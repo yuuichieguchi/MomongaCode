@@ -7,6 +7,7 @@ export const USAGE_LIMIT_CODE = 'plan_usage_limit' as const;
 export const WORKSPACE_USAGE_LIMIT_CODE = 'plan_workspace_usage_limit' as const;
 export const USAGE_PAUSED_CODE = 'plan_usage_paused' as const;
 export const SIGN_IN_REQUIRED_CODE = 'sign_in_required' as const;
+export const PLAN_CREDENTIAL_REJECTED_CODE = 'plan_credential_rejected' as const;
 export const PLAN_USE_NOT_ENABLED_CODE = 'plan_use_not_enabled' as const;
 export const PLAN_NOT_ELIGIBLE_CODE = 'plan_not_eligible' as const;
 export const PLAN_STORE_UNREADABLE_CODE = 'plan_store_unreadable' as const;
