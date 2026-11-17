@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson } from '@momonga/foundation';
 import { inputCeilingFor, pinnedFloorFor } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
 import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
@@ -71,7 +70,7 @@ describe('the tool floor of a claim resumed after the calibration of the model t
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const firstBody = env.gateway.streams[0]?.body;
     if (firstBody === undefined) throw new Error('the first claim made no model call');
-    const stable = inputTokensOf(firstBody) - tokensOfText(canonicalJson((firstBody.input as unknown[]).at(-1)));
+    const stable = inputTokensOf(firstBody);
     expect(stable).toBeLessThanOrEqual(pinnedFloorFor(pinnedSmall()));
     expect(stable).toBeGreaterThan(pinnedFloorFor(capabilitiesFor(FLOOR_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO })));
     expect(stable).toBeLessThanOrEqual(pinnedFloorFor(listedSmall()));
