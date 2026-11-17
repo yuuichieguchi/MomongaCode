@@ -59,7 +59,7 @@ describe('the probed Ollama cache becomes the capability unless declared', () =>
     const { dir, result } = await probeWith('automatic');
     const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
     return createProbedOllamaTarget({ written: declared,
-      toolCalling: 'auto', readReported: async () => ({}), targetName: 'local',
+      toolCalling: 'auto', readReported: async () => ({}), displayOf: () => 'local',
       endpoint: result.key.endpoint,
       model: OLLAMA_MODEL,
       declared,

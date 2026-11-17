@@ -70,7 +70,7 @@ describe('the three sources of a capability: declared, reported by the server, m
   it('serves an Ollama model whose tool support the server reports at once from the sources, and starts no measurement', async () => {
     let started = 0;
     const target = createProbedOllamaTarget({ written: DECLARED,
-      targetName: 'ollama/qwen',
+      displayOf: () => 'ollama/qwen',
       endpoint: 'http://127.0.0.1:11434',
       model: 'qwen',
       declared: DECLARED,
@@ -94,7 +94,7 @@ describe('the three sources of a capability: declared, reported by the server, m
   it('answers the measuring state at once for a chat-completions model whose tool support no source gives, naming the field', async () => {
     const asked: Array<readonly string[]> = [];
     const target = createProbedEndpointTarget({ written: DECLARED,
-      targetName: 'lab/qwen',
+      displayOf: () => 'lab/qwen',
       endpoint: 'http://127.0.0.1:1234/v1',
       model: 'qwen',
       declared: DECLARED,
@@ -119,7 +119,7 @@ describe('the three sources of a capability: declared, reported by the server, m
   it('serves a chat-completions model whose needs are all declared, with no record and no measurement request', async () => {
     let started = 0;
     const target = createProbedEndpointTarget({ written: DECLARED,
-      targetName: 'lab/qwen',
+      displayOf: () => 'lab/qwen',
       endpoint: 'http://127.0.0.1:1234/v1',
       model: 'qwen',
       declared: DECLARED,

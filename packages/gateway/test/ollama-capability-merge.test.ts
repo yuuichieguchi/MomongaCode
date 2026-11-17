@@ -24,7 +24,7 @@ const probedTarget = async (showCapabilities: readonly string[], declared: Decla
   const result = await probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
   const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS, 'the-model');
   return createProbedOllamaTarget({ written: declared,
-    toolCalling: 'auto', readReported: async () => ({}), targetName: 'local',
+    toolCalling: 'auto', readReported: async () => ({}), displayOf: () => 'local',
     endpoint: result.key.endpoint,
     model: OLLAMA_MODEL,
     declared,
@@ -99,7 +99,7 @@ describe('one merge decides a declared against a probed prompt cache for every p
     try {
       const report = { ...(await runProbe({ socketPath: fake.socketPath, samples: 2, ports: probePortsAt(() => new Date('2026-11-05T12:00:00.000Z')) })), promptCache: { kind: 'automatic' as const } };
       return createProbedEndpointTarget({ written: declared,
-        toolCalling: 'auto', readReported: async () => ({}), targetName: 'remote',
+        toolCalling: 'auto', readReported: async () => ({}), displayOf: () => 'remote',
         endpoint: 'unix:/nowhere',
         model: 'm',
         declared,

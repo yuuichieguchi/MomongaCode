@@ -162,7 +162,7 @@ const meteredCounter = (metered: MeteredMeasurement, bound: MeasurementBound): (
     const nextRequests = requests + 1;
     const nextInput = inputTokens + tokensForText(JSON.stringify(body));
     const nextOutput = outputTokens + requestedOutputOf(body, metered.declaredContextWindow);
-    if (nextRequests > bound.requests || nextInput > bound.inputTokens || nextOutput > bound.outputTokens) throw new MeasurementBoundReachedError(metered.display, bound);
+    if (nextRequests > bound.requests || nextInput > bound.inputTokens || nextOutput > bound.outputTokens) throw new MeasurementBoundReachedError(metered.displayOf(), bound);
     requests = nextRequests;
     inputTokens = nextInput;
     outputTokens = nextOutput;

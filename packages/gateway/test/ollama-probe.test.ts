@@ -40,7 +40,7 @@ describe('the Ollama probe', () => {
         key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL },
         model: OLLAMA_MODEL,
         contextWindow: 32768,
-        metered: { display: 'ollama/devstral', declaredContextWindow: 32768 },
+        metered: { displayOf: () => 'ollama/devstral', declaredContextWindow: 32768 },
       }),
     ).rejects.toThrow('measured only with your consent');
 

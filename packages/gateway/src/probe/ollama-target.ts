@@ -13,7 +13,7 @@ import { measuringAskOf, reportedLayerOf, sourcedCapabilities, unknownFieldsOf, 
 import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 
 export type ProbedOllamaTargetOptions = {
-  targetName: string;
+  displayOf: () => string;
   endpoint: string;
   model: string;
   declared: DeclaredCapabilities;
@@ -46,7 +46,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
     const reported = reportedOnce;
     const served = sourcedCapabilities(declared, options.written, options.toolCalling, reported);
     if (served !== undefined) return served;
-    throw targetProbingError(await options.startProbe(measuringAskOf(options.targetName, unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
+    throw targetProbingError(await options.startProbe(measuringAskOf(options.displayOf(), unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
   };
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
