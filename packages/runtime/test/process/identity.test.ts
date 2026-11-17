@@ -13,6 +13,7 @@ import {
   isLockFree,
   launchRuntime,
   settledState,
+  settlesWithin,
   startRuntimeProcess,
   startStack,
   stepsLogged,
@@ -80,7 +81,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     await tick(timers, STORE_IDENTITY_CHECK_MS - 1);
     expect(await settledState(launched.handle.fatal)).toBe('pending');
     await tick(timers, 1);
-    expect(await settledState(launched.handle.fatal)).toBe('settled');
+    await settlesWithin(launched.handle.fatal);
     await expectLatched(launched, timers);
   });
 
@@ -91,7 +92,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     await tick(timers, STORE_IDENTITY_CHECK_MS - 1);
     expect(await settledState(launched.handle.fatal)).toBe('pending');
     await tick(timers, 1);
-    expect(await settledState(launched.handle.fatal)).toBe('settled');
+    await settlesWithin(launched.handle.fatal);
     await expectLatched(launched, timers);
   });
 

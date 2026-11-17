@@ -246,7 +246,7 @@ class StdioTransportImpl implements StdioTransport {
         let terminateFailure: { error: unknown } | undefined;
         try {
           const outcome = await (this.options.terminate ?? ((pgid, options) => terminateGroup(pgid, { ...options, port: this.groupPort })))(group, { graceMs, signal: stopBound.signal, timing: this.timing });
-          if (outcome !== 'unconfirmed') await this.exitRecordedWithin(stopBound.signal);
+          if (outcome !== 'unconfirmed') await this.exited;
         } catch (error) {
           terminateFailure = { error };
         } finally {
@@ -297,20 +297,6 @@ class StdioTransportImpl implements StdioTransport {
       this.pendingBytes = 0;
       this.closed = true;
       this.onclose?.();
-    }
-  }
-
-  private async exitRecordedWithin(stopBound: AbortSignal): Promise<void> {
-    if (stopBound.aborted) return;
-    let release: () => void = () => undefined;
-    const bound = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    stopBound.addEventListener('abort', release, { once: true });
-    try {
-      await Promise.race([this.exited, bound]);
-    } finally {
-      stopBound.removeEventListener('abort', release);
     }
   }
 

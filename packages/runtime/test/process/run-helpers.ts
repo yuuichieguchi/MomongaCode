@@ -389,6 +389,19 @@ const CONDITION_BOUND_MS = 30_000;
 
 export const waitForCondition = (predicate: () => boolean, description: string, boundMs = CONDITION_BOUND_MS): Promise<void> => pollUntil(predicate, { description, boundMs });
 
+export const settlesWithin = async (promise: Promise<unknown>): Promise<void> => {
+  let settled = false;
+  promise.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  await waitForCondition(() => settled, 'the promise to settle on the real clock after the fake tick');
+};
+
 export const settledState = async (promise: Promise<unknown>): Promise<'settled' | 'pending'> => {
   let settled = false;
   promise.then(

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpPool, createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, terminateGroup, nodeFileSystem } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, systemTiming, terminateGroup, nodeFileSystem } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import { afterMicrotasks, createFakeClock, createFakeTimers, createTempDir, killGroupsForCleanup, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_STDIO_LAUNCH, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -12,7 +12,7 @@ import { BASE_ENV, entry, makeRecordFile, modernConfig } from './mcp-harness.ts'
 const STUBBORN_SERVER = path.join(import.meta.dirname, 'fixtures', 'stubborn-stdio-server.ts');
 const REAP_POLL_INTERVAL_MS = 25;
 const poolCloseBoundMs = (graceMs: number): number => 6 * graceMs + 3 * REAP_POLL_INTERVAL_MS + 2 * KILL_CONFIRM_MS;
-const DRIVE_MAX_TURNS = 200_000;
+const DRIVE_REAL_BOUND_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const dirs: string[] = [];
 const groups: number[] = [];
@@ -44,24 +44,34 @@ const recordingTiming = (timers: Pick<FakeTimers, 'now' | 'setTimeout' | 'clearT
   };
 };
 
-const recordingTerminate = (signals: NodeJS.Signals[]): NonNullable<StdioTransportOptions['terminate']> => {
+const recordingTerminate = (signals: NodeJS.Signals[], calls: { inFlight: number }): NonNullable<StdioTransportOptions['terminate']> => {
   const host = hostProcessGroupPort();
+  const tracked = async <T>(call: () => Promise<T>): Promise<T> => {
+    calls.inFlight += 1;
+    try {
+      return await call();
+    } finally {
+      calls.inFlight -= 1;
+    }
+  };
   const port: ProcessGroupPort = {
-    signal: async (pgid, signal, options) => {
-      signals.push(signal);
-      return host.signal(pgid, signal, options);
-    },
-    alive: (pgid, options) => host.alive(pgid, options),
+    signal: (pgid, signal, options) =>
+      tracked(async () => {
+        signals.push(signal);
+        return host.signal(pgid, signal, options);
+      }),
+    alive: (pgid, options) => tracked(() => host.alive(pgid, options)),
   };
   return (pgid, options) => terminateGroup(pgid, { ...options, port });
 };
 
-type Stubborn = { transport: StdioTransport; timers: FakeTimers; timing: RecordingTiming; signals: NodeJS.Signals[]; pgid: number };
+type Stubborn = { transport: StdioTransport; timers: FakeTimers; timing: RecordingTiming; signals: NodeJS.Signals[]; pgid: number; busy: () => number };
 
 const startStubborn = async (mode: 'ignore-stdin' | 'ignore-term', creationGraceMs: number): Promise<Stubborn> => {
   const timers = createFakeTimers(createFakeClock(1_000_000));
   const timing = recordingTiming(timers);
   const signals: NodeJS.Signals[] = [];
+  const calls = { inFlight: 0 };
   const transport = createStdioTransport({ launch: TEST_STDIO_LAUNCH, files: nodeFileSystem,
     name: 'stubborn',
     config: { command: process.execPath, args: [STUBBORN_SERVER, mode] },
@@ -69,7 +79,7 @@ const startStubborn = async (mode: 'ignore-stdin' | 'ignore-term', creationGrace
     baseEnv: { PATH: '/usr/bin:/bin' },
     closeGraceMs: creationGraceMs,
     timing,
-    terminate: recordingTerminate(signals),
+    terminate: recordingTerminate(signals, calls),
   });
   transport.onerror = () => undefined;
   await transport.start();
@@ -77,7 +87,7 @@ const startStubborn = async (mode: 'ignore-stdin' | 'ignore-term', creationGrace
   if (pgid === undefined) throw new Error('the stubborn server has no process group');
   groups.push(pgid);
   await waitFor(() => transport.diagnostics().stderrTail.includes('armed'), { description: 'the stubborn server to install its handlers' });
-  return { transport, timers, timing, signals, pgid };
+  return { transport, timers, timing, signals, pgid, busy: () => calls.inFlight };
 };
 
 const quiescent = (server: Stubborn, mode: 'ignore-stdin' | 'ignore-term'): boolean => {
@@ -90,6 +100,7 @@ const quiescent = (server: Stubborn, mode: 'ignore-stdin' | 'ignore-term'): bool
 const closeWithinBound = async (server: Stubborn, mode: 'ignore-stdin' | 'ignore-term', close: () => Promise<void>, graceMs: number): Promise<number> => {
   const startedAt = server.timers.now();
   const horizonAt = startedAt + poolCloseBoundMs(graceMs);
+  const realDeadline = systemTiming.monotonicMs() + DRIVE_REAL_BOUND_MS;
   let outcome: { kind: 'resolved' } | { kind: 'rejected'; error: unknown } | undefined;
   close().then(
     () => (outcome = { kind: 'resolved' }),
@@ -98,13 +109,13 @@ const closeWithinBound = async (server: Stubborn, mode: 'ignore-stdin' | 'ignore
   await waitFor(() => outcome !== undefined || server.timing.delays.includes(graceMs), {
     description: `the transport to arm its wait for the exit (grace ${graceMs}) on the injected timing; armed so far: ${JSON.stringify(server.timing.delays)}`,
   });
-  for (let turn = 0; turn < DRIVE_MAX_TURNS && outcome === undefined; turn += 1) {
+  while (outcome === undefined) {
+    if (systemTiming.monotonicMs() >= realDeadline) throw new Error(`the close did not end within ${DRIVE_REAL_BOUND_MS} real ms; delays armed on the injected timing: ${JSON.stringify(server.timing.delays)}`);
     await afterMicrotasks();
-    if (outcome !== undefined || !quiescent(server, mode)) continue;
+    if (outcome !== undefined || server.busy() > 0 || !quiescent(server, mode)) continue;
     const next = server.timers.nextDueAt();
     if (next !== undefined && next <= horizonAt) server.timers.advance(Math.max(0, next - server.timers.now()));
   }
-  if (outcome === undefined) throw new Error(`the close did not end within ${poolCloseBoundMs(graceMs)} fake ms; delays armed on the injected timing: ${JSON.stringify(server.timing.delays)}`);
   if (outcome.kind === 'rejected') throw outcome.error;
   return server.timers.now() - startedAt;
 };

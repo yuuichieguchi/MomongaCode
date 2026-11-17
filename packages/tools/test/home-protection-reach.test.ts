@@ -10,6 +10,8 @@ import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_CHILD_UNPROTECTED, createTempDir, testProcessInspector } from '@momonga/testkit';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 
+const quote = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`;
+
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SHORT_TEMP_PARENT = '/tmp';
@@ -47,11 +49,12 @@ const productControlSocket = async (): Promise<ControlSocket> => {
 
 const noneProtectionOf = (home: string): ChildProtection => childProtectionFor({ sandbox: 'none', home, platform: process.platform, env: {}, bubblewrap: process.platform === 'linux' });
 
-const reachCommand = (socketPath: string): string => `nc -U -w 2 ${socketPath} < /dev/null; echo "nc ended with $?"`;
+const connectCommand = (socketPath: string): string =>
+  `${quote(process.execPath)} -e ${quote(`require('net').connect(process.argv[1]).on('connect', () => process.exit(0)).on('error', () => process.exit(1))`)} ${quote(socketPath)}; echo "connect ended with $?"`;
 
 const bashReaches = async (protection: ChildProtection, socketPath: string): Promise<string> => {
   const tools = await makeBuiltins({ sandbox: createUnsandboxed({ protection, platform: process.platform, killGraceMs: 200 }) });
-  return resultOf(await tools.run('Bash', { command: reachCommand(socketPath) }, { env: { PATH: '/usr/bin:/bin' } }, 'allow_once')).output;
+  return resultOf(await tools.run('Bash', { command: connectCommand(socketPath) }, { env: { PATH: '/usr/bin:/bin' } }, 'allow_once')).output;
 };
 
 const hookReaches = async (protection: ChildProtection, socketPath: string): Promise<void> => {
@@ -59,7 +62,7 @@ const hookReaches = async (protection: ChildProtection, socketPath: string): Pro
   roots.push(dir);
   const markerDir = path.join(dir, 'markers');
   fs.mkdirSync(markerDir);
-  const hooks: HooksSettings = { PreToolUse: [{ hooks: [{ type: 'command', command: reachCommand(socketPath) }] }] };
+  const hooks: HooksSettings = { PreToolUse: [{ hooks: [{ type: 'command', command: connectCommand(socketPath) }] }] };
   await createToolHooks({
     inspector: testProcessInspector(),
     hooks,
@@ -91,7 +94,7 @@ describe.runIf(PROTECTING_HOST)("a process a tool starts under sandbox none cann
   it('Bash under sandbox none is refused the socket in the home', async () => {
     const control = await productControlSocket();
     const output = await bashReaches(noneProtectionOf(control.home), control.socketPath);
-    expect(output).toContain('nc ended with');
+    expect(output).toContain('connect ended with');
     expect(control.connections()).toBe(0);
   });
 
