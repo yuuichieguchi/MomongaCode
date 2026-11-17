@@ -1,5 +1,6 @@
-import { assistantTextOf } from '@momonga/protocol';
-import type { PublicRunEvent, SideEffect, ToolKind } from '@momonga/protocol';
+import { jsonValueOrText } from '@momonga/foundation';
+import { assistantTextOf, callInputTracker } from '@momonga/protocol';
+import type { PublicRunEvent, RunEvent, SideEffect, ToolKind } from '@momonga/protocol';
 import type { PermissionDecision } from './dataset.ts';
 import type { Transcript } from './transcript.ts';
 
@@ -32,16 +33,19 @@ const decisionOf = (events: readonly PublicRunEvent[], callId: string): Observed
   return 'unresolved';
 };
 
-const callsInRun = (runId: string, events: readonly PublicRunEvent[]): ObservedCall[] =>
-  eventsOfType(events, 'tool.call').map((event) => ({
+const callsInRun = (runId: string, events: readonly PublicRunEvent[]): ObservedCall[] => {
+  const inputs = callInputTracker(jsonValueOrText);
+  for (const event of events) inputs.observe(event as RunEvent);
+  return eventsOfType(events, 'tool.call').map((event) => ({
     runId,
     callId: event.callId,
     name: event.name,
     kind: event.kind,
     ...(event.sideEffect === undefined ? {} : { sideEffect: event.sideEffect }),
-    rawInput: event.rawInput,
+    rawInput: inputs.inputOf(event),
     decision: decisionOf(events, event.callId),
   }));
+};
 
 export const callsOf = (transcript: Pick<Transcript, 'run' | 'events' | 'children'>): ObservedCall[] => [
   ...callsInRun(transcript.run.id, transcript.events),

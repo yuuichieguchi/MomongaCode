@@ -1,5 +1,5 @@
-import { TRUNCATION_MARKER_SOURCE, safeSlice, someAsync } from '@momonga/foundation';
-import { assistantTextOf } from '@momonga/protocol';
+import { TRUNCATION_MARKER_SOURCE, jsonValueOrText, safeSlice, someAsync } from '@momonga/foundation';
+import { assistantTextOf, callInputTracker } from '@momonga/protocol';
 import type { RunEvent } from '@momonga/protocol';
 import type { HistoryAnchor, HistoryReadPage, HistorySearchResult, HistorySession, ReadDenial } from './port.ts';
 
@@ -75,7 +75,7 @@ const unlistedEvent = (event: never): never => {
   throw new Error(`the history has no text for the event ${JSON.stringify(event)}`);
 };
 
-const eventText = (event: RunEvent, ownRun: boolean): string => {
+const eventText = (event: RunEvent, ownRun: boolean, inputs: ReturnType<typeof callInputTracker>): string => {
   switch (event.type) {
     case 'user.message':
       return `user: ${event.text}`;
@@ -88,7 +88,7 @@ const eventText = (event: RunEvent, ownRun: boolean): string => {
       return `model response, step ${event.step}${text === '' ? '' : `: ${text}`}`;
     }
     case 'tool.call':
-      return `tool call ${event.callId} ${event.name}: ${event.title}\n${JSON.stringify(event.rawInput) ?? ''}`;
+      return `tool call ${event.callId} ${event.name}: ${event.title}\n${JSON.stringify(inputs.inputOf(event)) ?? ''}`;
     case 'tool.updated':
       return `tool update ${event.callId}: ${contentTextOf(event.content)}`;
     case 'tool.completed': {
@@ -243,6 +243,8 @@ export const renderRead = ({ page, deniedCalls, redact, ownRun, offset, offsetSe
     const callId = callIdOf(event);
     return callId !== undefined && deniedCalls.has(callId);
   };
+  const inputs = callInputTracker(jsonValueOrText);
+  for (const event of page.events) inputs.observe(event);
   const shown = page.events.filter((event) => !isWithheld(event));
   const withheldCalls = new Set(page.events.filter(isWithheld).map(callIdOf));
   const mark = page.origin !== 'trusted' ? ' origin="untrusted"' : '';
@@ -258,7 +260,7 @@ export const renderRead = ({ page, deniedCalls, redact, ownRun, offset, offsetSe
   for (const event of shown) {
     const prefix = `[${event.seq}] `;
     const start = event.seq === offsetSeq ? offset : 0;
-    const rendered = eventText(event, ownRun);
+    const rendered = eventText(event, ownRun, inputs);
     const text = sliceFrom(escapeRecorded(redact(ownRun ? rendered : withoutBlobHandles(rendered))), start);
     if (prefix.length + text.length + 1 <= remaining) {
       lines.push(prefix + text);

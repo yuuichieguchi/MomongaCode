@@ -1,4 +1,4 @@
-import { canonicalJson, parseBoundedJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, jsonValueOrText, parseBoundedJson, sha256Hex } from '@momonga/foundation';
 import {
   LOOP_GROUPS_KEPT,
   STOP_HOOK_FEEDBACK_PREFIX,
@@ -145,6 +145,13 @@ const closedGroup = (open: NonNullable<RunState['loopOpen']>): RunState['loopGro
     signature: digestOf(open.calls),
     ...(complete ? { outputSignature: digestOf(open.callIds.map((callId) => open.outputs[callId])) } : {}),
   };
+};
+
+const callInputOf = (state: RunState, event: Extract<RunEvent, { type: 'tool.call' }>): unknown => {
+  if (event.rawInput !== undefined) return event.rawInput;
+  const call = state.history.find((entry) => entry.item.type === 'function_call' && entry.item.call_id === event.callId)?.item;
+  if (call?.type !== 'function_call') throw new Error(`run ${state.runId}: tool.call ${event.callId} has no function call in the history`);
+  return jsonValueOrText(call.arguments);
 };
 
 const withLoopItem = (state: RunState, item: InputItem): RunState => {
@@ -485,7 +492,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       if (state.pendingCalls[event.callId] !== undefined) {
         throw new Error(`run ${state.runId}: duplicate tool.call for call ${event.callId}`);
       }
-      const key = sha256Hex(`${event.name}\n${canonicalJson(event.rawInput)}`);
+      const input = callInputOf(state, event);
+      const key = sha256Hex(`${event.name}\n${canonicalJson(input)}`);
       return {
         ...state,
         pendingCalls: {
@@ -493,7 +501,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           [event.callId]: {
             name: event.name,
             providerCallId: event.providerCallId,
-            arguments: event.rawInput,
+            arguments: input,
             status: 'requested',
             ...(event.sideEffect === undefined ? {} : { sideEffect: event.sideEffect }),
           },

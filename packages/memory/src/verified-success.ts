@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { isRecord } from '@momonga/foundation';
-import { completionMutates, conditionOwed, pinnedMandateOf, reconciliationMutates } from '@momonga/protocol';
+import { isRecord, jsonValueOrText } from '@momonga/foundation';
+import { callInputTracker, completionMutates, conditionOwed, pinnedMandateOf, reconciliationMutates } from '@momonga/protocol';
 import type { ConditionResult, MutationFacts, PinnedCompletion, RunEvent } from '@momonga/protocol';
 
 export type VerifiedSuccessInput = {
@@ -18,15 +18,15 @@ const WRITING_KINDS: readonly string[] = ['edit', 'delete', 'move'];
 
 const runsCommands = (call: CallFacts): boolean => call.sideEffect === 'exec' || call.kind === 'execute';
 
-const pathsNamedBy = (call: CallEvent): string[] => {
+const pathsNamedBy = (call: CallEvent, input: unknown): string[] => {
   const located = (call.locations ?? []).map((location) => location.path);
-  const given = isRecord(call.rawInput) ? call.rawInput['file_path'] : undefined;
+  const given = isRecord(input) ? input['file_path'] : undefined;
   return typeof given === 'string' ? [...located, given] : located;
 };
 
-const factsOfCall = (call: CallEvent): CallFacts => ({
+const factsOfCall = (call: CallEvent, input: unknown): CallFacts => ({
   kind: call.kind,
-  paths: pathsNamedBy(call),
+  paths: pathsNamedBy(call, input),
   rejected: false,
   ...(call.sideEffect === undefined ? {} : { sideEffect: call.sideEffect }),
 });
@@ -77,13 +77,15 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
     }
     if (paths.some((written) => manifests.has(path.basename(written)))) manifestWritten = true;
   };
+  const inputs = callInputTracker(jsonValueOrText);
   const add = (event: RunEvent): void => {
+    inputs.observe(event);
     switch (event.type) {
       case 'run.started':
         completion ??= pinnedMandateOf(event.pins)?.completion;
         return;
       case 'tool.call':
-        calls.set(event.callId, factsOfCall(event));
+        calls.set(event.callId, factsOfCall(event, inputs.inputOf(event)));
         return;
       case 'tool.permission.requested':
         approvals.set(event.approvalId, {

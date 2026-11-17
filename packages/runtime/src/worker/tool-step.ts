@@ -46,7 +46,6 @@ const callPayload = async (ctx: ClaimContext, display: DisplayContext, item: { c
     kind: tool?.kind ?? 'other',
     ...(tool === undefined ? {} : { sideEffect: tool.sideEffect }),
     title: tool !== undefined && input !== undefined ? await tool.title(input, display) : item.name,
-    rawInput,
     ...(locations === undefined ? {} : { locations }),
   };
 };

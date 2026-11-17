@@ -1,4 +1,5 @@
-import { canonicalJson, isRecord } from '@momonga/foundation';
+import { canonicalJson, isRecord, jsonValueOrText } from '@momonga/foundation';
+import { callInputTracker } from '@momonga/protocol';
 import type { PermissionOption, PublicRunEvent, RunEvent } from '@momonga/protocol';
 import { createCallRunTracker } from './call-ran.ts';
 
@@ -64,14 +65,16 @@ export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEven
     if (snapshot !== undefined) signals.push({ kind, compactionSeq: snapshot.compactionSeq, seq: call.seq });
   };
 
+  const inputs = callInputTracker(jsonValueOrText);
   for (const event of events) {
     ran.observe(event);
+    inputs.observe(event as RunEvent);
     switch (event.type) {
       case 'context.compacted':
         snapshot = { compactionSeq: event.seq, ...copyOf(live) };
         break;
       case 'tool.call': {
-        const call: CallRecord = { seq: event.seq, name: event.name, input: event.rawInput };
+        const call: CallRecord = { seq: event.seq, name: event.name, input: inputs.inputOf(event) };
         calls.set(event.callId, call);
         if (readsHistoryAtOrBelow(call, event.runId, snapshot?.compactionSeq ?? 0)) signal('history_read', call);
         if (snapshot?.refused.get(callKey(call)) === true) signal('instruction_drift', call);
