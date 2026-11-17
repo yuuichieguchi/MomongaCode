@@ -9,11 +9,22 @@ const DIFFERENT_LOCATION = /resolves to a different location than when it was ap
 
 type Event = { op: 'realpath' | 'open' | 'mkdir'; target: string };
 
-const patch = <K extends 'open' | 'realpath' | 'mkdir' | 'stat' | 'rename'>(name: K, replacement: (typeof fs.promises)[K]): void => {
+const patch = <K extends 'open' | 'mkdir' | 'stat' | 'rename'>(name: K, replacement: (typeof fs.promises)[K]): void => {
   const original = fs.promises[name];
   fs.promises[name] = replacement;
   onCleanup(() => {
     fs.promises[name] = original;
+  });
+};
+
+const patchNativeRealpath = (intercept: (target: string) => void): void => {
+  const original = fs.realpath.native;
+  fs.realpath.native = ((target: fs.PathLike, ...rest: unknown[]) => {
+    intercept(String(target));
+    return (original as (...args: unknown[]) => void)(target, ...rest);
+  }) as typeof fs.realpath.native;
+  onCleanup(() => {
+    fs.realpath.native = original;
   });
 };
 
@@ -40,13 +51,9 @@ const patchOpenSync = (replacement: typeof fs.openSync): void => {
 const createsAt = (flags: unknown): boolean => typeof flags === 'number' ? (flags & fs.constants.O_CREAT) !== 0 : typeof flags === 'string' && /[wax]/.test(flags);
 
 const recordEvents = (events: Event[]): void => {
-  const realpath = fs.promises.realpath;
   const open = fs.promises.open;
   const mkdir = fs.promises.mkdir;
-  patch('realpath', (async (target: fs.PathLike, ...rest: unknown[]) => {
-    events.push({ op: 'realpath', target: String(target) });
-    return (realpath as (...args: unknown[]) => Promise<string>)(target, ...rest);
-  }) as typeof fs.promises.realpath);
+  patchNativeRealpath((target) => events.push({ op: 'realpath', target }));
   patch('open', (async (target: fs.PathLike, ...rest: unknown[]) => {
     events.push({ op: 'open', target: String(target) });
     return (open as (...args: unknown[]) => Promise<fs.promises.FileHandle>)(target, ...rest);
@@ -108,16 +115,14 @@ describe('atomic write through a swapped parent directory', () => {
     const file = path.join(dir, 'new.txt');
     const redirect = redirectOf(tools);
     const createdThroughLink: string[][] = [];
-    const realpath = fs.promises.realpath;
     const open = fs.promises.open;
     let parentChecks = 0;
-    patch('realpath', (async (target: fs.PathLike, ...rest: unknown[]) => {
-      if (String(target) === dir) {
+    patchNativeRealpath((target) => {
+      if (target === dir) {
         parentChecks += 1;
         if (parentChecks === swapAtCheck) swapToSymlink(dir, redirect);
       }
-      return (realpath as (...args: unknown[]) => Promise<string>)(target, ...rest);
-    }) as typeof fs.promises.realpath);
+    });
     patch('open', (async (target: fs.PathLike, ...rest: unknown[]) => {
       const handle = await (open as (...args: unknown[]) => Promise<fs.promises.FileHandle>)(target, ...rest);
       if (isTemporaryFor(String(target), file) && fs.existsSync(redirect)) createdThroughLink.push(fs.readdirSync(redirect));
