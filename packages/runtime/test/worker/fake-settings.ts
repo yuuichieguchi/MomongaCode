@@ -1,9 +1,11 @@
-import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, defaultContextSettings, defaultToolsSettings, parseRule } from '@momonga/config';
+import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_MANIFESTS, defaultContextSettings, defaultToolsSettings, parseRule } from '@momonga/config';
 import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import { DEFAULT_SANDBOX_NETWORK } from '@momonga/foundation';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
+
+const CHECK_COMMANDS = ['npm test'];
 
 export const TOKEN_SETTINGS_OFF: ResolvedContextSettings = {
   adaptiveBudget: false,
@@ -42,7 +44,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     rulesHook: undefined,
     trustedValue: true,
     hooksValue: {},
-    verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS], conditions: [], required: false },
+    verificationValue: { commands: [...CHECK_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS], conditions: [], required: false },
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS, repositoryFacts: false },
     contextValue: defaultContextSettings(),
     toolsValue: { ...defaultToolsSettings(), deferral: false, conciseDescriptions: false },

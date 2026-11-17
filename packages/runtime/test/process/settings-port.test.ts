@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, hookGroupApprovalDigestOf } from '@momonga/config';
+import { ConfigError, DEFAULT_VERIFICATION_MANIFESTS, hookGroupApprovalDigestOf } from '@momonga/config';
 import { sha256Hex } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -75,11 +75,11 @@ describe('settings composition hooks and auto mode', () => {
     expect((await f.composition.sessionCreateSettings(f.temp.project, signalNever())).autoModeClassifier).toBe('fake/x');
   });
 
-  it('serves the verification commands of the layers, the defaults when no layer names any', async () => {
+  it('serves the verification commands the layers name, and none when no layer names any', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project);
-    expect((await f.composition.settings.verification(session, new AbortController().signal)).commands).toEqual([...DEFAULT_VERIFICATION_COMMANDS]);
+    expect((await f.composition.settings.verification(session, new AbortController().signal)).commands).toBeUndefined();
 
     writeUserSettings(f.temp.home, { verification: { commands: ['make check'] } });
     expect(await f.composition.settings.verification(session, new AbortController().signal)).toEqual({
