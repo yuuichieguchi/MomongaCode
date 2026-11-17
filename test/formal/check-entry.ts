@@ -10,7 +10,6 @@ export type CheckRequest = {
   entry: ManifestEntry;
   script: string;
   repoRoot: string;
-  tier: Tier;
   mode: 'on' | 'off';
   env: Readonly<Record<string, string | undefined>>;
   store: ResultStore;
@@ -53,7 +52,6 @@ const storedFactsOf = (run: TlcRun): StoredFacts | undefined => {
 type KeyedRead = { readonly unkeyed: RanReason } | { readonly key: string };
 
 const keyOfRun = async (request: CheckRequest, args: readonly string[]): Promise<KeyedRead> => {
-  if (request.tier === 'deep') return { unkeyed: 'deep tier' };
   if (request.mode === 'off') return { unkeyed: 'reuse off' };
   const refusal = refusalOf(request.env);
   if (refusal !== undefined) return { unkeyed: refusal };

@@ -130,7 +130,6 @@ describe('checking one configuration', () => {
       entry,
       script: fake.script,
       repoRoot,
-      tier: 'every-run',
       mode: 'on',
       env: {},
       store: createResultStore(storeDir),
@@ -205,10 +204,17 @@ describe('checking one configuration', () => {
     ['every-run, mode on, no arguments', {}, holdsEntry, ['Tiny', '-fp', '0', '-workers', String(TLC_WORKERS)]],
     ['every-run, mode on, final liveness', {}, { ...holdsEntry, args: ['-lncheck', 'final'] }, ['Tiny', '-lncheck', 'final', '-fp', '0', '-workers', String(TLC_WORKERS)]],
     ['mode off', { mode: 'off' }, holdsEntry, ['Tiny', '-workers', String(TLC_WORKERS)]],
-    ['tier deep', { tier: 'deep' }, holdsEntry, ['Tiny', '-workers', String(TLC_WORKERS)]],
+    ['a deep row, mode on', {}, { ...holdsEntry, tier: 'deep' }, ['Tiny', '-fp', '0', '-workers', String(TLC_WORKERS)]],
   ] as const)('passes the arguments of %s', async (_label, overrides, entry, argv) => {
     await checkEntry(request({ ...(overrides as Partial<CheckRequest>), entry }));
     expect(argvOfLastCall()).toEqual(argv);
+  });
+
+  it('stores the result of a deep row it runs, and reuses it the next time', async () => {
+    const deep = { ...holdsEntry, tier: 'deep' as const };
+    expect(await checkEntry(request({ entry: deep }))).toEqual({ outcome: 'ran', reason: 'no record', problems: [], stored: 'stored' });
+    expect(await checkEntry(request({ entry: deep }))).toEqual({ outcome: 'reused', producedAt: NOW });
+    expect(callsOf(fake)).toHaveLength(1);
   });
 
   it('stores nothing for a run that fails its row and runs it again next time', async () => {
@@ -246,7 +252,6 @@ describe('checking one configuration', () => {
 
   it.each([
     ['mode off', { mode: 'off' }, 'reuse off'],
-    ['tier deep', { tier: 'deep' }, 'deep tier'],
   ] as const)('neither reads nor writes the store with a valid record under %s and passes no -fp', async (_label, overrides, reason) => {
     await checkEntry(request());
     const watched = counting(createResultStore(storeDir));
@@ -278,7 +283,6 @@ describe('checking one configuration', () => {
   });
 
   const precedenceCases: readonly (readonly [string, () => Partial<CheckRequest>, string])[] = [
-    ['deep, mode off and a Java variable', () => ({ tier: 'deep', mode: 'off', env: { JAVA_TOOL_OPTIONS: '-Dx=1' } }), 'deep tier'],
     ['every-run, mode off and a Java variable', () => ({ mode: 'off', env: { JAVA_TOOL_OPTIONS: '-Dx=1' } }), 'reuse off'],
     ['mode on, a Java variable and an unreadable Java', () => ({ env: { JAVA_TOOL_OPTIONS: '-Dx=1' }, java: async () => undefined }), 'JAVA_TOOL_OPTIONS is set'],
     ['mode on, an unreadable Java and a missing jar', () => (fs.rmSync(path.join(repoRoot, '.cache', 'tla', 'tla2tools.jar')), { java: async () => undefined }), 'java not readable'],
@@ -359,8 +363,8 @@ describe('the summary of a tier', () => {
 
   it('names the deep tier', () => {
     const report = createTierReport('deep');
-    report.add('Deep.one', { outcome: 'ran', reason: 'deep tier', problems: [], stored: 'not eligible' } as CheckOutcome);
-    expect(report.lines()).toEqual(['TLC deep: 1 configurations, 0 reused, 1 ran', 'ran (deep tier): 1: Deep.one']);
+    report.add('Deep.one', { outcome: 'ran', reason: 'reuse off', problems: [], stored: 'not eligible' } as CheckOutcome);
+    expect(report.lines()).toEqual(['TLC deep: 1 configurations, 0 reused, 1 ran', 'ran (reuse off): 1: Deep.one']);
   });
 
   it('writes every line with a newline to the writer it is given', () => {
@@ -545,7 +549,46 @@ describe('the summary under a real vitest run', () => {
     3 * NESTED_RUN_TIMEOUT_MS,
   );
 
-  const tierFixture = (entriesSource: string, manifestConfigs: readonly string[]): { project: string; counter: string; stateDir: string; storeDir: string; jsonFile: string; args: string[]; env: (mode: string) => Record<string, string | undefined> } => {
+  it(
+    'stores the rows of the deep tier through describeTier and reuses them the next time',
+    async () => {
+      const project = path.join(temp, 'project');
+      const repoRoot = path.join(temp, 'repo');
+      fixtureRepository(repoRoot);
+      const script = executable(path.join(temp, 'fake-tlc.sh'), [
+        `echo "$*" >> "${path.join(temp, 'calls')}"`,
+        ...completedOutput(3)
+          .split('\n')
+          .map((line) => `echo ${JSON.stringify(line)}`),
+        'exit 0',
+      ]);
+      writeFile(path.join(project, 'vitest.config.mjs'), "export default { test: { name: 'unit', globals: true, include: ['*.test.ts'] } };\n");
+      writeFile(
+        path.join(project, 'tier.test.ts'),
+        [
+          `import { describeTier } from ${JSON.stringify(path.join(realRoot, 'test', 'formal', 'tier.ts'))};`,
+          `describeTier({ tier: 'deep', entries: ${JSON.stringify([{ ...holdsEntry, tier: 'deep' }])}, modules: [{ module: 'Tiny', abstractions: ['time'], notProved: ['liveness of Tiny'] }], manifestConfigs: ['Tiny'], script: ${JSON.stringify(script)}, repoRoot: ${JSON.stringify(repoRoot)}, env: process.env });`,
+          '',
+        ].join('\n'),
+      );
+      const stateDir = path.join(temp, 'state');
+      const jsonFile = path.join(temp, 'report.json');
+      const args = ['--reporter=default', '--reporter=json', `--outputFile.json=${jsonFile}`];
+      const env = (mode: string) => nestedEnv({ MOMONGA_TLC_REUSE: mode, MOMONGA_DEV_STATE_DIR: stateDir, PATH: `${javaStubBin(temp)}:${process.env['PATH'] ?? ''}` });
+
+      const first = await runNestedVitest(project, args, env('1'));
+      expect(first.code).toBe(0);
+      expect(first.stderr).toContain('TLC deep: 1 configurations, 0 reused, 1 ran');
+      expect(recordFiles(path.join(stateDir, 'tlc-results'), 'Tiny')).toHaveLength(1);
+
+      const second = await runNestedVitest(project, args, env('1'));
+      expect(second.code).toBe(0);
+      expect(second.stderr).toContain('TLC deep: 1 configurations, 1 reused, 0 ran');
+    },
+    2 * NESTED_RUN_TIMEOUT_MS,
+  );
+
+  const tierFixture =(entriesSource: string, manifestConfigs: readonly string[]): { project: string; counter: string; stateDir: string; storeDir: string; jsonFile: string; args: string[]; env: (mode: string) => Record<string, string | undefined> } => {
     const project = path.join(temp, 'project');
     const repoRoot = path.join(temp, 'repo');
     fixtureRepository(repoRoot);

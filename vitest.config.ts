@@ -1,6 +1,7 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
 import { hostE2eFileWorkers } from './e2e/support/parallelism.ts';
+import { hostTlcRowsAtOnce } from './test/formal/tlc-rows.ts';
 import { RUN_CLASS_KEY } from './scripts/support/run-class.ts';
 import { testReusePlan } from './test/support/test-reuse.ts';
 
@@ -29,6 +30,7 @@ export default defineConfig({
           globalSetup: ['test/support/run-lock.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts', 'test/support/lock-proof.ts'],
           include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx', 'test/**/*.test.ts'],
           exclude: [...configDefaults.exclude, CALIBRATION_TESTS, ...replayedIn('unit')],
+          maxConcurrency: hostTlcRowsAtOnce(),
         },
       },
       {

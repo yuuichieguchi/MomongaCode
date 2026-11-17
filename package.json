@@ -12,7 +12,7 @@
   "scripts": {
     "test": "MOMONGA_TEST_REUSE=0 MOMONGA_TLC_REUSE=0 MOMONGA_WHOLE_RUN=1 node scripts/bundle.ts --threads && vitest run --project unit --project e2e --project packaging",
     "test:reuse": "MOMONGA_TEST_REUSE=1 MOMONGA_TLC_REUSE=1 MOMONGA_WHOLE_RUN=1 node scripts/bundle.ts --threads && vitest run --project unit --project e2e --project packaging",
-    "test:tlc-deep": "MOMONGA_TLC_REUSE=0 MOMONGA_TLC_TIER=deep node scripts/bundle.ts --threads && vitest run --project unit test/formal",
+    "test:tlc-deep": "MOMONGA_TLC_REUSE=1 MOMONGA_TLC_TIER=deep node scripts/bundle.ts --threads && vitest run --project unit test/formal",
     "test:setup": "node scripts/fetch-tla.ts",
     "test:e2e": "node scripts/bundle.ts --threads && MOMONGA_WHOLE_RUN=1 vitest run --project e2e",
     "test:packaging": "node scripts/bundle.ts --threads && MOMONGA_WHOLE_RUN=1 vitest run --project packaging",

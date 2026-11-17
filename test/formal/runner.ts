@@ -5,8 +5,9 @@ import { promisify } from 'node:util';
 import { canStillRun } from '@momonga/foundation';
 import { createTempDir } from '../../packages/testkit/src/test-support.ts';
 import type { ModuleLimits, TlcRun, TlcRunOptions } from './manifest.ts';
+import { tlcWorkersOf } from './tlc-rows.ts';
 
-export const TLC_WORKERS = Math.ceil(os.availableParallelism() / 2);
+export const TLC_WORKERS = tlcWorkersOf(os.availableParallelism());
 
 export const notProvedText = (config: string, limits: ModuleLimits): string =>
   [`${config}: what the ${limits.module} model does not prove:`, ...limits.notProved.map((claim) => `  - ${claim}`)].join('\n') + '\n';

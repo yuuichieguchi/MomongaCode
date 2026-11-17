@@ -11,7 +11,6 @@ import type { TlcFacts } from './verdict.ts';
 export const REUSE_ENV = 'MOMONGA_TLC_REUSE';
 
 export const RAN_REASONS = [
-  'deep tier',
   'reuse off',
   'JAVA_TOOL_OPTIONS is set',
   '_JAVA_OPTIONS is set',

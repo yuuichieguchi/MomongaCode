@@ -67,9 +67,9 @@ describe('CI configuration', () => {
   };
 
   it('pins the reuse of model-checking results in each script that runs the tier: off in test and test:tlc-deep, on in test:reuse', () => {
-    expect(scriptParts('test')).toEqual({ assignments: { [TEST_REUSE_ENV]: '0', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit --project e2e --project packaging' });
-    expect(scriptParts('test:reuse')).toEqual({ assignments: { [TEST_REUSE_ENV]: '1', MOMONGA_TLC_REUSE: '1' }, command: 'vitest run --project unit --project e2e --project packaging' });
-    expect(scriptParts('test:tlc-deep')).toEqual({ assignments: { MOMONGA_TLC_TIER: 'deep', MOMONGA_TLC_REUSE: '0' }, command: 'vitest run --project unit test/formal' });
+    expect(scriptParts('test')).toEqual({ assignments: { [TEST_REUSE_ENV]: '0', MOMONGA_TLC_REUSE: '0', MOMONGA_WHOLE_RUN: '1' }, command: 'node scripts/bundle.ts --threads && vitest run --project unit --project e2e --project packaging' });
+    expect(scriptParts('test:reuse')).toEqual({ assignments: { [TEST_REUSE_ENV]: '1', MOMONGA_TLC_REUSE: '1', MOMONGA_WHOLE_RUN: '1' }, command: 'node scripts/bundle.ts --threads && vitest run --project unit --project e2e --project packaging' });
+    expect(scriptParts('test:tlc-deep')).toEqual({ assignments: { MOMONGA_TLC_TIER: 'deep', MOMONGA_TLC_REUSE: '1' }, command: 'node scripts/bundle.ts --threads && vitest run --project unit test/formal' });
   });
 
   it('names the reuse variable in no other script, and never in the gate, CI or the container', () => {
