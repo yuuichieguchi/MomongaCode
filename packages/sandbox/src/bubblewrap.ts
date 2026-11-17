@@ -183,6 +183,41 @@ const blockedPaths = async (set: FileRuleSet, entry: FileRuleEntry, port: Inspec
   return unique(found);
 };
 
+type ReadDenyEntry = { set: FileRuleSet; entry: FileRuleEntry };
+
+type Cover = { whole: boolean; masks: string[] };
+
+const withoutCovered = (paths: readonly string[]): string[] => paths.filter((candidate) => !paths.some((other) => other !== candidate && candidate.startsWith(`${other}/`)));
+
+const denialMasks = async (entries: readonly ReadDenyEntry[], port: Inspector, keptMounts: readonly string[], signal: AbortSignal): Promise<string[]> => {
+  const blocked = (candidate: string): boolean => entries.some(({ set, entry }) => fileRuleBlocks(set, entry, candidate, candidate));
+  const blockedWhole = (candidate: string): boolean =>
+    entries.some(({ set, entry }) => (entry.exceptions.length === 0 || entry.blockedAsWhole) && fileRuleBlocks(set, entry, candidate, candidate));
+  const depthBounds = entries.map(({ entry }) => depthBoundOf(entry));
+  const depthBound = depthBounds.includes(undefined) ? undefined : Math.max(...(depthBounds as number[]));
+  const foldable = (directory: string): boolean => !keptMounts.some((kept) => kept === directory || kept.startsWith(`${directory}/`));
+  const visit = async (candidate: string, kind: EntryKind | 'other'): Promise<Cover> => {
+    signal.throwIfAborted();
+    const isBlocked = blocked(candidate);
+    if (kind !== 'directory') return { whole: isBlocked, masks: [] };
+    if (blockedWhole(candidate) && foldable(candidate)) return { whole: true, masks: [] };
+    if (!isBlocked && depthBound !== undefined && componentCountOf(candidate) >= depthBound) return { whole: false, masks: [] };
+    const covers: Array<[string, Cover]> = [];
+    for (const child of await port.children(candidate)) covers.push([child.path, await visit(child.path, child.kind)]);
+    const complete = covers.length === 0 ? isBlocked : covers.every(([, cover]) => cover.whole);
+    if (complete && foldable(candidate)) return { whole: true, masks: [] };
+    return { whole: false, masks: covers.flatMap(([childPath, cover]) => (cover.whole ? [childPath] : cover.masks)) };
+  };
+  const roots = unique(entries.flatMap(({ entry }) => directoriesOf(entry).map(({ directory }) => directory)));
+  const masks: string[] = [];
+  for (const root of roots) {
+    if ((await port.kindOf(root)) !== 'directory') continue;
+    const cover = await visit(root, 'directory');
+    masks.push(...(cover.whole ? [root] : cover.masks));
+  }
+  return withoutCovered(unique(masks));
+};
+
 export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, signal: AbortSignal, port: FilesystemPort): Promise<BubblewrapPlan> {
   const paths = hostPaths(signal);
   const ask = <T>(question: () => Awaitable<T>): Promise<T> => {
@@ -356,10 +391,18 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
     readMounts.push({ depth: depthOf(resolved), args: kind === 'directory' ? ['--tmpfs', resolved] : ['--ro-bind', '/dev/null', resolved] });
   };
   for (const target of readDenied) await mask(target);
-  for (const entry of userDenies.filter((candidate) => candidate.access === 'read')) {
-    const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
-    for (const target of await blockedPaths(set, entry, inspector, signal)) await mask(target);
-  }
+  const readDenyEntries: ReadDenyEntry[] = userDenies
+    .filter((candidate) => candidate.access === 'read')
+    .map((entry) => ({ set: policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules, entry }));
+  const keptMounts = unique([
+    ...writableAreas,
+    ...[...writeMounts, ...pinMounts].filter((mount) => mount.args[0] === '--bind').map((mount) => mount.args[1] as string),
+    ...placeholders,
+    ...readAllowed,
+    ...(sessionTmpDir === undefined ? [] : [sessionTmpDir]),
+    ...(scratchDir === undefined ? [] : [scratchDir]),
+  ]);
+  for (const target of await denialMasks(readDenyEntries, inspector, keptMounts, signal)) await mask(target);
   const reallow: string[] = [];
   for (const target of readAllowed) if ((await kindOf(target)) !== undefined) reallow.push('--ro-bind', target, target);
 

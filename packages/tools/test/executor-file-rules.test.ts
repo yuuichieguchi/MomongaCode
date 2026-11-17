@@ -1,4 +1,3 @@
-import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +17,8 @@ import { minimalPolicyFor } from './helpers.ts';
 import { syncPaths } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+const DENIED_FILE_COUNT = 9200;
 
 type Recordings = {
   files_with_matches: string;
@@ -160,16 +161,13 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(listed).output).toBe(inProject(tools, carved));
   });
 
-  it.runIf(HAS_RG)('answers a directory Grep exactly when a deny rule matches more files than the argument limit can name, under the real sandbox', async () => {
+  it.runIf(HAS_RG)('searches past a fully denied directory of many files, which the sandbox masks as one directory, and keeps every denied file out, under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
-    const argumentLimit = Number(execFileSync('/usr/bin/getconf', ['ARG_MAX'], { encoding: 'utf8' }).trim());
-    const stem = 'd'.repeat(230);
-    const deniedDirectory = path.join(tools.layout.project, 'many');
-    fs.mkdirSync(deniedDirectory);
-    const count = Math.ceil(argumentLimit / stem.length) + 100;
-    for (let index = 0; index < count; index += 1) fs.writeFileSync(path.join(deniedDirectory, `${stem}-${index}.env`), 'secret');
+    const denied = path.join(tools.layout.project, 'many');
+    fs.mkdirSync(denied);
+    for (let index = 0; index < DENIED_FILE_COUNT; index += 1) fs.writeFileSync(path.join(denied, `secret-${index}.env`), 'secret');
     const visible = tools.write('notes.txt', 'secret');
-    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(many/*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
     const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });

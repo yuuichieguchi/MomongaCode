@@ -280,7 +280,7 @@ describe('planBubblewrap', () => {
     expect(indexOfTriple(args, '--bind', scratch)).toBeGreaterThan(args.findIndex((value, index) => value === '--tmpfs' && args[index + 1] === secrets));
   });
 
-  it('expands a read-deny glob to the files that exist and skips directories it already masks as a whole', async () => {
+  it('expands a read-deny glob to the files that exist, and masks a directory whose every entry is denied as one directory', async () => {
     fs.mkdirSync(path.join(work, 'a'), { recursive: true });
     fs.writeFileSync(path.join(work, 'a', '.env'), 'k');
     fs.writeFileSync(path.join(work, '.env'), 'k');
@@ -288,7 +288,9 @@ describe('planBubblewrap', () => {
     const rules = await FILE_RULES([fileSpec('**/.env', { roots: [work], home, tool: 'Read' })]);
     const { args } = await planBubblewrap(policy({ fileRules: await rules }), { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const masked = args.flatMap((value, index) => (value === '--ro-bind' && args[index + 1] === '/dev/null' ? [args[index + 2]] : []));
-    expect(masked.sort()).toEqual([path.join(work, '.env'), path.join(work, 'a', '.env')].sort());
+    const folded = args.flatMap((value, index) => (value === '--tmpfs' && args[index + 1] !== '/run' ? [args[index + 1]] : []));
+    expect(masked).toEqual([path.join(work, '.env')]);
+    expect(folded).toEqual([path.join(work, 'a')]);
   });
 
   it('turns a write-deny rule into read-only remounts of the matching existing files', async () => {
