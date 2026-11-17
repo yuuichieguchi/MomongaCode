@@ -4092,12 +4092,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 70092132,
-      "measuredSeconds": 1618.07,
+      "distinctStates": 609560,
+      "measuredSeconds": 9.21,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 5498.24,
-      "budgetCpuSeconds": 11000,
-      "identity": "9db7a20a7255454fe6942120f092749480ad9a222e2bb7070c9fd418d1a25833"
+      "measuredCpuSeconds": 37.59,
+      "budgetCpuSeconds": 79,
+      "identity": "b3779a253daaea0f880d98d54aec9af7c2e70194d5a98cc8fc6c4a64c0f3a6c3",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 13.53 at start)"
     },
     {
       "config": "ProcessMarker.execveFree",
