@@ -38,9 +38,9 @@ describe('one retention sweep deletes the rows of every store (R6)', () => {
     expect(purgeCalls.filter((site) => !insideSweepPurge(site)).map(({ file, line, text }) => `${file}:${line} ${text.trim()}`)).toEqual([]);
   });
 
-  it('the legacy trace content is moved with the period of the cutoff the sweep sends with each purge, never a period read elsewhere', () => {
-    const moves = sites(/\bmoveLegacyContent\(/).filter(({ text }) => !/^\s*(export )?(const|function|async function) |moveLegacyContent\(options:/.test(text));
+  it('the legacy trace content is moved only by a purge of the sweep: the move carries no period since commit e868d0fe7 dropped the body expiry', () => {
+    const moves = sites(/\bmoveLegacyContent\(/).filter(({ text }) => !/^\s*(export )?(const|function|async function) |moveLegacyContent\(\): number;/.test(text));
     expect(moves.length).toBeGreaterThan(0);
-    expect(moves.filter((site) => !insideSweepPurge(site) || !/retentionMs: clock\.now\(\) - cutoffMs\b/.test(site.text)).map(({ file, line, text }) => `${file}:${line} ${text.trim()}`)).toEqual([]);
+    expect(moves.filter((site) => !insideSweepPurge(site) || !/moveLegacyContent\(\);/.test(site.text)).map(({ file, line, text }) => `${file}:${line} ${text.trim()}`)).toEqual([]);
   });
 });
