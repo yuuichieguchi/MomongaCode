@@ -73,9 +73,10 @@ describe('the protection command', () => {
     });
   });
 
-  it('builds the Linux protection plan: the root bound writable, an empty tmpfs over each home area, the command scratch bound back', () => {
+  it('builds the Linux protection plan: the root bound writable, the standard device nodes of a fresh /dev, an empty tmpfs over each home area, the command scratch bound back', () => {
     expect(planProtection(protection.denied, ['/home/someone/.cache/momonga/tmp/sessions/s1'], [])).toEqual([
       '--bind', '/', '/',
+      '--dev', '/dev',
       '--tmpfs', '/home/someone/.momonga',
       '--tmpfs', '/home/someone/.cache/momonga/tmp',
       '--bind', '/home/someone/.cache/momonga/tmp/sessions/s1', '/home/someone/.cache/momonga/tmp/sessions/s1',

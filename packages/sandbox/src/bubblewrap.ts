@@ -21,6 +21,8 @@ export const DEFAULT_BWRAP_PATH = '/usr/bin/bwrap';
 
 export const BWRAP_MAX_ARGS = 9000;
 
+export const DEVICE_NODE_ARGUMENTS: readonly string[] = ['--dev', '/dev'];
+
 export const BWRAP_SANDBOX_FIXED_ARGUMENTS = 16;
 
 export const MASK_ARGUMENT_CEILING = BWRAP_MAX_ARGS - BWRAP_SANDBOX_FIXED_ARGUMENTS;
@@ -262,7 +264,7 @@ export async function planBubblewrap(policy: SandboxPolicy, options: BubblewrapO
   const scratchDir = options.scratchDir === undefined ? undefined : await paths.canonicalPath(options.scratchDir);
   const placeholders: string[] = [];
 
-  const base: string[] = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/run'];
+  const base: string[] = ['--ro-bind', '/', '/', ...DEVICE_NODE_ARGUMENTS, '--proc', '/proc', '--tmpfs', '/run'];
   if (policy.network === 'allow' && (await ask(() => port.kindOf(SYSTEMD_RESOLVE_DIRECTORY))) === 'directory') {
     base.push('--ro-bind', SYSTEMD_RESOLVE_DIRECTORY, SYSTEMD_RESOLVE_DIRECTORY);
   }
@@ -461,6 +463,7 @@ export const planProtection = (denied: readonly string[], scratch: readonly stri
   '--bind',
   '/',
   '/',
+  ...DEVICE_NODE_ARGUMENTS,
   ...denied.flatMap((area) => ['--tmpfs', area]),
   ...scratch.flatMap((folder) => ['--bind', folder, folder]),
   ...readable.flatMap((entry) => ['--ro-bind', entry, entry]),
@@ -474,8 +477,7 @@ export const bwrapProbeArguments = (shell: string): string[] => [
   '--ro-bind',
   '/',
   '/',
-  '--dev',
-  '/dev',
+  ...DEVICE_NODE_ARGUMENTS,
   '--proc',
   '/proc',
   '--tmpfs',
