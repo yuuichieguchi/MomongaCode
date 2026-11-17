@@ -4,7 +4,7 @@ import path from 'node:path';
 import { ProbeFailedError, findHolders, generationLayout, generationOfDirectoryName, isProcessAlive, judgeProcessIdentity, listGenerationNumbers, rotatedLogPath, scopeToGeneration, valueOrThrow } from '@momonga/foundation';
 import type { MomongaPaths, ProbeResult, StartTime } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { killGroupsForCleanup, testProcessInspector } from '@momonga/testkit';
+import { killGroupsForCleanup, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
 import { appendHarnessFile } from './run-env.ts';
@@ -215,7 +215,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
 
   const collectSupervisorLock = async (paths: MomongaPaths): Promise<void> => {
     for (const generation of await listGenerationNumbers(paths)) {
-      const text = readTextIfPresent(generationLayout(path.dirname(paths.root), generation).locks.supervisor);
+      const text = await testKernelLock().readHolder(generationLayout(path.dirname(paths.root), generation).locks.supervisor);
       const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
       if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
     }
