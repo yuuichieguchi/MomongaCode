@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaPaths } from '@momonga/foundation';
+import { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaPaths, nodeFileSystem } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createTempDir, removeTempDir, testKernelLock } from '@momonga/testkit';
 import type { TempDirOptions } from '@momonga/testkit';
@@ -147,9 +146,9 @@ describe('ensureSessionTmpDir error classes', () => {
     const elsewhere = makeDir();
     const alias = path.join(elsewhere, 'alias');
     fs.symlinkSync(directory, alias);
-    const realRealpath = fsp.realpath;
-    vi.spyOn(fsp, 'realpath').mockImplementation((async (target: fs.PathLike, options?: unknown) =>
-      String(target) === directory ? alias : realRealpath(target, options as never)) as typeof fsp.realpath);
+    const realRealpath = nodeFileSystem.realpath;
+    vi.spyOn(nodeFileSystem, 'realpath').mockImplementation(async (target) =>
+      target === directory ? alias : realRealpath(target));
     const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1', { lock: testKernelLock() }));
     expect(error).toBeInstanceOf(SessionTmpDirError);
     expect((error as Error).message).toBe(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
