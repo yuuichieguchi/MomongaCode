@@ -306,14 +306,14 @@ export const createRouter = (options: RouterOptions): Router => {
     };
   };
 
-  const roomMemberOf = async (target: TargetRuntime, first: boolean): Promise<ChainMember | undefined> => {
+  const roomMemberOf = async (target: TargetRuntime, first: boolean): Promise<ChainMember> => {
     try {
       return await readRoomMember(target);
     } catch (error) {
       if (error instanceof ClientDisconnectedError) throw error;
       if (error instanceof GatewayError) {
         if (first) throw error;
-        return undefined;
+        return { model: target.name, measuring: false, facts: { outputBounded: false } };
       }
       throw plainError(target.adapter.classify(error));
     }
@@ -322,7 +322,7 @@ export const createRouter = (options: RouterOptions): Router => {
   const roomRefusalOf = async (model: string, members: readonly TargetRuntime[]): Promise<GatewayError | undefined> => {
     if (!members.some((member) => member.adapter.roomFacts !== undefined)) return undefined;
     const read = await Promise.all(members.map((member, index) => roomMemberOf(member, index === 0)));
-    const verdict = chainRoomVerdict(model, read.flatMap((member) => member ?? []));
+    const verdict = chainRoomVerdict(model, read);
     if (verdict.kind === 'serve') return undefined;
     if (verdict.kind === 'wait') throw new Error(`model "${displayOf(model)}": every model was read with its values, yet the input room check asked to wait`);
     return invalidRequest(CHAIN_ROOM_REFUSED_CODE, roomVerdictText(verdict.refusal, displayOf), 'model', 412);
