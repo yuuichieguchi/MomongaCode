@@ -31,8 +31,6 @@ const PRESENT_DEADLINE_LOOPS: Readonly<Record<string, Counts>> = {
 
 const PRESENT_RENAMES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/history-store.ts': { 'rename': 1 },
-  'packages/cli/src/keeper/source.ts': { 'rename': 1 },
-  'packages/cli/src/node-ports.ts': { 'renameSync': 1 },
   'packages/foundation/src/platform/bundled-executable.ts': { 'rename': 1 },
   'packages/foundation/src/platform/replace-executable.ts': { 'rename': 4 },
   'packages/sandbox/src/placeholder-journal.ts': { 'rename': 1 },
