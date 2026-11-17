@@ -8,6 +8,7 @@ import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeResponseHold, FakeScriptedReply } from '@momonga/testkit';
 import { createE2eHome, disposeAll, e2eTmpRoot, registerE2eCleanup } from './home.ts';
+import { readDb, writeDb } from './db.ts';
 import type { E2eHome } from './home.ts';
 import { createRuntimeClient } from './runtime-client.ts';
 import type { RunEventStream, RuntimeClient } from './runtime-client.ts';
@@ -165,13 +166,20 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       deps: { launcherOverrides: { runtime: roleMainOverride('runtime', SUPERVISOR_APP_VERSION, [retentionCrashArgument(retentionCrashOf(env))]) } },
     }),
     beforeRun: async (env) => {
-      fs.writeFileSync(retentionCrashOf(env).marker, '');
-    },
-    inject: async (env) => {
+      const runtime = env.runtime as RuntimeClient;
       const crash = retentionCrashOf(env);
+      const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
+      writeDb(env.home.paths.databases.runtime, 'UPDATE sessions SET created_at = 0 WHERE id = ?', session.id);
+      fs.writeFileSync(crash.marker, '');
+      process.kill(await runtimePidOf(env), 'SIGKILL');
       await until(() => fs.existsSync(crash.record) && fs.readFileSync(crash.record, 'utf8') !== '', {
         deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
         description: 'the runtime killed between the purges and the finish of a retention sweep',
+      });
+      await until(async () => (await (env.stack as E2eStack).client.health()).role === 'serving', { deadlineMs: E2E_READY_DEADLINE_MS, description: 'the generation started after the crash to be the serving one' });
+      await until(() => readDb(env.home.paths.databases.runtime, 'SELECT session_id FROM retention_sweeps').length === 0 && readDb(env.home.paths.databases.runtime, 'SELECT id FROM sessions WHERE id = ?', session.id).length === 0, {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+        description: 'the next start to finish the retention sweep and delete the expired session',
       });
     },
   },
