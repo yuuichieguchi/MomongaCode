@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PinnedOverflowError, buildContext, inputCeilingFor, MIN_ROOM_TOKENS } from '@momonga/context';
+import { PinnedOverflowError, buildContext, inputCeilingFor, MIN_ROOM_TOKENS, pinnedFloorFor } from '@momonga/context';
 import type { FunctionTool } from '@momonga/protocol';
 import { capabilitiesFor, harness, inputFor, sourcesWith, tokensOfTools } from './helpers.ts';
 
@@ -18,6 +18,12 @@ const builtWith = async (contextWindow: number) => {
   const capabilities = capabilitiesFor(contextWindow, { maxOutputTokens: 1024 });
   const { ports } = harness(capabilities);
   return { capabilities, built: await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS }) }), ports) };
+};
+
+const smallestWindowHoldingFloor = (pinnedTokens: number): number => {
+  let window = 1;
+  while (pinnedFloorFor(capabilitiesFor(window, { maxOutputTokens: 1024 })) < pinnedTokens) window++;
+  return window;
 };
 
 describe('the tools a target is offered', () => {
@@ -45,7 +51,8 @@ describe('the tools a target is offered', () => {
   });
 
   it('do not change with the length of the task, because the task is not part of the floor', async () => {
-    const capabilities = capabilitiesFor(1_600, { maxOutputTokens: 1024 });
+    const floorTokens = (await builtWith(128_000)).built.pinnedTokens;
+    const capabilities = capabilitiesFor(smallestWindowHoldingFloor(floorTokens), { maxOutputTokens: 1024 });
     const { ports } = harness(capabilities);
     const task = (text: string) => ({ type: 'message' as const, role: 'user' as const, content: text });
     const short = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task: task('Do the work.') }) }), ports);

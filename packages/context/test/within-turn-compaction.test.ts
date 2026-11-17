@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ContextOverflowError, buildContext, createTokenMeter } from '@momonga/context';
+import { ContextOverflowError, DEFAULT_KEEP_RECENT_STEPS, buildContext, createTokenMeter, proactiveGainFor } from '@momonga/context';
 import { summaryInputCeilingFor } from '../src/budget.ts';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, SUMMARY_PROMPT_TOKENS, summaryPromptTokensFor, summaryTokenCapFor } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, SUMMARY_PROMPT_TOKENS, summaryItemTokensFor, summaryPromptTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { CompactionInputItem, InputItem, MessageInputItem } from '@momonga/protocol';
 import {
   READ_TOOL,
@@ -35,6 +35,33 @@ const ITEM_CAP = 730;
 const SUMMARY_CAP = 240;
 const PINNED_TEXT = 'You are MomongaCode.\nDo the task.';
 const PROMPT_CHARS = SUMMARY_PROMPT_TOKENS * ESTIMATED_CHARACTERS_PER_TOKEN;
+const PROACTIVE_GAIN = proactiveGainFor(summaryItemTokensFor(SUMMARY_CAP), 0);
+const HISTORY_STEPS = 6;
+const COMPACTABLE_STEPS = HISTORY_STEPS - DEFAULT_KEEP_RECENT_STEPS;
+const stepTokensAt = (chars: number): Promise<number> => {
+  const { meter } = harness(capabilities);
+  const context = { callNames: { c0: 'Peek' }, withTools: true };
+  return Promise.all([meter.countItem(argsCall(1, 'c0', chars).item as InputItem, context), meter.countItem(output(2, 'c0', 'ok').item as InputItem, context)]).then(
+    ([call, result]) => call + result,
+  );
+};
+
+const charsClearingGain = async (): Promise<number> => {
+  const needed = Math.ceil(PROACTIVE_GAIN / COMPACTABLE_STEPS);
+  let low = 0;
+  let high = 4 * needed;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((await stepTokensAt(middle)) >= needed) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+};
+
+const gainSteps = async (): Promise<number[]> => {
+  const chars = await charsClearingGain();
+  return Array.from({ length: HISTORY_STEPS }, () => chars);
+};
 
 const itemsOf = (history: readonly HistoryItem[], throughSeq: number): InputItem[] =>
   history.filter((entry) => entry.seq <= throughSeq).map((entry) => entry.item as InputItem);
@@ -43,11 +70,11 @@ const isTask = (item: InputItem): boolean => JSON.stringify(item) === JSON.strin
 
 describe('proactive compaction inside one turn', () => {
   it('hints the latest step-end cut before the protected steps when the region passes the gain rule', async () => {
-    const history = stepsOf([1500, 1500, 1500, 1500, 1500, 1500]);
+    const history = stepsOf(await gainSteps());
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
-    expect(built.inputTokens).toBe(2528);
-    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2528, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } , rebuilt: { before: expect.any(Array), after: expect.any(Array), tools: expect.any(Array) } });
+    expect(built.compaction?.tokens.replaced).toBeGreaterThanOrEqual(PROACTIVE_GAIN);
+    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: built.inputTokens, replaced: expect.any(Number), workingStateGrowth: 0, request: expect.any(Number) } , rebuilt: { before: expect.any(Array), after: expect.any(Array), tools: expect.any(Array) } });
   });
 
   it('gives no hint when the region is below twice the summary item', async () => {
@@ -59,7 +86,7 @@ describe('proactive compaction inside one turn', () => {
   });
 
   it('never hints a proactive compaction at a level above 0', async () => {
-    const history = stepsOf([1500, 1500, 1500, 1500, 1500, 1500]);
+    const history = stepsOf(await gainSteps());
     const atLevel0 = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
     const atLevel1 = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
@@ -217,10 +244,11 @@ describe('compaction input is the rendered context', () => {
   });
 
   it('renders an output above the item cap identically in two builds and never puts it in the compaction input above the cap', async () => {
+    const stepChars = await charsClearingGain();
     const history = [
-      argsCall(1, 'c0', 1500),
+      argsCall(1, 'c0', stepChars),
       output(2, 'c0', 'ok'),
-      argsCall(3, 'c1', 1500),
+      argsCall(3, 'c1', stepChars),
       output(4, 'c1', 'ok'),
       call(5, 'c2'),
       output(6, 'c2', 'r'.repeat(4000)),

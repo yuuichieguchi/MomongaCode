@@ -1,3 +1,4 @@
+export { DEFAULT_KEEP_RECENT_STEPS } from './levels.ts';
 export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inheritanceWindowFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, proactiveGainFor, withCalibration } from './budget.ts';
 export { renderMemories } from './memory.ts';
 export { instructionPathsOf, nestedInstructionCandidates, projectRootOf } from './instructions.ts';

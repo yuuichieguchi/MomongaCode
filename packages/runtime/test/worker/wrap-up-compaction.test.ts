@@ -1,38 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { COMPACT_AT, ESTIMATED_CHARACTERS_PER_TOKEN, tokensForText } from '@momonga/protocol';
+import { COMPACT_AT, ESTIMATED_CHARACTERS_PER_TOKEN, summaryItemTokensFor, summaryTokenCapFor, tokensForText } from '@momonga/protocol';
 import { defaultContextSettings } from '@momonga/config';
-import { inputCeilingFor } from '../../../context/src/budget.ts';
+import { DEFAULT_KEEP_RECENT_STEPS, inputCeilingFor, proactiveGainFor } from '@momonga/context';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 import { bigStep, padOf, withinTurnWorker } from './within-turn-support.ts';
 
 const CONTEXT_WINDOW = 4000;
-const STEPS_BELOW_HIGH_WATER = 5;
-const STEP_SCALE_FOR_SUMMARY_ITEM = 1.06;
+const proactiveBarTokens = (): number => proactiveGainFor(summaryItemTokensFor(summaryTokenCapFor(capabilitiesFor(CONTEXT_WINDOW))), 0);
+const highWaterTokens = (): number => Math.floor((COMPACT_AT.num * inputCeilingFor(capabilitiesFor(CONTEXT_WINDOW))) / COMPACT_AT.den);
+
+const stepBandBelowHighWater = (stepsBelow: number): { lower: number; upper: number } => ({
+  lower: Math.ceil(proactiveBarTokens() / (stepsBelow + 1 - DEFAULT_KEEP_RECENT_STEPS)),
+  upper: Math.floor(highWaterTokens() / (stepsBelow + 0.5)),
+});
+
+const STEPS_BELOW_HIGH_WATER = (() => {
+  let stepsBelow = DEFAULT_KEEP_RECENT_STEPS;
+  while (stepBandBelowHighWater(stepsBelow).lower > stepBandBelowHighWater(stepsBelow).upper) stepsBelow++;
+  return stepsBelow;
+})();
+const STEP_COUNT = STEPS_BELOW_HIGH_WATER + 1;
 
 const stepPadChars = (): number => {
-  const ceiling = inputCeilingFor(capabilitiesFor(CONTEXT_WINDOW));
-  const highWaterTokens = Math.floor((COMPACT_AT.num * ceiling) / COMPACT_AT.den);
-  const stepTokens = Math.floor((highWaterTokens / (STEPS_BELOW_HIGH_WATER + 0.5)) * STEP_SCALE_FOR_SUMMARY_ITEM);
+  const { lower, upper } = stepBandBelowHighWater(STEPS_BELOW_HIGH_WATER);
+  const stepTokens = Math.floor((lower + upper) / 2);
   const envelopeTokens = tokensForText(JSON.stringify({ name: 'Big', arguments: JSON.stringify({ letter: 'a', size: 0, pad: '' }) }));
   return (stepTokens - envelopeTokens) * ESTIMATED_CHARACTERS_PER_TOKEN;
 };
 
-const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, stepPadChars()) }));
+const paddedSteps = () => Array.from({ length: STEP_COUNT }, (_unused, index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, stepPadChars()) }));
 
 describe('wrap-up build', () => {
   it('makes no proactive compaction call although the context is above the high-water mark', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = defaultContextSettings();
-    env.gateway.script.push(...sixPaddedSteps(), textStep('Here is what I did.'));
-    const run = await env.enqueue('Fill the context', { limits: { maxSteps: 6 } });
+    env.gateway.script.push(...paddedSteps(), textStep('Here is what I did.'));
+    const run = await env.enqueue('Fill the context', { limits: { maxSteps: STEP_COUNT } });
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
-    expect(env.gateway.streams).toHaveLength(7);
-    expect(env.gateway.streams[6]?.body.tool_choice).toBe('none');
+    expect(env.gateway.streams).toHaveLength(STEP_COUNT + 1);
+    expect(env.gateway.streams[STEP_COUNT]?.body.tool_choice).toBe('none');
     expect(env.gateway.compacts).toEqual([]);
     expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
   });
@@ -41,7 +52,7 @@ describe('wrap-up build', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = defaultContextSettings();
-    env.gateway.script.push(...sixPaddedSteps(), textStep('done'));
+    env.gateway.script.push(...paddedSteps(), textStep('done'));
     const run = await env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
