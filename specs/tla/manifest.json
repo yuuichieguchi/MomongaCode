@@ -4070,20 +4070,6 @@
       "identity": "4011f08daa5815d8f3cf4ce864e6d87a2594bf94700a11a25bc2b3678377d961"
     },
     {
-      "config": "ProcessMarker.full",
-      "role": "check",
-      "expect": "holds",
-      "args": [],
-      "tier": "deep",
-      "distinctStates": 7197560,
-      "measuredSeconds": 109.46,
-      "measuredReuse": "off",
-      "measuredCpuSeconds": 560.22,
-      "budgetCpuSeconds": 1124,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.66 at start)",
-      "identity": "7150b85372bffba953820d318e6a1dc750ae9e878c9a4ee0eae121ceef6f456b"
-    },
-    {
       "config": "ProcessMarker.live",
       "role": "check",
       "expect": "holds",
@@ -4093,11 +4079,12 @@
       ],
       "tier": "deep",
       "distinctStates": 7197560,
-      "measuredSeconds": 1766.42,
+      "measuredSeconds": 2442.92,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6064.58,
-      "budgetCpuSeconds": 12133,
-      "identity": "eefb1f85ee9f89de98154aea8e04a90291340475267844b08c9aab70324d90c3"
+      "measuredCpuSeconds": 7944.82,
+      "budgetCpuSeconds": 15893,
+      "identity": "c9d80c998cf10d78a40c7d7631597ad0a88bf07b33319915ac7b98430d7f540a",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.04 at start)"
     },
     {
       "config": "ProcessMarker.threeCalls",
