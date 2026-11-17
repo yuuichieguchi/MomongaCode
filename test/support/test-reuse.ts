@@ -108,6 +108,16 @@ export type HarnessSpec = { readonly shared: readonly string[]; readonly project
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"]([^'"]+)['"]/g;
 const WORKSPACE_SCOPE = '@momonga/';
 
+const EXPORT_CONDITIONS = ['development', 'import', 'node', 'default'] as const;
+
+const exportTargetOf = (target: unknown): string | undefined => {
+  if (typeof target === 'string') return target;
+  if (typeof target !== 'object' || target === null) return undefined;
+  const conditions = target as Readonly<Record<string, unknown>>;
+  const condition = EXPORT_CONDITIONS.find((name) => name in conditions);
+  return condition === undefined ? undefined : exportTargetOf(conditions[condition]);
+};
+
 const workspaceEntriesOf = (root: string): ReadonlyMap<string, string> => {
   const entries = new Map<string, string>();
   for (const dir of fs.readdirSync(path.join(root, 'packages'), { withFileTypes: true })) {
@@ -118,8 +128,9 @@ const workspaceEntriesOf = (root: string): ReadonlyMap<string, string> => {
     const exported: unknown = parsed.exports;
     if (typeof exported !== 'object' || exported === null) throw new Error(`${manifest}: exports is not a map of subpaths`);
     for (const [subpath, target] of Object.entries(exported)) {
-      if (typeof target !== 'string') throw new Error(`${manifest}: the export ${subpath} is not a path`);
-      entries.set(subpath === '.' ? parsed.name : `${parsed.name}${subpath.slice(1)}`, path.join(root, 'packages', dir.name, target));
+      const file = exportTargetOf(target);
+      if (file === undefined) throw new Error(`${manifest}: the export ${subpath} names no path for the conditions ${EXPORT_CONDITIONS.join(', ')}`);
+      entries.set(subpath === '.' ? parsed.name : `${parsed.name}${subpath.slice(1)}`, path.join(root, 'packages', dir.name, file));
     }
   }
   return entries;
@@ -151,7 +162,7 @@ export const harnessOf = (root: string, spec: HarnessSpec): Record<string, strin
   return Object.fromEntries(Object.entries(spec.projects).map(([project, entries]) => [project, [...new Set([...shared, ...closureOf(root, entries, workspace)])].sort()]));
 };
 
-const IGNORED_ENV = new Set([TEST_REUSE_ENV, WHOLE_RUN_ENV, 'MOMONGA_TLC_REUSE', 'MOMONGA_RUN_LOCK_WAIT_SECONDS']);
+const IGNORED_ENV = new Set([TEST_REUSE_ENV, WHOLE_RUN_ENV, 'MOMONGA_TLC_REUSE', 'MOMONGA_RUN_LOCK_WAIT_SECONDS', 'MOMONGA_RUN_CPU_BUDGET_SECONDS']);
 
 export const globalsOf = (harness: Readonly<Record<string, readonly string[]>>, digests: RepoDigests, env: Env): ReuseGlobals => ({
   node: process.version,
@@ -175,6 +186,11 @@ const isRecord = (value: unknown): value is ReuseRecord => {
   return fields['format'] === REUSE_RECORD_FORMAT && typeof fields['project'] === 'string' && typeof fields['file'] === 'string' && typeof fields['whole'] === 'boolean' && typeof fields['key'] === 'string' && Array.isArray(fields['inputs']) && fields['inputs'].every((input) => typeof input === 'string');
 };
 
+const RECORD_FORMAT_FAMILY = 'momonga-test-reuse/';
+
+const isOtherFormat = (value: unknown): boolean =>
+  typeof value === 'object' && value !== null && 'format' in value && typeof value.format === 'string' && value.format.startsWith(RECORD_FORMAT_FAMILY) && value.format !== REUSE_RECORD_FORMAT;
+
 export const readRecord = (file: string): ReuseRecord | undefined => {
   let text: string;
   try {
@@ -184,6 +200,7 @@ export const readRecord = (file: string): ReuseRecord | undefined => {
     throw error;
   }
   const parsed: unknown = JSON.parse(text);
+  if (isOtherFormat(parsed)) return undefined;
   if (!isRecord(parsed)) throw new Error(`${file} is not a ${REUSE_RECORD_FORMAT} record`);
   return parsed;
 };

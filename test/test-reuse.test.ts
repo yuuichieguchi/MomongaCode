@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTempDir } from '@momonga/testkit';
-import { REUSE_RECORD_FORMAT, createRepoDigests, globalsOf, harnessOf, fileFiltersOf, projectsOf, replayedSelected, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
+import { REUSE_RECORD_FORMAT, createRepoDigests, globalsOf, harnessOf, readRecord, fileFiltersOf, projectsOf, replayedSelected, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
 import type { ReuseGlobals } from './support/test-reuse.ts';
 
 const GLOBALS: ReuseGlobals = { node: 'v24.0.0', platform: 'darwin', arch: 'arm64', harness: { unit: { 'package-lock.json': 'lock' }, e2e: { 'package-lock.json': 'lock' } }, env: {} };
@@ -153,6 +153,7 @@ describe('the harness files in the key of a project', () => {
     'e2e/global-setup.ts': "import { ledger } from './support/ledger.ts';\n",
     'e2e/support/ledger.ts': 'export const ledger = 1;\n',
     'test/support/loaded.ts': 'export const loaded = 1;\n',
+    'packages/vendored/package.json': JSON.stringify({ name: '@momonga/vendored', exports: { './lite': { types: './lite.d.ts', default: './lite.js' } } }),
   };
   const spec = { shared: ['package.json', 'vitest.config.ts'], projects: { unit: ['test/support/unit-setup.ts'], e2e: ['e2e/global-setup.ts'] } };
 
@@ -205,5 +206,24 @@ describe('the harness files in the key of a project', () => {
     const afterConfig = recordsUnder(changed('test/support/plan.ts'));
     expect(isReplayable(unit, afterConfig.digests, afterConfig.globals)).toBe(false);
     expect(isReplayable(e2e, afterConfig.digests, afterConfig.globals)).toBe(false);
+  });
+});
+
+describe('a stored record of another format', () => {
+  it('is read as no record, never thrown on and never replayed, so the next green run replaces it', () => {
+    const dir = createTempDir();
+    try {
+      const file = path.join(dir, 'old.json');
+      fs.writeFileSync(file, JSON.stringify({ format: 'momonga-test-reuse/1', project: 'unit', file: 'test/a.test.ts', whole: false, inputs: [], key: 'k' }));
+      expect(readRecord(file)).toBeUndefined();
+      fs.writeFileSync(file, JSON.stringify({ format: REUSE_RECORD_FORMAT, project: 'unit' }));
+      expect(() => readRecord(file)).toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the run CPU budget variable out of the key, since it cannot change a green outcome', () => {
+    expect(globalsOf({}, digestsOf({}), { MOMONGA_RUN_CPU_BUDGET_SECONDS: '60', MOMONGA_TLC_TIER: 'deep' }).env).toEqual({ MOMONGA_TLC_TIER: 'deep' });
   });
 });
