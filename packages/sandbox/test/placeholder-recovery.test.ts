@@ -51,9 +51,9 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const first = createPlaceholderJournal(directory);
       await first.intend('/w/.mcp.json', 100);
       await first.intend('/w/.envrc', 200);
-      await first.complete('/w/.envrc', { device: '1', inode: '3', changed: '4' });
+      await first.complete('/w/.envrc', { device: '1', inode: '3', born: '5', changed: '4' });
       expect((await createPlaceholderJournal(directory).records())).toEqual([
-        { path: '/w/.envrc', intentMs: 200, form: { kind: 'file', bytes: '' }, identity: { device: '1', inode: '3', changed: '4' } },
+        { path: '/w/.envrc', intentMs: 200, form: { kind: 'file', bytes: '' }, identity: { device: '1', inode: '3', born: '5', changed: '4' } },
         { path: '/w/.mcp.json', intentMs: 100, form: { kind: 'file', bytes: '' }, identity: null },
       ]);
       await first.forget('/w/.envrc');
@@ -62,7 +62,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
 
     it('refuses to complete a path that has no intent', async () => {
       const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
-      await expect(journal.complete('/w/.mcp.json', { device: '1', inode: '2', changed: '3' })).rejects.toThrow('no intent');
+      await expect(journal.complete('/w/.mcp.json', { device: '1', inode: '2', born: '5', changed: '3' })).rejects.toThrow('no intent');
     });
 
     it('refuses a malformed record instead of skipping it', async () => {
