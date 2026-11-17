@@ -1,7 +1,7 @@
 import { endpointKeyOf } from '@momonga/config';
 import { startSharedCall } from '@momonga/foundation';
 import type { SharedCall } from '@momonga/foundation';
-import type { Capabilities, ConstructSupport, DialectId, Probing } from '@momonga/protocol';
+import type { Capabilities, ConstructSupport, DialectId, NeedsProbe, Probing } from '@momonga/protocol';
 import { targetProbingError } from './auto-probe.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
@@ -100,7 +100,7 @@ export const ollamaServerRefusal = (targetName: string, adapter: string, endpoin
   );
 
 export type ProbedEndpointTargetOptions = {
-  targetName: string;
+  displayOf: () => string;
   endpoint: string;
   model: string;
   declared: DeclaredCapabilities;
@@ -126,18 +126,21 @@ export type ProbedEndpointTarget = {
 };
 
 export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions): ProbedEndpointTarget => {
-  const { targetName, endpoint, model, declared } = options;
+  const { displayOf, endpoint, model, declared } = options;
   const declaredParts = layerOf(declared);
   let record = options.record;
   let saving: Promise<void> = Promise.resolve();
-  const needsProbe = needsProbeOf(
-    targetName,
-    `the model "${targetName}" sets toolCalling to auto, but no probe record exists`,
-    `no record for ${endpoint} and model ${model}`,
-  );
+  const needsProbe = (): NeedsProbe => {
+    const targetName = displayOf();
+    return needsProbeOf(
+      targetName,
+      `the model "${targetName}" sets toolCalling to auto, but no probe record exists`,
+      `no record for ${endpoint} and model ${model}`,
+    );
+  };
 
   const requireRecord = (): EndpointRecord => {
-    if (record === null) throw preconditionOf(needsProbe);
+    if (record === null) throw preconditionOf(needsProbe());
     return record;
   };
 
@@ -147,7 +150,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     const reported = await options.readReported();
     const served = sourcedCapabilities(declared, options.written, options.toolCalling, reported);
     if (served !== undefined) return served;
-    throw targetProbingError(await options.startProbe(measuringAskOf(targetName, unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
+    throw targetProbingError(await options.startProbe(measuringAskOf(displayOf(), unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
   };
 
   const usable = (found: EndpointRecord | null): EndpointRecord | null =>
@@ -188,7 +191,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     capabilities: async () => {
       record = usable(await options.readRecord());
       if (record === null) return fromSources();
-      const refusal = declaredDialectRefusal(targetName, declared.schemaDialect, record.report.schemaDialect, `the server at ${endpoint} for model ${model}`);
+      const refusal = declaredDialectRefusal(displayOf(), declared.schemaDialect, record.report.schemaDialect, `the server at ${endpoint} for model ${model}`);
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, jsonMode, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,

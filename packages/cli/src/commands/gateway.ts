@@ -177,7 +177,7 @@ const probeChatCompletions = async (
 ): Promise<number> => {
   const { DEFAULT_SAMPLES, capabilitiesFromProbe, decideToolCalling, isMeteredTarget, measurementBoundOf, probeEndpointTarget, reachableEndpoint, saveMeasurementConsent, PERSON_TRAFFIC } = await import('@momonga/gateway');
   const key = endpointRecordKeyOf(subject, target);
-  const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  const metered = isMeteredTarget(target) ? { displayOf: () => subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   if (metered !== undefined && options.consented) {
     await saveMeasurementConsent(paths.probe, key, measurementBoundOf(metered.declaredContextWindow, options.samples ?? DEFAULT_SAMPLES), resolveLayoutLocks(paths).mechanism);
   }
@@ -212,7 +212,7 @@ const probeOllama = async (
 ): Promise<number> => {
   const { DEFAULT_SAMPLES, isMeteredTarget, measurementBoundOf, probeOllamaTarget, reachableEndpoint, saveMeasurementConsent, PERSON_TRAFFIC } = await import('@momonga/gateway');
   const key = endpointRecordKeyOf(subject, target);
-  const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  const metered = isMeteredTarget(target) ? { displayOf: () => subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   if (metered !== undefined && options.consented) {
     await saveMeasurementConsent(paths.probe, key, measurementBoundOf(metered.declaredContextWindow, options.samples ?? DEFAULT_SAMPLES), resolveLayoutLocks(paths).mechanism);
   }

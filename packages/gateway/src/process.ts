@@ -581,7 +581,7 @@ const endpointProbeKeyOf = (target: ResolvedTarget): EndpointProbeKey => {
 };
 
 const createAutoChatCompletionsAdapter = async (
-  display: string,
+  displayOf: () => string,
   target: Extract<RemoteTarget, { adapter: 'chat-completions' }>,
   readKey: ReturnType<typeof apiKeyReader>,
   probeRecordDir: string,
@@ -596,12 +596,12 @@ const createAutoChatCompletionsAdapter = async (
   const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
-  const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
+  const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, displayOf()), key);
   const loaded = await readRecord();
-  const adapterTarget: AdapterTarget = { name: target.canon, display, model: target.model };
-  const apiKeyNow = (signal: AbortSignal) => readKey(adapterTarget, signal);
-  const precondition = endpointPrecondition(display, upstream, probes.ports, target.model, apiKeyNow);
-  const metered = isMeteredTarget(target) ? { display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  const adapterTargetNow = (): AdapterTarget => ({ name: target.canon, display: displayOf(), model: target.model });
+  const apiKeyNow = (signal: AbortSignal) => readKey(adapterTargetNow(), signal);
+  const precondition = endpointPrecondition(displayOf, upstream, probes.ports, target.model, apiKeyNow);
+  const metered = isMeteredTarget(target) ? { displayOf, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   const subject = endpointProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
@@ -624,7 +624,7 @@ const createAutoChatCompletionsAdapter = async (
   });
   const probed = createProbedEndpointTarget({
     outputPolicy: probes.outputPolicy,
-    targetName: display,
+    displayOf,
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
@@ -635,7 +635,7 @@ const createAutoChatCompletionsAdapter = async (
     readReported: async () => NOTHING_REPORTED,
     startProbe: (ask) => probes.autoProbe.ensure({ ...subject, unknown: ask }, endpointLockKeyOf(key)),
     readIdentity: async (fields, signal) => {
-      const apiKey = await readKey(adapterTarget, signal);
+      const apiKey = await readKey(adapterTargetNow(), signal);
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, probes.ports, signal);
     },
     saveRecord: (record) =>
@@ -662,7 +662,7 @@ const createAutoChatCompletionsAdapter = async (
 };
 
 const createProbedOllamaAdapter = async (
-  display: string,
+  displayOf: () => string,
   target: Extract<RemoteTarget, { adapter: 'ollama' }>,
   probeRecordDir: string,
   clock: Clock,
@@ -675,9 +675,9 @@ const createProbedOllamaAdapter = async (
   const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
-  const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, display), key);
+  const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, displayOf()), key);
   const loaded = await readRecord();
-  const metered = isMeteredTarget(target) ? { display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  const metered = isMeteredTarget(target) ? { displayOf, declaredContextWindow: target.capabilities.contextWindow } : undefined;
   const subject = ollamaProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
@@ -699,7 +699,7 @@ const createProbedOllamaAdapter = async (
     ...(metered === undefined ? {} : { metered: { measurement: metered, samples: DEFAULT_SAMPLES } }),
   });
   const probed = createProbedOllamaTarget({
-    targetName: display,
+    displayOf,
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
@@ -724,14 +724,19 @@ const createProbedOllamaAdapter = async (
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
-const declaredWindowRefusalOf = async (display: string, target: RemoteTarget, network: OutboundNetwork, timers: GatewayTimers, signal: AbortSignal): Promise<DeclaredWindowAboveReportedError | undefined> => {
+type DeclaredWindowExceeded = { declared: number; reported: number; address: string };
+
+const declaredWindowErrorOf = (exceeded: DeclaredWindowExceeded, display: string): DeclaredWindowAboveReportedError =>
+  new DeclaredWindowAboveReportedError(display, exceeded.declared, exceeded.reported, exceeded.address);
+
+const declaredWindowExceededOf = async (target: RemoteTarget, network: OutboundNetwork, timers: GatewayTimers, signal: AbortSignal): Promise<DeclaredWindowExceeded | undefined> => {
   const endpoint = upstreamEndpointOf(target);
   const declared = target.capabilities?.contextWindow;
   if (endpoint.kind !== 'tcp' || declared === undefined || isMeteredTarget(target)) return undefined;
   const dispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: IDENTITY_READ_TIMEOUT_MS });
   try {
     const reported = await reportedWindowAt({ address: endpoint.baseUrl, model: target.model, fetch: outboundFetch(dispatcher), signal: AbortSignal.any([signal, timers.timeoutSignal(IDENTITY_READ_TIMEOUT_MS)]) });
-    return reported !== undefined && declared > reported ? new DeclaredWindowAboveReportedError(display, declared, reported, endpoint.baseUrl) : undefined;
+    return reported !== undefined && declared > reported ? { declared, reported, address: endpoint.baseUrl } : undefined;
   } finally {
     await dispatcher.close();
   }
@@ -741,21 +746,18 @@ type Identification = (signal: AbortSignal) => Promise<void>;
 
 const UNIDENTIFIED = Symbol('unidentified');
 
-const ollamaIdentificationOf = (display: string, target: OllamaDetectable, network: OutboundNetwork, ports: ProbeHostPorts): Identification => {
-  let refusal: PreconditionFailedError | null | typeof UNIDENTIFIED = UNIDENTIFIED;
+const ollamaIdentificationOf = (displayOf: () => string, target: OllamaDetectable, network: OutboundNetwork, ports: ProbeHostPorts): Identification => {
+  let isOllama: boolean | typeof UNIDENTIFIED = UNIDENTIFIED;
   return async (signal) => {
-    if (refusal === UNIDENTIFIED) {
-      const isOllama = await answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), ports, signal);
-      refusal = isOllama ? ollamaServerRefusal(display, target.adapter, endpointKeyOf(upstreamEndpointOf(target))) : null;
-    }
-    if (refusal !== null) throw refusal;
+    if (isOllama === UNIDENTIFIED) isOllama = await answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), ports, signal);
+    if (isOllama) throw ollamaServerRefusal(displayOf(), target.adapter, endpointKeyOf(upstreamEndpointOf(target)));
   };
 };
 
 const NO_IDENTIFICATION: Identification = async () => undefined;
 
-const identificationOf = (display: string, target: ServedTarget, network: OutboundNetwork, ports: ProbeHostPorts): Identification =>
-  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(display, target, network, ports) : NO_IDENTIFICATION;
+const identificationOf = (displayOf: () => string, target: ServedTarget, network: OutboundNetwork, ports: ProbeHostPorts): Identification =>
+  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(displayOf, target, network, ports) : NO_IDENTIFICATION;
 
 const DEBUG_TCP_HOST = '127.0.0.1';
 
@@ -1275,6 +1277,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
     const closablesOf = (epoch: ProcessEpoch): Closable[] => [...epoch.parts.values()].flatMap((part) => part.closables);
     const liveEpochs = new Set<ProcessEpoch>();
+    let displayNames: ReadonlyMap<string, string> = new Map();
+    const displayOfTarget = (name: string): (() => string) => () => displayNames.get(name) ?? name;
     const incarnations = new Map<string, number>();
     const nextIncarnation = (name: string): number => {
       const incarnation = (incarnations.get(name) ?? 0) + 1;
@@ -1283,7 +1287,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
 
     const buildPart = async (
-      display: string,
+      displayOf: () => string,
       target: ServedTarget,
       current: ResolvedSettings,
       outbound: OutboundNetwork,
@@ -1357,13 +1361,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         };
       }
       if (isMeasuredBy(target, 'ollama-wire')) {
-        const probed = await createProbedOllamaAdapter(display, target, paths.probe, clock, userDialects, liveness, outbound, probes);
+        const probed = await createProbedOllamaAdapter(displayOf, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential, keyReadLimitOf(current.models.headersTimeoutMs), timers);
-      const identify = identificationOf(display, target, outbound, probes.ports);
+      const identify = identificationOf(displayOf, target, outbound, probes.ports);
       if (isMeasuredBy(target, 'chat-completions-wire')) {
-        const probed = await createAutoChatCompletionsAdapter(display, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
+        const probed = await createAutoChatCompletionsAdapter(displayOf, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
@@ -1418,11 +1422,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
       const parts = new Map<string, TargetPart>();
       const built: Closable[] = [];
+      const previousDisplayNames = displayNames;
       let epoch: ProcessEpoch;
       try {
-        const displays = displayMapOf(current.models.views);
+        displayNames = displayMapOf(current.models.views);
         for (const [name, target] of current.models.models) {
-          const display = displays.get(name) ?? name;
+          const display = displayNames.get(name) ?? name;
           const server = target.adapter === 'managed' ? requiredServer(current.models.servers, target.server) : null;
           const plan = 'plan' in target ? planComponentsOf(name, target, inputs) : undefined;
           const keys = {
@@ -1449,11 +1454,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           const part =
             'plan' in target && plan !== undefined
               ? buildPlanPart(target, current, outbound, keys.part, plan)
-              : await buildPart(display, target as ServedTarget, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys, outputPolicy);
+              : await buildPart(displayOfTarget(name), target as ServedTarget, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys, outputPolicy);
           built.push(...part.closables.filter((closable) => !holds.has(closable)));
-          const refusal = target.adapter === 'managed' || 'plan' in target ? undefined : await declaredWindowRefusalOf(display, target as RemoteTarget, outbound, timers, keySignal);
+          const exceeded = target.adapter === 'managed' || 'plan' in target ? undefined : await declaredWindowExceededOf(target as RemoteTarget, outbound, timers, keySignal);
+          const refusal = exceeded === undefined ? undefined : declaredWindowErrorOf(exceeded, display);
           if (refusal !== undefined) logger.warn(preconditionText(refusal.message, refusal.detail, refusal.remediation));
-          parts.set(name, refusal === undefined ? part : { ...part, adapter: refusingAdapter(part.adapter, refusal) });
+          parts.set(name, exceeded === undefined ? part : { ...part, adapter: refusingAdapter(part.adapter, () => declaredWindowErrorOf(exceeded, displayOfTarget(name)())) });
         }
         const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
         const config = withCounters(gatewayConfigOf(current.models), counters);
@@ -1481,6 +1487,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           networkDigest,
         };
       } catch (error) {
+        displayNames = previousDisplayNames;
         await Promise.all(built.map((closable) => closable.close(undefined)));
         throw error;
       }

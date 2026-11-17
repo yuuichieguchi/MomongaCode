@@ -12,7 +12,7 @@ import type { ProbePrecondition } from './auto-probe.ts';
 
 export type MeasurementBound = { readonly requests: number; readonly inputTokens: number; readonly outputTokens: number };
 
-export type MeteredMeasurement = { readonly display: string; readonly declaredContextWindow: number };
+export type MeteredMeasurement = { readonly displayOf: () => string; readonly declaredContextWindow: number };
 
 export const consentCommandOf = (display: string): string => `${probeCommandOf(display)} --yes`;
 
@@ -75,14 +75,14 @@ export const meteredPrecondition = (precondition: ProbePrecondition, dir: string
     if (verdict.kind === 'refused') return verdict;
     const bound = measurementBoundOf(metered.declaredContextWindow, samples);
     if (consentCovers(await loadMeasurementConsent(dir, key), bound)) return verdict;
-    const refusal = new MeasurementConsentRequiredError(metered.display, bound);
+    const refusal = new MeasurementConsentRequiredError(metered.displayOf(), bound);
     return { kind: 'refused', message: refusal.message, detail: refusal.detail ?? '', remedy: refusal.remediation };
   },
 });
 
 export const requireMeasurementConsent = async (dir: string, key: EndpointKey, metered: MeteredMeasurement, samples: number): Promise<MeasurementBound> => {
   const bound = measurementBoundOf(metered.declaredContextWindow, samples);
-  if (!consentCovers(await loadMeasurementConsent(dir, key), bound)) throw new MeasurementConsentRequiredError(metered.display, bound);
+  if (!consentCovers(await loadMeasurementConsent(dir, key), bound)) throw new MeasurementConsentRequiredError(metered.displayOf(), bound);
   return bound;
 };
 
