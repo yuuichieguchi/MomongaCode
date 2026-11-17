@@ -29,9 +29,9 @@ describe('the health reply: every field the producer always sends is required', 
     expect(validate(missing)).toBe(false);
   });
 
-  it('requires every property the schema declares', () => {
+  it('requires every property the schema declares, except the retention status the runtime gives only when its service has one', () => {
     const schema = RUN_API_SCHEMAS.Health as { properties: Record<string, unknown>; required: string[] };
-    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).sort());
+    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).filter((name) => name !== 'retention').sort());
   });
 
   it('types role, steps and jobs as always present', () => {
