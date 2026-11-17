@@ -1,4 +1,4 @@
-import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
+import { EXIT_CONFIG, EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
 import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, attachRunCommand, budgetSentence, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
@@ -595,7 +595,7 @@ const refusedBeforeRun = (ports: Pick<CliPorts, 'stdout'>, format: OutputFormat,
 const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, error: { reason: string }): number => {
   ports.stderr.write(`${escapedLines(leadWith('momonga: ', error.reason.split('\n')))}\n`);
   writeRefusedResult(ports, format, TARGET_NOT_READY, error.reason);
-  return EXIT_FAILURE;
+  return EXIT_CONFIG;
 };
 
 const MODEL_PARAM = 'model';
