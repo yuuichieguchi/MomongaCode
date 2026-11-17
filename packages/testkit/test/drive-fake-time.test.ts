@@ -87,10 +87,10 @@ describe('driveFakeTime', () => {
     armPeriodic(timers, 1);
     const startedAt = performance.now();
 
-    await expect(driveFakeTime(timers, { done: () => false, horizonAt: 90_000, maxSteps: 1000, description: 'never' })).rejects.toThrow(
-      /never not met within 90000 fake ms: 1000 steps used; pending timers \[\{"id":\d+,"delayMs":1,"dueAt":\d+\}\]/,
+    await expect(driveFakeTime(timers, { done: () => false, horizonAt: 90_000, deadlineMs: 200, description: 'never' })).rejects.toThrow(
+      /never not met within 90000 fake ms: the real-time deadline of 200 ms passed; pending timers \[\{"id":\d+,"delayMs":1,"dueAt":\d+\}\]/,
     );
-    expect(performance.now() - startedAt).toBeLessThan(5000);
+    expect(performance.now() - startedAt).toBeLessThan(2000);
   });
 
   it('fails fast when the scenario is quiet and the next timer is due beyond the horizon', async () => {
@@ -111,7 +111,7 @@ describe('driveFakeTime', () => {
     const startedAt = performance.now();
 
     await expect(
-      driveFakeTime(timers, { done: () => false, horizonAt: 90_000, maxSteps: Number.MAX_SAFE_INTEGER, deadlineMs: 200, description: 'never' }),
+      driveFakeTime(timers, { done: () => false, horizonAt: 90_000, deadlineMs: 200, description: 'never' }),
     ).rejects.toThrow(/never not met within 90000 fake ms: the real-time deadline of 200 ms passed; pending timers/);
     expect(performance.now() - startedAt).toBeLessThan(2000);
   });
@@ -128,7 +128,6 @@ describe('driveFakeTime', () => {
           return false;
         },
         horizonAt: 90_000,
-        maxSteps: Number.MAX_SAFE_INTEGER,
         deadlineMs: 200,
         description: 'never',
       }),

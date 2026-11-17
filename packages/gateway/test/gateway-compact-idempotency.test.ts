@@ -113,7 +113,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
     const first = compact(client, 'cp-3');
     await waitFor(() => primary.compactSignals.length === 1, { description: 'first compact call' });
     const second = postJson(client, '/v1/responses/compact', compactBody, { ...key('cp-3'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) }).then(readJson);
-    await waitFor(() => primary.compactSignals.length === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the duplicate joined the in-flight call', maxTurns: 20_000 });
+    await waitFor(() => primary.compactSignals.length === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the duplicate joined the in-flight call' });
     expect(primary.compactSignals).toHaveLength(1);
     primary.release();
     const [a, b] = await Promise.all([first, second]);
@@ -172,7 +172,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
     const raw = await openRawPost(socketPath, '/v1/responses/compact', compactBody, { headers: key('cp-6') });
     await waitFor(() => primary.compactSignals.length === 1, { description: 'compact call started' });
     raw.socket.destroy();
-    await waitFor(() => timerPending(timers, DETACHED_MAX_MS), { description: 'the compaction detached from its client', maxTurns: 20_000 });
+    await waitFor(() => timerPending(timers, DETACHED_MAX_MS), { description: 'the compaction detached from its client' });
     expect(primary.compactSignals[0]?.aborted).toBe(false);
     primary.release();
     await waitFor(() => primary.settled.length === 1, { description: 'compact settled' });
@@ -328,7 +328,7 @@ describe('a cancelled keyed compaction stays tracked until it settles', () => {
     const raw = await openRawPost(harness.socketPath, '/v1/responses/compact', compactBody, { headers: key(keyValue) });
     await waitFor(() => primary.signals.length === 1, { description: 'compact call started' });
     raw.socket.destroy();
-    await waitFor(() => timerPending(harness.timers, DETACHED_MAX_MS), { description: 'the compaction detached from its client', maxTurns: 20_000 });
+    await waitFor(() => timerPending(harness.timers, DETACHED_MAX_MS), { description: 'the compaction detached from its client' });
     const cancelled = await readJson(
       await harness.client.request({ method: 'POST', path: '/v1/momonga/responses/cancel', headers: key(keyValue) }),
     );

@@ -128,7 +128,7 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
     replaceSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...declared(256) } }) });
     const answered = postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system')).then((response) => response.status, () => -1);
-    await waitFor(() => serves(dumpFile).length === 2, { maxTurns: 50_000, description: 'a second incarnation to start for the changed definition' });
+    await waitFor(() => serves(dumpFile).length === 2, { description: 'a second incarnation to start for the changed definition' });
     expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
     expect(await answered).toBe(200);
     expect(await inFlight).toBe(200);
@@ -147,7 +147,7 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     expect(next.status).toBe(200);
     await next.text();
     expect((await inFlight).status).toBe(200);
-    await waitFor(() => !isAlive(apple.pid), { maxTurns: 50_000, description: 'the removed target server to stop after its last lease ended' });
+    await waitFor(() => !isAlive(apple.pid), { description: 'the removed target server to stop after its last lease ended' });
   });
 
   it('an edit a to b to a with a call in flight on a keeps one managed server for the counter of a (design-settings-live 15.4)', async () => {

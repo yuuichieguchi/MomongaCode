@@ -57,8 +57,7 @@ describe('Idempotency-Key', () => {
     const secondPending = postJson(client, '/v1/responses', streamBody, { ...key('k-2'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) });
     await waitFor(() => primary.calls.length === 1 && timers.pending().some((timer) => timer.delayMs === JOINER_DEADLINE_MS), {
       description: 'the joiner subscribed to the in-flight run',
-      maxTurns: 20_000,
-    });
+      });
     primary.release('g');
 
     const secondResponse = await secondPending;

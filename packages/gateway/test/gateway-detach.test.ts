@@ -15,13 +15,13 @@ const JOINER_DEADLINE_MS = 60_000;
 type Timers = Awaited<ReturnType<typeof startGateway>>['timers'];
 const timerPending = (timers: Timers, delayMs: number): boolean => timers.pending().some((timer) => timer.delayMs === delayMs);
 const detached = (timers: Timers): Promise<void> =>
-  waitFor(() => timerPending(timers, DETACHED_MAX_MS), { description: 'the run detached from its last client', maxTurns: 20_000 });
+  waitFor(() => timerPending(timers, DETACHED_MAX_MS), { description: 'the run detached from its last client' });
 const rejoined = (timers: Timers): Promise<void> =>
-  waitFor(() => !timerPending(timers, DETACHED_MAX_MS), { description: 'a client rejoined the detached run', maxTurns: 20_000 });
+  waitFor(() => !timerPending(timers, DETACHED_MAX_MS), { description: 'a client rejoined the detached run' });
 const joinerSubscribed = (timers: Timers, upstreamCalls: () => number): Promise<void> =>
-  waitFor(() => upstreamCalls() === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner subscribed to the one upstream call', maxTurns: 20_000 });
+  waitFor(() => upstreamCalls() === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner subscribed to the one upstream call' });
 const joinerLeft = (timers: Timers): Promise<void> =>
-  waitFor(() => !timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner left', maxTurns: 20_000 });
+  waitFor(() => !timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner left' });
 
 const drain = async (iterator: AsyncIterator<SseFrame>): Promise<SseFrame[]> => {
   const frames: SseFrame[] = [];
@@ -140,7 +140,7 @@ describe('detached keyed runs', () => {
     await detached(timers);
 
     const joining = postJson(client, '/v1/responses', body, { ...key('d-5'), 'momonga-deadline-ms': '500' });
-    await waitFor(() => timers.pending().some((timer) => timer.delayMs === 500), { description: 'joiner deadline timer', maxTurns: 20_000 });
+    await waitFor(() => timers.pending().some((timer) => timer.delayMs === 500), { description: 'joiner deadline timer' });
     timers.advance(500);
     const joinerResult = await readJson(await joining);
     expect(joinerResult.status).toBe(504);
@@ -165,7 +165,7 @@ describe('detached keyed runs', () => {
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-6') });
     await waitFor(() => primary.calls[0]?.emitted === 1);
     raw.socket.destroy();
-    await waitFor(() => timers.pending().some((timer) => timer.delayMs === 60_000), { description: 'detached max timer', maxTurns: 20_000 });
+    await waitFor(() => timers.pending().some((timer) => timer.delayMs === 60_000), { description: 'detached max timer' });
     timers.advance(59_999);
     expect(primary.calls[0]?.signal.aborted).toBe(false);
     timers.advance(1);

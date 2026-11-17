@@ -1,22 +1,21 @@
 import fs from 'node:fs';
 import { POLL_INTERVAL_MS, systemWaitTiming, waitUntil } from '@momonga/foundation';
 
-export type WaitForOptions = { maxTurns?: number; description?: string };
+export const HARNESS_WAIT_MS = 45_000;
 
-const DEFAULT_MAX_TURNS = 200_000;
+export type WaitForOptions = { boundMs?: number; description?: string };
 
 const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export const afterMicrotasks = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export const waitFor = async (predicate: () => boolean | Promise<boolean>, options: WaitForOptions = {}): Promise<void> => {
-  const maxTurns = options.maxTurns ?? DEFAULT_MAX_TURNS;
-  for (let count = 0; count < maxTurns; count += 1) {
-    if (await predicate()) return;
+  const boundMs = options.boundMs ?? HARNESS_WAIT_MS;
+  const deadline = systemWaitTiming.monotonicMs() + boundMs;
+  while (!(await predicate())) {
+    if (systemWaitTiming.monotonicMs() >= deadline) throw new Error(`waitFor: condition not met within ${boundMs} ms${options.description === undefined ? '' : `: ${options.description}`}`);
     await turn();
   }
-  if (await predicate()) return;
-  throw new Error(`waitFor: condition not met after ${maxTurns} event-loop turns${options.description === undefined ? '' : `: ${options.description}`}`);
 };
 
 export type PollUntilOptions = { description: string; boundMs: number };

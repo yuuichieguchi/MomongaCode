@@ -48,7 +48,6 @@ const advanceUntil = async (
     },
     ready: () => status === 'QUEUED',
     horizonAt: Number.MAX_SAFE_INTEGER,
-    maxSteps: Number.MAX_SAFE_INTEGER,
     deadlineMs: REAL_PROCESS_TEST_TIMEOUT_MS,
     description: `run ${runId} to reach a terminal state`,
   });

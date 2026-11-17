@@ -524,7 +524,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
   };
 };
 
-export const waitTurns = (predicate: () => boolean, description: string): Promise<void> => waitFor(predicate, { description, maxTurns: 50_000 });
+export const waitTurns = (predicate: () => boolean, description: string): Promise<void> => waitFor(predicate, { description });
 
 export type SimpleResponse = { status: number; headers: Record<string, string>; text: string };
 

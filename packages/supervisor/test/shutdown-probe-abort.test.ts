@@ -102,7 +102,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
     });
     const closing = settled<SupervisorCloseResult>(controller.close(DEFAULT_STOP_VALUES));
     timers.advance(POLL_INTERVAL_MS);
-    await waitFor(() => log.events('shutdown.step').some((line) => line['shutdownStep'] === 2), { description: 'step 2 begins within one poll interval of the drain', maxTurns: 20_000 });
+    await waitFor(() => log.events('shutdown.step').some((line) => line['shutdownStep'] === 2), { description: 'step 2 begins within one poll interval of the drain' });
     expect(clock.now()).toBeLessThanOrEqual(POLL_INTERVAL_MS);
     expect(clock.now()).toBeLessThan(SHUTDOWN_DRAIN_BOUND_MS);
     expect(log.events('shutdown.step.bound').filter((line) => line['detail'] === 'step 1 bound reached')).toEqual([]);
