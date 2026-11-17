@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
@@ -59,7 +60,7 @@ const startHolder = (context: CleanupContext, home: string, binary: string) =>
 const nextProbe = (context: CleanupContext, at: Awaited<ReturnType<typeof prepared>>) => {
   const warnings: string[] = [];
   const server = createManagedServer({
-    inspector: testProcessInspector(),
+    inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: { ...FM_SERVER, restart: { ...FM_SERVER.restart, maxRestarts: 0 } },

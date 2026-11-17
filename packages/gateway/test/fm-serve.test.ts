@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { spawnSync } from '@momonga/testkit/child-process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -206,7 +207,7 @@ const setup = (config: SetupConfig = {}) => {
   });
   const warnings: string[] = [];
   const server: ManagedServer = createManagedServer({
-    inspector: testProcessInspector(),
+    inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: { ...FM_SERVER, restart: { backoffMs: BACKOFF_MS, maxRestarts: config.maxRestarts ?? 3, windowMs: RESET_MS } },

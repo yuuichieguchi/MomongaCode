@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
@@ -21,7 +22,7 @@ describe('the instance of a managed server is named by its server name (design-m
     const provider = `server-${'n'.repeat(140)}`;
     const instance = managedInstancePaths(momongaPaths(withTempDir(context, { asHome: true }), process.platform, {}), { owner: 'gateway', generation: 1, purpose: 'serve', provider, incarnation: 1 });
     const server = createManagedServer({
-      inspector: testProcessInspector(),
+      inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
       launch: TEST_UNPROTECTED_LAUNCH,
       lock: testKernelLock(),
       description: FM_SERVER,
