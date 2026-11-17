@@ -225,6 +225,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
+  const reportRecoveredPlaceholders = (recovered: { removed: string[]; unrecovered: string[] }): void => {
+    for (const leftover of recovered.removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+    for (const leftover of recovered.unrecovered) logger.warn(`left ${leftover} in place: a killed runtime may have created it as a placeholder before recording which file it was, so it is not removed; delete it yourself if you did not create it`);
+  };
   const stopValuesReader = options.stopValues ?? createStopValuesReader({ onNotice: onWarning });
   const valuesOfStop = (given: StopValues | undefined): StopValues => given ?? stopValuesReader.read();
   let stopMcpCloseGraceMs: number | undefined;
@@ -463,6 +467,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'sandbox', run: () => sandboxes.retireAll() });
     await step('sandbox', async () => {
+      if (platform === 'linux') reportRecoveredPlaceholders(await recoverPlaceholders(createPlaceholderJournal(journalDirectory)));
       (await sandboxes.admit(startDeadlineSignal(signal))).release();
     });
 
@@ -1093,9 +1098,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               if (platform !== 'linux') return 'done';
               if (await otherRuntimeLive()) return 'again';
               const { sandbox } = sandboxes.current();
-              const recovered = await (sandbox.recover === undefined ? recoverPlaceholders(createPlaceholderJournal(journalDirectory)) : sandbox.recover());
-              for (const leftover of recovered.removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
-              for (const leftover of recovered.unrecovered) logger.warn(`left ${leftover} in place: a killed runtime may have created it as a placeholder before recording which file it was, so it is not removed; delete it yourself if you did not create it`);
+              reportRecoveredPlaceholders(await (sandbox.recover === undefined ? recoverPlaceholders(createPlaceholderJournal(journalDirectory)) : sandbox.recover()));
               return 'done';
             },
           },
