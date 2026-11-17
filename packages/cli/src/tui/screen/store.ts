@@ -1,10 +1,13 @@
+import { callInputTracker } from '@momonga/protocol';
 import type { RunStatus } from '@momonga/protocol';
+import { jsonValueOrText } from '@momonga/foundation';
 import type { AttemptFailed } from '../../retry-wait.ts';
 import type { Entry, PendingApproval, PendingElicitation, RunPhase, RunningTool, Subagent, Usage } from '../transcript.ts';
 
 export type StoreEntry = { readonly id: number; readonly version: number; readonly entry: Entry };
 
 export type TranscriptState = {
+  callInputs: ReturnType<typeof callInputTracker>;
   runId: string | undefined;
   runStatus: RunStatus | undefined;
   phase: RunPhase | undefined;
@@ -30,7 +33,7 @@ export const EMPTY_USAGE: Usage = { inputTokens: 0, outputTokens: 0, totalTokens
 
 export const MIN_THOUGHT_WINDOW = 1;
 
-export const initialState: TranscriptState = {
+export const initialState: Omit<TranscriptState, 'callInputs'> = {
   runId: undefined,
   runStatus: undefined,
   phase: undefined,
@@ -51,6 +54,8 @@ export const initialState: TranscriptState = {
   contextTokens: 0,
   subagents: [],
 };
+
+export const freshState = (): TranscriptState => ({ ...initialState, callInputs: callInputTracker(jsonValueOrText) });
 
 export type StoreListener = (entryId: number | undefined, version: number) => void;
 
@@ -96,7 +101,7 @@ export const createTranscriptStore = (): TranscriptStore => {
   let positions = new Map<string, number>();
   let firstId = 0;
   let nextId = 0;
-  let state = initialState;
+  let state = freshState();
   let storeVersion = 0;
   let epoch = 0;
   let openKey: string | undefined;
@@ -173,7 +178,7 @@ export const createTranscriptStore = (): TranscriptStore => {
       firstId = nextId;
       entries = [];
       positions = new Map();
-      state = { ...initialState, thoughtWindow: state.thoughtWindow };
+      state = { ...freshState(), thoughtWindow: state.thoughtWindow };
       openKey = undefined;
       epoch += 1;
       tell(undefined, storeVersion + 1);

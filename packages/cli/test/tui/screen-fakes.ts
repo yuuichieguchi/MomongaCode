@@ -47,9 +47,12 @@ export const envelope = { id: 1, runId: 'r', sessionId: 's', seq: 1, step: 1, cr
 
 export const eventOf = (event: Record<string, unknown>): PublicRunEvent => ({ ...envelope, ...event }) as PublicRunEvent;
 
-export type Folded = TranscriptState & { entries: Entry[] };
+export type Folded = Omit<TranscriptState, 'callInputs'> & { entries: Entry[] };
 
-export const plainOf = (store: TranscriptStore): Folded => ({ ...store.state(), entries: Array.from({ length: store.count() }, (_, index) => store.at(index).entry).filter((entry) => entry.kind !== 'retired') });
+export const plainOf = (store: TranscriptStore): Folded => {
+  const { callInputs: _callInputs, ...state } = store.state();
+  return { ...state, entries: Array.from({ length: store.count() }, (_, index) => store.at(index).entry).filter((entry) => entry.kind !== 'retired') };
+};
 
 export const storeOf = (events: readonly Record<string, unknown>[], store: TranscriptStore = createTranscriptStore()): TranscriptStore => {
   for (const event of events) foldEvent(store, eventOf(event));
