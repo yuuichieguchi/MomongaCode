@@ -34,5 +34,28 @@ describe('a refused billing change in the fallback notice', () => {
     expect(notice?.message).toBe(
       'The model call was answered by the fallback model secondary because primary failed (provider_unavailable: the upstream is unreachable). Did not fall back to metered: billing from plan to metered is not allowed.',
     );
+    expect(notice?.fallback).toMatchObject({
+      target: 'secondary',
+      causes: [expect.objectContaining({ target: 'primary', code: 'provider_unavailable' }), expect.objectContaining({ target: 'metered', reason: 'billing_change_refused', fromBilling: 'plan', toBilling: 'metered' })],
+    });
+  });
+
+  it('names no command for a rejected plan credential either: each surface adds its own', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(
+      answeredBy(textStep('Done.', { usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } }), {
+        target: 'secondary',
+        attempts: 2,
+        fallbackFrom: ['primary'],
+        fallbackCauses: [{ target: 'primary', code: 'plan_credential_rejected', message: 'the plan credential was rejected' }],
+      }),
+    );
+    const run = await env.enqueue('Work');
+
+    await env.runOnce(env.worker());
+
+    const message = env.ofType(run.id, 'notice').find((event) => event.code === 'fallback_target')?.message ?? '';
+    expect(message).toContain('primary failed (plan_credential_rejected: the plan credential was rejected)');
+    expect(message).not.toMatch(/\/login|\/models|auth login|models billing|momonga /);
   });
 });

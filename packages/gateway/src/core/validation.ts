@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import { MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
+import { MAX_TOOL_PARAMETERS_BYTES, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 import { refuseStoredResponses } from './input.ts';
@@ -195,7 +195,6 @@ export const createStoredDataChecks = (): StoredDataChecks => {
 };
 
 const MAX_TOOLS = 128;
-const MAX_TOOL_PARAMETERS_BYTES = 65536;
 
 const validateTools = (tools: unknown): void => {
   if (!Array.isArray(tools)) throwIssue({ segments: ['tools'], message: 'must be an array of function tools' });

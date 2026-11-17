@@ -106,6 +106,7 @@ export {
   summaryTokenCapFor,
 } from './budget-constants.ts';
 export type { ErrorShape } from './budget-constants.ts';
+export { MAX_TOOL_PARAMETERS_BYTES } from './tool-parameters.ts';
 export {
   ANTHROPIC_API_VERSIONS,
   DEFAULT_ANTHROPIC_API_VERSION,
@@ -839,8 +840,8 @@ export type {
   RetentionStatusView,
 } from './supervisor-api.ts';
 export { INTERRUPTED_COMMAND_SHOWN_CHARS, INTERRUPTED_WORK_LISTED, interruptedWorkOf, parseInterruptedWork, parseRetentionStatus } from './supervisor-api.ts';
-export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList, isSpanFallbackCause, isSpanFallbackCauseList, spanFallbackCauseOf } from './fallback-cause.ts';
-export type { BillingChangeReason, BillingChangeRecord, FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
+export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, PLAN_CREDENTIAL_REJECTED, describeFallbackCause, describeFallbackCauseOn, fallbackCauseName, fallbackNoticeText, fallbackNoticeTextOn, isFallbackCause, isFallbackCauseList, isSpanFallbackCause, isSpanFallbackCauseList, spanFallbackCauseOf } from './fallback-cause.ts';
+export type { BillingChangeReason, BillingChangeRecord, FallbackCause, FallbackNotice, SpanFallbackCause } from './fallback-cause.ts';
 export { PLAN_LABEL_PATTERN, PLAN_LABEL_REFUSAL, isPlanLabel, planAccountRefOf } from './plan-account.ts';
 export type { NamedPlanAccountRef } from './plan-account.ts';
 export type { JsonSchema } from './schema-helpers.ts';

@@ -1,6 +1,6 @@
 import { TARGET_BILLINGS } from './capabilities.ts';
 import type { TargetBilling } from './capabilities.ts';
-import { messageOf } from './vocabulary.ts';
+import { billingChangeRefusedSentence, withBillingRemedy, withSignInRemedy } from './vocabulary.ts';
 import type { Surface } from './vocabulary.ts';
 
 export const BILLING_CHANGE_ALLOWED = 'billing_change_allowed' as const;
@@ -52,12 +52,34 @@ export const isSpanFallbackCauseList = (value: unknown): value is SpanFallbackCa
 
 export const fallbackCauseName = (cause: SpanFallbackCause): string => cause.name ?? cause.target;
 
+export const describeFallbackCauseOn = (cause: SpanFallbackCause, surface: Surface): string =>
+  cause.reason === BILLING_CHANGE_REFUSED ? withBillingRemedy(describeFallbackCause(cause), surface, cause.fromBilling, cause.toBilling) : describeFallbackCause(cause);
+
 const failureDetailOf = (cause: SpanFallbackCause): string => [cause.code, cause.message].filter((part): part is string => part !== null && part !== undefined).join(': ');
 
 const failureOf = (cause: SpanFallbackCause): string => `${fallbackCauseName(cause)} failed (${failureDetailOf(cause)})`;
 
-export const describeFallbackCause = (cause: SpanFallbackCause, surface: Surface): string => {
-  if (cause.reason === BILLING_CHANGE_REFUSED) return messageOf('billingChangeRefused', surface, { model: fallbackCauseName(cause), from: cause.fromBilling, to: cause.toBilling });
+export const describeFallbackCause = (cause: SpanFallbackCause): string => {
+  if (cause.reason === BILLING_CHANGE_REFUSED) return billingChangeRefusedSentence({ model: fallbackCauseName(cause), from: cause.fromBilling, to: cause.toBilling });
   if (cause.reason === BILLING_CHANGE_ALLOWED) return `${failureOf(cause)}, so the request changed from ${cause.fromBilling} to ${cause.toBilling} billing as models.billingChanges allows`;
   return failureOf(cause);
+};
+
+export const PLAN_CREDENTIAL_REJECTED = 'plan_credential_rejected' as const;
+
+export type FallbackNotice = { target: string; causes: FallbackCause[] };
+
+export const fallbackNoticeText = (notice: FallbackNotice): string => {
+  const failed = notice.causes.filter((cause) => cause.reason !== BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause));
+  const refused = notice.causes.filter((cause) => cause.reason === BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause));
+  return [`The model call was answered by the fallback model ${notice.target}${failed.length === 0 ? '' : ` because ${failed.join(' and ')}`}.`, ...refused].join(' ');
+};
+
+export const fallbackNoticeTextOn = (notice: FallbackNotice, surface: Surface): string => {
+  const remedies = new Map<string, (text: string) => string>();
+  for (const cause of notice.causes) {
+    if (cause.reason === BILLING_CHANGE_REFUSED) remedies.set(`billing ${cause.fromBilling} ${cause.toBilling}`, (text) => withBillingRemedy(text, surface, cause.fromBilling, cause.toBilling));
+    else if (cause.code === PLAN_CREDENTIAL_REJECTED) remedies.set('sign-in', (text) => withSignInRemedy(text, surface));
+  }
+  return [...remedies.values()].reduce((text, apply) => apply(text), fallbackNoticeText(notice));
 };
