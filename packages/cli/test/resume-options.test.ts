@@ -1,7 +1,7 @@
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { EXIT_FAILURE, EXIT_USAGE } from '@momonga/foundation';
+import { EXIT_CONFIG, EXIT_USAGE } from '@momonga/foundation';
 import { TARGET_NOT_READY, messageOf } from '@momonga/protocol';
 import type { MomongaModelList } from '@momonga/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -130,7 +130,7 @@ describe('readiness is decided before a resume is resolved', () => {
     const runtime = await started();
     const options = { prompt: async () => 'go on', format: 'json', verbose: false, interrupt: new AbortController().signal, reopen: { kind: 'id', id: 'ffffffff-no-such-session' }, capabilitiesOf: async () => { throw new Error('the capabilities of no model are read'); }, modelList: async () => NOT_CONNECTED } as unknown as HeadlessOptions;
 
-    expect(await runHeadless(runtime.ports, runtime.paths, options)).toBe(EXIT_FAILURE);
+    expect(await runHeadless(runtime.ports, runtime.paths, options)).toBe(EXIT_CONFIG);
 
     expect(runtime.stderr.join('')).toContain(messageOf('noModelConnected', 'cli'));
     expect(runtime.stderr.join('')).not.toContain('No session has the id');
@@ -145,7 +145,7 @@ describe('the command a refusal prints for a session of another folder', () => {
     fs.mkdirSync(awkward);
     const elsewhere = await runtime.service.createSession({ cwd: awkward });
 
-    const failure = await resolveSession(runtime.client, runtime.service.layout.project, elsewhere.id).catch((error: unknown) => error);
+    const failure = await resolveSession(runtime.client, runtime.service.layout.project, elsewhere.id, process.platform).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(SessionRefused);
     const command = /Run: (cd .*) && momonga --resume /s.exec((failure as Error).message)?.[1];
@@ -158,6 +158,6 @@ describe('the command a refusal prints for a session of another folder', () => {
   it('leaves a plain folder as it is', async () => {
     const sessions = { listSessions: async (cwd?: string) => (cwd === undefined ? [{ id: '0123456789abcdef', cwd: '/work/other' }] : []) };
 
-    await expect(resolveSession(sessions as never, '/work/project', '0123456789abcdef')).rejects.toThrow('Run: cd /work/other && momonga --resume 0123456789abcdef');
+    await expect(resolveSession(sessions as never, '/work/project', '0123456789abcdef', process.platform)).rejects.toThrow('Run: cd /work/other && momonga --resume 0123456789abcdef');
   });
 });

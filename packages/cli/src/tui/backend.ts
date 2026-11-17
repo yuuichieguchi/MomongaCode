@@ -273,8 +273,8 @@ export const createTuiBackend = (
       });
       return adopt(created.session);
     },
-    resumeSession: async (id) => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'id', id }, options)),
-    continueSession: async () => adopt(await reopenedAsTyped(runtime(), ports.cwd, { kind: 'newest' }, options)),
+    resumeSession: async (id) => adopt(await reopenedAsTyped(runtime(), ports.cwd, ports.platform, { kind: 'id', id }, options)),
+    continueSession: async () => adopt(await reopenedAsTyped(runtime(), ports.cwd, ports.platform, { kind: 'newest' }, options)),
     sessions: () => listedSessions(runtime(), ports.cwd, session?.id, closing.signal),
     runs: () => conversationRuns(current().id),
     toolResult: (runId, callId, offset) => runtime().toolResult(runId, callId, offset),

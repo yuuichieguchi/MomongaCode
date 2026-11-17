@@ -378,7 +378,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     resumeSession: async (id) => {
       record(`resume:${id}`);
-      return adopt(await resolveSession(stored, session.cwd, id));
+      return adopt(await resolveSession(stored, session.cwd, id, process.platform));
     },
     continueSession: async () => {
       record('continue');

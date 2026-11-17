@@ -297,13 +297,7 @@ const MODEL_LIST_KIND = 'a model list';
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
   const dial = (): UdsClient => createUdsClient(options.resolveSocket, { connectTimeoutMs: HOST_READ_BOUND_MS });
 
-  let http = dial();
-
-  const leaveRetiredGeneration = async (): Promise<void> => {
-    const retired = http;
-    http = dial();
-    await retired.close();
-  };
+  const http = dial();
 
   type Sent = { status: number; text: string };
 
@@ -312,12 +306,7 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return { status: response.status, text: await response.text() };
   };
 
-  const send = async (method: HttpMethod, path: string, body: unknown, signal: AbortSignal | undefined): Promise<Sent> => {
-    const first = await sendOnce(method, path, body, signal);
-    if (retiredRefusalOf(first.text) === undefined) return first;
-    await leaveRetiredGeneration();
-    return sendOnce(method, path, body, signal);
-  };
+  const send = sendOnce;
 
   const getJson = async (path: string, what: string, signal?: AbortSignal): Promise<unknown> => {
     const settled = await send('GET', path, undefined, signal);
