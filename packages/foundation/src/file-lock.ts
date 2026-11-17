@@ -30,7 +30,7 @@ export class LockWaitTimeoutError extends Error {
 
 const NEVER_ABORTED = new AbortController().signal;
 
-const waitBoundOf = (options: FileLockOptions): number => options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+const waitBoundOf = (options: FileLockOptions): number => options.timeoutMs ?? (options.signal === undefined ? DEFAULT_LOCK_TIMEOUT_MS : Number.POSITIVE_INFINITY);
 
 const acquireWithinTimeout = async (lockPath: string, options: FileLockOptions): Promise<HeldKernelLock> => {
   const timeoutMs = waitBoundOf(options);
