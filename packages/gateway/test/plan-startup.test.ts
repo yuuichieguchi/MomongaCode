@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { testKernelLock, writeLeftoverEntry } from '@momonga/testkit';
 import { PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, readRecord, recordFileOf, signedIn, startHarness, CONDITION_WAIT } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -23,7 +24,7 @@ describe('startup of the session engine', () => {
     const h = await harness();
     await signedIn(h, 'work');
     const stale = path.join(h.paths.sessions, `.${path.basename(recordFileOf(h, 'work'))}.4f2a.tmp`);
-    await fs.writeFile(stale, 'partial', { mode: 0o600 });
+    writeLeftoverEntry(testKernelLock(), stale, 'partial');
     await h.reopen({ accounts: work });
     await expect(fs.stat(stale)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'active' });

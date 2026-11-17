@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, sidecarOf, systemRandom, nodeFileSystem, nodeFileSystemSync, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testKernelLock, writeLeftoverEntry } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import { launchRuntime, scopedPaths, sessionEnvFor, startStack, stepsLogged } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -67,7 +67,7 @@ describe('startup tmp sweeps through startRuntimeProcess (system timers, fake cl
     }
     fs.symlinkSync(outside, path.join(root, seeded.activeSymlink));
     fs.symlinkSync(outside, path.join(root, 'unknown-link'));
-    fs.writeFileSync(path.join(root, 'unknown-file'), 'x');
+    writeLeftoverEntry(testKernelLock(), path.join(root, 'unknown-file'), 'x');
     fs.mkdirSync(path.join(root, '.removing-0190a000-0000-7000-8000-000000000000', 'left'), { recursive: true });
 
     await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });

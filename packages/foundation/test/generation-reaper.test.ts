@@ -16,7 +16,7 @@ import {
   reapDeadGenerations,
 } from '@momonga/foundation';
 import type { GenerationLayout, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult, HeldKernelLock, KernelLockMechanism, MarkerKind, MomongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest, startGenerationForTest, startLockHolder, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest, startGenerationForTest, startLockHolder, leaveLockFile, testKernelLock } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
 import { exitOf } from './support/lock-processes.ts';
 import { seededRandom } from './seeded-random.ts';
@@ -111,13 +111,19 @@ const kill = async (child: TrackedChild): Promise<void> => {
 
 const touch = (file: string, content = ''): void => fs.writeFileSync(file, content, { mode: 0o600 });
 
-const fillGeneration = (s: Setup, generation: number): GenerationLayout => {
+const lockLeftover = (lock: KernelLockMechanism | undefined, file: string): void => (lock === undefined ? touch(file) : leaveLockFile(lock, file));
+
+const fillGeneration = (s: Setup, generation: number, lock?: KernelLockMechanism): GenerationLayout => {
   const layout = s.prepare(generation);
   const targets = path.join(layout.dir, 'targets');
   fs.mkdirSync(targets, { mode: 0o700 });
   fs.mkdirSync(path.join(layout.dir, 'jobs'), { mode: 0o700 });
-  for (const stem of ['apple-1', '_probe-apple']) for (const suffix of ['.sock', '.lock']) touch(path.join(targets, `${stem}${suffix}`));
-  for (const name of ['supervisor.lock', 'starting.lock', 'runtime.lock', 'gateway.lock', 'gateway.sock', 'gateway.sock.lock', 'settings-applied.json']) touch(path.join(layout.dir, name));
+  for (const stem of ['apple-1', '_probe-apple']) {
+    touch(path.join(targets, `${stem}.sock`));
+    lockLeftover(lock, path.join(targets, `${stem}.lock`));
+  }
+  for (const name of ['supervisor.lock', 'starting.lock', 'runtime.lock', 'gateway.lock', 'gateway.sock.lock']) lockLeftover(lock, path.join(layout.dir, name));
+  for (const name of ['gateway.sock', 'settings-applied.json']) touch(path.join(layout.dir, name));
   fs.mkdirSync(generationSpawnScratch(s.paths, generation), { recursive: true, mode: 0o700 });
   return layout;
 };
@@ -323,7 +329,7 @@ describe('T-L2-6 (14.5 step 4, 20.64): a held child lock stops the reaper', () =
 describe('T-L2-7 (18.9a): every instance lock is claimed before targets/ goes', () => {
   it('keeps targets/ whole while one instance lock is held by a live process, and removes the generation once it is free', async (context) => {
     const s = setup();
-    const layout = fillGeneration(s, 1);
+    const layout = fillGeneration(s, 1, testKernelLock());
     const targets = path.join(layout.dir, 'targets');
     const instance = await startLockHolder(context, path.join(targets, 'apple-1.lock'));
     const warnings: string[] = [];
@@ -367,7 +373,7 @@ const dial = (socketPath: string): Promise<string> =>
 describe('T-L2-9 (14.4, 14.11 T6): a dial during and after a removal', () => {
   it('never fails a dial to a live generation during the pass, and a dial to the removed one finds no daemon', async () => {
     const s = setup();
-    const dead = fillGeneration(s, 1);
+    const dead = fillGeneration(s, 1, testKernelLock());
     const live = s.prepare(2);
     const lock = testKernelLock();
     const held = await lock.claim(live.locks.supervisor);

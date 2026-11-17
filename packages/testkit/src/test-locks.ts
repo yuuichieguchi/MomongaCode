@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { layoutProcessInspector, resolveLayoutLocks } from '@momonga/foundation';
+import { claimPathOf, layoutProcessInspector, lockFormOf, resolveLayoutLocks, sidecarOf } from '@momonga/foundation';
 import type { ClaimOutcome, KernelLockMechanism, LayoutLocks, LockCapability, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
 
 export const LOCK_PROOF_ENV = 'MOMONGA_TEST_LOCK_PROOF';
@@ -58,3 +58,18 @@ export const fixedLockCapability = (answer: LockCapability): LockCapabilityProbe
 });
 
 export const expectedKernelLockOn = (_platform: NodeJS.Platform): KernelLockMechanism => testKernelLock();
+
+export const lockFileOf = (lock: KernelLockMechanism, entry: string): string => (lockFormOf(lock, 'file') === 'entry' ? entry : sidecarOf(lock, entry));
+
+export const leaveLockFile = (lock: KernelLockMechanism, entry: string): void => {
+  const outcome = lock.claimSync?.(claimPathOf(lock, entry, lockFormOf(lock, 'file')));
+  if (outcome?.kind !== 'claimed') throw new Error(`the lock of ${entry} could not be claimed by the test`);
+  outcome.lock.release();
+};
+
+export const writeLeftoverEntry = (lock: KernelLockMechanism, file: string, content = ''): void => {
+  const outcome = lock.claimSync?.(claimPathOf(lock, file, lockFormOf(lock, 'file')));
+  if (outcome?.kind !== 'claimed') throw new Error(`the lock of ${file} could not be claimed by the test`);
+  fs.writeFileSync(file, content, { mode: 0o600 });
+  outcome.lock.release();
+};

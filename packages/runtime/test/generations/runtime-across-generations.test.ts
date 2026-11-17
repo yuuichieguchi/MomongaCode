@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EXIT_RETIRED, FIRST_GENERATION, createRolePort, generationLayout, momongaLayout, publishCurrentGeneration, scopeToGeneration } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, testKernelLock, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, lockFileOf, testKernelLock, REAL_PROCESS_WAIT_MS, writeLeftoverEntry } from '@momonga/testkit';
 import { mutableRole } from '../shared/mutable-role.ts';
 import { makeLogger } from '../process/helpers.ts';
 import { RUNTIME_VERSION, launchRuntime, prepareGeneration, readDb, scopedPaths, startStack, waitForCondition, waitForStatus } from '../process/run-helpers.ts';
@@ -174,15 +174,15 @@ describe('the start of a runtime beside other generations (20.35, 20.49)', () =>
     const staleLock = path.join(stack.temp.paths.callLocks, 'stale.lock');
     const held = await testKernelLock().claim(heldLock);
     if (held.kind !== 'claimed') throw new Error('the test could not claim its call lock');
-    fs.writeFileSync(staleLock, '');
+    writeLeftoverEntry(testKernelLock(), staleLock);
     const gatewaySocketPath = generationLayout(stack.temp.home, FIRST_GENERATION).sockets.gateway;
 
     try {
       const launched = await launchRuntime(stack.temp, { generation: 2, gatewaySocketPath });
 
       expect(fs.existsSync(foreignMarker)).toBe(true);
-      expect(fs.existsSync(heldLock)).toBe(true);
-      expect(fs.existsSync(staleLock)).toBe(false);
+      expect(fs.existsSync(lockFileOf(testKernelLock(), heldLock))).toBe(true);
+      expect(fs.existsSync(lockFileOf(testKernelLock(), staleLock))).toBe(false);
       expect(fs.statSync(scopedPaths(stack.temp, 2).jobs).mode & 0o777).toBe(0o700);
       expect(fs.existsSync(scopedPaths(stack.temp, 2).tmp.spawn)).toBe(true);
       expect(launched.handle.role()).toBe('serving');

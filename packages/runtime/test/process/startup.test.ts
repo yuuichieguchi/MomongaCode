@@ -7,7 +7,7 @@ import { nodeChildPorts } from '@momonga/tools';
 import { FIRST_GENERATION, ProcessLockHeldError, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration, registerOwned } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, lockFileOf, startLockHolder, firstGeneration, registerOwned, testKernelLock } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings, onCleanup } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -176,7 +176,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(error).toBeInstanceOf(runtimeAlreadyRunningError());
     expect(error).toMatchObject({ lockPath: firstGeneration(temp.paths).locks.runtime, holderPid: holder });
     expect(fs.existsSync(temp.paths.databases.runtime)).toBe(false);
-    expect(fs.readFileSync(firstGeneration(temp.paths).locks.runtime, 'utf8').trim()).toBe(String(holder));
+    expect(await testKernelLock().readHolder(firstGeneration(temp.paths).locks.runtime)).toBe(String(holder));
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -460,7 +460,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const viaLink = await registerOwned(onCleanup, () => startRuntimeProcess({ generation: FIRST_GENERATION, home: link, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() }));
     expect(viaLink.ready.socketPath).toBe(firstGeneration(stack.temp.paths).sockets.runtime);
     expect(fs.existsSync(stack.temp.paths.databases.runtime)).toBe(true);
-    expect(fs.existsSync(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
+    expect(fs.existsSync(lockFileOf(testKernelLock(), firstGeneration(stack.temp.paths).locks.runtime))).toBe(true);
     expect(fs.existsSync(path.join(link, '.momonga'))).toBe(true);
     expect(fs.lstatSync(path.join(stack.temp.home, '.momonga')).isDirectory()).toBe(true);
     await viaLink.close();
