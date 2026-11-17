@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { TestProject } from 'vitest/node';
 import { stateDirOf } from '../../scripts/support/dev-state.ts';
 import { RUN_CLASS_KEY, classOfSelection } from '../../scripts/support/run-class.ts';
+import { wholeRunRefusalOf } from './whole-run-guard.ts';
 import type { ProjectRunClass, SelectionProject } from '../../scripts/support/run-class.ts';
 import { RUN_LOCK_ENV, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, parseWaitSeconds, runLockDirsOf, unusableMessage, untilStopped } from '../../scripts/support/run-lock.ts';
 
@@ -46,6 +47,8 @@ const selectionProjectOf = async (project: TestProject): Promise<SelectionProjec
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const { state, projects } = project.vitest;
   if (typeof state.getPaths !== 'function' || !Array.isArray(projects)) throw refusalOf('run-lock: this vitest no longer exposes the selected test files');
+  const refusal = wholeRunRefusalOf({ argv: process.argv, env: process.env, projects: projects.map((selected) => selected.name) });
+  if (refusal !== undefined) throw refusalOf(refusal);
   const waitSeconds = waitSecondsOf(process.env[RUN_LOCK_WAIT_ENV]);
   const dir = stateDir();
   const runClass = await classOfSelection({

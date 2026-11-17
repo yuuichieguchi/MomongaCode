@@ -10,6 +10,8 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 export const REUSE_RECORD_FORMAT = 'momonga-test-reuse/1';
 
+export const WHOLE_RUN_ENV = 'MOMONGA_WHOLE_RUN';
+
 export type ReuseGlobals = {
   readonly node: string;
   readonly platform: string;
@@ -97,7 +99,7 @@ export const HARNESS_INPUTS = ['package.json', 'package-lock.json', 'tsconfig.js
 
 const HARNESS_DIRECTORIES = ['test/support/', 'scripts/support/', 'e2e/support/'];
 
-const IGNORED_ENV = new Set([TEST_REUSE_ENV, 'MOMONGA_TLC_REUSE', 'MOMONGA_RUN_LOCK_WAIT_SECONDS']);
+const IGNORED_ENV = new Set([TEST_REUSE_ENV, WHOLE_RUN_ENV, 'MOMONGA_TLC_REUSE', 'MOMONGA_RUN_LOCK_WAIT_SECONDS']);
 
 export const globalsOf = (tracked: readonly string[], digests: RepoDigests, env: Env): ReuseGlobals => ({
   node: process.version,
