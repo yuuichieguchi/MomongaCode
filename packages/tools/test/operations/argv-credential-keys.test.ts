@@ -1,10 +1,10 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PATH_VALUED_HTTP_KEYS, trustConfigOf } from '../../src/operations/argv.ts';
 import { appendGitConfig } from '../../src/read-only-call.ts';
+import { createTempDir } from '@momonga/testkit';
 
 const CONFIGURATION_ERROR = /Unsupported SSL backend|bad config|unable to parse|is not a valid|fatal: unknown/i;
 
@@ -36,7 +36,7 @@ describe('real git accepts the configuration the credential step produces', () =
   let home: string;
 
   beforeEach(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'argv-credential-keys-'));
+    home = createTempDir();
   });
 
   afterEach(() => {

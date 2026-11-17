@@ -1,4 +1,3 @@
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../../src/daemon/ensure-daemon.ts';
@@ -36,7 +35,7 @@ const effectsFor = (root: string): HomeEffects<never> =>
 
 describe('the eval host reconnects within the same bound as the TUI follow', () => {
   it('the reconnect bound of a case is the daemon ready bound the TUI follow uses', async () => {
-    const homes = createHomes(effectsFor(path.join(os.tmpdir(), 'momonga-reconnect-bound')), {
+    const homes = createHomes(effectsFor(path.join('/fixture', 'momonga-reconnect-bound')), {
       credentialValues: {},
       reflection: { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1 },
       managedTargets: [],
