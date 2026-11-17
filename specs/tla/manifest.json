@@ -6851,12 +6851,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 28120104,
-      "measuredSeconds": 1286.24,
+      "distinctStates": 307206,
+      "measuredSeconds": 4.62,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1492.52,
-      "budgetCpuSeconds": 2989,
-      "identity": "09e8841a11143f2ef1c22e2515cae1b746d9fc88e11446c4c280cb80f47064fa"
+      "measuredCpuSeconds": 15.96,
+      "budgetCpuSeconds": 35,
+      "identity": "d2748f25ccc177e8bc93f6dec93b659a7d2d1a09d20255a1a8fe0177568b4e7e",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.36 at start)"
     },
     {
       "config": "Retention.perStoreSweep",
