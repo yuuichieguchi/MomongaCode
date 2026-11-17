@@ -8,7 +8,7 @@ import { callsStep } from './scripts.ts';
 const recordedBeforeShown = (dbPath: string, approvalId: string): void => {
   const db = openDatabase(dbPath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
   db.exec('DROP TRIGGER events_reject_update');
-  db.prepare("UPDATE events SET payload_json = json_remove(payload_json, '$.shown') WHERE type = 'tool.permission.requested' AND approval_id = ?").run(approvalId);
+  db.prepare("UPDATE events SET payload_json = json_remove(payload_json, '$.shown'), shown = NULL WHERE type = 'tool.permission.requested' AND approval_id = ?").run(approvalId);
   db.close();
 };
 
