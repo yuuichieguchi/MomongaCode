@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, createExecWithStdin, givenCredentialSecretStore, secretStoreEnvFor } from '@momonga/foundation';
+import { CREDENTIAL_NOT_FOUND_EXIT, KEYCHAIN_ITEM_NOT_FOUND_EXIT, SECRET_TOOL_NOT_FOUND_EXIT, SecretNotFoundError } from '@momonga/foundation/secret-store';
 import { assertFakeSecretStoreEnv, productTestEnv, standInEnv, systemTempRoot } from '@momonga/testkit';
 import type { E2eHome } from '../e2e/support/home.ts';
 import { cliEnv } from '../e2e/support/cli.ts';
@@ -12,6 +13,8 @@ const TEST_TEMP_ROOT = systemTempRoot();
 const testProcessEnv = (): Record<string, string | undefined> => ({ ...process.env, DBUS_SESSION_BUS_ADDRESS: standInEnv()['DBUS_SESSION_BUS_ADDRESS'] });
 
 const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
+
+const NOT_FOUND_EXIT_OF_BACKEND: Readonly<Record<string, number>> = { keychain: KEYCHAIN_ITEM_NOT_FOUND_EXIT, 'secret-service': SECRET_TOOL_NOT_FOUND_EXIT, 'credential-manager': CREDENTIAL_NOT_FOUND_EXIT };
 
 const chosenSecretProgram = async (env: Readonly<Record<string, string | undefined>>): Promise<string | undefined> => (await secretStoreEnvFor(env, HOST))[SECRET_PROGRAM_ENV];
 
@@ -36,7 +39,9 @@ describe('no process of a test run can reach the OS secret store', () => {
     const name = `momonga-isolation-${process.pid}`;
     await given.store.write(name, 'kept value', new AbortController().signal);
     await expect(given.store.read(name, new AbortController().signal)).resolves.toBe('kept value');
-    await expect(given.store.read(`${name}-missing`, new AbortController().signal)).rejects.toThrow(/exit 44/);
+    const missing: unknown = await given.store.read(`${name}-missing`, new AbortController().signal).then(() => undefined, (error: unknown) => error);
+    expect(missing).toBeInstanceOf(SecretNotFoundError);
+    expect((missing as SecretNotFoundError).exitCode).toBe(NOT_FOUND_EXIT_OF_BACKEND[(await secretStoreEnvFor(testProcessEnv(), HOST))[SECRET_BACKEND_ENV] as string]);
   });
 
   it('the e2e harness gives the supervisor and the CLI a PATH whose secret store is the fake', async () => {

@@ -50,9 +50,9 @@ export type SecretStore = {
   write(name: string, value: string, signal: AbortSignal): Promise<void>;
 };
 
-const KEYCHAIN_ITEM_NOT_FOUND_EXIT = 44;
-const SECRET_TOOL_NOT_FOUND_EXIT = 1;
-const CREDENTIAL_NOT_FOUND_EXIT = 3;
+export const KEYCHAIN_ITEM_NOT_FOUND_EXIT = 44;
+export const SECRET_TOOL_NOT_FOUND_EXIT = 1;
+export const CREDENTIAL_NOT_FOUND_EXIT = 3;
 
 const DEFAULT_KEYCHAIN_ANSWER = /^    "(.+)"\n$/;
 const DEFAULT_KEYCHAIN_REFUSAL = /^(?:[^:\n]*: )?(SecKeychainCopyDefault: .*)$/;
