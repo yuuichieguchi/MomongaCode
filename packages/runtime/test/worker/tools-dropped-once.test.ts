@@ -3,7 +3,7 @@ import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { textStep } from './scripts.ts';
 
-const SMALL_WINDOW = 1300;
+const SMALL_WINDOW = 1600;
 
 const droppedNotices = (env: Env, runId: string): string[] =>
   env.ofType(runId, 'notice').flatMap((notice) => (notice.code === 'tools_dropped' ? [notice.message] : []));
