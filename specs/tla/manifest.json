@@ -3309,6 +3309,22 @@
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)"
     },
     {
+      "config": "PlanCredential.twoGensPersistFail",
+      "role": "evidence",
+      "expect": {
+        "violates": "SingleUse",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 43443,
+      "measuredSeconds": 3.23,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 10.59,
+      "budgetCpuSeconds": 25,
+      "note": "measured cold (reuse off, scripts/tlc.sh, workers 5, nice 15, 1-minute load 4.79 at start). Persist fault in the two-generation model: the disk keeps the spent refresh token while the memory token is dirty and the store lock is released, so the other generation sends it again. Finding open: the trace is in the commit message; the row turns to holds when the product fix lands"
+    },
+    {
       "config": "PlanCredential.twoGensNoReread",
       "role": "evidence",
       "expect": {
