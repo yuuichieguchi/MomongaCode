@@ -62,6 +62,7 @@ describe('a value a person did not write stays on its own line in command output
       startedAt: 's',
       phase: 'ready',
       env: 'frozen at supervisor start',
+      retention: null,
       children: [{ role: 'gateway', state: 'held', restarts: 0, consecutiveFailures: 0, heldReason: FORGED }],
       logs: { droppedLines: 0 },
     } as unknown as SupervisorHealth;
