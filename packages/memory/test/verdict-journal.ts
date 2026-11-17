@@ -77,6 +77,11 @@ export const commandThrough = (name: string, command: string, options: BashOptio
   };
 };
 
+export const observedWrites = (step: Step, files: { path: string; access: 'read' | 'write' | 'remove' }[]): Step => {
+  if (step.step !== 'call') throw new Error('only a call has observed files');
+  return { ...step, end: { ...step.end, files: files.map((file): ToolFile => ({ path: `${PROJECT}/${file.path}`, access: file.access })) } };
+};
+
 export const reconciled = (step: Step, outcome: 'already_applied' | 'not_applied' | 'unknown'): Step => {
   if (step.step !== 'call') throw new Error('only a call is reconciled');
   const command = outcome === 'not_applied' ? undefined : step.end['command'];

@@ -196,6 +196,15 @@ describe('a live yield run', () => {
     ]);
   });
 
+  it('makes each learn workspace a git folder, so the executor observes the files a Bash call of the verification writes, and gives no reuse home a repository of its own', async () => {
+    const context = harness();
+    await runYieldLive(context.effects, input());
+    const repositoryFiles = [...context.files.keys()].filter((file) => file.includes('/.git/'));
+    expect(repositoryFiles.filter((file) => file.endsWith('/.git/HEAD'))).toEqual(['/tmp/mc-y0/w/.git/HEAD', '/tmp/mc-y3/w/.git/HEAD', '/tmp/mc-y6/w/.git/HEAD', '/tmp/mc-y9/w/.git/HEAD']);
+    expect(context.files.get('/tmp/mc-y0/w/.git/HEAD')).toBe('ref: refs/heads/main\n');
+    expect(repositoryFiles.filter((file) => file.startsWith('/tmp/mc-y0/'))).toEqual(['/tmp/mc-y0/w/.git/HEAD', '/tmp/mc-y0/w/.git/config']);
+  });
+
   it('reads the candidates of the learn run and seeds the accepted ones in the with arm only, with the paths of their file evidence', async () => {
     const context = harness();
     const runs = await runYieldLive(context.effects, input());

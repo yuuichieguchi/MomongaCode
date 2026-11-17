@@ -90,11 +90,4 @@ describe('the shipped yield dataset', () => {
       expect(entry.reuse.graders.length).toBeGreaterThan(1);
     }
   });
-
-  it('has each learn task run its verification command and no other script, so a passing check makes the learn run a verified success', () => {
-    const dataset = parseYieldDataset(fs.readFileSync(SHIPPED, 'utf8'), 'yield.json');
-    for (const entry of dataset.families) {
-      for (const script of entry.learn.input.match(/node tools\/[\w.]+\.mjs/g) ?? []) expect(entry.learn.verification, `${entry.id} ${script}`).toContain(script);
-    }
-  });
 });

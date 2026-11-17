@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isVerifiedSuccess } from '@momonga/memory';
-import { bash, check, commandThrough, journal, read, reconciled, standing, write } from './verdict-journal.ts';
+import { bash, check, commandThrough, journal, observedWrites, read, reconciled, standing, write } from './verdict-journal.ts';
 import type { Step } from './verdict-journal.ts';
 
 const COMMANDS = ['npm test', 'pytest'];
@@ -76,9 +76,25 @@ describe('isVerifiedSuccess', () => {
   describe('a Bash call that is not read only', () => {
     const edit = (command = "sed -i 's/a/b/' package.json"): Step => bash(command, { basis: 'person' });
 
-    it('counts as a write of unknown paths, so a check after it does not verify the run', () => {
+    it('is a mutation only when the files the executor observed it write hold no manifest, so a check after it verifies the run', () => {
+      expect(verdict([observedWrites(edit(), [{ path: 'src/a.ts', access: 'write' }]), ...pass()])).toBe(true);
+      expect(verdict([write('src/a.ts'), observedWrites(edit(), [{ path: 'src/b.ts', access: 'write' }]), ...pass()])).toBe(true);
+      expect(verdict([observedWrites(edit('rm -rf build'), []), ...pass()])).toBe(true);
+    });
+
+    it('latches when the files the executor observed it write or remove include a manifest', () => {
+      expect(verdict([observedWrites(edit(), [{ path: 'package.json', access: 'write' }]), ...pass()])).toBe(false);
+      expect(verdict([observedWrites(edit('rm -rf build'), [{ path: 'src/a.ts', access: 'write' }, { path: 'Makefile', access: 'remove' }]), ...pass()])).toBe(false);
+    });
+
+    it('latches when its written files were not observed, so a check after it does not verify the run', () => {
       expect(verdict([edit(), ...pass()])).toBe(false);
       expect(verdict([write('src/a.ts'), edit(), ...pass()])).toBe(false);
+    });
+
+    it('takes the observed files of a reconciled call the same way', () => {
+      expect(verdict([observedWrites(reconciled(edit('rm -rf build'), 'unknown'), [{ path: 'src/a.ts', access: 'write' }]), ...pass()])).toBe(true);
+      expect(verdict([observedWrites(reconciled(edit('rm -rf build'), 'unknown'), [{ path: 'package.json', access: 'write' }]), ...pass()])).toBe(false);
     });
 
     it('does not matter for a read only call between the write and the check, nor after it', () => {

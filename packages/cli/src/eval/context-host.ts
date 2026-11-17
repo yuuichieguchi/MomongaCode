@@ -68,6 +68,15 @@ export type ContextHostEffects = {
 
 const WORKSPACE_DIRECTORY = 'w';
 
+const initRepository = async (effects: Pick<ContextHostEffects, 'makeDirectory' | 'writeFile'>, workspace: string): Promise<void> => {
+  const git = path.join(workspace, '.git');
+  await effects.makeDirectory(path.join(git, 'objects'));
+  await effects.makeDirectory(path.join(git, 'refs', 'heads'));
+  await effects.makeDirectory(path.join(git, 'refs', 'tags'));
+  await effects.writeFile(path.join(git, 'HEAD'), 'ref: refs/heads/main\n');
+  await effects.writeFile(path.join(git, 'config'), '[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n');
+};
+
 const ISOLATED_VARIABLES = ['XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'LOCALAPPDATA', 'APPDATA'] as const;
 
 export const caseEnvironment = (base: Readonly<Record<string, string | undefined>>, root: string, platform: NodeJS.Platform): Record<string, string> => {
@@ -412,7 +421,7 @@ const BENCHMARK_GUIDELINE_REPORT = { source: 'context improve benchmark' } as co
 
 export type ReflectionBounds = Pick<ReflectionSettle, 'pendingBoundMs' | 'attemptBoundMs' | 'pollMs'>;
 
-export type HomeSpec = { label: string; settings: Record<string, unknown>; files?: Readonly<Record<string, string>> };
+export type HomeSpec = { label: string; settings: Record<string, unknown>; files?: Readonly<Record<string, string>>; repository?: boolean };
 
 export type OpenedHome<Runtime extends ContextRuntime = ContextRuntime> = { cwd: string; env: Record<string, string>; runtime: Runtime; api: ContextCaseHost['api']; follow: EventFollow; close(): Promise<void> };
 
@@ -468,6 +477,7 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
     await effects.makeDirectory(workspace);
     for (const [name, content] of Object.entries(spec.files ?? {})) await effects.writeFile(path.join(workspace, name), content);
+    if (spec.repository === true) await initRepository(effects, workspace);
     const cwd = await effects.canonical(workspace);
     if (record.released) throw new ContextInterrupted();
     const daemonEnv = { ...caseEnvironment(effects.env, root, effects.platform), ...options.credentialValues };
