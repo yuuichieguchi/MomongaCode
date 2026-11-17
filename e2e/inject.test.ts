@@ -31,7 +31,7 @@ describe('the injection scenario set (4.1, 4.3)', () => {
   it(titleOf('inject-faults'), () => {
     const all = injectionScenarios.scenarios;
     expect(injectionScenarios.format).toBe('momonga-inject/1');
-    expect(new Set(all.map((scenario) => scenario.fault)).size).toBe(11);
+    expect(new Set(all.map((scenario) => scenario.fault)).size).toBe(12);
     expect(new Set(all.map((scenario) => scenario.id)).size).toBe(all.length);
     expect(all.filter((scenario) => scenario.requires === 'linux-container')).toHaveLength(1);
   });

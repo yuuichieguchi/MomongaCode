@@ -193,7 +193,7 @@ describe('acp: momonga acp', () => {
     expect(acp.permissionRequests[0]?.toolCall).toMatchObject({ kind: 'edit', title: 'editor: Edit config.toml', rawInput: { file_path: target } });
     const waiting = updatesOf(acp.updates, 'tool_call_update').filter((update) => JSON.stringify(update).includes('waiting for subagent editor'));
     expect(waiting).toHaveLength(1);
-    expect(messageTexts(acp.updates, 'agent_message_chunk').join('')).toBe(`${FINAL_TEXT}momonga info: ${E2E_CHECK_PASSED_TEXT}\n`);
+    expect(messageTexts(acp.updates, 'agent_message_chunk').join('')).toBe(`momonga info: ${E2E_CHECK_PASSED_TEXT}\n${FINAL_TEXT}momonga info: ${E2E_CHECK_PASSED_TEXT}\n`);
     expect(await acp.finish()).toEqual({ code: 0, signal: null });
   });
 

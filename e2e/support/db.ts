@@ -21,3 +21,12 @@ export const readDb = <Row extends DbRow = DbRow>(file: string, sql: string, ...
     db.close();
   }
 };
+
+export const writeDb = (file: string, sql: string, ...params: SQLInputValue[]): void => {
+  const db = new DatabaseSync(file, { timeout: E2E_DB_BUSY_WAIT_MS });
+  try {
+    db.prepare(sql).run(...params);
+  } finally {
+    db.close();
+  }
+};

@@ -17,11 +17,17 @@ describe('the credential step gives git no path-valued http key of the repositor
     expect(trustConfigOf('/session/ca.pem')).toContainEqual(['http.sslCAInfo', '/session/ca.pem']);
   });
 
-  it('names every http key the git manual gives a file or directory, so none is left to a repository setting', () => {
-    expect(PATH_VALUED_HTTP_KEYS).toEqual(
-      expect.arrayContaining(['http.sslCert', 'http.sslKey', 'http.sslCAPath', 'http.pinnedPubkey', 'http.proxySSLCert', 'http.proxySSLKey', 'http.proxySSLCAInfo']),
-    );
+  it('neutralises the path-valued keys that git accepts with an empty value', () => {
+    expect(PATH_VALUED_HTTP_KEYS).toEqual(['http.sslKey', 'http.proxySSLCert', 'http.proxySSLKey', 'http.proxySSLCAInfo']);
   });
+
+  it.each(['http.sslCert', 'http.sslCAPath', 'http.pinnedPubkey'])(
+    'leaves %s alone: git fails the credential run on an empty value of it, and a repository setting of it is refused before the run',
+    (key) => {
+      expect(PATH_VALUED_HTTP_KEYS).not.toContain(key);
+      expect(trustConfigOf('/session/ca.pem').map(([name]) => name)).not.toContain(key);
+    },
+  );
 
   it.each(['http.sslBackend', 'http.sslCertType', 'http.sslKeyType', 'http.sslCertPasswordProtected', 'http.proxySSLCertPasswordProtected', 'http.sslCipherList', 'http.sslVersion'])(
     'leaves %s alone, since it names no file or directory',
