@@ -47,7 +47,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     verificationValue: { commands: [...CHECK_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS], conditions: [], required: false },
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS, repositoryFacts: false },
     contextValue: defaultContextSettings(),
-    toolsValue: { ...defaultToolsSettings(), deferral: false, conciseDescriptions: false },
+    toolsValue: defaultToolsSettings(),
     classifierModel: undefined,
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,
