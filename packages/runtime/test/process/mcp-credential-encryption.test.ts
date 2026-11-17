@@ -78,8 +78,13 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
       const view = toolRuntime.mcpAdmin.authorization(session.id, 'docs');
       return view !== undefined && view.status !== 'awaiting_user' ? view : undefined;
     };
-    await waitFor(() => settledView() !== undefined, { description: 'the authorization to settle' });
-    const view = settledView();
+    const settled: NonNullable<ReturnType<typeof settledView>>[] = [];
+    await waitFor(() => {
+      const view = settledView();
+      if (view !== undefined) settled.push(view);
+      return view !== undefined;
+    }, { description: 'the authorization to settle' });
+    const view = settled[0];
     if (view === undefined) throw new Error('the authorization did not settle');
     return view;
   };
