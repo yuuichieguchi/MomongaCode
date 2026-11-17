@@ -337,7 +337,8 @@ describe('gitpr: delegated work through the real runtime, from the production st
     const bare = path.join(home.project, 'remote.git');
     initRepository(home, home.project, bare, bare);
     gitAt(home, home.project, 'remote', 'add', 'granted', `${forge.origin}/acme/widgets.git`);
-    gitAt(home, home.project, 'remote', 'add', 'ungranted', 'https://code.example.invalid/acme/widgets.git');
+    const ungrantedHost = new URL(forge.origin.replace('://127.0.0.1:', '://localhost:')).host;
+    gitAt(home, home.project, 'remote', 'add', 'ungranted', `http://${ungrantedHost}/acme/widgets.git`);
     await startStack({
       home,
       settings: { ...forgeSettings(forge), models: localModels(home) },
@@ -350,8 +351,11 @@ describe('gitpr: delegated work through the real runtime, from the production st
       expect(forge.requests.some((request) => request.path.includes('acme/widgets.git'))).toBe(true);
       const pushes = outputsOf(frames, 'GitPush');
       expect(pushes, allOutputsOf(frames)).toHaveLength(2);
-      expect(pushes[0]).not.toMatch(/code\.example\.invalid/);
-      expect(pushes[1]).toMatch(/code\.example\.invalid.*CONNECT tunnel failed, response 502/s);
+      expect(pushes[0]).not.toContain(ungrantedHost);
+      expect(pushes[1]).toContain(ungrantedHost);
+      expect(pushes[1]).toMatch(new RegExp(`the sandbox proxy refused ${ungrantedHost.replace(/\./g, '\\.')}: the name resolves to (127\\.0\\.0\\.1|::1), which is not a public address; a command reaches such an address only when the address itself is granted`));
+      expect(forge.requests.some((request) => request.headers['host'] === forge.host)).toBe(true);
+      expect(forge.requests.filter((request) => request.headers['host'] === ungrantedHost)).toHaveLength(0);
     } finally {
       await runtime.close();
     }
