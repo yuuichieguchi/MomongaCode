@@ -12,7 +12,7 @@
         "job": 1
       },
       "packages/cli/src/commands/report.ts": {
-        "limit": 2
+        "limit": 1
       },
       "packages/eval/src/context-improve.ts": {
         "benchmark": 5,
@@ -128,9 +128,6 @@
         "conversation": 2,
         "directory": 4,
         "gateway": 2,
-        "limit": 1
-      },
-      "packages/cli/src/run/headless.ts": {
         "limit": 1
       },
       "packages/cli/src/run/skill-invocation.ts": {
@@ -570,7 +567,7 @@
         "task": 1
       },
       "packages/runtime/src/worker/budget.ts": {
-        "limit": 4
+        "limit": 2
       },
       "packages/runtime/src/worker/claim-runner.ts": {
         "gateway": 2
