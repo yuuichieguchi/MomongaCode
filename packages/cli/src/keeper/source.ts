@@ -11,17 +11,16 @@ import {
   ensureBundledLinuxSocketGuard,
   ensureBundledWindowsKeeper,
   lockFormOf,
-  nodeFileSystem,
   parseLinuxSocketGuardManifest,
   parseWindowsKeeperManifest,
   sha256Hex,
   sweepLeftovers,
 } from '@momonga/foundation';
-import type { BundledExecutableManifest, KernelLockMechanism, Random } from '@momonga/foundation';
+import type { BundledExecutableManifest, FileSystem, KernelLockMechanism, Random } from '@momonga/foundation';
 
 const WORK_NAME_BYTES = 8;
 
-export type SourceKeeperFiles = {
+export type SourceKeeperFiles = Pick<FileSystem, 'mkdirPrivate' | 'readFile' | 'open' | 'rename' | 'rm' | 'readdir'> & {
   exists(file: string): boolean;
   read(file: string): Uint8Array;
 };
@@ -96,7 +95,7 @@ const checkedFrom = async (helper: SourceBuiltHelper, ports: CheckPorts, built: 
   const { asset, sha256, size } = manifest.binary;
   const binary = files.read(path.join(built, asset));
   if (binary.length !== size || sha256Hex(binary) !== sha256) throw helper.failure(`the ${helper.what} built from ${helper.source} does not match the checksum in its manifest`);
-  const final = await helper.ensure({ asset: (entry) => files.read(path.join(built, entry)), executablesRoot, random, files: nodeFileSystem, lock });
+  const final = await helper.ensure({ asset: (entry) => files.read(path.join(built, entry)), executablesRoot, random, files, lock });
   return helper.checked(final, sha256, files.read);
 };
 
@@ -112,7 +111,7 @@ const buildChecked = async (helper: SourceBuiltHelper, ports: SourceKeeperPorts,
 const builtHelper = async (helper: SourceBuiltHelper, ports: SourceKeeperPorts): Promise<() => string> => {
   const { script, executablesRoot, files, random, lock } = ports;
   if (!files.exists(script)) throw helper.failure(`the ${helper.executable} could not be built for this from-source run: ${script} is missing`);
-  await nodeFileSystem.mkdirPrivate(executablesRoot);
+  await files.mkdirPrivate(executablesRoot);
   await sweepLeftovers({ directories: [{ directory: executablesRoot, isLeftover: (entry) => entry.startsWith(`${helper.folder}-source-`) }], lock });
   const workDir = path.join(executablesRoot, `${helper.folder}-source-${random.hex(WORK_NAME_BYTES)}`);
   const claim = await lock.claim(claimPathOf(lock, workDir, lockFormOf(lock, 'directory')));
@@ -120,7 +119,7 @@ const builtHelper = async (helper: SourceBuiltHelper, ports: SourceKeeperPorts):
   try {
     return await buildChecked(helper, ports, workDir);
   } finally {
-    await nodeFileSystem.rm(workDir, { recursive: true });
+    await files.rm(workDir, { recursive: true });
     claim.lock.dispose();
   }
 };

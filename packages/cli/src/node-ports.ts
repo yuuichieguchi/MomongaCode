@@ -172,6 +172,7 @@ export const nodeFilesLockedBy = (lock: LockSource): CliFiles => ({
 export const WINDOWS_KEEPER_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'windows-keeper.ts');
 
 export const nodeSourceKeeperFiles: SourceKeeperFiles = {
+  ...nodeFileSystem,
   exists: (file) => existsSync(file),
   read: (file) => readFileSync(file),
 };
