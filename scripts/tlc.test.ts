@@ -131,6 +131,9 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
     fs.symlinkSync(`${repoRoot}.cache/tla/tla2tools.jar`, path.join(root, 'sandbox', '.cache', 'tla', 'tla2tools.jar'));
     fs.writeFileSync(path.join(root, 'sandbox', 'specs', 'tla', 'Stub.tla'), '');
     fs.writeFileSync(path.join(root, 'sandbox', 'specs', 'tla', 'Stub.cfg'), '');
+    fs.writeFileSync(path.join(root, 'sandbox', 'specs', 'tla', 'Scratch.tla'), '');
+    fs.writeFileSync(path.join(root, 'sandbox', 'specs', 'tla', 'Scratch.cfg'), '');
+    fs.writeFileSync(path.join(root, 'sandbox', 'specs', 'tla', 'manifest.json'), JSON.stringify({ entries: [{ config: 'Stub', budgetCpuSeconds: 30 }] }));
     fs.writeFileSync(
       path.join(bin, 'java'),
       [
@@ -169,7 +172,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
   const holdHeavy = async (): Promise<number | undefined> => {
     const release = path.join(root, 'release');
     const events = path.join(root, 'events');
-    const child = spawn(process.execPath, [`${repoRoot}scripts/run-lock.ts`, 'heavy', '--', process.execPath, `${repoRoot}scripts/support/run-lock-holder.ts`, events, 'H1', release], {
+    const child = spawn(process.execPath, [`${repoRoot}scripts/run-lock.ts`, 'heavy', '--budget-cpu-seconds', '30', '--', process.execPath, `${repoRoot}scripts/support/run-lock-holder.ts`, events, 'H1', release], {
       cwd: repoRoot,
       env: baseEnv(),
       stdio: 'ignore',
@@ -214,7 +217,30 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
     expect(run.status).toBe(0);
     expect(logLines()).toHaveLength(1);
     expect(logLines()[0]).toMatch(/^ran:heavy\.[0-9a-f]{16}$/);
-    expect(spawnSync(process.execPath, [`${repoRoot}scripts/run-lock.ts`, 'heavy', '--', 'true'], { cwd: repoRoot, env: baseEnv() }).status).toBe(0);
+    expect(spawnSync(process.execPath, [`${repoRoot}scripts/run-lock.ts`, 'heavy', '--budget-cpu-seconds', '5', '--', 'true'], { cwd: repoRoot, env: baseEnv() }).status).toBe(0);
+  });
+
+  it('takes the CPU budget of a five-worker call from the config row of the manifest', () => {
+    const run = tlc(['Stub', '-workers', '5']);
+
+    expect(run.status).toBe(0);
+    expect(run.stderr).toContain('of its budget of 30 s');
+  });
+
+  it('refuses a five-worker call of a config with no manifest row and no explicit budget, without the lock', () => {
+    const run = tlc(['Scratch', '-workers', '5']);
+
+    expect(run.status).toBe(64);
+    expect(run.stderr).toContain('run-lock: Scratch has no row in specs/tla/manifest.json, so it has no CPU budget: set TLC_BUDGET_CPU_SECONDS');
+    expect(logLines()).toEqual([]);
+  });
+
+  it('runs a five-worker call of a config with no manifest row under an explicit budget', () => {
+    const run = tlc(['Scratch', '-workers', '5'], { TLC_BUDGET_CPU_SECONDS: '7' });
+
+    expect(run.status).toBe(0);
+    expect(run.stderr).toContain('of its budget of 7 s');
+    expect(logLines()).toHaveLength(1);
   });
 
   it('TB48 trusts a heavy token of the right shape without checking it', () => {

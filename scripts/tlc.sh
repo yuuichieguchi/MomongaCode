@@ -15,6 +15,8 @@ usage() {
   echo "  config-name: a file specs/tla/<config-name>.cfg, for example RunRecovery;" >&2
   echo "  the module is the part of the name before the first dot: RunRecovery.children checks RunRecovery.tla" >&2
   echo "  TLC_METADIR: the state directory; when set, the caller owns it and the script does not remove it" >&2
+  echo "  TLC_BUDGET_CPU_SECONDS: the CPU budget of a run with more than one worker, which holds the heavy run lock;" >&2
+  echo "    when unset, the budgetCpuSeconds of the config's row in specs/tla/manifest.json; a config with no row needs it" >&2
   echo "  expected jar: $jar" >&2
   echo "  pinned sha256: $JAR_SHA256" >&2
   echo "  pinned version: $JAR_VERSION" >&2
@@ -78,7 +80,13 @@ if [ "$heavy" = 1 ] && [ -f "$root/scripts/run-lock.ts" ]; then
         echo "run-lock: node is required to take the run lock for a TLC run with more than one worker" >&2
         exit 73
       fi
-      exec node "$root/scripts/run-lock.ts" heavy -- bash "${BASH_SOURCE[0]}" "$config" "$@" ;;
+      budget="${TLC_BUDGET_CPU_SECONDS:-}"
+      if [ -z "$budget" ]; then budget="$(node "$root/scripts/support/run-budgets.ts" "$config")"; fi
+      if [ -z "$budget" ]; then
+        echo "run-lock: $config has no row in specs/tla/manifest.json, so it has no CPU budget: set TLC_BUDGET_CPU_SECONDS" >&2
+        exit 64
+      fi
+      exec node "$root/scripts/run-lock.ts" heavy --budget-cpu-seconds "$budget" -- bash "${BASH_SOURCE[0]}" "$config" "$@" ;;
   esac
 fi
 

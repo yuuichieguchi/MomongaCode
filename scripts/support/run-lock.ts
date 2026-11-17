@@ -11,7 +11,7 @@ export const RUN_LOCK_ENV = 'MOMONGA_RUN_LOCK';
 export const RUN_LOCK_WAIT_ENV = 'MOMONGA_RUN_LOCK_WAIT_SECONDS';
 export const RUN_LOCK_DEFAULT_WAIT_SECONDS = 3600;
 export const RUN_LOCK_POLL_MS = 1000;
-export const RUN_LOCK_EXIT = { usage: 64, refused: 71, waitedOut: 72, unusable: 73, interrupted: 130, terminated: 143 } as const;
+export const RUN_LOCK_EXIT = { usage: 64, refused: 71, waitedOut: 72, unusable: 73, interrupted: 130, terminated: 143, cpuBudget: 75, starterGone: 76 } as const;
 export const LIGHT_STEPS = ['claimOwn', 'checkHeavy'] as const;
 export const HEAVY_STEPS = ['claimHeavy', 'scanOne', 'decide'] as const;
 
@@ -52,6 +52,11 @@ export const parseWaitSeconds = (text: string | undefined, source: WaitSource): 
   if (text === undefined || !/^\d+$/.test(text) || !Number.isSafeInteger(Number(text))) {
     throw new Error(`run-lock: ${WAIT_SOURCE_NAMES[source]} must be a whole number of seconds, got "${text ?? ''}"`);
   }
+  return Number(text);
+};
+
+export const parseBudgetSeconds = (text: string, source: string): number => {
+  if (!/^[1-9]\d*$/.test(text) || !Number.isSafeInteger(Number(text))) throw new Error(`run-lock: ${source} must be a whole number of CPU seconds above 0, got "${text}"`);
   return Number(text);
 };
 
