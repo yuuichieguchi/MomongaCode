@@ -1,0 +1,2 @@
+export const DEFAULT_TEST_TIMEOUT_MS = 60_000;
+export const E2E_HOOK_TIMEOUT_MS = 163_325;

@@ -10,20 +10,20 @@
   },
   "packageManager": "npm@11.19.1",
   "scripts": {
-    "test": "MOMONGA_TEST_REUSE=0 MOMONGA_TLC_REUSE=0 MOMONGA_WHOLE_RUN=1 node scripts/bundle.ts --threads && vitest run --project unit --project e2e --project packaging",
-    "test:reuse": "MOMONGA_TEST_REUSE=1 MOMONGA_TLC_REUSE=1 MOMONGA_WHOLE_RUN=1 node scripts/bundle.ts --threads && vitest run --project unit --project e2e --project packaging",
-    "test:tlc-deep": "MOMONGA_TLC_REUSE=1 MOMONGA_TLC_TIER=deep node scripts/bundle.ts --threads && vitest run --project unit test/formal",
+    "test": "MOMONGA_TEST_REUSE=0 MOMONGA_TLC_REUSE=0 MOMONGA_WHOLE_RUN=1 vitest run --project unit --project e2e --project packaging",
+    "test:reuse": "MOMONGA_TEST_REUSE=1 MOMONGA_TLC_REUSE=1 MOMONGA_WHOLE_RUN=1 vitest run --project unit --project e2e --project packaging",
+    "test:tlc-deep": "MOMONGA_TLC_REUSE=1 MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
     "test:setup": "node scripts/fetch-tla.ts",
-    "test:e2e": "node scripts/bundle.ts --threads && MOMONGA_WHOLE_RUN=1 vitest run --project e2e",
-    "test:packaging": "node scripts/bundle.ts --threads && MOMONGA_WHOLE_RUN=1 vitest run --project packaging",
+    "test:e2e": "MOMONGA_WHOLE_RUN=1 vitest run --project e2e",
+    "test:packaging": "MOMONGA_WHOLE_RUN=1 vitest run --project packaging",
     "calibrate:offloop": "vitest run --project calibration --silent=false packages/runtime/test/calibration/offloop-cost.test.ts",
     "typecheck": "node scripts/bundle.ts --threads && tsc -p tsconfig.json",
     "bundle": "node scripts/bundle.ts",
     "sea": "node scripts/sea.ts",
     "notices": "node scripts/third-party-notices.ts",
-    "test:sea": "node scripts/bundle.ts --threads && vitest run --project packaging scripts/sea.test.ts",
-    "test:install": "node scripts/bundle.ts --threads && vitest run --project packaging scripts/install.test.ts",
-    "test:release": "node scripts/bundle.ts --threads && vitest run --project packaging scripts/release.test.ts"
+    "test:sea": "vitest run --project packaging scripts/sea.test.ts",
+    "test:install": "vitest run --project packaging scripts/install.test.ts",
+    "test:release": "vitest run --project packaging scripts/release.test.ts"
   },
   "devDependencies": {
     "typescript": "7.0.2",

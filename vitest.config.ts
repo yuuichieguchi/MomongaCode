@@ -1,5 +1,5 @@
 import { configDefaults, defineConfig } from 'vitest/config';
-import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
+import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/vitest-timeouts.ts';
 import { hostE2eFileWorkers } from './e2e/support/parallelism.ts';
 import { hostTlcRowsAtOnce } from './test/formal/tlc-rows.ts';
 import { RUN_CLASS_KEY } from './scripts/support/run-class.ts';
