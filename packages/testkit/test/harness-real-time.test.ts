@@ -2,10 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers, driveFakeTime, waitFor } from '@momonga/testkit';
 
 describe('waitFor is bounded by real time and yields to real I/O', () => {
-  it('gives up after its real-time bound, naming the bound and the description', async () => {
-    const startedAt = performance.now();
+  it('gives up after its bound, naming the bound and the description', async () => {
     await expect(waitFor(() => false, { boundMs: 200, description: 'never' })).rejects.toThrow(/not met within 200 ms: never/);
-    expect(performance.now() - startedAt).toBeLessThan(2000);
+  });
+
+  it('reads its bound from the timing it is given, so the wait ends at the bound of that clock', async () => {
+    const clock = createFakeClock(0);
+    let polls = 0;
+    await expect(
+      waitFor(
+        () => {
+          polls += 1;
+          clock.advance(50);
+          return false;
+        },
+        { boundMs: 200, description: 'never', timing: clock },
+      ),
+    ).rejects.toThrow(/not met within 200 ms: never/);
+    expect(polls).toBe(4);
   });
 
   it('is met by a condition that real I/O settles later than a count of turns would allow', async () => {

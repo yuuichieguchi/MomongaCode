@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import { POLL_INTERVAL_MS, systemWaitTiming, waitUntil } from '@momonga/foundation';
+import type { Timing } from '@momonga/foundation';
 
 export const HARNESS_WAIT_MS = 45_000;
 
-export type WaitForOptions = { boundMs?: number; description?: string };
+export type WaitForOptions = { boundMs?: number; description?: string; timing?: Pick<Timing, 'monotonicMs'> };
 
 const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -11,9 +12,10 @@ export const afterMicrotasks = (): Promise<void> => new Promise((resolve) => set
 
 export const waitFor = async (predicate: () => boolean | Promise<boolean>, options: WaitForOptions = {}): Promise<void> => {
   const boundMs = options.boundMs ?? HARNESS_WAIT_MS;
-  const deadline = systemWaitTiming.monotonicMs() + boundMs;
+  const timing = options.timing ?? systemWaitTiming;
+  const deadline = timing.monotonicMs() + boundMs;
   while (!(await predicate())) {
-    if (systemWaitTiming.monotonicMs() >= deadline) throw new Error(`waitFor: condition not met within ${boundMs} ms${options.description === undefined ? '' : `: ${options.description}`}`);
+    if (timing.monotonicMs() >= deadline) throw new Error(`waitFor: condition not met within ${boundMs} ms${options.description === undefined ? '' : `: ${options.description}`}`);
     await turn();
   }
 };
