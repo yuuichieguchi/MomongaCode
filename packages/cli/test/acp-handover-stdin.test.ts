@@ -30,6 +30,7 @@ const scriptedInput = (): ScriptedInput => {
     take: () => chunks.shift(),
     pause: () => undefined,
     resume: () => undefined,
+    release: () => undefined,
     arrival: () => {
       if (chunks.length > 0) return Promise.resolve('bytes');
       if (ended) return Promise.resolve('end');

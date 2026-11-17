@@ -96,7 +96,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: (text: string) => void err.push(text) },
     interrupt: new AbortController().signal,
-    personCapability: async () => FAKE_PERSON_CAPABILITY,
+    personCapability: async (home: string) => (home === paths.home ? FAKE_PERSON_CAPABILITY : `no capability for ${home}`),
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out, err };
 };

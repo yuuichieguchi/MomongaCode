@@ -27,7 +27,7 @@ export type SelfExecutable =
 
 export type Sink = { write(text: string): void };
 
-export type AcpInput = { take(): Uint8Array | undefined; arrival(): Promise<'bytes' | 'end'>; pause(): void; resume(): void };
+export type AcpInput = { take(): Uint8Array | undefined; arrival(): Promise<'bytes' | 'end'>; pause(): void; resume(): void; release(): void };
 
 export type AcpStdio = { input: AcpInput; output: WritableStream<Uint8Array> };
 
