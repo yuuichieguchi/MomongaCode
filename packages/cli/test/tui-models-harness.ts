@@ -1,6 +1,6 @@
 import type { TestContext } from 'vitest';
 import type { GatewayHealth, LocalServerDetection, PlanAccountsResponse } from '@momonga/protocol';
-import type { DetectRequest } from '../src/commands/models.ts';
+import type { DetectRequest, ModelsShell } from '../src/commands/models.ts';
 import { createFoundServers } from '../src/tui/models/context.ts';
 import type { ModelsFlowContext } from '../src/tui/models/context.ts';
 import type { PickRequest, TextRequest } from '../src/tui/picker.tsx';
@@ -16,6 +16,7 @@ export type Shown =
 export type FlowFakes = {
   found?: (request: DetectRequest) => readonly LocalServerDetection[] | Promise<readonly LocalServerDetection[]>;
   programModel?: string;
+  describe?: ModelsShell['describe'];
   health?: GatewayHealth['models'];
   accounts?: PlanAccountsResponse;
   cancelPhase?: string;
@@ -50,7 +51,7 @@ export const flowOf = (context: TestContext, settings: unknown | undefined, step
   const phases: string[] = [];
   const secrets = new Map<string, string>();
   const detections: DetectRequest[] = [];
-  const harness = shellOf(place, { ...(fakes.programModel === undefined ? {} : { programModel: fakes.programModel }) });
+  const harness = shellOf(place, { ...(fakes.programModel === undefined ? {} : { programModel: fakes.programModel }), ...(fakes.describe === undefined ? {} : { describe: fakes.describe }) });
   const choose = async (request: PickRequest) => {
     const rows = request.rows.map((row) => row.label);
     shown.push({ kind: 'pick', title: request.title, lines: (request.lines ?? []).map(lineText), rows });
