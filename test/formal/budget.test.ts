@@ -58,3 +58,24 @@ describe('the cold wall of the every-run tier', () => {
     expect(tierBudgetProblem(manifest)).toBeUndefined();
   });
 });
+
+describe('the CPU budgets of the vitest projects', () => {
+  const projectRows = (): Record<string, unknown>[] => {
+    const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (typeof parsed !== 'object' || parsed === null || !('vitestProjects' in parsed) || !Array.isArray(parsed.vitestProjects)) throw new Error('the TLA manifest has no vitestProjects');
+    return parsed.vitestProjects as Record<string, unknown>[];
+  };
+
+  it('records a budget for every project of the vitest config', () => {
+    expect(projectRows().map((row) => row['project']).sort()).toEqual(['calibration', 'e2e', 'packaging', 'unit']);
+  });
+
+  it('derives every budget as twice the measured CPU, or wall × cores while the CPU is not measured, rounded up plus the start-up CPU', () => {
+    const { startupCpuSeconds } = readManifest(manifestPath);
+    for (const row of projectRows()) {
+      const measured = row['measuredCpuSeconds'];
+      const basis = typeof measured === 'number' ? measured : (row['measuredWallSeconds'] as number) * (row['measuredCores'] as number);
+      expect(row['budgetCpuSeconds'], String(row['project'])).toBe(Math.ceil(2 * basis) + startupCpuSeconds);
+    }
+  });
+});

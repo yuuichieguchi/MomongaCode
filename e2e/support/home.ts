@@ -10,7 +10,7 @@ import type { LedgerSurvivor, ProcessLedger } from './ledger.ts';
 import { readDb } from './db.ts';
 import { groupAlive } from './process.ts';
 import { removeTree } from './remove-tree.ts';
-import { E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eEntryPrefix, e2eTmpRoot, harnessFilePath } from './run-env.ts';
+import { E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eEntryPrefix, e2eTmpRoot, harnessFilePath, privateTempRoot } from './run-env.ts';
 import { E2E_DISPOSE_BOUND_MS, E2E_STOP_SETTLED_BOUNDS_MS, UNTIL_DEFAULT_INTERVAL_MS, abortableWait, withinBound } from './wait.ts';
 
 export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
@@ -32,7 +32,7 @@ export type E2eHome = {
   readonly ledger: ProcessLedger;
 };
 
-export type CreateE2eHomeOptions = { tmpRoot?: string; run?: string };
+export type CreateE2eHomeOptions = { tmpRoot?: string; run?: string; privateBase?: string };
 
 export type E2eTestOutcome = { readonly test: string; readonly failed: boolean };
 
@@ -76,7 +76,7 @@ const assertSocketBudget = async (tmpRoot: string, run: string): Promise<void> =
 
 export const createE2eHome = async (options: CreateE2eHomeOptions = {}): Promise<E2eHome> => {
   const run = options.run === undefined ? e2eRunToken() : runTokenFrom(options.run);
-  const realTmp = e2eTmpRoot();
+  const realTmp = options.privateBase === undefined ? e2eTmpRoot() : privateTempRoot(fs.realpathSync(options.privateBase));
   const tmpRoot = options.tmpRoot === undefined ? realTmp : fs.realpathSync(options.tmpRoot);
   assertInside(tmpRoot, realTmp);
   await assertSocketBudget(tmpRoot, run);

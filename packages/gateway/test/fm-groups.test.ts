@@ -8,7 +8,7 @@ import type { ManagedServer } from '@momonga/gateway';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { REAL_FM_STOP_GRACE_MS, registerCleanup } from './gateway-helpers.ts';
-import { MINIMAL_PATH, isAlive, makeHome, pause, until } from './gateway-process-helpers.ts';
+import { MINIMAL_PATH, isAlive, makeHome, until } from './gateway-process-helpers.ts';
 import { FM_SERVER } from '@momonga/protocol';
 import { readMarkerGroup } from '@momonga/foundation';
 import { systemTiming } from '@momonga/foundation';
@@ -134,14 +134,14 @@ describe('fm serve group lifetime', () => {
   it('keeps the marker after the leader crashes, and the next start kills the survivor', async () => {
     const context = await setup();
     reapAll(context);
-    const first = makeServe(context);
+    let exits = 0;
+    const first = makeServe(context, { onChildExit: () => (exits += 1) });
     await first.start();
     const survivor = await survivorOf(context);
     const [leader] = servePids(context.dumpFile);
     if (leader === undefined) throw new Error('fm serve did not start');
     process.kill(leader, 'SIGKILL');
-    await until(() => !isAlive(leader), 'the leader to die');
-    await pause(200);
+    await until(() => exits === 1, 'the server to see its leader exit');
     expect(isAlive(survivor)).toBe(true);
     expect(fs.readdirSync(context.markers)).toHaveLength(1);
 
@@ -154,14 +154,14 @@ describe('fm serve group lifetime', () => {
   it('stop() after a leader crash still kills the survivors and removes the marker', async () => {
     const context = await setup();
     reapAll(context);
-    const serve = makeServe(context);
+    let exits = 0;
+    const serve = makeServe(context, { onChildExit: () => (exits += 1) });
     await serve.start();
     const survivor = await survivorOf(context);
     const [leader] = servePids(context.dumpFile);
     if (leader === undefined) throw new Error('fm serve did not start');
     process.kill(leader, 'SIGKILL');
-    await until(() => !isAlive(leader), 'the leader to die');
-    await pause(200);
+    await until(() => exits === 1, 'the server to see its leader exit');
     expect(isAlive(survivor)).toBe(true);
     await serve.stop();
     await until(() => !isAlive(survivor), 'the survivor to be killed', 3000);
@@ -264,8 +264,11 @@ describe('finalize of a spawned fm group', () => {
     await until(() => fs.existsSync(readyFile), 'the child to drop the marker fd');
     expect(pgidOf(pid)).toBe(pid);
 
+    const kill = vi.spyOn(process, 'kill');
     await child.finalize?.(300);
-    await pause(200);
+    const sentToGroup = kill.mock.calls.filter(([target, signal]) => Math.abs(Number(target)) === pid && signal !== 0);
+    kill.mockRestore();
+    expect(sentToGroup).toEqual([]);
     expect(isAlive(pid)).toBe(true);
     expect(fs.readdirSync(markers)).toEqual([]);
     expect(warnings).toHaveLength(1);
@@ -386,7 +389,8 @@ describe('reaper warnings for a recorded group it could not verify', () => {
     registerCleanup(() => killGroupsForCleanup(helper === undefined ? [] : [helper]));
 
     const firstWarnings = vi.fn();
-    const first = makeServe(helperContext, { onWarning: firstWarnings });
+    let exits = 0;
+    const first = makeServe(helperContext, { onWarning: firstWarnings, onChildExit: () => (exits += 1) });
     await first.start();
     await until(() => fs.existsSync(helperPidFile) && fs.readFileSync(helperPidFile, 'utf8').endsWith('\n'), 'the helper pid');
     helper = Number(fs.readFileSync(helperPidFile, 'utf8').trim());
@@ -396,8 +400,7 @@ describe('reaper warnings for a recorded group it could not verify', () => {
     const [markerName] = fs.readdirSync(context.markers);
     const marker = path.join(context.markers, markerName ?? '');
     process.kill(leader, 'SIGKILL');
-    await until(() => !isAlive(leader), 'the leader to die');
-    await pause(200);
+    await until(() => exits === 1, 'the server to see its leader exit');
     expect(fs.existsSync(marker)).toBe(true);
 
     const onWarning = vi.fn();

@@ -291,6 +291,36 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
     expect(await mechanism.isHeld(path.join(dir, 'heavy'))).toBe(false);
   });
 
+  it('a heavy run that waits for two light holders keeps a third light run out, and starts when both release', async () => {
+    const first = await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+    const second = await hold({ runClass: 'light', pid: 333, command: 'cmd3' });
+    let clock = 0;
+    let sleeps = 0;
+    const lateLights: Outcome[] = [];
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        command: 'cmd9',
+        waitSeconds: 10,
+        monotonic: () => clock,
+        sleep: async () => {
+          sleeps += 1;
+          clock += 1000;
+          if (sleeps === 1) lateLights.push(await acquireRunLock(request({ runClass: 'light', pid: 444, command: 'cmd4' })));
+          if (sleeps === 2) await first.release();
+          if (sleeps === 3) await second.release();
+        },
+      }),
+    );
+    if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+
+    expect(lateLights).toEqual([
+      { kind: 'refused', message: `run-lock: light run refused: held by waiting heavy pid 999 started ${STARTED} in /w: cmd9${TO_WAIT}` },
+    ]);
+    expect(outcome.kind).toBe('acquired');
+  });
+
   const tokenRows: Array<[string, () => Promise<{ env: Record<string, string>; runClass: 'heavy' | 'light'; old?: string }>, string]> = [
     ['a live heavy token and a light request', async () => ({ env: { MOMONGA_RUN_LOCK: (await hold()).token }, runClass: 'light' }), 'inherited'],
     ['a live heavy token and a heavy request', async () => ({ env: { MOMONGA_RUN_LOCK: (await hold()).token }, runClass: 'heavy' }), 'inherited'],

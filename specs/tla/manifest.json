@@ -2,6 +2,38 @@
   "format": "momonga-tla-manifest/2",
   "unitSuiteSeconds": 215.2,
   "startupCpuSeconds": 3,
+  "vitestProjects": [
+    {
+      "project": "calibration",
+      "measuredCpuSeconds": 29.8,
+      "cpuSource": "CPU of the vitest processes printed by the run lock (each process as last seen alive), vitest run --project calibration packages/runtime/test/calibration/offloop-cost.test.ts, nice 15, 2026-11-18",
+      "budgetCpuSeconds": 63
+    },
+    {
+      "project": "unit",
+      "measuredWallSeconds": 1278.11,
+      "wallSource": "MomongaCode-docs/pending/review-final-2026-11-11/runs/unit-whole-c34dad186.log",
+      "measuredCores": 10,
+      "measuredCpuSeconds": null,
+      "budgetCpuSeconds": 25566
+    },
+    {
+      "project": "e2e",
+      "measuredWallSeconds": 1465.14,
+      "wallSource": "MomongaCode-docs/pending/review-final-2026-11-11/runs/e2e-whole-a4623d422.log",
+      "measuredCores": 10,
+      "measuredCpuSeconds": null,
+      "budgetCpuSeconds": 29306
+    },
+    {
+      "project": "packaging",
+      "measuredWallSeconds": 2460.02,
+      "wallSource": "MomongaCode-docs/pending/review-final-2026-11-11/runs/whole-test-reuse-962c4b275.log (the whole run that contained packaging)",
+      "measuredCores": 10,
+      "measuredCpuSeconds": null,
+      "budgetCpuSeconds": 49204
+    }
+  ],
   "modules": [
     {
       "module": "AutoProbe",

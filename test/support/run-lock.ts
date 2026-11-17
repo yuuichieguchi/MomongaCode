@@ -5,7 +5,9 @@ import { stateDirOf } from '../../scripts/support/dev-state.ts';
 import { RUN_CLASS_KEY, classOfSelection } from '../../scripts/support/run-class.ts';
 import { wholeRunRefusalOf } from './whole-run-guard.ts';
 import type { ProjectRunClass, SelectionProject } from '../../scripts/support/run-class.ts';
-import { RUN_LOCK_ENV, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, parseWaitSeconds, runLockDirsOf, unusableMessage, untilStopped } from '../../scripts/support/run-lock.ts';
+import { CPU_BUDGET_ENV, breachLine, killTree, usageLine, watchTree } from '../../scripts/support/cpu-budget.ts';
+import { vitestProjectBudgetOf } from '../../scripts/support/run-budgets.ts';
+import { RUN_LOCK_ENV, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, parseBudgetSeconds, parseWaitSeconds, runLockDirsOf, unusableMessage, untilStopped } from '../../scripts/support/run-lock.ts';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const TIER_RUNNER = path.join(REPO_ROOT, 'test', 'formal', 'tier.ts');
@@ -44,16 +46,46 @@ const selectionProjectOf = async (project: TestProject): Promise<SelectionProjec
   files: (await project.globTestFiles()).testFiles,
 });
 
+const budgetOf = (projectNames: readonly string[]): number => {
+  const given = process.env[CPU_BUDGET_ENV];
+  if (given !== undefined) {
+    try {
+      return parseBudgetSeconds(given, CPU_BUDGET_ENV);
+    } catch (error) {
+      throw refusalOf(causeOf(error));
+    }
+  }
+  return projectNames.reduce((total, name) => {
+    const budget = vitestProjectBudgetOf(name);
+    if (budget === undefined) throw refusalOf(`run-lock: no CPU budget for project ${name}: record one in vitestProjects of specs/tla/manifest.json, or set ${CPU_BUDGET_ENV}`);
+    return total + budget;
+  }, 0);
+};
+
+const endTreeAt = (breach: Parameters<typeof breachLine>[0]): void => {
+  process.stderr.write(`${breachLine(breach)}\n`);
+  killTree(process.pid).then(
+    () => process.kill(process.pid, 'SIGKILL'),
+    (error: unknown) => {
+      throw error;
+    },
+  );
+};
+
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const { state, projects } = project.vitest;
   if (typeof state.getPaths !== 'function' || !Array.isArray(projects)) throw refusalOf('run-lock: this vitest no longer exposes the selected test files');
   const refusal = wholeRunRefusalOf({ argv: process.argv, env: process.env, projects: projects.map((selected) => selected.name) });
   if (refusal !== undefined) throw refusalOf(refusal);
+  const selected = state.getPaths();
+  const selectionProjects = await Promise.all(projects.map(selectionProjectOf));
+  const selectedSet = new Set(selected);
+  const budgetCpuSeconds = budgetOf(selectionProjects.filter(({ files }) => files.some((file) => selectedSet.has(file))).map(({ name }) => name));
   const waitSeconds = waitSecondsOf(process.env[RUN_LOCK_WAIT_ENV]);
   const dir = stateDir();
   const runClass = await classOfSelection({
-    selected: state.getPaths(),
-    projects: await Promise.all(projects.map(selectionProjectOf)),
+    selected,
+    projects: selectionProjects,
     repoRoot: REPO_ROOT,
     tierRunner: TIER_RUNNER,
     readFile: (file) => fs.promises.readFile(file, 'utf8'),
@@ -78,7 +110,10 @@ export default async function setup(project: TestProject): Promise<() => Promise
   if (outcome.kind !== 'acquired') throw refusalOf(outcome.message);
   const { release } = outcome;
   process.env[RUN_LOCK_ENV] = outcome.token;
+  const watch = watchTree(process.pid, budgetCpuSeconds, endTreeAt);
   return async () => {
+    watch.stop();
+    process.stderr.write(`${usageLine(watch.usedCpuSeconds(), budgetCpuSeconds)}\n`);
     await release();
     delete process.env[RUN_LOCK_ENV];
   };

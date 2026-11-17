@@ -7,7 +7,8 @@ import type { AnsweredByView, RunFactsView } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeResponseHold, FakeScriptedReply } from '@momonga/testkit';
-import { createE2eHome, disposeAll, e2eTmpRoot, registerE2eCleanup } from './home.ts';
+import { createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
+import type { InjectionHost } from './inject-host.ts';
 import { readDb, writeDb } from './db.ts';
 import type { E2eHome } from './home.ts';
 import { createRuntimeClient } from './runtime-client.ts';
@@ -29,12 +30,12 @@ import type { ScenarioResult } from './inject-report.ts';
 export { INJECTION_REPORT_ENV, injectionReportOf } from './inject-report.ts';
 export type { ScenarioResult } from './inject-report.ts';
 
-export type InjectionHost = { linuxContainer: boolean };
+export { SMALL_FS_ENV, detectInjectionHost } from './inject-host.ts';
+export type { InjectionHost } from './inject-host.ts';
 
 const HELD_COMMAND_SECONDS = 600;
 const GATEWAY_RETRY = GATEWAY_CONFIG_DEFAULTS.retry;
 const GATEWAY_WINDOW_BOUND_MS = GATEWAY_RETRY.totalWaitMs + E2E_MARGIN_MS;
-const SMALL_FILESYSTEM_MAX_BYTES = 256 * 1024 * 1024;
 const FILL_CHUNK_BYTES = 1024 * 1024;
 const PORT_FAULT_MARKER_NAME = 'file-fault.on';
 const PORT_FAULT_RECORD_NAME = 'file-fault.refused';
@@ -439,8 +440,14 @@ type TrialRecord = { label: string; witness: Record<string, number>; trial: Inje
 
 const NO_FAULT: Fault = {};
 
-const runTrial = async (scenario: InjectionScenario, point: Point | undefined, resultId: string, fault: Fault = FAULTS[scenario.fault]): Promise<TrialRecord & { frames: readonly Frame[] }> => {
-  const home = await createE2eHome();
+const runTrial = async (
+  scenario: InjectionScenario,
+  point: Point | undefined,
+  resultId: string,
+  fault: Fault = FAULTS[scenario.fault],
+  privateBase?: string,
+): Promise<TrialRecord & { frames: readonly Frame[] }> => {
+  const home = await createE2eHome(privateBase === undefined ? {} : { privateBase });
   const ledgerDirectory = path.join(home.root, LEDGER_DIRECTORY_NAME);
   fs.mkdirSync(ledgerDirectory);
   const ledgerFile = path.join(ledgerDirectory, LEDGER_FILE_NAME);
@@ -531,9 +538,9 @@ const pointsOf = async (scenario: InjectionScenario): Promise<Point[]> => {
   );
 };
 
-const resultOf = async (scenario: InjectionScenario, point: Point | undefined, id: string): Promise<ScenarioResult> => {
+const resultOf = async (scenario: InjectionScenario, point: Point | undefined, id: string, privateBase?: string): Promise<ScenarioResult> => {
   const trials: TrialRecord[] = [];
-  for (let index = 0; index < scenario.trials; index += 1) trials.push(await runTrial(scenario, point, id));
+  for (let index = 0; index < scenario.trials; index += 1) trials.push(await runTrial(scenario, point, id, FAULTS[scenario.fault], privateBase));
   const witness: Record<string, number> = {};
   trials.forEach((record, index) => {
     for (const [key, count] of Object.entries(record.witness)) witness[`${index + 1}/${key}`] = count;
@@ -547,17 +554,6 @@ const sweepOf = async (scenario: InjectionScenario): Promise<ScenarioResult[]> =
   return sweep;
 };
 
-const notRunReason = (scenario: InjectionScenario, host: InjectionHost): string | undefined => {
-  if (scenario.requires === 'any') return undefined;
-  if (!host.linuxContainer) return `linux-container: scenario ${scenario.id} needs the Linux container, where the state directory sits on a size-limited filesystem of at most ${SMALL_FILESYSTEM_MAX_BYTES} bytes under ${e2eTmpRoot()}`;
-  return undefined;
-};
-
-export const detectInjectionHost = (): InjectionHost => {
-  if (process.platform !== 'linux') return { linuxContainer: false };
-  const { blocks, bsize } = fs.statfsSync(e2eTmpRoot());
-  return { linuxContainer: blocks * bsize <= SMALL_FILESYSTEM_MAX_BYTES };
-};
 
 const trialBoundMs = (scenario: InjectionScenario): number => {
   const runBoundMs = E2E_RUN_COMPLETED_BOUND_MS + (FAULTS[scenario.fault].extraBoundMs?.(scenario) ?? 0);
@@ -570,13 +566,14 @@ const trialCountOf = (scenario: InjectionScenario): number =>
 export const scenarioBoundMs = (scenario: InjectionScenario): number => trialCountOf(scenario) * trialBoundMs(scenario);
 
 export const runInjectionScenario = async (scenario: InjectionScenario, host: InjectionHost): Promise<ScenarioResult[]> => {
-  const reason = notRunReason(scenario, host);
-  const results: ScenarioResult[] =
-    reason !== undefined
-      ? [{ id: scenario.id, status: 'not_run', reason }]
-      : scenario.fault === 'kill_at_step'
-        ? await sweepOf(scenario)
-        : [await resultOf(scenario, undefined, scenario.id)];
+  if (scenario.requires === 'linux-container') {
+    return reported(
+      host.linuxContainer
+        ? [await resultOf(scenario, undefined, scenario.id, host.smallFsBase)]
+        : [{ id: scenario.id, status: 'not_run', reason: `linux-container: scenario ${scenario.id} ${host.reason}` }],
+    );
+  }
+  const results: ScenarioResult[] = scenario.fault === 'kill_at_step' ? await sweepOf(scenario) : [await resultOf(scenario, undefined, scenario.id)];
   return reported(results);
 };
 

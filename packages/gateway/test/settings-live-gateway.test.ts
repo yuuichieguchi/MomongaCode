@@ -23,8 +23,10 @@ import {
   registerOwned,
   testLocks,
   REAL_PROCESS_WAIT_MS,
+  createFakeClock,
+  createFakeTimers,
 } from '@momonga/testkit';
-import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, OtlpCollector } from '@momonga/testkit';
+import type { CleanupContext, FakeChatCompletionsServer, FakeTimers, FakeScriptedReply, OtlpCollector } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
@@ -55,7 +57,7 @@ const replaceSettingsText = (home: string, text: string): void => {
 
 type Stack = { home: string; handle: GatewayProcess; client: UdsClient; logText(): string };
 
-const startStack = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}): Promise<Stack> => {
+const startStack = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}, timers?: FakeTimers): Promise<Stack> => {
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
   replaceSettings(home, settings);
@@ -66,6 +68,7 @@ const startStack = async (context: CleanupContext, settings: unknown, env: Recor
     home,
     env: baseEnv(home, env),
     version: PROCESS_VERSION,
+    ...(timers === undefined ? {} : { timers }),
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (chunks.push(chunk), true) }, level: 'debug' }),
     stdout: { write: () => true },
   }));
@@ -143,19 +146,24 @@ describe('S1 gateway: each request pins the router it started with (design-setti
 
 });
 
+const GATE_WAIT_MS = 777_000;
+
+const waitersAtGate = (timers: FakeTimers): number => timers.pending().filter((timer) => timer.delayMs === GATE_WAIT_MS).length;
+
 describe('S1 gateway: breaker and gate are carried over by the identity of the target (design-settings-live 3.1)', () => {
-  const gated = (fake: FakeChatCompletionsServer, extra: Record<string, unknown> = {}) => ccTarget(fake.socketPath, { maxConcurrency: 1, ...extra });
+  const gated = (fake: FakeChatCompletionsServer, extra: Record<string, unknown> = {}) => ccTarget(fake.socketPath, { maxConcurrency: 1, admissionTimeoutMs: GATE_WAIT_MS, ...extra });
 
   it('a change that leaves the target unchanged keeps one gate: a request of the new epoch waits for the in-flight one of the old epoch', async (context) => {
     const a = await fakeUpstream(context);
-    const stack = await startStack(context, { models: modelsOf({ a: gated(a) }) });
+    const timers = createFakeTimers(createFakeClock(0));
+    const stack = await startStack(context, { models: modelsOf({ a: gated(a) }) }, {}, timers);
     const first = await heldRequest(stack.client, a);
     replaceSettings(stack.home, { models: modelsOf({ a: gated(a) }), network: { noProxy: 'example.invalid' } });
     let secondSettled = false;
     const second = post(stack.client, ask()).finally(() => {
       secondSettled = true;
     });
-    for (let turn = 0; turn < 200; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => waitersAtGate(timers) === 1, { description: 'the request of the new epoch to wait at the carried gate' });
     expect(secondSettled, 'the request of the new epoch through the added alias must wait at the carried gate').toBe(false);
     expect(a.requests).toHaveLength(1);
     first.hold.release();
@@ -316,9 +324,10 @@ describe('S2 gateway telemetry: a span ends on the provider it started on (desig
 describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)', () => {
   it('an edit a to b to a with a call in flight on the first epoch shares one gate for the counter of a', async (context) => {
     const a = await fakeUpstream(context);
-    const definitionA = { models: modelsOf({ a: ccTarget(a.socketPath, { maxConcurrency: 1 }) }) };
-    const definitionB = { models: modelsOf({ a: ccTarget(a.socketPath, { maxConcurrency: 1, capabilities: CHANGED_CAPABILITIES }) }) };
-    const stack = await startStack(context, definitionA);
+    const definitionA = { models: modelsOf({ a: ccTarget(a.socketPath, { maxConcurrency: 1, admissionTimeoutMs: GATE_WAIT_MS }) }) };
+    const definitionB = { models: modelsOf({ a: ccTarget(a.socketPath, { maxConcurrency: 1, admissionTimeoutMs: GATE_WAIT_MS, capabilities: CHANGED_CAPABILITIES }) }) };
+    const timers = createFakeTimers(createFakeClock(0));
+    const stack = await startStack(context, definitionA, {}, timers);
     const first = await heldRequest(stack.client, a);
     replaceSettings(stack.home, definitionB);
     const second = await heldRequest(stack.client, a);
@@ -327,7 +336,7 @@ describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)
     const third = post(stack.client, ask()).finally(() => {
       thirdSettled = true;
     });
-    for (let turn = 0; turn < 200; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => waitersAtGate(timers) === 1, { description: 'the request of the third epoch to wait at the gate the first epoch holds' });
     expect(thirdSettled, 'the third epoch must wait at the gate the first epoch still holds').toBe(false);
     expect(a.requests).toHaveLength(2);
     first.hold.release();

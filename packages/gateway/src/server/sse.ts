@@ -14,6 +14,7 @@ export type SseOptions = {
   readerStallMs: number;
   signal: AbortSignal;
   answer: (error: unknown) => GatewayError;
+  onReaderBehind?: () => void;
 };
 
 export const errorHintsOf = (error: GatewayError): { retry_after_ms?: number; deferred?: true } => {
@@ -178,6 +179,7 @@ export const sseResponse = (first: StreamEvent | undefined, rest: AsyncIterator<
         controller.enqueue(frameOf(step.value));
         emitted = true;
         armStallTimer();
+        if (controller.desiredSize !== null && controller.desiredSize <= 0) options.onReaderBehind?.();
       } catch (error) {
         if (!streamDone) {
           streamDone = true;
