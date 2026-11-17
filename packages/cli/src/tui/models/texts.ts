@@ -113,7 +113,9 @@ export const PROGRAM_FIELD_ROWS = [
   { label: 'Command', field: 'command' },
   { label: 'Arguments', field: 'args' },
   { label: 'Ready path', field: 'readyPath' },
+  { label: 'Model file', field: 'modelFile' },
 ] as const;
+export const MODEL_FILE_PROMPT = 'Model file (the argument that names the model file, as written in Arguments; empty removes it):';
 export const FORGET_PROGRAM_ROW = 'Forget this program';
 
 export const NOT_SET = 'not set';

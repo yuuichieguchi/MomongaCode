@@ -386,6 +386,20 @@ describe('server programs, wait limits and dialects', () => {
     expect(textOf(home)).toBe(before);
   });
 
+  it('setServerField sets the model file mark of a program, an empty value removes it, and a mark that names no argument is refused', async () => {
+    const home = homeWith(BASE);
+    await editModels(home, [op('setServerField', { id: 'llama-server', field: 'args', value: ['--model', '/models/weights.gguf', '{socket}'] })]);
+    expect((await editModels(home, [op('setServerField', { id: 'llama-server', field: 'modelFile', value: '/models/weights.gguf' })])).summaries).toEqual(['Set modelFile of llama-server.']);
+    expect(modelsOf(home).servers?.['llama-server']).toMatchObject({ modelFile: '/models/weights.gguf' });
+    const before = textOf(home);
+    expect((await refusalOfEdit(editModels(home, [op('setServerField', { id: 'llama-server', field: 'modelFile', value: '/models/other.gguf' })]))).message).toContain(
+      'modelFile names no argument of args',
+    );
+    expect(textOf(home)).toBe(before);
+    await editModels(home, [op('setServerField', { id: 'llama-server', field: 'modelFile', value: '' })]);
+    expect(modelsOf(home).servers?.['llama-server']).not.toHaveProperty('modelFile');
+  });
+
   it('setTimeouts writes milliseconds, refuses 0, and says the values in force', async () => {
     const home = homeWith(BASE);
     expect((await editModels(home, [op('setTimeouts', { headersTimeoutMs: 600000 })])).summaries).toEqual(['Waits saved: first reply 10 min, no data 5 min.']);

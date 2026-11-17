@@ -41,7 +41,7 @@ type Writer = { write(text: string): void };
 
 export type DetectRequest = { candidates: readonly string[]; typed: readonly string[]; signal: AbortSignal };
 
-export type DeclaredProgram = { id: string; command: string; args: readonly string[]; readyPath: string };
+export type DeclaredProgram = { id: string; command: string; args: readonly string[]; readyPath: string; modelFile?: string };
 
 export type BuiltInProgram = { id: string; builtIn: true };
 
@@ -719,7 +719,7 @@ const proposeAddProgram = async (shell: ModelsHost, edit: ModelsEdit, input: For
   };
 };
 
-const PROGRAM_FIELDS = ['command', 'args', 'readyPath'] as const;
+const PROGRAM_FIELDS = ['command', 'args', 'readyPath', 'modelFile'] as const;
 
 const outsideJsonOf = (text: string, where: string): unknown => {
   try {
@@ -828,7 +828,7 @@ const FORM_SPECS: Readonly<Record<ModelsForm, FormSpec>> = {
   'unset-server': { usage: usage('unset-server', '<server> <field> [--yes]'), propose: proposeServerField(false) },
   name: { usage: usage('name', '<server> <name> | <server> --clear [--yes]'), propose: proposeName },
   'add-program': { usage: usage('add-program', '--command <path> [--arg <text>]... --ready-path <path> [--name <name>] [--model <own name>] [--yes]'), propose: proposeAddProgram },
-  'set-program': { usage: usage('set-program', '<id> <command|args|readyPath> <value> [--yes]'), propose: proposeSetProgram },
+  'set-program': { usage: usage('set-program', '<id> <command|args|readyPath|modelFile> <value> [--yes]'), propose: proposeSetProgram },
   'forget-program': { usage: usage('forget-program', '<id> [--yes]'), propose: proposeForgetProgram },
   timeouts: { usage: usage('timeouts', '[--headers <minutes>] [--idle <minutes>] [--yes]'), propose: proposeTimeouts },
   'dialects show': { usage: usage('dialects show', ''), print: dialectRows },
@@ -887,7 +887,7 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
 export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: ServerProgram, signal: AbortSignal, onWarning: (message: string) => void): Promise<string> => {
   const { listManagedModel, noneSandboxLaunchOf, systemProcessFiles } = await import('@momonga/gateway');
   const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal });
-  const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } };
+  const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath, ...(program.modelFile === undefined ? {} : { modelFile: program.modelFile }) } };
   const description = registeredServer(serverRegistryOf(declared, paths.settingsFile), program.id);
   if (description === undefined) throw new TypeError(`the server program ${program.id} is not in the registry of server programs`);
   const locks = resolveLayoutLocks(paths);

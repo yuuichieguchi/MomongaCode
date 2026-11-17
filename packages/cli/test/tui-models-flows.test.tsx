@@ -423,7 +423,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
   it('row 19: a declared program is edited field by field, and is not forgotten while a server uses it', async (context) => {
     const harness = flowOf(context, S4, [{ pick: 'Programs' }, { pick: 'llama-server' }, { pick: /^Ready path/ }, { type: 'ready' }, { type: '/ready' }, YES, { pick: 'Forget this program' }]);
     await runModelsHub(harness.context);
-    expect(harness.picks()[2]?.rows).toEqual([`Command  ${LLAMA_SERVER.command}`, 'Arguments  --socket {socket}', 'Ready path  /health', 'Forget this program']);
+    expect(harness.picks()[2]?.rows).toEqual([`Command  ${LLAMA_SERVER.command}`, 'Arguments  --socket {socket}', 'Ready path  /health', 'Model file  not set', 'Forget this program']);
     expect(harness.prompts()[0]).toEqual({ kind: 'text', title: 'Path that answers when it is ready (for example /health):', hidden: false, problems: ['Write a path starting with /.'] });
     const confirms = harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title);
     expect(confirms).toEqual(['Set readyPath of llama-server?']);

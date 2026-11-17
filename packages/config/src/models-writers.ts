@@ -43,7 +43,7 @@ export type ModelsOperation =
   | { kind: 'setConnectionField'; provider: string; path: readonly string[]; value: unknown }
   | { kind: 'setProvider'; provider: string; name: string | null }
   | { kind: 'declareServer'; id: string; command: string; args: readonly string[]; readyPath: string }
-  | { kind: 'setServerField'; id: string; field: 'command' | 'args' | 'readyPath'; value: unknown }
+  | { kind: 'setServerField'; id: string; field: 'command' | 'args' | 'readyPath' | 'modelFile'; value: unknown }
   | { kind: 'forgetServer'; id: string }
   | { kind: 'setTimeouts'; headersTimeoutMs?: number; idleTimeoutMs?: number }
   | { kind: 'setDialects'; dialects: object };
@@ -700,12 +700,14 @@ const declareServer = (document: Json, operation: Extract<ModelsOperation, { kin
   return { summary: () => `Declared the server program ${id}.` };
 };
 
-const SERVER_FIELDS: readonly string[] = ['command', 'args', 'readyPath'];
+const SERVER_FIELDS: readonly string[] = ['command', 'args', 'readyPath', 'modelFile'];
 
 const setServerField = (document: Json, operation: Extract<ModelsOperation, { kind: 'setServerField' }>): Applied => {
   const { id, field, value } = operation;
   if (!SERVER_FIELDS.includes(field)) refuse('invalid_value', `"${String(field)}" is not a field of a server program; the fields are ${SERVER_FIELDS.join(', ')}.`);
-  declaredServerOf(document, id)[field] = structuredClone(value);
+  const server = declaredServerOf(document, id);
+  if (field === 'modelFile' && value === '') delete server[field];
+  else server[field] = structuredClone(value);
   return { summary: () => `Set ${field} of ${id}.` };
 };
 

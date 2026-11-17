@@ -29,9 +29,10 @@ const pathOfArgument = (argument: string): string | undefined => {
   return path.isAbsolute(value) ? value : undefined;
 };
 
-const pathArgumentsOf = (args: readonly string[]): string[] => [...new Set(args.flatMap((argument) => pathOfArgument(argument) ?? []))];
-
-const declaredIdentityOf = (declared: DeclaredServer): readonly ProbeKeyComponent[] => ['binarySha256', ...pathArgumentsOf(declared.args).map(fileIdentityComponentOf)];
+const declaredIdentityOf = (declared: DeclaredServer): readonly ProbeKeyComponent[] => {
+  const modelPath = declared.modelFile === undefined ? undefined : pathOfArgument(declared.modelFile);
+  return ['binarySha256', ...(modelPath === undefined ? [] : [fileIdentityComponentOf(modelPath)])];
+};
 
 const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedServerDescription => ({
   id,
@@ -67,6 +68,9 @@ const checkDeclaration = (id: string, declared: DeclaredServer, where: string): 
   });
   const placeholders = declared.args.filter((arg) => arg === SOCKET_PLACEHOLDER).length;
   if (placeholders !== 1) throw new ConfigError(`${where}.args must contain ${JSON.stringify(SOCKET_PLACEHOLDER)} exactly once; found ${placeholders}`);
+  if (declared.modelFile === undefined) return;
+  if (!declared.args.includes(declared.modelFile)) throw new ConfigError(`${where}.modelFile names no argument of args: ${JSON.stringify(declared.modelFile)} is not one of ${JSON.stringify(declared.args)}`);
+  if (pathOfArgument(declared.modelFile) === undefined) throw new ConfigError(`${where}.modelFile must name an argument that is an absolute path; got ${JSON.stringify(declared.modelFile)}`);
 };
 
 export const serverRegistryOf = (declared: Readonly<Record<string, DeclaredServer>> | undefined, source: string): ServerRegistry => {

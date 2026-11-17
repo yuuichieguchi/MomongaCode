@@ -664,7 +664,7 @@ const registerModels: CommandGroup = (program, deps) => {
     deps,
     'add-program',
   );
-  formOf(models.command('set-program [id] [field] [value]').description('change the command, args or readyPath of a declared program').option(YES_FLAG, YES_HELP), deps, 'set-program');
+  formOf(models.command('set-program [id] [field] [value]').description('change the command, args, readyPath or modelFile of a declared program').option(YES_FLAG, YES_HELP), deps, 'set-program');
   formOf(models.command('forget-program [id]').description('forget a declared program that no server uses').option(YES_FLAG, YES_HELP), deps, 'forget-program');
   formOf(
     models
