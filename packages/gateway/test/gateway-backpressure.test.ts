@@ -10,6 +10,7 @@ const WRITE_BLOCK_BYTES = 16 * 1024;
 const WRITE_ATTEMPTS_BOUND = 100_000;
 const STREAM_TO_CAPACITY_RATIO = 4;
 const QUEUED_BEYOND_CAPACITY_BYTES = 64 * 1024;
+const RESUME_POLL_MS = 20;
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,9 +50,14 @@ describe('streaming backpressure', () => {
     const emitted = primary.calls[0]?.emitted ?? 0;
     expect(emitted).toBeLessThan(chunks);
     expect(emitted * SLOW_READER_CHUNK_BYTES).toBeLessThanOrEqual(capacity + QUEUED_BEYOND_CAPACITY_BYTES);
-    let count = 1;
-    for (let step = await frames.next(); step.done !== true; step = await frames.next()) count += 1;
-    expect(count).toBeGreaterThan(emitted);
+    let resumed = false;
+    for (let read = 0; read < chunks - emitted - 1 && !resumed; read += 1) {
+      await frames.next();
+      await pause(RESUME_POLL_MS);
+      resumed = (primary.calls[0]?.emitted ?? 0) > emitted;
+    }
+    expect(resumed).toBe(true);
+    await frames.return?.(undefined);
   });
 });
 
