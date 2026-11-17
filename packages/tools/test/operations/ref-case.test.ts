@@ -50,7 +50,7 @@ const measure = (format: 'files' | 'reftable', packed: boolean): Measured => {
   return { ...afterPush, pushThirdToMain: String(pushThirdToMain), revParseMainAfterThird: inBare('rev-parse', 'refs/heads/main'), forEachRefAfterThird: refs() };
 };
 
-const EXPECTED: Record<string, Measured> = {
+const EXPECTED_ON_CASE_INSENSITIVE: Record<string, Measured> = {
   'files loose': {
     pushToMain: '1',
     revParseMain: 'FIRST',
@@ -83,8 +83,37 @@ const EXPECTED: Record<string, Measured> = {
   },
 };
 
+const caseSensitiveVolume = (): boolean => {
+  const directory = createTempDir();
+  try {
+    fs.writeFileSync(path.join(directory, 'ref-case-probe'), '');
+    return !fs.existsSync(path.join(directory, 'REF-CASE-PROBE'));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+};
+
+const CASE_SENSITIVE = caseSensitiveVolume();
+
+const DISTINCT_REFS: Measured = {
+  pushToMain: '0',
+  revParseMain: 'FIRST',
+  revParseUpperMain: 'SECOND',
+  logMain: 'first',
+  forEachRef: 'refs/heads/Main SECOND | refs/heads/main FIRST',
+  pushThirdToMain: '0',
+  revParseMainAfterThird: 'THIRD',
+  forEachRefAfterThird: 'refs/heads/Main SECOND | refs/heads/main THIRD',
+};
+
+const EXPECTED_ON_CASE_SENSITIVE: Record<string, Measured> = {
+  'files loose': DISTINCT_REFS,
+  'files packed': DISTINCT_REFS,
+  reftable: DISTINCT_REFS,
+};
+
 const check = (key: string, measured: Measured): void => {
-  expect(measured).toEqual(EXPECTED[key]);
+  expect(measured).toEqual(CASE_SENSITIVE ? EXPECTED_ON_CASE_SENSITIVE[key] : EXPECTED_ON_CASE_INSENSITIVE[key]);
 };
 
 describe('pushing to Main when main exists (git ref identity is case-sensitive)', () => {
