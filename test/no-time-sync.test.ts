@@ -47,7 +47,6 @@ const BURN_DOWN: Readonly<Record<string, BurnDown>> = {
   'packages/sandbox/test/after-exit-shared.test.ts': { kinds: { 'timer wait': 1 }, owner: 'sandbox: an exit that must stay pending while the cleanup after it runs shows no event; the case gives it twenty turns' },
   'packages/testkit/test/fake-chat-completions-hold.test.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W7 (fake-chat-completions): a held request is shown pending by twenty turns' },
   'packages/testkit/test/fake-chat-completions-routes.test.ts': { kinds: { 'timer wait': 2 }, owner: 'tests-W7 (fake-chat-completions): a held request is shown pending by twenty turns' },
-  'test/formal/runner.ts': { kinds: { 'timer wait': 1 }, owner: 'tests-W11 (formal tier): the CPU budget poll of the TLC runner' },
   'test/formal/tlc.test.ts': { kinds: { 'wall-clock reading': 2, 'timer wait': 2 }, owner: 'tests-W11 (formal tier): the CPU budget against wall seconds is the subject' },
 };
 
