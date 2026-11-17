@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, homePaths, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
@@ -26,7 +26,7 @@ const servedOnce = async (target: Record<string, unknown>, recorded: boolean): P
   const home = makeHome();
   writeSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, toolCalling: 'native', ...target } }) });
   if (recorded) await saveFakeFmRecord(home, fm.binaryPath, makeReport(1, 1), typeof target['model'] === 'string' ? target['model'] : undefined);
-  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec } as GatewayProcessOptions);
+  const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec } as GatewayProcessOptions);
   const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'apple/system', input: userInput('hello') }));
   expect(answered.status).toBe(200);
   await handle.close();

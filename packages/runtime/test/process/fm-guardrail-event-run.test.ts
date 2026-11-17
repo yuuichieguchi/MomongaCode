@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { probeManagedFm, startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerOwned, testProcessInspector, testLocks, testKernelLock, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerOwned, testProcessInspector, testLocks, testKernelLock, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { onCleanup, writeUserSettings } from './helpers.ts';
 import { GATEWAY_VERSION, launchRuntime, makeRunHome, prepareGeneration, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -45,7 +45,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
     inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
-    platform: process.platform,
+    platform: FM_HOST_PLATFORM,
     paths: temp.paths,
     instance: managedInstancePaths(temp.paths, { owner: 'cli', purpose: 'probe', provider: 'fm' } as Parameters<typeof managedInstancePaths>[1]),
     description: FM_SERVER,
@@ -65,7 +65,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     await prepareGeneration(temp);
-    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
+    const gateway = await registerOwned(onCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: FM_HOST_PLATFORM, locks: testLocks(), generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
     onCleanup(async () => {
       await gateway.close();
     });

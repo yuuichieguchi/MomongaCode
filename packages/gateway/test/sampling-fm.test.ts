@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { MINIMAL_PATH, PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
@@ -29,7 +29,7 @@ describe('an fm target renders no sampling field', () => {
     const home = makeHome();
     writeSettings(home, { models: modelsOf({ 'local-fm': { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' } }) });
     await placeFakeFm(home, fm.binaryPath);
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, { PATH: MINIMAL_PATH }), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home, { PATH: MINIMAL_PATH }), version: PROCESS_VERSION, exec: fakeExec });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'local-fm/system', input: userInput('hello fm'), temperature: 0.2 }));
     expect(response.status).toBe(400);
     expect(response.body.error.type).toBe('invalid_request');

@@ -8,7 +8,7 @@ import type { KnownProbeKey } from '@momonga/config';
 import { managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, firstRefusedSocketPathBytes, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, firstRefusedSocketPathBytes, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
@@ -36,12 +36,12 @@ const ask = (model = 'workbench/fake-1') => ({ model, input: userInput('hello') 
 
 const recordOf = (model: string) => ({ ...makeReport(1, 1), modelId: model });
 
-const targetsDir = (home: string): string => path.join(momongaPaths(home, process.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
-const targetMarkers = (home: string, stem: string): string => path.join(momongaPaths(home, process.platform, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', stem);
-const probeDir = (home: string): string => momongaPaths(home, process.platform, {}).probe;
+const targetsDir = (home: string): string => path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).run, `g${FIRST_GENERATION}`, 'targets');
+const targetMarkers = (home: string, stem: string): string => path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', stem);
+const probeDir = (home: string): string => momongaPaths(home, FM_HOST_PLATFORM, {}).probe;
 const recordFiles = (home: string): string[] => (fs.existsSync(probeDir(home)) ? fs.readdirSync(probeDir(home)).filter((name) => name.endsWith('.json')).sort() : []);
 
-const launch = (home: string) => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec } as GatewayProcessOptions);
+const launch = (home: string) => launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec } as GatewayProcessOptions);
 
 type Kind = {
   label: string;

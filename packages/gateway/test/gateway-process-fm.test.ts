@@ -9,7 +9,7 @@ import { codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundatio
 import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import { FM_CURRENCY, fmRecordKey, saveFakeFmRecord } from './fm-record-support.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput, listedCountersOf, listedEntryOf } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import {
@@ -85,7 +85,7 @@ describe('managed fm under startGatewayProcess', () => {
       MOMONGA_CANARY: 'must-not-leak',
       NODE_OPTIONS: '--max-old-space-size=64',
     });
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env, version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env, version: PROCESS_VERSION, exec: fakeExec });
     const client = clientFor(handle.socketPath);
     expect((await readJson(await postJson(client, '/v1/responses', body))).status).toBe(200);
     expect((await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fm/system', input: 'one two three' }))).status).toBe(200);
@@ -110,7 +110,7 @@ describe('managed fm under startGatewayProcess', () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareNativeFm(home, fm.binaryPath);
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body))).status).toBe(200);
     const [pid] = servePids(dumpFile);
     if (pid === undefined) throw new Error('fm serve was not started');
@@ -145,7 +145,7 @@ describe('managed fm under startGatewayProcess', () => {
     registerCleanup(() => killGroupsForCleanup([orphanPid]));
     await until(() => fs.existsSync(paths.fmSocket), 'the orphan fm socket');
 
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
     expect(response.status).toBe(200);
     await until(() => !isAlive(orphanPid), 'the orphan fm to be killed');
@@ -157,7 +157,7 @@ describe('managed fm under startGatewayProcess', () => {
     const home = makeHome();
     const missing = path.join(makeDir(), 'no-such-fm');
     declareAutoFm(home, missing);
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const health = await getJson(clientFor(handle.socketPath), '/v1/momonga/health');
     expect(health.status).toBe(200);
     expect(health.body.ok).toBe(false);
@@ -175,7 +175,7 @@ describe('managed fm under startGatewayProcess', () => {
     declareAutoFm(home, fm.binaryPath);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), fmRecordKey(binarySha256, FAKE_OS_BUILD), makeReport(1, 1), FM_CURRENCY, testKernelLock());
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = listedEntryOf(models.body, 'fm/system');
     expect(entry.chain.map((member) => member.model)).toEqual(['fm/system']);
@@ -187,7 +187,7 @@ describe('managed fm under startGatewayProcess', () => {
     reapServeGroups(dumpFile);
     declareAutoFm(home, fm.binaryPath);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const counters = listedCountersOf(models.body, 'fm/system');
     const { settings } = await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
@@ -213,7 +213,7 @@ describe('managed fm under startGatewayProcess', () => {
     fs.rmSync(path.join(probeDir, `${fmRecordKey(binarySha256, FAKE_OS_BUILD).digest}.json`));
     await saveProbeRecord(probeDir, fmRecordKey(binarySha256, `${FAKE_OS_BUILD}x`), makeReport(1, 1), FM_CURRENCY, testKernelLock());
     fm.configure({ envDumpFile: dumpFile, serve: { stallNativeSamples: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], stallMs: 600_000 } });
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = listedEntryOf(models.body, 'fm/system');
     expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { ...measuringAskOf('fm/system', ['toolCalling', 'contextWindow']), step: null, elapsedSeconds: expect.any(Number) } }, source: 'unprobed' });

@@ -6,6 +6,8 @@ import type { FakeChatCompletionsOptions } from './fake-chat-completions.ts';
 
 export const FAKE_OS_BUILD = '25A354';
 
+export const FM_HOST_PLATFORM: NodeJS.Platform = 'darwin';
+
 export interface FakeFmConfig {
   serve?: Partial<Omit<FakeChatCompletionsOptions, 'socketPath'>>;
   envDumpFile?: string;

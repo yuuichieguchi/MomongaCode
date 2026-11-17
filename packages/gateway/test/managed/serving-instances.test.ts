@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
@@ -34,12 +34,12 @@ const reapLaunched = (file: string, command: string): void => {
 const ask = (model: string) => ({ model, input: userInput('hello') });
 
 const generationTargets = (home: string): { sockets: string; markers: string } => {
-  const paths = momongaPaths(home, process.platform, {});
+  const paths = momongaPaths(home, FM_HOST_PLATFORM, {});
   return { sockets: path.join(paths.run, `g${FIRST_GENERATION}`, 'targets'), markers: path.join(paths.markers.root, `g${FIRST_GENERATION}`, 'targets') };
 };
 
 const launch = (home: string, extra: Record<string, unknown> = {}) =>
-  launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...extra } as GatewayProcessOptions);
+  launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...extra } as GatewayProcessOptions);
 
 describe('each managed target has its own serving instance, named by the target (design-managed-servers section 17, item 19; test T1)', () => {
   it('runs two servers for two targets of server "fm", on run/g<N>/targets/<target>-<k>.sock with markers under markers/g<N>/targets/<target>-<k> (rule 18.2.1, design-settings-live 3.1)', async () => {
@@ -64,8 +64,8 @@ describe('each managed target has its own serving instance, named by the target 
     expect(fs.readdirSync(path.join(places.markers, 'apple-1'))).toHaveLength(1);
     expect(fs.readdirSync(path.join(places.markers, 'banana-1'))).toHaveLength(1);
     expect(fs.existsSync(path.join(places.markers, 'fm'))).toBe(false);
-    expect(fs.existsSync(momongaPaths(home, process.platform, {}).markers.targets)).toBe(false);
-    expect(fs.existsSync(path.join(momongaPaths(home, process.platform, {}).run, 'managed-locks'))).toBe(false);
+    expect(fs.existsSync(momongaPaths(home, FM_HOST_PLATFORM, {}).markers.targets)).toBe(false);
+    expect(fs.existsSync(path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).run, 'managed-locks'))).toBe(false);
   });
 });
 

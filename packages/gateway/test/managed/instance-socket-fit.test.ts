@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, firstRefusedSocketPathBytes } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, firstRefusedSocketPathBytes } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
@@ -13,9 +13,9 @@ const DECLARED = { toolCalling: 'native', capabilities: { contextWindow: 4096, m
 const FITTING_TARGET = 'fm';
 const FIRST_INCARNATION_SUFFIX = '-1';
 
-const instanceSockets = (home: string): string => path.join(momongaPaths(home, process.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
+const instanceSockets = (home: string): string => path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).run, `g${FIRST_GENERATION}`, 'targets');
 
-const instanceMarkers = (home: string, target: string): string => path.join(momongaPaths(home, process.platform, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', target);
+const instanceMarkers = (home: string, target: string): string => path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', target);
 
 const targetNameWhoseSocketIs = (home: string, byteLength: number): string => {
   const prefix = Buffer.byteLength(path.join(instanceSockets(home), `x${FIRST_INCARNATION_SUFFIX}.sock`)) - 1;
@@ -44,7 +44,7 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
         }),
     });
 
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const client = clientFor(handle.socketPath);
 
     const refused = await readJson(await postJson(client, '/v1/responses', { model: `${longTarget}/system`, input: userInput('hello') }));

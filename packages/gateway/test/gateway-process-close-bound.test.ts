@@ -6,7 +6,7 @@ import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, POLL_INTERVAL_MS, gatewayMaxClose
 import type { ProcessInspector, StopValues } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import type { ManagedChild } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { saveFakeFmRecord } from './fm-record-support.ts';
@@ -97,6 +97,7 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
     await Promise.all([...serves.managed, ...serves.probe].map((server) => server.close()));
   });
   const handle = await launchGateway({
+    platform: FM_HOST_PLATFORM,
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),

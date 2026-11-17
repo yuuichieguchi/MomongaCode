@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, FIRST_GENERATION, createJsonLogger, managedInstancePaths, momongaPaths, systemClock } from '@momonga/foundation';
 import type { ManagedInstance } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor, registerOwned, testLocks } from '@momonga/testkit';
+import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor, registerOwned, testLocks } from '@momonga/testkit';
 import type { FakeFm } from '@momonga/testkit';
 import { getJson, makeDir, postJson, registerCleanup, userInput, listedCountersOf } from '../gateway-helpers.ts';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -42,7 +42,7 @@ const replaceSettings = (home: string, value: unknown): void => {
 
 const ask = (model: string) => ({ model, input: userInput('hello') });
 
-const targetsDirectory = (home: string): string => path.join(momongaPaths(home, process.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
+const targetsDirectory = (home: string): string => path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).run, `g${FIRST_GENERATION}`, 'targets');
 
 const BOUNDED_STEPS_OF_AN_EDIT_SEQUENCE = 5;
 const STEP_BOUND_MS = REAL_PROCESS_TEST_TIMEOUT_MS / BOUNDED_STEPS_OF_AN_EDIT_SEQUENCE;
@@ -96,7 +96,7 @@ const trailIn = (home: string): Trail => {
 
 const launch = async (home: string, trail?: Trail) => {
   const output = trail === undefined ? { stdout: { write: () => true } } : { stdout: trail.stream, logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: trail.stream, level: 'debug' }) };
-  const handle = await registerOwned(registerCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  locks: testLocks(), platform: process.platform, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...output }));
+  const handle = await registerOwned(registerCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  locks: testLocks(), platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...output }));
   registerCleanup(async () => {
     await handle.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 });
   });

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { loadProbeRecord, managedRecordPath, probeManagedFm } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
-import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { FAKE_OS_BUILD, FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 import { FAKE_FM_LISTED_MODEL, FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
 import { systemTiming } from '@momonga/foundation';
@@ -16,13 +16,13 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const setup = async () => {
   const dir = makeHome();
   const fm = await createFakeFm({ dir });
-  const paths = momongaPaths(dir, process.platform, {});
+  const paths = momongaPaths(dir, FM_HOST_PLATFORM, {});
   const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'apple' });
   return { dir, binary: fm.binaryPath, paths, instance };
 };
 
 const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] = []) => ({
-  platform: process.platform,
+  platform: FM_HOST_PLATFORM,
   paths: context.paths,
   instance: context.instance,
   description: FM_SERVER,
