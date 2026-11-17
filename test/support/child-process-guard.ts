@@ -147,8 +147,10 @@ const realFileStartedBy = (command: string | undefined, env: ProcessEnv, cwd: un
 };
 
 const realSecretProgram = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
-  const real = realFileStartedBy(command, env, cwd);
-  if (real === undefined) return undefined;
+  if (command === undefined || command === '') return undefined;
+  const found = resolvedCommand(command, env, cwd);
+  if (found === undefined) return hasSecretProgramName(command) ? command : undefined;
+  const real = startedFileOf(found);
   return hasSecretProgramName(path.basename(real)) && !isInsideFakeSecretPrograms(real) ? real : undefined;
 };
 

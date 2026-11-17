@@ -267,10 +267,12 @@ describe('the worker guard refuses a product launch of a MomongaCode binary that
     expect(install).toContain('MOMONGA_LAUNCHES.startDaemon.args');
   });
 
-  describe.each(STORE_CHOOSING)('%s', (_name, launch) => {
+  const leakingStorePath = (decoy: Decoy): string => `${decoy.dir}${path.delimiter}/usr/bin${path.delimiter}/bin`;
+
+describe.each(STORE_CHOOSING)('%s', (_name, launch) => {
     it.each(SELF_KINDS)('through the real spawn port as a %s with a hand-built PATH of /usr/bin is refused before exec', async (kind) => {
-      await expectRefusedBeforeLaunch(/\(iii\) it is the product launch of a MomongaCode binary with .*, which would choose the secret store \/usr\/bin\/security/, (d) =>
-        nodeSpawnDetached({ ...binaryOf(kind, launch.args, d), env: { PATH: '/usr/bin:/bin', HOME: d.dir }, cwd: d.dir }),
+      await expectRefusedBeforeLaunch(/\(iii\) it is the product launch of a MomongaCode binary with .*, which would choose the secret store .*\/security/, (d) =>
+        nodeSpawnDetached({ ...binaryOf(kind, launch.args, d), env: { PATH: leakingStorePath(d), HOME: d.dir }, cwd: d.dir }),
       );
     });
 
@@ -285,9 +287,9 @@ describe('the worker guard refuses a product launch of a MomongaCode binary that
     });
   });
 
-  it('the update restart, through the real command runner with a hand-built PATH of /usr/bin, is refused before exec', async () => {
+  it('the update restart, through the real command runner with a hand-built PATH that leaks a store, is refused before exec', async () => {
     await expectRefusedBeforeLaunch(/\(iii\) it is the product launch of a MomongaCode binary with daemon start/, (d) =>
-      nodeBoundedCommandRunner(binaryOf('single-binary', [], d).command, MOMONGA_LAUNCHES.startDaemon.args, { env: { PATH: '/usr/bin:/bin', HOME: d.dir }, timeoutMs: 30_000, signal: new AbortController().signal }),
+      nodeBoundedCommandRunner(binaryOf('single-binary', [], d).command, MOMONGA_LAUNCHES.startDaemon.args, { env: { PATH: leakingStorePath(d), HOME: d.dir }, timeoutMs: 30_000, signal: new AbortController().signal }),
     );
   });
 
