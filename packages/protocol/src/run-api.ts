@@ -570,7 +570,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       rawInput: anything,
       locations: { type: 'array', items: location },
     },
-    required: ['callId', 'providerCallId', 'name', 'kind', 'title', 'rawInput'],
+    required: ['callId', 'providerCallId', 'name', 'kind', 'title'],
   },
   'tool.permission.requested': {
     properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, reason: string, suggestedRule: string, shown: approvalShown },

@@ -291,7 +291,7 @@ export type RunEventPayload =
       kind: ToolKind;
       sideEffect?: SideEffect;
       title: string;
-      rawInput: unknown;
+      rawInput?: unknown;
       locations?: { path: string; line?: number }[];
     }
   | {

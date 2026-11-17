@@ -1044,7 +1044,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       name,
       title,
       kind: expectOneOf('events', approval.id, 'kind', TOOL_KINDS, kind),
-      rawInput: payload['rawInput'],
+      rawInput: payload['rawInput'] ?? requestOf(approval).shown?.input,
       ...(locations === undefined ? {} : { locations: decodeLocations(approval.id, locations) }),
     };
   };
