@@ -3303,12 +3303,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 43664115,
-      "measuredSeconds": 2226.26,
+      "distinctStates": 712341,
+      "measuredSeconds": 15.9,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 3128.11,
-      "budgetCpuSeconds": 6260,
-      "identity": "09ea807115c543c30a63e575b96d07b8be6c2da53b835f269d155d535a5cfcca"
+      "measuredCpuSeconds": 66.85,
+      "budgetCpuSeconds": 137,
+      "identity": "4c810b05e26a8c6d3b3fead9dcf2e67803b5565e6db173702e2f4e067c0be864",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 13.38 at start)"
     },
     {
       "config": "PlanCredential.noMutex",
