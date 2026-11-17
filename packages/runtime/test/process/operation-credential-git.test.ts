@@ -41,6 +41,8 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+vi.setConfig({ testTimeout: SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS });
+
 describe('a credentialed git operation through the runtime process, composed as the product composes it', () => {
   it('starts git for a credentialed remote through the credential helper of the process', async () => {
     vi.stubEnv(FORGE_VARIABLE, 'forge-test-token');
@@ -60,5 +62,5 @@ describe('a credentialed git operation through the runtime process, composed as 
     expect(output).not.toContain(HELPER_REFUSAL);
     expect(output).not.toMatch(GIT_CONFIGURATION_ERROR);
     expect(output).toContain('GitFetch did not reach its goal');
-  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
+  });
 });

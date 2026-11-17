@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { cfgNames } from '../../../../test/formal/cfg-names.ts';
 import * as runtime from '@momonga/runtime';
 import { FACTS_SWEEP_BATCH_RUNS, INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
@@ -96,6 +96,8 @@ const tick = async (timers: ReturnType<typeof createFakeTimers>): Promise<void> 
   await afterMicrotasks();
   await afterMicrotasks();
 };
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('startFactsSweeper (FactsSweeper.tla)', () => {
   it('sends at most FACTS_SWEEP_BATCH_RUNS runFacts requests per tick and commits each batch once', async () => {
@@ -288,7 +290,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
         }
       }
       expect(problems).toEqual([]);
-    }, REAL_PROCESS_TEST_TIMEOUT_MS);
+    });
 
     it('a closed session that the retention sweep deletes while its run is in a batch leaves no row behind, and the batch commits with the other runs covered', async () => {
       const periodMs = 100_000;
