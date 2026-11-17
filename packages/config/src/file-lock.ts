@@ -1,5 +1,5 @@
-import { createKeyedSerializer, hostPaths, nodeFileSystem, sha256Hex, systemFileLockPorts, withFileLock } from '@momonga/foundation';
-import type { FileLockPorts, KernelLockMechanism, PathResolver, Random } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS, LockWaitTimeoutError, createKeyedSerializer, hostPaths, nodeFileSystem, sha256Hex, systemFileLockPorts, withFileLock } from '@momonga/foundation';
+import type { FileLockPorts, KernelLockMechanism, PathResolver, Random, Timing } from '@momonga/foundation';
 import { layoutOf } from './layout.ts';
 
 const KEY_HEX_CHARS = 32;
@@ -14,12 +14,35 @@ export type SettingsFileLockOptions = { lock: KernelLockMechanism; ports?: FileL
 
 const serializeInProcess = createKeyedSerializer();
 
+const turnWithin = <T>(key: string, file: string, signal: AbortSignal, timing: Timing, timeoutMs: number, work: () => Promise<T>): Promise<T> => {
+  const turn = new AbortController();
+  const forward = (): void => turn.abort(signal.reason);
+  signal.addEventListener('abort', forward, { once: true });
+  const bound = timing.setTimeout(() => turn.abort(new LockWaitTimeoutError(file, timeoutMs, String(process.pid))), timeoutMs);
+  const run = serializeInProcess(
+    key,
+    () => {
+      timing.clearTimeout(bound);
+      signal.removeEventListener('abort', forward);
+      return work();
+    },
+    turn.signal,
+  );
+  const release = (): void => {
+    timing.clearTimeout(bound);
+    signal.removeEventListener('abort', forward);
+  };
+  run.then(release, release);
+  return run;
+};
+
 export const settingsFileLock = (home: string, { lock, ports = systemFileLockPorts, lockTimeoutMs }: SettingsFileLockOptions): SettingsLockPort => ({
   locked: async (file, signal, work) => {
     const paths = hostPaths(signal);
     await nodeFileSystem.mkdir(layoutOf(home).run, PRIVATE_DIRECTORY_MODE);
     const lockPath = await settingsLockPath(home, file, paths);
-    return serializeInProcess(await paths.comparablePath(file), () => withFileLock(lockPath, work, { ports, mechanism: lock, signal, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }), signal);
+    const timeoutMs = lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+    return turnWithin(await paths.comparablePath(file), file, signal, ports.timing, timeoutMs, () => withFileLock(lockPath, work, { ports, mechanism: lock, signal, timeoutMs }));
   },
 });
 
