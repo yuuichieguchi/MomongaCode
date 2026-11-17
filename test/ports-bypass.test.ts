@@ -20,13 +20,11 @@ const SYNCHRONOUS_FILE_ADAPTERS = adapterFilesOf('synchronous-file-calls');
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
-  'packages/cli/src/tui/run-interactive.tsx': { 'node:child_process': 1 },
   'packages/cli/src/tui/screen/clipboard-host.ts': { 'node:child_process': 2 },
   'packages/config/src/auto-fit.ts': { 'node:fs': 2 },
   'packages/config/src/auto-mode-dataset.ts': { 'node:fs': 1 },
   'packages/context/src/fs-instruction-reader.ts': { 'node:fs/promises': 3 },
   'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
-  'packages/foundation/src/host-identity.ts': { 'node:fs': 2 },
   'packages/foundation/src/outbound.ts': { 'node:net': 1, 'node:worker_threads': 1 },
   'packages/foundation/src/process-contract.ts': { 'AbortSignal.timeout': 1 },
   'packages/foundation/src/rotating-log.ts': { 'node:fs': 7 },
@@ -34,8 +32,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/uds.ts': { 'node:fs': 4, 'node:net': 1 },
   'packages/gateway/src/core/store-worker.ts': { 'node:worker_threads': 2 },
   'packages/gateway/src/core/store.ts': { 'node:worker_threads': 1 },
-  'packages/gateway/src/managed/fm-processes.ts': { 'node:fs': 4, 'randomUUID': 1 },
-  'packages/gateway/src/managed/server.ts': { 'node:fs': 5 },
+  'packages/gateway/src/managed/server.ts': { 'node:fs': 4 },
   'packages/gateway/src/probe/endpoint-record.ts': { 'node:fs': 1 },
   'packages/gateway/src/probe/record.ts': { 'node:fs': 4 },
   'packages/mcp/src/connection.ts': { 'Math.random': 1 },
@@ -68,7 +65,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
 
 const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/commands/auto-mode.ts': { 'createHostExec': 1 },
-  'packages/cli/src/daemon/ensure-daemon.ts': { 'nodeFileSystem': 1 },
   'packages/cli/src/eval/context-effects.ts': { 'createHostExec': 1 },
   'packages/cli/src/keeper/host.ts': { 'nodeFileSystem': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'nodeFileSystem': 1 },
@@ -76,7 +72,6 @@ const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
 
 const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/rotating-log.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'renameSync': 2, 'statSync': 1, 'writeSync': 1 },
-  'packages/gateway/src/managed/fm-processes.ts': { 'closeSync': 1, 'openSync': 1, 'rmSync': 2 },
   'packages/gateway/src/process-ports.ts': { 'existsSync': 1, 'readFileSync': 1, 'statSync': 1 },
   'packages/runtime/src/memory/journal-thread.ts': { 'statSync': 1 },
   'packages/sandbox/src/scratch.ts': { 'statSync': 1 },
