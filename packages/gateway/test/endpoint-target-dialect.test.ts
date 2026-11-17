@@ -17,7 +17,7 @@ const SELECTED_EXPLICIT = reportOf({ selected: 'explicit-keys', shape: 'union', 
 const SELECTED_2020 = reportOf({ selected: 'json-schema-2020-12', shape: 'union', tried: [{ id: 'json-schema-2020-12', result: 'accepted' }] });
 
 const targetOf = (targetName: string, declared: DeclaredCapabilities, report: ProbeReport | null) =>
-  createProbedEndpointTarget({
+  createProbedEndpointTarget({ written: {},
     toolCalling: 'auto', readReported: async () => ({}), targetName,
     endpoint: 'unix:/nowhere',
     model: 'm',
