@@ -116,6 +116,34 @@ describe('retentionSweep', () => {
     expect((rawDb(dbPath).prepare('SELECT COUNT(*) AS n FROM retention_sweeps').get() as { n: number }).n).toBe(0);
   });
 
+  it('a crash after the purges and before the finish leaves the sweep pending, and the next sweep finishes it with the same run ids', async () => {
+    const { store, clock, dbPath } = harness();
+    const old = await endedSession(store, '/work/old');
+    clock.advance((PERIOD_DAYS + 1) * DAY_MS);
+    const crashing = (): void => {
+      throw new Error('the runtime was killed between the purges and the finish');
+    };
+
+    await expect(store.retention.sweep({ periodMs: PERIOD_MS, purges: [], crashPoint: crashing }, NEVER_CANCELLED)).rejects.toThrow('killed between the purges and the finish');
+    expect(store.getSession(old.sessionId)).toBeUndefined();
+    expect((rawDb(dbPath).prepare('SELECT COUNT(*) AS n FROM retention_sweeps').get() as { n: number }).n).toBe(1);
+
+    const calls: Purged[] = [];
+    await store.retention.sweep({ periodMs: PERIOD_MS, purges: [recordingPurge(calls)] }, NEVER_CANCELLED);
+    expect(calls.map((call) => call.runIds)).toEqual([[old.run.id]]);
+    expect((rawDb(dbPath).prepare('SELECT COUNT(*) AS n FROM retention_sweeps').get() as { n: number }).n).toBe(0);
+  });
+
+  it('reports what the sweep deleted, so the status can show the last sweep', async () => {
+    const { store, clock } = harness();
+    await endedSession(store, '/work/old');
+    clock.advance((PERIOD_DAYS + 1) * DAY_MS);
+
+    const report = await store.retention.sweep({ periodMs: PERIOD_MS, purges: [] }, NEVER_CANCELLED);
+
+    expect(report).toMatchObject({ sessionsDeleted: 1, runsPurged: 1, more: false });
+  });
+
   it('keeps a blob another run still owns and collects it once no run owns it', async () => {
     const { store, clock, dir } = harness();
     const first = await endedSession(store, '/work/a');

@@ -17,6 +17,7 @@ export const INJECTION_FAULTS = [
   'budget',
   'external_state_changed',
   'settings_broken',
+  'retention_crash',
 ] as const;
 
 export type InjectionFault = (typeof INJECTION_FAULTS)[number];
@@ -168,6 +169,7 @@ const REQUIRED_PARAMS: Readonly<Record<InjectionFault, readonly (keyof Injection
   budget: ['maxTotalTokens'],
   external_state_changed: ['change'],
   settings_broken: [],
+  retention_crash: [],
 };
 
 const assertConsistent = (file: InjectionScenarios, source: string): void => {

@@ -18,8 +18,8 @@ import { textReply, toolCallReply } from './upstream.ts';
 import { readLog } from './log-reader.ts';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { roleMainOverride } from './launcher.ts';
-import { fileFaultArgument } from './role-main.ts';
-import type { RoleMainFileFault } from './role-main.ts';
+import { fileFaultArgument, retentionCrashArgument } from './role-main.ts';
+import type { RoleMainFileFault, RoleMainRetentionCrash } from './role-main.ts';
 import { E2E_DISPOSE_BOUND_MS, E2E_MARGIN_MS, E2E_READY_DEADLINE_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eTestTimeoutMs, until, withinBound } from './wait.ts';
 
 import { INJECTION_REPORT_ENV, writeInjectionPart } from './inject-report.ts';
@@ -37,6 +37,8 @@ const SMALL_FILESYSTEM_MAX_BYTES = 256 * 1024 * 1024;
 const FILL_CHUNK_BYTES = 1024 * 1024;
 const PORT_FAULT_MARKER_NAME = 'file-fault.on';
 const PORT_FAULT_RECORD_NAME = 'file-fault.refused';
+const RETENTION_CRASH_MARKER_NAME = 'retention-crash.on';
+const RETENTION_CRASH_RECORD_NAME = 'retention-crash.killed';
 const LEDGER_DIRECTORY_NAME = 'ledger';
 const LEDGER_FILE_NAME = 'ledger.txt';
 const HOOK_MARK_FILE_NAME = 'hook.mark';
@@ -152,7 +154,27 @@ const chatRequestsOf = (env: TrialEnv) => (env.fake as FakeChatCompletionsServer
 const retryAfterSecondsOf = (window: 'inside' | 'beyond'): string =>
   String(window === 'inside' ? Math.ceil(GATEWAY_RETRY.baseMs / 1000) : Math.floor(GATEWAY_RETRY.totalWaitMs / 1000) + 1);
 
+const retentionCrashOf = (env: TrialEnv): RoleMainRetentionCrash => ({
+  marker: path.join(env.home.root, RETENTION_CRASH_MARKER_NAME),
+  record: path.join(env.home.root, RETENTION_CRASH_RECORD_NAME),
+});
+
 const FAULTS: Record<InjectionScenario['fault'], Fault> = {
+  retention_crash: {
+    stackOptions: (env) => ({
+      deps: { launcherOverrides: { runtime: roleMainOverride('runtime', SUPERVISOR_APP_VERSION, [retentionCrashArgument(retentionCrashOf(env))]) } },
+    }),
+    beforeRun: async (env) => {
+      fs.writeFileSync(retentionCrashOf(env).marker, '');
+    },
+    inject: async (env) => {
+      const crash = retentionCrashOf(env);
+      await until(() => fs.existsSync(crash.record) && fs.readFileSync(crash.record, 'utf8') !== '', {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+        description: 'the runtime killed between the purges and the finish of a retention sweep',
+      });
+    },
+  },
   kill_at_step: {
     beforeRun: async (env) => {
       const point = env.point as Point;

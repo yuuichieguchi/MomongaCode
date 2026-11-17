@@ -1,10 +1,10 @@
 import { CONTROL_REQUEST_TIMEOUT_MS, createUdsClient, fixedSocket, parseOutsideJson } from '@momonga/foundation';
-import { parseInterruptedWork } from '@momonga/protocol';
-import type { InterruptedWorkItem } from '@momonga/protocol';
+import { parseInterruptedWork, parseRetentionStatus } from '@momonga/protocol';
+import type { InterruptedWorkItem, RetentionStatusView } from '@momonga/protocol';
 import { HEALTH_BODY_MAX_BYTES } from './lock-watch.ts';
 import type { ChildRole } from './launcher.ts';
 
-export type GenerationCounts = { steps?: number; jobs?: number; calls?: number; interrupts?: InterruptedWorkItem[] };
+export type GenerationCounts = { steps?: number; jobs?: number; calls?: number; interrupts?: InterruptedWorkItem[]; retention?: RetentionStatusView };
 
 export type ChildCountsReader = (role: ChildRole, socketPath: string) => Promise<GenerationCounts>;
 
@@ -34,10 +34,12 @@ export const countsOfHealthBody = (role: ChildRole, body: Readonly<Record<string
   const steps = countOf(body, 'steps');
   const jobs = countOf(body, 'jobs');
   const interrupts = parseInterruptedWork(body['interrupts']);
+  const retention = parseRetentionStatus(body['retention']);
   return {
     ...(steps === undefined ? {} : { steps }),
     ...(jobs === undefined ? {} : { jobs }),
     ...(interrupts === undefined ? {} : { interrupts }),
+    ...(retention === undefined ? {} : { retention }),
   };
 };
 

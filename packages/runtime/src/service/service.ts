@@ -8,7 +8,7 @@ import type { MandateRunVerification, PolicyVerification } from '../process/fold
 import type { GatewayStanding } from '../process/supervised-gateway.ts';
 import type { Clock, FileSystem, Redactor, RolePort, KernelLockMechanism } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
-import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
+import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RetentionStatusView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { PermissionRule } from '@momonga/config';
@@ -51,6 +51,7 @@ export type RunServiceOptions = {
   pid: number;
   startedAt: string;
   sandboxKind: (signal: AbortSignal) => Promise<SandboxKind>;
+  retention?: () => RetentionStatusView;
   protectedRootAreas: readonly string[];
   notifier: RunNotifier;
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
@@ -189,7 +190,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     beginDraining: startDraining,
     role: () => options.role.current(),
     work: options.work,
-    health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind },
+    health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind, ...(options.retention === undefined ? {} : { retention: options.retention }) },
     protectedRootAreas: options.protectedRootAreas,
     defaults: { runTimeoutMs, limits: options.defaults.limits },
     notifier: options.notifier,

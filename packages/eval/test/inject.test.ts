@@ -16,11 +16,12 @@ const withScenario = (change: (scenario: Record<string, unknown>) => void): stri
 };
 
 describe('momonga-inject/1 (design 4.1)', () => {
-  it('parses the shipped scenario set: eleven faults with settings_broken, one needing the Linux container', () => {
+  it('parses the shipped scenario set: twelve faults with settings_broken and retention_crash, one needing the Linux container', () => {
     const parsed = parseInjectionScenarios(shipped(), SHIPPED);
     expect(new Set(parsed.scenarios.map((scenario) => scenario.fault))).toEqual(new Set(INJECTION_FAULTS));
     expect(INJECTION_FAULTS).toContain('settings_broken');
-    expect(INJECTION_FAULTS).toHaveLength(11);
+    expect(INJECTION_FAULTS).toContain('retention_crash');
+    expect(INJECTION_FAULTS).toHaveLength(12);
     expect(parsed.scenarios.filter((scenario) => scenario.requires === 'linux-container')).toHaveLength(1);
   });
 

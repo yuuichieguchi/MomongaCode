@@ -1,6 +1,6 @@
 import type { Stored } from './stored-value.ts';
 import { INTERRUPTED_COMMAND_SHOWN_CHARS, INTERRUPTED_WORK_LISTED } from './supervisor-api.ts';
-import type { InterruptedWorkItem } from './supervisor-api.ts';
+import type { InterruptedWorkItem, RetentionStatusView } from './supervisor-api.ts';
 import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
@@ -1434,6 +1434,7 @@ export type AdoptGuidelineRequest = { text: string; parent: number | null; repor
 export type CostReportView = GatewayCostReportView & { contextCharges: ContextChargesView };
 
 export type RunHealth = {
+  retention?: RetentionStatusView;
   status: 'ok';
   version: string;
   apiVersion: 1;
@@ -1653,6 +1654,10 @@ export const RUN_API_SCHEMAS = {
             ],
           },
         },
+        retention: closed(
+          { days: integer, lastSweep: closed({ at: string, sessionsDeleted: integer, runsPurged: integer, blobsCollected: integer }, ['at', 'sessionsDeleted', 'runsPurged', 'blobsCollected']) },
+          ['days'],
+        ),
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
       ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'interrupts', 'sandbox'],

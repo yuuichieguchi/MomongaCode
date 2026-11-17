@@ -64,7 +64,7 @@ export const RETENTION_TABLES: readonly RetentionTable[] = [
 
 export type RetentionPurge = (runIds: readonly string[], cutoffMs: number, signal: AbortSignal) => Promise<void>;
 
-export type RetentionSweepRequest = { periodMs: number; purges: readonly RetentionPurge[] };
+export type RetentionSweepRequest = { periodMs: number; purges: readonly RetentionPurge[]; crashPoint?: () => void };
 
 export type RetentionSweepReport = { sessionsDeleted: number; runsPurged: number; blobsCollected: number; more: boolean };
 
@@ -187,6 +187,7 @@ export const retentionSweep = async (ports: RetentionSweepPorts, request: Retent
     signal.throwIfAborted();
     await purge(pending.runIds, cutoffMs, signal);
   }
+  request.crashPoint?.();
   immediateTx(ports.db, () => {
     for (const sessionId of pending.sessionIds) statements.finish.run({ sessionId });
   });

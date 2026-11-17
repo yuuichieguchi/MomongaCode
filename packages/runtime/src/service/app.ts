@@ -9,7 +9,7 @@ import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/f
 import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
-import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
+import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RetentionStatusView, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
@@ -130,7 +130,7 @@ export type RunAppDeps = {
   beginDraining(): void;
   role(): GenerationRole;
   work: { runs(): readonly string[]; jobs(): readonly { id: string; command: string }[] };
-  health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind> };
+  health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind>; retention?: () => RetentionStatusView };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
   notifier: RunNotifier;
@@ -313,6 +313,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     jobs: deps.work.jobs().length,
     interrupts: interruptedWorkOf(deps.work.runs(), deps.work.jobs()),
     sandbox: await deps.health.sandbox(context.req.raw.signal),
+    ...(deps.health.retention === undefined ? {} : { retention: deps.health.retention() }),
   });
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');

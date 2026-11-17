@@ -2,7 +2,7 @@ import { readUserStopValuesOrDefault } from '@momonga/config';
 import { STOP_VALUE_NAMES, generationLayout, readStopRecord } from '@momonga/foundation';
 import type { MomongaPaths, StopValueName, StopValues } from '@momonga/foundation';
 import { INTERRUPTED_WORK_LISTED } from '@momonga/protocol';
-import type { InterruptedWorkItem, SupervisorHealth } from '@momonga/protocol';
+import type { InterruptedWorkItem, RetentionStatusView, SupervisorHealth } from '@momonga/protocol';
 import { ensureCurrentDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts, InterruptedWork } from '../daemon/ensure-daemon.ts';
 import { listLiveGenerations } from '../daemon/generations.ts';
@@ -11,9 +11,15 @@ import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
+const retentionText = (retention: RetentionStatusView): string =>
+  retention.lastSweep === undefined
+    ? `  retention: ${retention.days} days, no sweep yet`
+    : `  retention: ${retention.days} days, last sweep at ${retention.lastSweep.at}: ${retention.lastSweep.sessionsDeleted} sessions deleted, ${retention.lastSweep.runsPurged} runs purged, ${retention.lastSweep.blobsCollected} blobs collected`;
+
 export const daemonStatusText = (health: SupervisorHealth): string =>
   escapedLines([
     `momonga daemon running: pid ${health.pid}, version ${health.version}, phase ${health.phase}, started ${health.startedAt}`,
+    ...(health.retention === undefined ? [] : [retentionText(health.retention)]),
     ...health.children.map(
       (child) => `  ${child.role}: ${child.state}${child.pid === undefined ? '' : ` (pid ${child.pid})`}${child.heldReason === undefined ? '' : ` - ${child.heldReason}`}`,
     ),

@@ -479,6 +479,7 @@ export type ServiceOverrides = {
   runTraceContent?: (runId: string, after: number, limit: number) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
+  retention?: () => protocol.RetentionStatusView;
   protectedRootAreas?: readonly string[];
   skills?: runtime.SkillsPort;
   agents?: runtime.AgentCatalogPort;
@@ -585,6 +586,7 @@ export const serviceOptions = (
   pid: SERVICE_PID,
   startedAt: STARTED_AT,
   sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
+  ...(overrides.retention === undefined ? {} : { retention: overrides.retention }),
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelListing: overrides.modelListing ?? base.ports.modelListing,
   modelCapabilities: async (model: string) => {

@@ -14,6 +14,24 @@ export type RoleMainFileFault = { readonly code: string; readonly under: string;
 
 export const fileFaultArgument = (fault: RoleMainFileFault): string => `${FILE_FAULT_FLAG}${JSON.stringify(fault)}`;
 
+export const RETENTION_CRASH_FLAG = '--role-main-retention-crash=';
+
+export type RoleMainRetentionCrash = { readonly marker: string; readonly record: string };
+
+export const retentionCrashArgument = (crash: RoleMainRetentionCrash): string => `${RETENTION_CRASH_FLAG}${JSON.stringify(crash)}`;
+
+const retentionCrashPointOf = (argv: readonly string[]): (() => void) | undefined => {
+  const given = argv.find((argument) => argument.startsWith(RETENTION_CRASH_FLAG));
+  if (given === undefined) return undefined;
+  const crash = JSON.parse(given.slice(RETENTION_CRASH_FLAG.length)) as RoleMainRetentionCrash;
+  return () => {
+    if (!fs.existsSync(crash.marker)) return;
+    fs.appendFileSync(crash.record, 'crashed\n');
+    fs.rmSync(crash.marker, { force: true });
+    process.kill(process.pid, 'SIGKILL');
+  };
+};
+
 const fileSystemOf = (argv: readonly string[]): FileSystem => {
   const given = argv.find((argument) => argument.startsWith(FILE_FAULT_FLAG));
   if (given === undefined) return nodeFileSystem;
@@ -29,10 +47,13 @@ const fileSystemOf = (argv: readonly string[]): FileSystem => {
 export const roleMain = (argv: readonly string[]): Promise<number> => {
   const [role, version, ...rest] = argv;
   if (version === undefined) throw new Error('role-main needs the role and the version it reports as its first two arguments');
-  const entryArgv = rest.filter((argument) => !argument.startsWith(FILE_FAULT_FLAG));
+  const entryArgv = rest.filter((argument) => !argument.startsWith(FILE_FAULT_FLAG) && !argument.startsWith(RETENTION_CRASH_FLAG));
   const io = { ...nodeEntryIo(), argv: entryArgv };
   if (role === 'gateway') return runGatewayEntry(io, { version });
-  if (role === 'runtime') return runRuntimeEntry(io, { version, helperSelf: { execPath: process.execPath, script: PRODUCT_ENTRY }, fileSystem: fileSystemOf(rest) });
+  if (role === 'runtime') {
+    const retentionCrashPoint = retentionCrashPointOf(rest);
+    return runRuntimeEntry(io, { version, helperSelf: { execPath: process.execPath, script: PRODUCT_ENTRY }, fileSystem: fileSystemOf(rest), ...(retentionCrashPoint === undefined ? {} : { retentionCrashPoint }) });
+  }
   throw new Error(`role-main: unknown role ${role}`);
 };
 

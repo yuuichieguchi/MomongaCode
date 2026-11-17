@@ -43,6 +43,29 @@ export type SupervisorChildHealth = {
   external?: { pid?: number; probe: 'pending' | 'healthy' | 'unhealthy' | 'unresponsive' | 'unreachable' };
 };
 
+export type RetentionStatusView = {
+  days: number;
+  lastSweep?: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number };
+};
+
+const countField = (value: unknown): number | undefined => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined);
+
+export const parseRetentionStatus = (value: unknown): RetentionStatusView | undefined => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const { days, lastSweep } = value as Readonly<Record<string, unknown>>;
+  const period = countField(days);
+  if (period === undefined) return undefined;
+  if (lastSweep === undefined) return { days: period };
+  if (typeof lastSweep !== 'object' || lastSweep === null) return undefined;
+  const sweep = lastSweep as Readonly<Record<string, unknown>>;
+  const at = sweep['at'];
+  const sessionsDeleted = countField(sweep['sessionsDeleted']);
+  const runsPurged = countField(sweep['runsPurged']);
+  const blobsCollected = countField(sweep['blobsCollected']);
+  if (typeof at !== 'string' || sessionsDeleted === undefined || runsPurged === undefined || blobsCollected === undefined) return undefined;
+  return { days: period, lastSweep: { at, sessionsDeleted, runsPurged, blobsCollected } };
+};
+
 export type SupervisorHealth = {
   status: 'ok';
   version: string;
@@ -59,6 +82,7 @@ export type SupervisorHealth = {
   jobs?: number;
   calls?: number;
   interrupts?: InterruptedWorkItem[];
+  retention?: RetentionStatusView;
 };
 
 export type SupervisorShutdownResponse = { phase: 'draining' };

@@ -23,6 +23,15 @@ describe('momonga daemon status reads its stop values the way the stop does (cli
     expect(stderr.chunks.join('').match(/the default values were used/g)).toHaveLength(1);
   });
 
+  it('shows the retention period and the last sweep of the serving runtime', async (context) => {
+    const { paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
+    await start({ version: '1.2.4', generation: 2, pid: 4002, reports: { retention: { days: 30, lastSweep: { at: '2026-11-17T00:00:00.000Z', sessionsDeleted: 2, runsPurged: 3, blobsCollected: 4 } } } });
+
+    expect(await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths, { json: false })).toBe(0);
+
+    expect(stdout.chunks.join('')).toContain('  retention: 30 days, last sweep at 2026-11-17T00:00:00.000Z: 2 sessions deleted, 3 runs purged, 4 blobs collected\n');
+  });
+
   it('prints with --json the values the text shows', async (context) => {
     const { home, paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
     await start({ version: '1.2.4', generation: 2, pid: 4002 });

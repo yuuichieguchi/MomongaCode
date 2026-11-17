@@ -161,6 +161,7 @@ export type StartRuntimeProcessOptions = {
   socketGuard?: SocketGuardSource;
   role?: RolePort;
   requestShutdown?: () => void;
+  retentionCrashPoint?: () => void;
   createAdminPool?: ToolRuntimeOptions['createAdminPool'];
 };
 
@@ -219,6 +220,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
   const startedAtMs = clock.now();
   const startedAt = new Date(startedAtMs).toISOString();
+  let lastRetentionSweep: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number } | undefined;
   const canonicalHome = await canonicalHomeOf(home, hostPaths(startDeadlineSignal(signal)));
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
@@ -727,6 +729,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         socketPath: own.sockets.runtime,
         pid: process.pid,
         startedAt,
+        retention: () => ({
+          days: resolveRetentionSettings(settingsComposition.takeUserSnapshot().settings.retention).days,
+          ...(lastRetentionSweep === undefined ? {} : { lastSweep: lastRetentionSweep }),
+        }),
         sandboxKind: async (healthSignal) => {
           const lease = await sandboxes.acquire(healthSignal);
           const { kind } = lease.value.sandbox;
@@ -1063,6 +1069,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               const report = await store.retention.sweep(
                 {
                   periodMs: retention.days * DAY_MS,
+                  ...(options.retentionCrashPoint === undefined ? {} : { crashPoint: options.retentionCrashPoint }),
                   purges: [
                     async (runIds, cutoffMs) => {
                       traceStore.purgeRuns(runIds, cutoffMs);
@@ -1075,6 +1082,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                 },
                 sweepStop.signal,
               );
+              lastRetentionSweep = { at: new Date(clock.now()).toISOString(), sessionsDeleted: report.sessionsDeleted, runsPurged: report.runsPurged, blobsCollected: report.blobsCollected };
               return report.more ? 'again' : 'done';
             },
           },
