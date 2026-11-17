@@ -108,7 +108,7 @@ describe('withFileLock', () => {
           now: () => now,
           sleep: async (ms) => {
             now += ms;
-            await new Promise<void>((resolve) => setImmediate(resolve));
+            await Promise.resolve();
             if (now - start > 10 * DEFAULT_LOCK_TIMEOUT_MS) throw new Error('the wait did not end at the default bound');
           },
         }),

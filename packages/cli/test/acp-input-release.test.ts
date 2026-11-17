@@ -8,8 +8,7 @@ describe('the standard input of an ACP surface handed to a new process', () => {
     const input = acpInputOf(stdin);
 
     input.release();
-    stdin.write(Buffer.from('{"jsonrpc":"2.0"}\n'));
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => stdin.write(Buffer.from('{"jsonrpc":"2.0"}\n'), () => resolve()));
 
     expect(stdin.isPaused()).toBe(true);
     expect(stdin.listenerCount('data')).toBe(0);
