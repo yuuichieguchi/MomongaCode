@@ -1,6 +1,7 @@
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { testKernelLock, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
+import { nodeFilesLockedBy } from '../src/node-ports.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliPorts, SelfExecutable } from '../src/ports.ts';
 import { createTuiBackend } from '../src/tui/backend.ts';
@@ -18,7 +19,7 @@ describe('the TUI backend', () => {
       void holder.backend?.close();
       return undefined;
     });
-    const ports = { version: '1.2.3', env: { PATH: '/usr/bin' }, home, cwd: home, clock: virtualClock(), self: SELF, spawnDetached: spawn, ...installedProgram('1.2.3').ports } as unknown as CliPorts;
+    const ports = { version: '1.2.3', files: nodeFilesLockedBy(testKernelLock), env: { PATH: '/usr/bin' }, home, cwd: home, clock: virtualClock(), self: SELF, spawnDetached: spawn, ...installedProgram('1.2.3').ports } as unknown as CliPorts;
     holder.backend = createTuiBackend(ports, paths, {}, { load: async () => [], append: async () => undefined }, []);
 
     const failure: unknown = await holder.backend.boot().then(
