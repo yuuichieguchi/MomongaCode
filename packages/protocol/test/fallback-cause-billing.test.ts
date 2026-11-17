@@ -23,7 +23,7 @@ describe('one renderer of a fallback cause covers billing records (P3, M9)', () 
 
   it('is the renderer the fallback_target notice of model-step uses', () => {
     const source = fs.readFileSync(MODEL_STEP, 'utf8');
-    expect(source).toContain('describeFallbackCause');
+    expect(source).toContain('fallbackNoticeText');
     expect(source).not.toContain('failed (${');
   });
 });

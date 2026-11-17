@@ -3,6 +3,7 @@ import type { QuiescentBehaviour, VerificationOutcome, VerificationState } from 
 import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution, HookStart } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
+import type { FallbackNotice } from './fallback-cause.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { Stored } from './stored-value.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
@@ -453,7 +454,7 @@ export type RunEventPayload =
   | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
   | { type: 'user.compact'; instructions?: string }
-  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; key?: string; reduction?: NoticeReduction };
+  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; key?: string; reduction?: NoticeReduction; fallback?: FallbackNotice };
 
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }

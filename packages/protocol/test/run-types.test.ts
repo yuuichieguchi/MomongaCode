@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
+import type { FallbackNotice } from '@momonga/protocol';
 import type {
   ApprovalBasis,
   CallTiming,
@@ -403,6 +404,7 @@ describe('run event payloads', () => {
       toolKey?: string;
       key?: string;
       reduction?: { turn: number; from: number; to: number };
+      fallback?: FallbackNotice;
     }>();
   });
 
@@ -415,6 +417,7 @@ describe('run event payloads', () => {
       toolKey?: string;
       key?: string;
       reduction?: { turn: number; from: number; to: number };
+      fallback?: FallbackNotice;
       id: number;
       runId: string;
       sessionId: string;

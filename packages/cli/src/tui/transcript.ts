@@ -1,4 +1,4 @@
-import { UNKNOWN_EFFECT_REASON, escapeTerminalLine } from '@momonga/protocol';
+import { UNKNOWN_EFFECT_REASON, escapeTerminalLine, fallbackNoticeTextOn } from '@momonga/protocol';
 import type { ApprovalShown, PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, RunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
 import { attachedRow } from './attach.ts';
 import { startFlow } from '../elicit/flow.ts';
@@ -390,7 +390,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       });
       return;
     case 'notice':
-      appendEntry(store, { kind: 'notice', level: event.level, text: event.message });
+      appendEntry(store, { kind: 'notice', level: event.level, text: event.fallback === undefined ? event.message : fallbackNoticeTextOn(event.fallback, 'tui') });
       return;
     case 'tool.loaded':
       appendEntry(store, { kind: 'info', text: `tools loaded: ${event.names.join(', ')}` });
