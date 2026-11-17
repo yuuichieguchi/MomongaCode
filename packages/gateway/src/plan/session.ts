@@ -36,6 +36,7 @@ import type { RecordLockRefusal } from './record-io.ts';
 import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, RefreshEnd, RefreshTokens } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
+import { limitFailureOf } from './request-limit.ts';
 import { createSerial } from './serial.ts';
 import { startSharedCall } from './shared-call.ts';
 import type { SharedCall } from './shared-call.ts';
@@ -854,7 +855,9 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
           flight.waiting -= 1;
         };
         signal.addEventListener('abort', left, { once: true });
-        return shared.join(signal).finally(() => signal.removeEventListener('abort', left));
+        return shared.join(signal).catch((error: unknown) => {
+          throw limitFailureOf(error) ?? error;
+        }).finally(() => signal.removeEventListener('abort', left));
       },
     };
     account.inflight = running;

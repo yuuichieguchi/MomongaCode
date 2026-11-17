@@ -17,6 +17,7 @@ const productTools = (): AnyTool[] => [
     runArgv: unused('git') as ArgvRunner,
     forge: { request: unused('the forge'), gitCredential: unused('the forge'), gitDestination: unused('the forge') } as unknown as ForgeAccess,
     settings: {},
+    platform: process.platform, shell: async () => '/bin/sh',
   }),
 ];
 

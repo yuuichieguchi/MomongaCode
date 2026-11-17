@@ -2,7 +2,7 @@ import { approvalDigest } from './settings.ts';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
 import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths } from '@momonga/foundation';
-import type { FileSystem, PathAsking } from '@momonga/foundation';
+import type { FileSystem, LayoutEnvironment, PathAsking } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import { acceptedCheckOf } from './declared-checks.ts';
 import { hookGroupApprovalDigestOf } from './approval-digest.ts';
@@ -88,6 +88,7 @@ export type PendingHookGroup = { event: keyof HooksSettings; group: HookGroups[n
 
 export type LoadSettingsOptions = {
   home: string;
+  env: LayoutEnvironment;
   projectDir: string;
   cli: Settings;
   trust: TrustOracle;
@@ -210,9 +211,9 @@ function* ownedByProduct(entry: string, owned: readonly string[]): PathAsking<bo
   return false;
 }
 
-function* enforceableUnixSockets({ source, allow }: { source: string; allow: string[] }, home: string, warnings: string[]): PathAsking<string[]> {
+function* enforceableUnixSockets({ source, allow }: { source: string; allow: string[] }, home: string, env: LayoutEnvironment, warnings: string[]): PathAsking<string[]> {
   if (allow.length === 0) return [];
-  const owned = [layoutOf(home).root, keyStoreOf(home)];
+  const owned = [layoutOf(home).root, keyStoreOf(home, env)];
   const enforceable: string[] = [];
   for (const entry of allow) {
     if (yield* ownedByProduct(entry, owned)) {
@@ -224,7 +225,7 @@ function* enforceableUnixSockets({ source, allow }: { source: string; allow: str
   return enforceable;
 }
 
-export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[]): PathAsking<ResolvedSettings> {
+export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[], env: LayoutEnvironment): PathAsking<ResolvedSettings> {
   let projectReal: string;
   try {
     projectReal = yield* askedPaths.realPath(projectDir);
@@ -360,15 +361,15 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     if (forges !== undefined) merged.forges = forges;
     if (operations !== undefined) merged.operations = operations;
   }
-  if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: yield* enforceableUnixSockets(unixSockets, home, warnings) };
+  if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: yield* enforceableUnixSockets(unixSockets, home, env, warnings) };
   merged.verification = withCompletionConditions(merged.verification, declaredCommands, acceptedCheckOf(merged, projectReal));
   return merged;
 }
 
-export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[], { signal, paths }: Asker): Promise<ResolvedSettings> =>
-  answeredLater(mergingLayers(layers, models, home, projectDir, warnings), paths, signal);
+export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[], env: LayoutEnvironment, { signal, paths }: Asker): Promise<ResolvedSettings> =>
+  answeredLater(mergingLayers(layers, models, home, projectDir, warnings, env), paths, signal);
 
-export const loadSettings = async ({ home, projectDir, cli, trust, signal, user, kept, files }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
+export const loadSettings = async ({ home, env, projectDir, cli, trust, signal, user, kept, files }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
   const asker = askerOf(signal, files);
   const loaded = await loadLayers({ home, projectDir, trust, asker, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   let cliSettings: Settings;
@@ -383,6 +384,6 @@ export const loadSettings = async ({ home, projectDir, cli, trust, signal, user,
   const layers: Layer[] = [...loaded.layers, { origin: 'cli', source: 'cli', root: projectDir, ruleRoot: projectDir, settings: cliSettings }];
   const warnings = [...loaded.warnings, ...cliWarnings];
   const rules = layers.flatMap((layer) => parseLayerRules(layer, home, projectDir, warnings));
-  const settings = await mergeLayers(layers, loaded.models, home, projectDir, warnings, asker);
+  const settings = await mergeLayers(layers, loaded.models, home, projectDir, warnings, env, asker);
   return { settings, rules, warnings, files: loaded.files };
 };

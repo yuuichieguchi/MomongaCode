@@ -1,4 +1,5 @@
 import { hostPaths, isRecord } from '@momonga/foundation';
+import type { LayoutEnvironment } from '@momonga/foundation';
 import { acceptedCheckOf } from './declared-checks.ts';
 import type { AcceptedCheck } from './declared-checks.ts';
 import { editUserSettings } from './edit-user-settings.ts';
@@ -6,8 +7,8 @@ import type { SettingsWriterPorts } from './file-lock.ts';
 import { layoutOf } from './layout.ts';
 import { loadUserSettings } from './user-settings.ts';
 
-export const readProjectCheck = async (home: string, projectDir: string, signal: AbortSignal): Promise<AcceptedCheck | undefined> =>
-  acceptedCheckOf((await loadUserSettings({ home, signal })).settings, await hostPaths(signal).canonicalPath(projectDir));
+export const readProjectCheck = async ({ env, home, projectDir, signal }: { env: LayoutEnvironment; home: string; projectDir: string; signal: AbortSignal }): Promise<AcceptedCheck | undefined> =>
+  acceptedCheckOf((await loadUserSettings({ env, home, signal })).settings, await hostPaths(signal).canonicalPath(projectDir));
 
 export const forgetProjectCheck = async (home: string, projectDir: string, ports: SettingsWriterPorts): Promise<void> => {
   const folder = await hostPaths(ports.signal).canonicalPath(projectDir);

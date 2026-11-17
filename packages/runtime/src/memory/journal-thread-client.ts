@@ -14,6 +14,7 @@ import type {
   RecordedHash,
   ReflectionInputReply,
   ReportReply,
+  Run,
   RunStateReply,
   VerdictFact,
   VerdictReply,
@@ -231,9 +232,10 @@ const runStateOf = (reply: JournalThreadReply, runId: string): RunStateReply => 
 };
 
 const reportOf = (reply: JournalThreadReply, runId: string): ReportReply => {
-  const { report } = reply;
+  const { report, run } = reply;
   if (!isReportOf(report, runId)) throw new JournalThreadError(`journal thread report reply carries a malformed report for run ${runId}`);
-  return { lastSeq: lastSeqOf(reply, 'report'), report };
+  if (!isRecord(run) || run['id'] !== runId) throw new JournalThreadError(`journal thread report reply carries no run row of run ${runId}`);
+  return { lastSeq: lastSeqOf(reply, 'report'), report, run: run as unknown as Run };
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {

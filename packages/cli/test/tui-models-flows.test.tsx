@@ -23,6 +23,7 @@ type Written = { models: Record<string, unknown> & { connections: Connection[] }
 const writtenOf = (harness: FlowHarness): Written => harness.written() as Written;
 
 const SEARCHING = 'searching for model servers';
+const READING = 'reading this model';
 const CHECKING = 'checking the servers';
 const MEASURING = 'measuring this model (once per model and OS build)';
 const SEARCH = 'Search this computer for model servers';
@@ -54,7 +55,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const steps: Step[] = [{ pick: SEARCH }, { pick: OLLAMA_ROW }, { pick: 'devstral-small-2' }, { type: 'many' }, { type: '32768' }];
     const declined = flowOf(context, undefined, [...steps, NO], { found: twoOnOllama });
     await runAddFlow(declined.context);
-    expect(declined.phases).toEqual([SEARCHING]);
+    expect(declined.phases).toEqual([SEARCHING, READING]);
     expect(declined.detections.map((request) => request.typed)).toEqual([[]]);
     expect(declined.picks().map((pick) => pick.rows)[1]).toEqual([OLLAMA_ROW]);
     expect(declined.picks()[2]?.rows).toEqual(['devstral-small-2', 'qwen3.8:27b']);
@@ -72,6 +73,14 @@ describe('the /models flows, one per row of 4.9.1', () => {
     });
     await runAddFlow(ceiling.context);
     expect(ceiling.prompts()).toEqual([{ kind: 'text', title: 'Context window for small (at most 8192):', hidden: false, problems: ['Enter a whole number from 1 to 8192.'] }]);
+
+    const described = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'small' }, YES], {
+      found: () => [{ kind: 'ollama', provider: 'ollama', address: OLLAMA_ADDRESS, models: [{ id: 'small:latest', tools: 'unknown', ceiling: 8192 }] }],
+      describe: async (_server, model) => ({ ...model, contextWindow: 4096 }),
+    });
+    await runAddFlow(described.context);
+    expect(described.prompts()).toEqual([]);
+    expect(writtenOf(described).models.connections).toMatchObject([{ models: [{ id: 'small:latest', capabilities: { contextWindow: 4096 } }] }]);
 
     const nothing = flowOf(context, undefined, [{ pick: SEARCH }, { pick: 'Back' }]);
     await runAddFlow(nothing.context);
@@ -347,7 +356,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const slash = {
       ...harness.context,
       commands: [],
-      backend: { ...harness.context.backend, ...folderTrustFakes({ settingsPlace: () => ({ home: harness.place.home, projectDir: project }), trust: undefined, trustItems: undefined, cwd: () => project, record: () => undefined }), settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
+      backend: { ...harness.context.backend, ...folderTrustFakes({ settingsPlace: () => ({ home: harness.place.home, projectDir: project }), trust: undefined, trustItems: undefined, cwd: () => project, record: () => undefined }), settings: async () => readSettingsSnapshot({ env: process.env, home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
       background: (_label: string, work: (signal: AbortSignal) => Promise<unknown>) => work(new AbortController().signal),
     } as unknown as SlashContext;
     await runSettingsScreen(slash, []);
@@ -398,7 +407,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const harness = flowOf(context, threeModels(), []);
     const project = path.join(harness.place.home, 'project');
     fs.mkdirSync(project);
-    const snapshot = await readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal });
+    const snapshot = await readSettingsSnapshot({ env: process.env, home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal });
     expect(settingsFileLines(snapshot)[0]).toBe(`Settings file: ${harness.place.settingsFile}`);
   });
 

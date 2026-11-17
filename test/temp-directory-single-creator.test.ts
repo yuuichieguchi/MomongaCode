@@ -10,7 +10,6 @@ const SCANNED_ROOTS = ['packages', 'e2e', 'scripts', 'test'] as const;
 const RAW_TEMP_CALL = /(?:\b(?:fs|os|promises)\.|(?<![.\w]))(mkdtemp(?:Sync|Disposable|DisposableSync)?|tmpdir)\s*\(/g;
 
 const ALLOWANCES: Readonly<Record<string, string>> = {
-  'e2e/support/home.ts': 'the e2e home creator: a home under the private per-user root, which the e2e teardown sweeps by its run prefix',
   'packages/testkit/test/temp-dir-creator.test.ts': 'it pins the base of the testkit creator to the system temporary folder',
   'test/temp-directory-single-creator.test.ts': 'its planted source names each raw form, to show the scan finds it',
   'test/leak-guard.test.ts': 'it proves that the leak guard records a temporary entry made by each raw form of mkdtemp, so it must call each form',

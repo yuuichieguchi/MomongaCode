@@ -1,5 +1,5 @@
 import type { PermissionRule } from '@momonga/config';
-import { unixSocketPolicyOf, verdictKey } from '@momonga/foundation';
+import { settledOrAborted, unixSocketPolicyOf, verdictKey } from '@momonga/foundation';
 import type { RuleEnforcement, UnixSocketPolicy } from '@momonga/foundation';
 import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, isFinalRuleVerdict, policyRefutedMessage, policyVerdictNotice, refusingRefutations } from '@momonga/protocol';
 import type { PinnedRuleVerdict, RuleVerdict, RunEventPayload, RunState } from '@momonga/protocol';
@@ -14,7 +14,7 @@ import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
 import type { WorkerOptions } from './types.ts';
 
-export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised' | 'fail'> };
+export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier' | 'verificationStop'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised' | 'fail'> };
 
 export type RuleSetFacts = { rules: readonly PermissionRule[]; roots: readonly string[]; exemptDirectory: string; enforcement: RuleEnforcement; unixSockets: UnixSocketPolicy };
 
@@ -61,17 +61,18 @@ export const ruleVerdictFor = async ({ options, control }: RuleVerdictSources, s
   const solver = await verifier.solverVersion();
   const fingerprint = verdictKey(input, solver);
   if (!(await verifier.needsVerdict(input))) return { fingerprint, solver, ...NOT_NEEDED };
-  const verdict = await verdictOfKey({
+  const verdict = await control.recordingRaised(verdictOfKey({
     verifier,
     cache: options.store.ruleVerdicts,
     fingerprint,
     solver,
-    verify: () => control.recordingRaised(verdictOrUnverified(verifier.verify(input, control.signal), solver)),
-    retry: () => verifier.verify(input, control.signal),
+    signal: control.signal,
+    verify: () => verdictOrUnverified(verifier.verify(input, options.verificationStop), solver),
+    retry: () => verifier.verify(input, options.verificationStop),
     onRetryFailure: (error) => {
       if (!control.signal.aborted) control.fail(error);
     },
-  });
+  }));
   return { fingerprint, ...verdict };
 };
 
@@ -82,12 +83,13 @@ export type KeyedVerification = {
   cache: VerdictCache;
   fingerprint: string;
   solver: string;
+  signal: AbortSignal;
   verify: () => Promise<RuleVerdict>;
   retry: () => Promise<RuleVerdict>;
   onRetryFailure: (error: unknown) => void;
 };
 
-export const verdictOfKey = async ({ verifier, cache, fingerprint, solver, verify, retry, onRetryFailure }: KeyedVerification): Promise<RuleVerdict> => {
+export const verdictOfKey = async ({ verifier, cache, fingerprint, solver, signal, verify, retry, onRetryFailure }: KeyedVerification): Promise<RuleVerdict> => {
   const stored = cache.get(fingerprint);
   if (stored !== undefined) return stored.verdict;
   const undecided = undecidedOf(verifier);
@@ -100,11 +102,7 @@ export const verdictOfKey = async ({ verifier, cache, fingerprint, solver, verif
     }
   };
   const earlier = undecided.get(fingerprint);
-  if (earlier === undefined) {
-    const verdict = await verify();
-    settle(verdict);
-    return verdict;
-  }
+  if (earlier === undefined) return settledOrAborted(verify().then((verdict) => (settle(verdict), verdict)), signal);
   earlier.retry ??= verdictOrUnverified(retry(), solver).then(settle, (error: unknown) => {
     earlier.retry = undefined;
     onRetryFailure(error);
@@ -113,7 +111,7 @@ export const verdictOfKey = async ({ verifier, cache, fingerprint, solver, verif
 };
 
 export type StartVerdictSources = RuleVerdictSources & {
-  options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier' | 'tools' | 'settings' | 'clock'>;
+  options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier' | 'tools' | 'settings' | 'clock' | 'verificationStop'>;
   env: ToolEnv;
   readableDirectories: readonly string[];
   delegation: Pick<Delegation, 'rules'> | undefined;

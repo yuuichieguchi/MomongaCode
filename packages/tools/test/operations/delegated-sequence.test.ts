@@ -58,6 +58,7 @@ const setup = async () => {
       readCredential: async () => CREDENTIAL,
     }),
     settings: {},
+    platform: process.platform, shell: async () => '/bin/sh',
   });
   const toolSet = await toolSetOf(...tools);
   const harness = makeHarness();

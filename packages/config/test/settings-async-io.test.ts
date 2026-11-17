@@ -73,7 +73,7 @@ const socketConnection = (socketPath: string) => ({ adapter: 'chat-completions',
 
 const cacheOf = (tree: Tree, files?: FileSystem) => {
   const warnings: string[] = [];
-  const cache = createUserSettingsCache({ home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords, ...(files === undefined ? {} : { files }) });
+  const cache = createUserSettingsCache({ env: process.env, home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords, ...(files === undefined ? {} : { files }) });
   return { cache, warnings };
 };
 
@@ -89,7 +89,7 @@ describe('config: settings are loaded asynchronously, through the file-system po
     const reason = new Error('the asker left');
     const counted = countedFiles();
     const synchronous = synchronousFileCalls();
-    await expect(loadSettings({ signal: abortedWith(reason), home: tree.home, projectDir: tree.project, cli: {}, trust: trustingAll, files: counted.files })).rejects.toBe(reason);
+    await expect(loadSettings({ env: process.env, signal: abortedWith(reason), home: tree.home, projectDir: tree.project, cli: {}, trust: trustingAll, files: counted.files })).rejects.toBe(reason);
     expect(counted.calls).toEqual([]);
     expect(synchronous()).toEqual([]);
   });
@@ -100,7 +100,7 @@ describe('config: settings are loaded asynchronously, through the file-system po
     writeJson(projectSettingsPath(tree), { env: { TZ: 'project' } });
     const counted = countedFiles();
     const synchronous = synchronousFileCalls();
-    const loaded = await loadSettings({ signal: unaborted(), home: tree.home, projectDir: tree.project, cli: {}, trust: trustingAll, files: counted.files });
+    const loaded = await loadSettings({ env: process.env, signal: unaborted(), home: tree.home, projectDir: tree.project, cli: {}, trust: trustingAll, files: counted.files });
     expect(synchronous()).toEqual([]);
     expect(loaded.settings.env).toEqual({ TZ: 'project' });
     expect(loaded.settings.autoUpdates).toBe(false);
@@ -112,9 +112,9 @@ describe('config: settings are loaded asynchronously, through the file-system po
     writeJson(userSettingsPath(tree), { gateway: { closeGraceMs: 1234 }, models: { connections: [socketConnection(path.join(tree.project, 'model.sock'))] } });
     const synchronous = synchronousFileCalls();
     const signal = unaborted();
-    const settings = await loadUserSettings({ home: tree.home, signal });
+    const settings = await loadUserSettings({ env: process.env, home: tree.home, signal });
     const models = await loadUserModels({ home: tree.home, signal });
-    const stop = await readUserStopValues(tree.home, signal);
+    const stop = await readUserStopValues(tree.home, process.env, signal);
     const key = await userSettingsChangeKey(tree.home, signal);
     expect(synchronous()).toEqual([]);
     expect(settings.settings.gateway.closeGraceMs).toBe(1234);
@@ -130,8 +130,8 @@ describe('config: settings are loaded asynchronously, through the file-system po
     const link = path.join(tree.project, 'run-link');
     fs.symlinkSync(run, link);
     writeJson(userSettingsPath(tree), { models: { connections: [socketConnection(path.join(link, 'own.sock'))] } });
-    await expect(loadUserSettings({ home: tree.home, signal: unaborted() })).rejects.toThrow(/models\.connections\[0\]: socketPath .* must not be inside /);
-    await expect(loadUserSettings({ home: tree.home, signal: unaborted() })).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: unaborted() })).rejects.toThrow(/models\.connections\[0\]: socketPath .* must not be inside /);
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: unaborted() })).rejects.toBeInstanceOf(ConfigError);
   });
 });
 
@@ -203,7 +203,7 @@ describe('config: the user-settings cache keeps the last loaded snapshot in memo
     const file = userSettingsPath(tree);
     writeJson(file, { gateway: { closeGraceMs: 1111 } });
     const told: number[] = [];
-    const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords, onLoaded: ({ settings }) => told.push(settings.gateway.closeGraceMs) });
+    const cache = createUserSettingsCache({ env: process.env, home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords, onLoaded: ({ settings }) => told.push(settings.gateway.closeGraceMs) });
     await cache.load(unaborted());
     await cache.load(unaborted());
     writeJson(file, { gateway: { closeGraceMs: 2222 } });
@@ -232,7 +232,7 @@ describe('config: the settings writers write asynchronously under the signal of 
     const file = userSettingsPath(tree);
     writeText(file, '{"autoUpdates":false}');
     const reason = new Error('the asker left');
-    await expect(editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { lock: testKernelLock(), signal: abortedWith(reason) })).rejects.toBe(reason);
+    await expect(editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { env: process.env, lock: testKernelLock(), signal: abortedWith(reason) })).rejects.toBe(reason);
     expect(fs.readFileSync(file, 'utf8')).toBe('{"autoUpdates":false}');
   });
 
@@ -241,8 +241,8 @@ describe('config: the settings writers write asynchronously under the signal of 
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false });
     const synchronous = synchronousFileCalls();
-    await editSettings({ home: tree.home, projectDir: tree.project }, 'project', { kind: 'set', path: ['env', 'TZ'], value: 'UTC' }, { lock: testKernelLock(), signal: unaborted() });
-    await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { lock: testKernelLock(), signal: unaborted() });
+    await editSettings({ home: tree.home, projectDir: tree.project }, 'project', { kind: 'set', path: ['env', 'TZ'], value: 'UTC' }, { env: process.env, lock: testKernelLock(), signal: unaborted() });
+    await editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: true }, { env: process.env, lock: testKernelLock(), signal: unaborted() });
     expect(synchronous()).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ autoUpdates: true });
   });
@@ -253,10 +253,10 @@ describe('config: the settings writers write asynchronously under the signal of 
     const record = path.join(tree.home, '.momonga', 'run', 'settings-applied.json');
     fs.mkdirSync(path.dirname(record), { recursive: true });
     const reason = new Error('the asker left');
-    await expect(writeAppliedRecord(tree.home, record, undefined, { signal: abortedWith(reason), random: systemRandom, lock: testKernelLock() })).rejects.toBe(reason);
+    await expect(writeAppliedRecord(tree.home, record, undefined, { env: process.env, signal: abortedWith(reason), random: systemRandom, lock: testKernelLock() })).rejects.toBe(reason);
     expect(fs.existsSync(record)).toBe(false);
     const synchronous = synchronousFileCalls();
-    const written = await writeAppliedRecord(tree.home, record, undefined, { signal: unaborted(), random: systemRandom, lock: testKernelLock() });
+    const written = await writeAppliedRecord(tree.home, record, undefined, { env: process.env, signal: unaborted(), random: systemRandom, lock: testKernelLock() });
     expect(synchronous()).toEqual([]);
     expect(written).toEqual({ kind: 'written', seq: 1 });
     expect(JSON.parse(fs.readFileSync(record, 'utf8'))).toEqual({ seq: 1, settings: { autoUpdates: false } });

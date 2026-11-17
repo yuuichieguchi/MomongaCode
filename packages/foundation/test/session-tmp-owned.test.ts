@@ -5,12 +5,13 @@ import { createOwnedDirectory, ensureMomongaDirs, ensureSessionTmpDir, momongaPa
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { makeShortHomeDirectory, makeTemporaryDirectory } from './support/temporary-directory.ts';
 import { expectedKernelLockOn } from '@momonga/testkit';
+import { claimPathOf, lockFormOf, sidecarSuffixOf } from '../src/platform/lock-form.ts';
 
 const MECHANISMS: readonly NodeJS.Platform[] = ['darwin', 'linux'];
 
-const claimPathOfDirectory = (lock: KernelLockMechanism, directory: string): string => (lock.name === 'file-lock' ? `${directory}.lock` : directory);
+const claimPathOfDirectory = (lock: KernelLockMechanism, directory: string): string => claimPathOf(lock, directory, lockFormOf(lock, 'directory'));
 
-const directoryOfClaim = (lock: KernelLockMechanism, claimPath: string): string => (lock.name === 'file-lock' ? claimPath.slice(0, -'.lock'.length) : claimPath);
+const directoryOfClaim = (lock: KernelLockMechanism, claimPath: string): string => (claimPath.endsWith(sidecarSuffixOf(lock)) ? claimPath.slice(0, -sidecarSuffixOf(lock).length) : claimPath);
 
 const observing = (lock: KernelLockMechanism): { lock: KernelLockMechanism; existedAtClaim: boolean[] } => {
   const existedAtClaim: boolean[] = [];

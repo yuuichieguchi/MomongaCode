@@ -5,7 +5,7 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 const userGateway = async (gateway: Record<string, unknown> | undefined) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), gateway === undefined ? {} : { gateway });
-  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.gateway;
+  return (await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).settings.gateway;
 };
 
 describe('gateway.closeGraceMs and gateway.managedServerStopGraceMs', () => {
@@ -43,7 +43,7 @@ describe('gateway.closeGraceMs and gateway.managedServerStopGraceMs', () => {
   ])('refuses gateway.%s up to %d given %o with the English message', async (key, max, value) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { gateway: { [key]: value } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
       `${userSettingsPath(tree)}: invalid settings at /gateway/${key}: must be an integer from 0 to ${max} milliseconds; got ${JSON.stringify(value)}`,
     );
   });
@@ -55,7 +55,7 @@ describe('gateway.closeGraceMs and gateway.managedServerStopGraceMs', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { gateway: { closeGraceMs: 4000, managedServerStopGraceMs: 2000 } });
     const file = writeJson(locate(tree), { gateway: { closeGraceMs: 0, managedServerStopGraceMs: 0 } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.gateway).toEqual({ closeGraceMs: 4000, managedServerStopGraceMs: 2000 });
     expect(result.warnings).toContain(`${file}: gateway is only honored in user settings; discarded`);
   });

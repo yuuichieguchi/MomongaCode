@@ -33,7 +33,7 @@ describe('/mode (design-screens 12.1 row 11)', () => {
     const picked = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project } }, { choices: [{ index: 1, alt: true }] });
     await runSlash('mode', '', picked.context);
     expect(picked.recorded.modes).toEqual(['acceptEdits']);
-    const snapshotOf = async () => readSettingsSnapshot({ home: place.home, projectDir: place.project, trusted: true, signal: new AbortController().signal });
+    const snapshotOf = async () => readSettingsSnapshot({ env: process.env, home: place.home, projectDir: place.project, trusted: true, signal: new AbortController().signal });
     expect(JSON.stringify((await snapshotOf()).layers.find((layer) => layer.layer === 'user')?.document)).toContain('"defaultMode":"acceptEdits"');
     const typed = contextOf({}, { settingsPlace: { home: place.home, projectDir: place.project } });
     await runSlash('mode', 'plan --start', typed.context);

@@ -116,6 +116,7 @@ export const mandateRunVerification =
       cache: sources.ruleVerdicts,
       fingerprint: verdictKey(input, solver),
       solver,
+      signal,
       verify: () => verdictOrUnverified(sources.verifier.verify(input, signal), solver),
       retry: () => sources.verifier.verify(input, sources.retrySignal),
       onRetryFailure: sources.onRetryFailure,

@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import fs from 'node:fs';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { managedInstancePaths, momongaPaths, systemTiming } from '@momonga/foundation';
@@ -24,7 +25,7 @@ describe('the managed probe measures the model it is given', () => {
     const model = await listManagedModel({
       paths,
       lock: testKernelLock(),
-      inspector: testProcessInspector(),
+      inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
       launch: TEST_UNPROTECTED_LAUNCH,
       instance: managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'apple' }),
       description: FM_SERVER,

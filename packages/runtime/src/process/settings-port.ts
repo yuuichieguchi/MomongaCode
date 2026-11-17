@@ -6,7 +6,7 @@ import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
 import { AUTO_CLASSIFIER_CODE } from '../worker/auto-classifier.ts';
-import type { KernelLockMechanism } from '@momonga/foundation';
+import type { KernelLockMechanism, SandboxNetworkSetting } from '@momonga/foundation';
 
 const credentialRulesOf = ({ env, keep, valuePatterns }: ResolvedSettings['credentials']): CredentialRules => ({ env, keep, valuePatterns });
 
@@ -29,6 +29,7 @@ export type SettingsComposition = {
   keptLayers(use: SettingsUse): KeptLayers;
   envFor(session: Pick<Session, 'env' | 'cwd'>, signal: AbortSignal): Promise<ToolEnv>;
   referenceEnvFor(session: Pick<Session, 'env' | 'cwd'>, snapshot: UserSnapshot, signal: AbortSignal): Promise<ToolEnv>;
+  sandboxNetwork(session: Pick<Session, 'cwd' | 'sandboxNetwork'>, signal: AbortSignal): Promise<SandboxNetworkSetting>;
   takeUserSnapshot(): UserSnapshot;
   userSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
   admitUserSnapshot(signal: AbortSignal): Promise<UserSnapshot>;
@@ -76,12 +77,17 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
 
   const keptLayers = (use: SettingsUse): KeptLayers => ({ store: cache.kept, use });
 
-  const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse, signal: AbortSignal): Promise<LoadSettingsResult> =>
-    loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, signal, user: snapshot.user, kept: keptLayers(use) });
+  const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse, signal: AbortSignal, sandboxNetwork: SandboxNetworkSetting | null = null): Promise<LoadSettingsResult> =>
+    loadSettings({ env: process.env, home, projectDir: cwd, cli: sandboxNetwork === null ? {} : { sandboxNetwork }, trust: trustOracle, signal, user: snapshot.user, kept: keptLayers(use) });
 
   const loadSessionSettings = (cwd: string, snapshot: UserSnapshot, signal: AbortSignal): Promise<LoadSettingsResult> => settledOrAborted(settingsFor(cwd, snapshot, 'read', signal), signal);
 
   const currentSessionSettings = async (cwd: string, signal: AbortSignal): Promise<LoadSettingsResult> => loadSessionSettings(cwd, await settledOrAborted(userSnapshot(signal), signal), signal);
+
+  const sessionSandboxNetwork = async (session: Pick<Session, 'cwd' | 'sandboxNetwork'>, signal: AbortSignal): Promise<SandboxNetworkSetting> => {
+    const loaded = await settledOrAborted(settingsFor(session.cwd, takeUserSnapshot(), 'read', signal, session.sandboxNetwork), signal);
+    return loaded.settings.sandboxNetwork;
+  };
 
   const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
@@ -124,6 +130,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
 
   const settings: SettingsPort = {
     rules: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).rules,
+    sandboxNetwork: sessionSandboxNetwork,
     hooks: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.hooks,
     verification: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.verification,
     memory: async (target, signal) => (await currentSessionSettings(target.cwd, signal)).settings.memory,
@@ -139,5 +146,5 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     },
   };
 
-  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };
+  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, sandboxNetwork: sessionSandboxNetwork, trustOracle, admitted };
 };

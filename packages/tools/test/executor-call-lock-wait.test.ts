@@ -1,5 +1,4 @@
 import { sleepDrivenTiming } from '@momonga/testkit';
-import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Timing } from '@momonga/foundation';
@@ -13,6 +12,7 @@ const LONG_LEASE_HEARTBEAT_MS = 40_000;
 const ABORT_SETTLE_LIMIT_MS = 2000;
 const SHORT_LEASE_HEARTBEAT_MS = 1000;
 const FIXED_CAP_MS = 30_000;
+const RELEASE_AT_MS = 500;
 
 const lockPathOf = (harness: Harness): string => path.join(harness.callLockDir, `${KEY}.lock`);
 
@@ -33,20 +33,6 @@ const reconcilingEdit = () =>
     sideEffect: 'write', subjectKind: 'none',
     reconcile: async () => ({ outcome: 'already_applied', output: 'reconciled' }),
   });
-
-const sourceOf = (relative: string): string => fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', relative), 'utf8');
-
-const argumentsOfCall = (source: string, callee: string): string => {
-  const open = source.indexOf(`${callee}({`);
-  if (open === -1) throw new Error(`no call of ${callee}`);
-  let depth = 0;
-  for (let index = open + callee.length; index < source.length; index += 1) {
-    if (source[index] === '(') depth += 1;
-    if (source[index] === ')') depth -= 1;
-    if (depth === 0) return source.slice(open, index + 1);
-  }
-  throw new Error(`the call of ${callee} is not closed`);
-};
 
 describe('the wait for a held call lock', () => {
   it('outlasts a long heartbeat plus the settle limit, whatever the reconcile cap is', async () => {
@@ -77,8 +63,17 @@ describe('the wait for a held call lock', () => {
     expect(waited).toBeLessThan(FIXED_CAP_MS);
   });
 
-  it('receives the heartbeat of the configured lease in the runtime process', () => {
-    expect(argumentsOfCall(sourceOf('runtime/src/process/tool-runtime.ts'), 'createToolExecutor')).toMatch(/^\s*heartbeatMs: options\.heartbeatMs,$/m);
-    expect(argumentsOfCall(sourceOf('runtime/src/process/start-runtime-process.ts'), 'createToolRuntime')).toMatch(/^\s*heartbeatMs: heartbeatMsFor\(leaseMs\),$/m);
+  it('proceeds once a held call lock is released inside the heartbeat, after the executor has waited', async () => {
+    let harness: Harness | undefined;
+    const timing = advancingTiming((now) => {
+      if (now >= RELEASE_AT_MS) harness?.kernelLock.releaseExternally(lockPathOf(harness));
+    });
+    harness = makeHarness({ executor: { reap: { timing }, reconcileCapMs: FIXED_CAP_MS, heartbeatMs: SHORT_LEASE_HEARTBEAT_MS } as never });
+    harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
+    harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
+
+    const outcomes = await harness.executor.runBatch(await harness.input(await toolSetOf(reconcilingEdit()), [call('c1', 'Edit', {}, 'allow_once')]));
+
+    expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed' } });
   });
 });

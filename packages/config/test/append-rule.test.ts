@@ -29,7 +29,7 @@ describe('appendPermissionRule', () => {
     await appendPermissionRule({ lock: testKernelLock(), ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Network(api.example.org)', effect: 'allow', signal: NEVER_ABORTED });
     expect(JSON.parse(fs.readFileSync(userSettingsPath(tree), 'utf8'))).toEqual({ permissions: { allow: ['Network(api.example.org)'] } });
     expect(fs.existsSync(localSettingsPath(tree))).toBe(false);
-    const loaded = await loadSettings({ signal: NEVER_ABORTED, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const loaded = await loadSettings({ env: process.env, signal: NEVER_ABORTED, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(loaded.rules).toMatchObject([{ text: 'Network(api.example.org)', effect: 'allow', origin: 'user' }]);
   });
 

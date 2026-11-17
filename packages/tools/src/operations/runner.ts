@@ -26,7 +26,7 @@ import type { Scope } from './template.ts';
 
 export type OperationSettings = { readonly protectedRefs?: readonly string[]; readonly approval?: Readonly<Record<string, 'rule' | 'always'>> };
 
-export type OperationDeps = { runArgv: ArgvRunner; forge: ForgeAccess; settings: OperationSettings };
+export type OperationDeps = { runArgv: ArgvRunner; forge: ForgeAccess; settings: OperationSettings; platform: NodeJS.Platform; shell(): Promise<string> };
 
 type Observation = Record<string, unknown>;
 
@@ -393,6 +393,9 @@ const prePushLine = (hook: PrePushHook, scope: Scope, remoteSha: string): string
   return isTruthy(scope, hook.delete) ? `${DELETED_REF} ${absent} ${ref} ${remote}\n` : `${ref} ${localSha} ${ref} ${remote}\n`;
 };
 
+const hookArgvOf = async (deps: Pick<OperationDeps, 'platform' | 'shell'>, program: string, operands: readonly string[]): Promise<string[]> =>
+  deps.platform === 'win32' ? [await deps.shell(), '-c', '"$0" "$@"', program, ...operands] : [program, ...operands];
+
 const runPrePushHook = async (runtime: Runtime, hook: PrePushHook, ctx: ToolContext, scope: Scope, repoRoot: string): Promise<string | undefined> => {
   const step = { cwd: repoRoot, env: gitEnvironment(ctx.env, { mode: 'local' }), signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };
   const located = await runtime.deps.runArgv(['git', 'rev-parse', '--git-path', `hooks/${PRE_PUSH}`], step);
@@ -404,7 +407,7 @@ const runPrePushHook = async (runtime: Runtime, hook: PrePushHook, ctx: ToolCont
   for (const destination of recordedDestinations(scope)) {
     const remoteSha = await observeArgv(runtime, probe.via, ctx, { ...scope, call: callOf(ctx.idemKey, destination) }, repoRoot);
     if (remoteSha === undefined) return `the remote ${destination} could not be read before the ${PRE_PUSH} hook, so nothing was sent`;
-    const ran = await runtime.deps.runArgv([program, renderTemplate(hook.remote, scope), destination], { ...step, stdin: prePushLine(hook, scope, remoteSha) });
+    const ran = await runtime.deps.runArgv(await hookArgvOf(runtime.deps, program, [renderTemplate(hook.remote, scope), destination]), { ...step, stdin: prePushLine(hook, scope, remoteSha) });
     if (ran.exitCode !== 0) {
       const printed = printedOf(ran);
       return `the ${PRE_PUSH} hook of the repository exited with ${ran.exitCode}, so nothing was sent to ${destination}${printed === '' ? '' : `:\n${printed}`}`;

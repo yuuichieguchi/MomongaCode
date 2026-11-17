@@ -9,7 +9,7 @@ import type { Tree } from './helpers.ts';
 const signal = new AbortController().signal;
 const DOCS = { type: 'stdio', command: 'npx', args: ['docs-server'] };
 
-const optionsOf = (tree: Tree, trust = trusting(tree)) => ({ home: tree.home, trust, ...settingsWriterPorts(tree.home, { lock: testKernelLock(), signal }) });
+const optionsOf = (tree: Tree, trust = trusting(tree)) => ({ env: {}, home: tree.home, trust, ...settingsWriterPorts(tree.home, { lock: testKernelLock(), signal }) });
 const mcpFile = (tree: Tree): string => path.join(tree.project, '.mcp.json');
 
 describe('writeProjectMcpServer: the one writer of the project .mcp.json', () => {
@@ -20,7 +20,7 @@ describe('writeProjectMcpServer: the one writer of the project .mcp.json', () =>
     expect(JSON.parse(fs.readFileSync(mcpFile(tree), 'utf8'))).toEqual({ mcpServers: { wiki: { command: 'wiki' }, docs: DOCS } });
     const loaded = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, signal });
     expect(loaded.enabled.map((server) => server.name)).toEqual(['docs']);
-    const pending = await pendingProjectItems({ home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
+    const pending = await pendingProjectItems({ env: {}, home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
     expect(pending.items.map((item) => (item.kind === 'mcp' ? item.name : item.kind))).toEqual(['wiki']);
   });
 

@@ -5,7 +5,7 @@ import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } 
 const load = (mcp: Record<string, unknown> | undefined) => {
   const tree = makeTree();
   if (mcp !== undefined) writeJson(userSettingsPath(tree), { mcp });
-  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const KEYS = ['toolIdleTimeoutNetworkMs', 'toolIdleTimeoutStdioMs', 'toolTotalTimeoutMs'] as const;
@@ -46,7 +46,7 @@ describe('the MCP call bounds: an idle key per transport and one total key', () 
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { mcp: { [key]: 1234 } });
     const file = writeJson(projectSettingsPath(tree), { mcp: { [key]: 9 } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.mcp).toEqual({ [key]: 1234 });
     expect(result.warnings.some((warning) => warning.includes(`mcp.${key} is only honored in user settings`) && warning.includes(file))).toBe(true);
   });

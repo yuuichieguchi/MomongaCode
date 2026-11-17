@@ -21,13 +21,13 @@ const declaring = (servers: Record<string, unknown>, targets: Record<string, Rec
 const loadUser = async (models: Record<string, unknown>) => {
   const tree = makeTree();
   const file = userFile(tree, models);
-  return { tree, file, loaded: await loadUserSettings({ home: tree.home, signal: new AbortController().signal }) };
+  return { tree, file, loaded: await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }) };
 };
 
 const refusalOf = async (models: Record<string, unknown>): Promise<string> => {
   const tree = makeTree();
   userFile(tree, models);
-  const outcome = await loadUserSettings({ home: tree.home, signal: new AbortController().signal }).then(
+  const outcome = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }).then(
     () => undefined,
     (error: unknown) => (error as Error).message,
   );
@@ -151,7 +151,7 @@ describe('a declaration outside the user settings is discarded with a warning (1
     const tree = makeTree();
     userFile(tree, { connections: [connectionOf('remote', { adapter: 'chat-completions', model: 'm', baseUrl: 'https://example.invalid/v1', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } })] });
     const file = writeJson(fileOf(tree), { models: projectModels });
-    const loaded = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const loaded = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(loaded.warnings).toContain(`${file}: models.servers is only honored in user settings; discarded`);
     expect(canonsOf(loaded.settings)).toEqual(['remote/m']);
   });

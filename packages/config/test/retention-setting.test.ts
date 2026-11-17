@@ -14,7 +14,7 @@ describe('retention.days', () => {
   it.each([1, 7, 36500])('takes the user value %j', async (days) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { retention: { days } });
-    const result = await loadUserSettings({ home: tree.home, signal });
+    const result = await loadUserSettings({ env: process.env, home: tree.home, signal });
     expect(result.warnings).toEqual([]);
     expect(resolveRetentionSettings(result.settings.retention)).toEqual({ days });
   });
@@ -22,21 +22,21 @@ describe('retention.days', () => {
   it.each([0, 36501, -1, 1.5, '30'])('refuses %j, naming the pointer and the bounds', async (days) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { retention: { days } });
-    const refusal = loadUserSettings({ home: tree.home, signal });
+    const refusal = loadUserSettings({ env: process.env, home: tree.home, signal });
     await expect(refusal).rejects.toThrow('/retention/days');
   });
 
   it.each([0, 36501])('names the bound %j breaks', async (days) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { retention: { days } });
-    await expect(loadUserSettings({ home: tree.home, signal })).rejects.toThrow(days === 0 ? /1/ : /36500/);
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal })).rejects.toThrow(days === 0 ? /1/ : /36500/);
   });
 
   it('discards a project value with a warning and keeps the user value', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { retention: { days: 9 } });
     writeJson(projectSettingsPath(tree), { retention: { days: 2 } });
-    const result = await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.warnings).toEqual([`${projectSettingsPath(tree)}: retention is only honored in user settings; discarded`]);
     expect(resolveRetentionSettings(result.settings.retention)).toEqual({ days: 9 });
   });
@@ -44,6 +44,6 @@ describe('retention.days', () => {
   it('refuses the retired telemetry.contentRetentionDays and names retention.days', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: { contentRetentionDays: 7 } });
-    await expect(loadUserSettings({ home: tree.home, signal })).rejects.toThrow(/invalid settings at \/telemetry\/contentRetentionDays: is not a setting any more; .*retention\.days/);
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal })).rejects.toThrow(/invalid settings at \/telemetry\/contentRetentionDays: is not a setting any more; .*retention\.days/);
   });
 });

@@ -14,7 +14,7 @@ const settingsWith = async (env: Env, onQuiescent: 'report' | 'wait' | undefined
   fs.mkdirSync(directory, { recursive: true });
   const night = { ask: [`Write(/${path.join(env.project, 'out.txt')})`], ...(onQuiescent === undefined ? {} : { onQuiescent }) };
   fs.writeFileSync(path.join(directory, 'settings.json'), JSON.stringify({ mandates: { night } }));
-  return (await loadUserSettings({ home: env.home, signal: new AbortController().signal })).settings;
+  return (await loadUserSettings({ env: process.env, home: env.home, signal: new AbortController().signal })).settings;
 };
 
 const quiescentOf = async (onQuiescent: 'report' | 'wait' | undefined) => {

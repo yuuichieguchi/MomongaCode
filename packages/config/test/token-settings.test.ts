@@ -6,13 +6,13 @@ import { connectionOf, makeTree, modelOf, projectSettingsPath, trusting, userSet
 const resolvedWith = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings;
+  return (await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).settings;
 };
 
 const rejectedWith = async (settings: Record<string, unknown>, fragment: string | RegExp): Promise<void> => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(fragment);
+  await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(fragment);
 };
 
 const DEFAULT_CONTEXT = { adaptiveBudget: true, autoCompact: true, cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
@@ -57,7 +57,7 @@ describe('token settings values', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { context: { cachePrefix: true, outputFormatters: ['log'] }, tools: { deferral: true } });
     writeJson(projectSettingsPath(tree), { context: { outputFormatters: ['json'] }, tools: { conciseDescriptions: true } });
-    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ ...DEFAULT_CONTEXT, outputFormatters: ['json'] });
     expect(settings.tools).toEqual(ON_TOOLS);
   });

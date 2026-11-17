@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,7 +35,7 @@ const keptSpawn = () => {
   folders.push(folder);
   const markerDirectory = path.join(folder, 'markers');
   fs.mkdirSync(markerDirectory);
-  const spawn = createGroupSpawn({ env: { PATH: '/usr/bin:/bin' }, markerDirectory, onWarning: () => undefined, inspector: testProcessInspector(), port, spawnProcess });
+  const spawn = createGroupSpawn({ env: { PATH: '/usr/bin:/bin' }, markerDirectory, onWarning: () => undefined, inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync, port, spawnProcess });
   return { fake, port, spawn, markerDirectory };
 };
 

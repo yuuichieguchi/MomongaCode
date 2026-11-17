@@ -24,7 +24,7 @@ const writeTextAt = (file: string, text: string, at: Date): void => {
 describe('loadUserSettings', () => {
   it('returns the defaults when there is no user settings file', async () => {
     const tree = makeTree();
-    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const result = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     expect(result.settings.autoUpdates).toBe(true);
     expect(canonsOf(result.settings)).toEqual([]);
     expect((result.settings.models as unknown as { start: string | undefined; fallback: readonly string[] }).start).toBeUndefined();
@@ -38,7 +38,7 @@ describe('loadUserSettings', () => {
     const user = writeJson(userSettingsPath(tree), { autoUpdates: false, env: { TZ: 'user' } });
     writeJson(projectSettingsPath(tree), { env: { TZ: 'project' } });
     writeJson(localSettingsPath(tree), { env: { TZ: 'local' } });
-    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const result = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.settings.env).toEqual({ TZ: 'user' });
     expect(result.files).toEqual([user]);
@@ -47,7 +47,7 @@ describe('loadUserSettings', () => {
   it('fails with a ConfigError naming the file for an invalid user file', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { permissions: { allow: 'Bash(ls)' } });
-    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const failure = loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toBeInstanceOf(ConfigError);
     await expect(failure).rejects.toThrow(file);
   });
@@ -55,14 +55,14 @@ describe('loadUserSettings', () => {
   it('fails with a ConfigError for malformed JSON', async () => {
     const tree = makeTree();
     writeText(userSettingsPath(tree), '{ "autoUpdates": ');
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toBeInstanceOf(ConfigError);
   });
 });
 
 describe('createUserSettingsCache', () => {
   const cacheFor = (tree: Tree) => {
     const warnings: string[] = [];
-    const cache = createUserSettingsCache({ home: tree.home, onWarning: (message: string) => warnings.push(message), keptRecords: noKeptRecords });
+    const cache = createUserSettingsCache({ env: process.env, home: tree.home, onWarning: (message: string) => warnings.push(message), keptRecords: noKeptRecords });
     return { cache, warnings };
   };
 
@@ -166,7 +166,7 @@ describe('project directory equal to home', () => {
     writeJson(path.join(localSettingsDir({ home: tree.home, project: tree.home }), 'settings.local.json'), {
       permissions: { allow: ['Bash(curl:*)'] },
     });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.home, cli: {}, trust: { isTrusted: () => true } });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.home, cli: {}, trust: { isTrusted: () => true } });
     expect(result.rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(git status)', 'user']]);
     expect(result.files).toEqual([user]);
   });
@@ -179,7 +179,7 @@ describe('project directory equal to home', () => {
     writeJson(path.join(localSettingsDir({ home: tree.home, project: tree.home }), 'settings.local.json'), {
       permissions: { allow: ['Bash(curl:*)'] },
     });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: link, cli: {}, trust: { isTrusted: () => true } });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: link, cli: {}, trust: { isTrusted: () => true } });
     expect(result.rules.map((rule) => [rule.text, rule.origin])).toEqual([['Bash(git status)', 'user']]);
     expect(result.files).toEqual([user]);
   });
@@ -187,14 +187,14 @@ describe('project directory equal to home', () => {
   it('still loads the project layer for a different directory', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { permissions: { allow: ['Read(./src/**)'] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.rules.map((rule) => rule.origin)).toEqual(['project']);
   });
 });
 
 describe('defaultModeOrigin', () => {
   const load = (tree: Tree, cli: Record<string, unknown> = {}) =>
-    loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli, trust: trusting(tree) });
+    loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli, trust: trusting(tree) });
 
   it('is undefined when no layer sets defaultMode', async () => {
     const result = await load(makeTree());
