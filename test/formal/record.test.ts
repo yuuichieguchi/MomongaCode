@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { completedOutput, holdsEntry, invariantEntry, invariantViolationOutput } from './fixtures.ts';
+import { actionPropertyViolationOutput, completedOutput, holdsEntry, invariantEntry, invariantViolationOutput } from './fixtures.ts';
 import { measurementOf, recordProblems, recordedRow } from './record.ts';
 import { specIdentityOf } from './reuse.ts';
 import { readManifest } from './manifest-reader.ts';
@@ -36,6 +36,12 @@ describe('the verdict a recorded run must give', () => {
   it('accepts a holds row whose log completes with the recorded state count', () => {
     const log = coldLog(3);
     expect(recordProblems(holdsEntry, log, measurementOf(log))).toEqual([]);
+  });
+
+  it('accepts an action property violation with the expected exit 13 and its name', () => {
+    const entry = { ...invariantEntry, expect: { violates: 'IdentityPinned', exitCode: 13 } as const };
+    const log = [actionPropertyViolationOutput('IdentityPinned'), TIME, '38 states generated, 23 distinct states found, 0 states left on queue.'].join('\n');
+    expect(recordProblems(entry, log, measurementOf(log))).toEqual([]);
   });
 
   it('refuses a holds row whose log shows a violation', () => {

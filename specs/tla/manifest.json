@@ -3215,12 +3215,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 34768,
-      "measuredSeconds": 1.95,
+      "measuredSeconds": 2.31,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6.51,
-      "budgetCpuSeconds": 17,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.21 at start)",
-      "identity": "93e9d50f5732e9ae70dec566357dbf089ff720b3d64efcfc652c456a5fc69edb"
+      "measuredCpuSeconds": 7.21,
+      "budgetCpuSeconds": 18,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.25 at start)",
+      "identity": "896d447b74c3d822c9bde97356af6a7b872eb02c0ecf440f0463132ec118a85e"
     },
     {
       "config": "PlanCredential.signOut",
@@ -3229,12 +3229,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 491790,
-      "measuredSeconds": 7.04,
+      "measuredSeconds": 7.85,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 34.88,
-      "budgetCpuSeconds": 73,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.92 at start)",
-      "identity": "dc31e483a3f72586e26c78f8a3f9628d7787eb4d70cf5d77e13f0598c219bfc8"
+      "measuredCpuSeconds": 37.83,
+      "budgetCpuSeconds": 79,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.39 at start)",
+      "identity": "4c29832a91164f67de5d82eb637be9e30a3bc79bffaa4b334a6e0e9064a77eea"
     },
     {
       "config": "PlanCredential.crashPoints",
@@ -3243,12 +3243,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 329368,
-      "measuredSeconds": 5.7,
+      "measuredSeconds": 6.16,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 27.53,
-      "budgetCpuSeconds": 59,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.51 at start)",
-      "identity": "3ad269d5754aa172cd54c9422f3422b319a3858d015206c4e00d2fdc7109f673"
+      "measuredCpuSeconds": 28.54,
+      "budgetCpuSeconds": 61,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.02 at start)",
+      "identity": "ad6e1af27a3be9e4804877600e0eed6ae7adf1db0de3bcb2f8c0d291fb4ac42c"
     },
     {
       "config": "PlanCredential.twoAccounts",
@@ -3290,12 +3290,12 @@
       ],
       "tier": "deep",
       "distinctStates": 4851,
-      "measuredSeconds": 1.98,
+      "measuredSeconds": 2.36,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6.41,
-      "budgetCpuSeconds": 16,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.72 at start)",
-      "identity": "b29f0f3e9f46fa82ad7ff12593b8884ab471974d8acd7cc24a1995dd01b274e0"
+      "measuredCpuSeconds": 7.68,
+      "budgetCpuSeconds": 19,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.02 at start)",
+      "identity": "5c8e4b09cdb77ef17329a44ca7813b0ef79955e33388555348f1dea703317f12"
     },
     {
       "config": "PlanCredential.deep",
@@ -3319,13 +3319,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 257,
-      "measuredSeconds": 1.38,
+      "distinctStates": 258,
+      "measuredSeconds": 1.6,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.65,
+      "measuredCpuSeconds": 2.97,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.75 at start)",
-      "identity": "bc70816fbd9d203937f030c9ec799a6462cb465cd5af117de7ed5b3b17e34ca2"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.02 at start)",
+      "identity": "53184fe65928db062e32b1a49d2417812b836a52600afe03a4c055ef66e9695c"
     },
     {
       "config": "PlanCredential.eraseOnTransient",
@@ -3337,12 +3337,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 19,
-      "measuredSeconds": 1.4,
+      "measuredSeconds": 1.77,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.36,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.22 at start)",
-      "identity": "a910ea910516d22f4de23418e805adfa4b378972ab92cb38f9110e37f09b0f73"
+      "measuredCpuSeconds": 2.96,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.86 at start)",
+      "identity": "1cc2a151e960001aa66846e589924ab5c715b8ced0cd75869406b1fc4a3bc903"
     },
     {
       "config": "PlanCredential.transientSignsOut",
@@ -3354,12 +3354,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 53,
-      "measuredSeconds": 1.42,
+      "measuredSeconds": 1.79,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.5,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.77 at start)",
-      "identity": "0796475999aedb1e5c311b0e727aa12f5c2fde0c88cb07807936fe36894760d5"
+      "measuredCpuSeconds": 2.8,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.86 at start)",
+      "identity": "b6f3cb9422093e16544e7f8ce252e796529d92fdd59537e1a3316bb2fb3e2bf9"
     },
     {
       "config": "PlanCredential.twoGens",
@@ -3368,12 +3368,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 166400,
-      "measuredSeconds": 3.89,
+      "measuredSeconds": 4.64,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 16.66,
-      "budgetCpuSeconds": 37,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)",
-      "identity": "6305626d63f76c3979400c81b33ee2a4b558463d39e2a20c4e1e2a85eaca97af"
+      "measuredCpuSeconds": 18.25,
+      "budgetCpuSeconds": 40,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.59 at start)",
+      "identity": "00e7547a3a4d648d5e477d1423908605e0f81c388560b78f01d79e48099c4e13"
     },
     {
       "config": "PlanCredential.twoGensPersistFail",
@@ -3414,14 +3414,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 230,
-      "measuredSeconds": 1.35,
+      "tier": "deep",
+      "distinctStates": 228,
+      "measuredSeconds": 1.68,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.51,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.24 at start)",
-      "identity": "b3a0947870b74d6991fc63e22b406e5e74bdf85a1c5a1e58d7a4d813c1644eb4"
+      "measuredCpuSeconds": 3.01,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.10 at start)",
+      "identity": "e449e3f90b8376e536101e08c337c6df107d3531f87cc0484d14ee0bd84c54be"
     },
     {
       "config": "PlanCredential.twoGensPointerStale",
@@ -3431,14 +3431,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 87,
-      "measuredSeconds": 1.32,
+      "tier": "deep",
+      "distinctStates": 97,
+      "measuredSeconds": 1.61,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.1,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.92 at start)",
-      "identity": "43706ed2e39fa2ef086fb7f6788b1f4b3a5e6aafb9b25340fc38c35c966f8fb7"
+      "measuredCpuSeconds": 2.65,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.10 at start)",
+      "identity": "82c7d9460000061b697b25d084e364982025e59e2e7c4974e06219145f33429e"
     },
     {
       "config": "PlanCredential.forgetBeforePersist",
@@ -3450,12 +3450,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 23,
-      "measuredSeconds": 1.29,
+      "measuredSeconds": 1.6,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.26,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.52 at start)",
-      "identity": "cec92e7060c075f1217cf3dbb12c86edce02526fa8190bedc9e03ff3c47778f1"
+      "measuredCpuSeconds": 2.59,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.10 at start)",
+      "identity": "fee7ed42f30211db65d7fdef912260c083df4e089fb47b62ce0ccb7f08ca7bf3"
     },
     {
       "config": "PlanCredential.signOutNoWait",
@@ -3465,14 +3465,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 273,
-      "measuredSeconds": 1.34,
+      "measuredSeconds": 1.71,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.5,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.09 at start)",
-      "identity": "c7d9ff6db92bd8e56650b851ca1426168cf10823a39aadb897266b934a74965c"
+      "measuredCpuSeconds": 3.04,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.85 at start)",
+      "identity": "ad5c45662f5f48f3a3a0b6ac3a858de18c646309bf11bb0435b15cff8df1b636"
     },
     {
       "config": "PlanCredential.signOutAbort",
@@ -3497,13 +3497,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 44329,
-      "measuredSeconds": 4.42,
+      "distinctStates": 41813,
+      "measuredSeconds": 4.77,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 17,
-      "budgetCpuSeconds": 37,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.8 at start)",
-      "identity": "4063e5f8a3613dc801f47e95b52c40dc7da181f80edc677567141132a3959953"
+      "measuredCpuSeconds": 17.24,
+      "budgetCpuSeconds": 38,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.79 at start)",
+      "identity": "bedad560d91a0719322258a15ca4d50c52eb7707042dc2fbf21dd43ab6647558"
     },
     {
       "config": "PlanCredential.noCoalesceGen",
@@ -3515,12 +3515,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 127,
-      "measuredSeconds": 1.35,
+      "measuredSeconds": 1.61,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.41,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.83 at start)",
-      "identity": "1ee691669f48d141ef3eb1e62fd6082abec31e80c170c01ede64ec84d2d8a3d4"
+      "measuredCpuSeconds": 2.83,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.79 at start)",
+      "identity": "80040ece865063c95ca3b9b8fd36b1a848cbcce5e889aa3260da60ef9fe47dba"
     },
     {
       "config": "PlanCredential.noCoalesceForced",
@@ -3531,13 +3531,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 152,
-      "measuredSeconds": 1.35,
+      "distinctStates": 146,
+      "measuredSeconds": 1.64,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.54,
+      "measuredCpuSeconds": 2.88,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.18 at start)",
-      "identity": "f1844b2e23c3c954f1550a381e59e71977c083bed661ea37b7bc93f4f38828a3"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.32 at start)",
+      "identity": "12bc52b39384bbdd4efbe9be5e6bba3ba57b0ffa709c0d31a34ca365bbb63788"
     },
     {
       "config": "PlanCredential.mutexOnly",
@@ -3546,12 +3546,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 1378,
-      "measuredSeconds": 1.49,
+      "measuredSeconds": 1.75,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 3.37,
-      "budgetCpuSeconds": 10,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.01 at start)",
-      "identity": "c090424af85ea73e9e2e60888b6d073e26f5e5d525aebba38735cc32f68cc14c"
+      "measuredCpuSeconds": 3.96,
+      "budgetCpuSeconds": 11,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.32 at start)",
+      "identity": "f5da0940ed8c0355319c905bef4b3c886f4dff6d81e47894ace85022f55e661b"
     },
     {
       "config": "PlanCredential.noIntent",
@@ -3560,12 +3560,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 889,
-      "measuredSeconds": 1.5,
+      "measuredSeconds": 1.77,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 3.33,
-      "budgetCpuSeconds": 10,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.09 at start)",
-      "identity": "337e786051a087d09a002f2180c102a3a489117a164486243d67c3e062d1f9bd"
+      "measuredCpuSeconds": 3.73,
+      "budgetCpuSeconds": 11,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.32 at start)",
+      "identity": "72c4ff2e32e0205be61ace235410680f67ab1548c4e93ddbab3207e58ee5486c"
     },
     {
       "config": "PlanCredential.noIntentCause",
@@ -3576,13 +3576,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 355,
-      "measuredSeconds": 1.36,
+      "distinctStates": 360,
+      "measuredSeconds": 1.65,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.63,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.89 at start)",
-      "identity": "d156f4216afdc6441037de27b6cf5282fb31960d14bb0366c9db0a938186d19e"
+      "measuredCpuSeconds": 3.06,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.38 at start)",
+      "identity": "2c131014db32385d4754f7b4e006a236b60282b762a5c728ba6d704bc22fa17d"
     },
     {
       "config": "PlanCredential.signOutAfterLoss",
@@ -3593,13 +3593,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 188,
-      "measuredSeconds": 1.36,
+      "distinctStates": 185,
+      "measuredSeconds": 1.64,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.45,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.09 at start)",
-      "identity": "061edc49254c288b33c21d2f440670ea1e70b19b11bb2a07bd1f80eb29bf69db"
+      "measuredCpuSeconds": 2.92,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.38 at start)",
+      "identity": "06838627892197c97e6481ee80d8c04abdfc283437505da225d1611ff7e17d2f"
     },
     {
       "config": "PlanCredential.pinIdentityOff",
@@ -3609,14 +3609,14 @@
         "exitCode": 13
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 23,
-      "measuredSeconds": 1.3,
+      "measuredSeconds": 1.63,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.16,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.69 at start)",
-      "identity": "3a9118a285065b2bce9a734ad58b05fa8b1bd21c6db5d2de87d35840ffb01995"
+      "measuredCpuSeconds": 2.62,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.69 at start)",
+      "identity": "3d83d75f7604c030ed058c9f1fb989fe38d27c8f74e6c43171cbf836480bf1b5"
     },
     {
       "config": "PlanCredential.crossAccount",
@@ -3628,12 +3628,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 64,
-      "measuredSeconds": 1.3,
+      "measuredSeconds": 1.6,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.09,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.19 at start)",
-      "identity": "49eac963d7cbb99150947a0cabe797649971aa98edc67ba0d0e6d9e303e4cb49"
+      "measuredCpuSeconds": 2.62,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.03 at start)",
+      "identity": "fc3f452c4b05d88518fab06b958799e241be5260cbf7c55c6bfd73992d5ca4d2"
     },
     {
       "config": "PlanSignIn",
@@ -3837,12 +3837,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 28746,
-      "measuredSeconds": 1.82,
+      "measuredSeconds": 2.19,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6.21,
-      "budgetCpuSeconds": 16,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.18 at start)",
-      "identity": "ef744269aa7631688901d5652920a15c63e03fa1a2da3a1c18d4ba29046278fa"
+      "measuredCpuSeconds": 6.73,
+      "budgetCpuSeconds": 17,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.03 at start)",
+      "identity": "16299809125d36e922a5773102b584fadbcb1c7c53388f5b639d45f76ae34df3"
     },
     {
       "config": "PlanCredential.refreshWhileUnwritable",
@@ -3854,12 +3854,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 327,
-      "measuredSeconds": 1.37,
+      "measuredSeconds": 1.68,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.59,
+      "measuredCpuSeconds": 2.97,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.84 at start)",
-      "identity": "e21039f14dd4642fb39e44b9434989f4554abc19888be810b47394fd06bfabc9"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.86 at start)",
+      "identity": "3fc56f2e0d202a3f4241af0705a23f8e5868d499f965672becfcf8dda1ef5447"
     },
     {
       "config": "PlanCredential.unreadableAsSignIn",
@@ -3871,12 +3871,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 13,
-      "measuredSeconds": 1.3,
+      "measuredSeconds": 1.59,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.27,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.92 at start)",
-      "identity": "2906f734add6051232a92b05b2a3f9405d32174549b89be1d7d9a04cd9e36286"
+      "measuredCpuSeconds": 2.67,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.86 at start)",
+      "identity": "7fd14f4d3e50c2eef9f5bf973b7a7f214d6d89effc68ed56a9af10cf60fe3842"
     },
     {
       "config": "PlanCredential.weakTransientShort",
@@ -3886,14 +3886,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 207,
-      "measuredSeconds": 1.33,
+      "tier": "deep",
+      "distinctStates": 210,
+      "measuredSeconds": 1.82,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.33,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.81 at start)",
-      "identity": "af546e9cf63497ee217557f6c0ed19239ecec46ee52b66b1390f4ef07938213e"
+      "measuredCpuSeconds": 3.06,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.55 at start)",
+      "identity": "acfd09832ccb0df26a511cfe5b0550a8c3bd1da8091dadf1776ea941921e0203"
     },
     {
       "config": "PlanCredential.weakRejectShort",
@@ -3904,13 +3904,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 283,
-      "measuredSeconds": 1.38,
+      "distinctStates": 290,
+      "measuredSeconds": 1.63,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.66,
+      "measuredCpuSeconds": 2.86,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.22 at start)",
-      "identity": "66948da2c1c69659b5e1c4ef172e869b7951362f514f37d83f11065c527ec1a0"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.55 at start)",
+      "identity": "4b5124696bb7ca615916eaac5bc8fea8a5ae911321c20277eff1ebe61bbd24b5"
     },
     {
       "config": "PlanCredential.weakAdoptRotated",
@@ -3922,12 +3922,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 359,
-      "measuredSeconds": 1.37,
+      "measuredSeconds": 1.65,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.64,
+      "measuredCpuSeconds": 2.92,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.8 at start)",
-      "identity": "481add606e0eda583df567801ab38ad89800056f96f340179bb860f383cba480"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.55 at start)",
+      "identity": "fc666c7b406a9c7095771cb5d1a44baac2d544bbb864b05c7a5f4ecefae455f5"
     },
     {
       "config": "PlanCredential.weakSignInKept",
@@ -3938,13 +3938,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 117,
-      "measuredSeconds": 1.32,
+      "distinctStates": 114,
+      "measuredSeconds": 1.57,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.24,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.69 at start)",
-      "identity": "3ef18fa344723947905ebbd10e762f48a029ee7880709204161aa370a7e81832"
+      "measuredCpuSeconds": 2.85,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.35 at start)",
+      "identity": "b4fa9b1bd2db1d144f7dbfd1a0fe2a1cb5248ce595ea89beecb0d2dabbce72e5"
     },
     {
       "config": "PlanCredential.weakSignInShort",
@@ -3955,13 +3955,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 124,
-      "measuredSeconds": 1.31,
+      "distinctStates": 118,
+      "measuredSeconds": 1.54,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.38,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.01 at start)",
-      "identity": "f0aa6c0d473dad9933ec191b9a4cc66c99c6fafa9e723bb0e7be8217147a4cfe"
+      "measuredCpuSeconds": 2.78,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.35 at start)",
+      "identity": "925660cc31ee69fae8995c6fa1bd88889fd4afee1d8167cf34f36734b0f7a90c"
     },
     {
       "config": "PlanCredential.weakUnansweredRotated",
@@ -3972,13 +3972,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 114,
-      "measuredSeconds": 1.33,
+      "distinctStates": 116,
+      "measuredSeconds": 1.54,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.29,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.05 at start)",
-      "identity": "ae0d4d3aeecfb45b4ab64c21aa164b1dca918e8161c6ee4ff4cd21ebc97c4b5b"
+      "measuredCpuSeconds": 2.83,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.35 at start)",
+      "identity": "a7ccc202fc6a30b1d1b6c03791b70e6aefe37f17067ab94140007e9a83b1accc"
     },
     {
       "config": "PlanCredential.weakAdoptShort",
@@ -3987,12 +3987,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 359,
-      "measuredSeconds": 1.32,
+      "measuredSeconds": 1.59,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.55,
+      "measuredCpuSeconds": 2.98,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.03 at start)",
-      "identity": "54ad883e5f7b80a1137c4f8d9feae9c6ca4c45f9d8f1f9f9c360a8185d3a2063"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.16 at start)",
+      "identity": "74767b866d547ea2b829469681d3d8fb33c9ac331f51a6174fc735720d64f0af"
     },
     {
       "config": "PlanCredential.weakAdoptKept",
@@ -4001,12 +4001,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 371,
-      "measuredSeconds": 1.35,
+      "measuredSeconds": 1.59,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.59,
+      "measuredCpuSeconds": 2.99,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.79 at start)",
-      "identity": "5c3d5d31c086e9ff50da49418a1a3fd30791a846228c6b167c2fe08eb44b82e2"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.16 at start)",
+      "identity": "36db89679472715e823b4abfa82ad80aa001e685c11bb7eef9ba010e90998eed"
     },
     {
       "config": "PlanCredential.weakAdoptShortFaults",
@@ -4015,12 +4015,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 14445,
-      "measuredSeconds": 1.68,
+      "measuredSeconds": 1.96,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 5.05,
-      "budgetCpuSeconds": 14,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.89 at start)",
-      "identity": "fbdb23f3b93854dc52c3b85f260712f740362a9f1799669fdfadbf75dae05f54"
+      "measuredCpuSeconds": 5.78,
+      "budgetCpuSeconds": 15,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.99 at start)",
+      "identity": "574dbcfc985b8e3a245e4acce096da1c09f5e92e2f621bdb6f6b6e606804f86c"
     },
     {
       "config": "PlanCredential.weakAdoptKeptFaults",
@@ -4029,12 +4029,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 12567,
-      "measuredSeconds": 1.85,
+      "measuredSeconds": 1.97,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6.21,
-      "budgetCpuSeconds": 16,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.89 at start)",
-      "identity": "b2f696ba5666e498b104276c6e3fe08e8ee4d3b954125e2a5346352d5be9a839"
+      "measuredCpuSeconds": 5.57,
+      "budgetCpuSeconds": 15,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.99 at start)",
+      "identity": "0895a6917366c7b726753b46e842881ab239a5f859c85d385ce54ae6f7d41b34"
     },
     {
       "config": "PlanCredential.causeIsCode",
@@ -4046,12 +4046,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 73,
-      "measuredSeconds": 1.36,
+      "measuredSeconds": 1.56,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.47,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.92 at start)",
-      "identity": "32c1aa701fe327d71b4edd61f55bae01c70c0e8cc7a03a729d49e028f2657f72"
+      "measuredCpuSeconds": 2.73,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.99 at start)",
+      "identity": "2f7e2c436137cea9ce5d272de88153a6bf6592e3b82b0b870aebe6fd4a57224c"
     },
     {
       "config": "ProcessMarker",
@@ -5517,12 +5517,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 94,
-      "measuredSeconds": 1.31,
+      "measuredSeconds": 1.54,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.17,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.87 at start)",
-      "identity": "f53f3c4e422538c77a1456e949bf981baf22ed552a8ba138c633d00d9fa6c083"
+      "measuredCpuSeconds": 2.75,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.23 at start)",
+      "identity": "dff22427fbc205ab06bd6701824b76ecc161a8841cebbc7204415fe1b010edaf"
     },
     {
       "config": "PlanCredential.adoptAll",
@@ -5531,12 +5531,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 111906,
-      "measuredSeconds": 3.23,
+      "measuredSeconds": 3.76,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 12.46,
-      "budgetCpuSeconds": 28,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.87 at start)",
-      "identity": "8f1dd53c2645b33f98f163a24b908ce1dfe222c783df139117e79137367a6ef2"
+      "measuredCpuSeconds": 13.7,
+      "budgetCpuSeconds": 31,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.13 at start)",
+      "identity": "9fe65543b3b395357c1865a9b303312ec049ae277e03ecd8883c9690fd648100"
     },
     {
       "config": "FidelityMemo.aloneNonQuiet",
@@ -6292,7 +6292,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 320,
       "measuredSeconds": 2.59,
       "measuredReuse": "off",
@@ -6749,12 +6749,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 80508,
-      "measuredSeconds": 2.48,
+      "measuredSeconds": 2.75,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 9.09,
-      "budgetCpuSeconds": 22,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.61 at start)",
-      "identity": "8b4d75ee59b02d0c90608f37955ee577147c1a3b7a09f0c69473d7618f954278"
+      "measuredCpuSeconds": 9.65,
+      "budgetCpuSeconds": 23,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.13 at start)",
+      "identity": "85dd60112c5a6a2fca7942f3960eba630cc5afe0b05f5862ef710feb3d96836c"
     },
     {
       "config": "Retention",
@@ -7233,13 +7233,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 60276,
-      "measuredSeconds": 4.71,
+      "distinctStates": 25576,
+      "measuredSeconds": 3.09,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 12.66,
-      "budgetCpuSeconds": 29,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.52 at start)",
-      "identity": "a1bdce43c4281279f35a2a8816aaf8ec12dd7a0cb78960293c01a2efe24840fc"
+      "measuredCpuSeconds": 8.41,
+      "budgetCpuSeconds": 20,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.12 at start)",
+      "identity": "31ca6c21dda10aec76c896a6268609e2be9515a59bdc6f3232d89ff491b2330f"
     },
     {
       "config": "StopProtocol.noReap",
@@ -7250,13 +7250,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1141,
-      "measuredSeconds": 1.32,
+      "distinctStates": 760,
+      "measuredSeconds": 1.51,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.2,
+      "measuredCpuSeconds": 2.48,
       "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.81 at start)",
-      "identity": "f811662af8209b285fe74e985357bc70124971fba8aaf00ef1e680d3b4152671"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.12 at start)",
+      "identity": "6d414a60a00e6219efae63baf35ed0ae4d04231135e587ff3ad5aaf9e4683ce0"
     },
     {
       "config": "StopProtocol.mixed",
@@ -7266,14 +7266,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "deep",
-      "distinctStates": 201,
-      "measuredSeconds": 1.26,
+      "tier": "every-run",
+      "distinctStates": 138,
+      "measuredSeconds": 1.46,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.74,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.44 at start)",
-      "identity": "e6765109828421246678e439624219e0d6bbdccaa36510b52d76891d84780790"
+      "measuredCpuSeconds": 2.13,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.12 at start)",
+      "identity": "46d150a829fe9a4999ecd28a46a7b36f9f947a32707be2c28a587d716771aae3"
     },
     {
       "config": "StopProtocol.noMessage",
@@ -7284,13 +7284,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 207,
-      "measuredSeconds": 1.25,
+      "distinctStates": 149,
+      "measuredSeconds": 1.48,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.74,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.8 at start)",
-      "identity": "6ad01ec76b640ce1bb81e7c128cc71a7f31476d22d7a17209b54060ac5fbf09d"
+      "measuredCpuSeconds": 2.17,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.11 at start)",
+      "identity": "64ec14290d3e6ca5d9439a05c6a2f61b6d7c832b2193d022577365994a41672b"
     },
     {
       "config": "StopProtocol.noDeadline",
@@ -7301,13 +7301,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 3332,
-      "measuredSeconds": 1.36,
+      "distinctStates": 1824,
+      "measuredSeconds": 1.54,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.46,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.19 at start)",
-      "identity": "666668c037444b1237d9a65dac312614a71d20f6d7b7c355b6763602f68f4877"
+      "measuredCpuSeconds": 2.72,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.11 at start)",
+      "identity": "8ad7a6d7ea1ce3071d64c18c673bd70806d045e5594886ffb80c128ed5ae91c9"
     },
     {
       "config": "StopProtocol.waitsForever",
@@ -7318,13 +7318,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 81444,
-      "measuredSeconds": 4.83,
+      "distinctStates": 29310,
+      "measuredSeconds": 2.86,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 10.54,
-      "budgetCpuSeconds": 25,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.04 at start)",
-      "identity": "7e544ecddcda52b9750b74a58e97f08fbcdec6334d3957b738af013b9ce41072"
+      "measuredCpuSeconds": 6.77,
+      "budgetCpuSeconds": 17,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.42 at start)",
+      "identity": "ac217d68764e0bc8fee5f066fa4faaa04db8f2bdaae36d8591f12eeb446c8633"
     },
     {
       "config": "StopProtocol.malformedNoKill",
@@ -7335,13 +7335,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 6467,
-      "measuredSeconds": 1.48,
+      "distinctStates": 3828,
+      "measuredSeconds": 1.67,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.94,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.93 at start)",
-      "identity": "839c7e89bcb7ac34c3024b451f9501ba11d85b4a09eee0f95fb74a1c07fd7d4b"
+      "measuredCpuSeconds": 3.65,
+      "budgetCpuSeconds": 11,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.42 at start)",
+      "identity": "28c9b97165c1e575d925b8857e846078403735a6983a99deee879f8310589e27"
     },
     {
       "config": "StopProtocol.sigtermAfterFail",
@@ -7352,13 +7352,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 206,
-      "measuredSeconds": 1.26,
+      "distinctStates": 141,
+      "measuredSeconds": 1.47,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.73,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.8 at start)",
-      "identity": "6abdfebcb0bd462e11e93b8ec6ee1f69c3bdfcc29f6c66ce66565a1763bc51b5"
+      "measuredCpuSeconds": 2.11,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.23 at start)",
+      "identity": "1bd9cd943f50b863a92f451f5daeb10cdeb2dec26d4731418ffc8e11fccb2b0e"
     },
     {
       "config": "StopProtocol.runtimeLate",
@@ -7368,14 +7368,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 200,
-      "measuredSeconds": 1.22,
+      "tier": "deep",
+      "distinctStates": 147,
+      "measuredSeconds": 1.46,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.74,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.8 at start)",
-      "identity": "3a4e803f6c2fa9870a12d0324f4d151093bcb69f681088d7ba4b269736002a79"
+      "measuredCpuSeconds": 2.12,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.23 at start)",
+      "identity": "0a91591867a75b180789f8ede400248cb04627a587c3e393f51723ce089665c1"
     },
     {
       "config": "StopProtocol.graceConfirm",
@@ -7386,13 +7386,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 255,
-      "measuredSeconds": 1.23,
+      "distinctStates": 185,
+      "measuredSeconds": 1.48,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.7,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.06 at start)",
-      "identity": "e182f2945e67ccb1a53af9b330ba5c39a3001f019ceb46bd7ec1604a31beef96"
+      "measuredCpuSeconds": 2.18,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.23 at start)",
+      "identity": "d53ef1c6b23ab6273493dba8ee915fa95c34d6b906099075c9bd663c2ad110ce"
     },
     {
       "config": "StopProtocol.failOnUnconfirmed",
@@ -7403,13 +7403,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 2083,
-      "measuredSeconds": 1.4,
+      "distinctStates": 1312,
+      "measuredSeconds": 1.56,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.6,
+      "measuredCpuSeconds": 2.77,
       "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.77 at start)",
-      "identity": "4083ac00ee6689cfd648ff1029334778dc5e438ce03274751b01c2a6e10f231a"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.85 at start)",
+      "identity": "f29e9443c812b62a51e04893dd875dd6d8a7249b1de0469bf92d106c899934ef"
     },
     {
       "config": "StopProtocol.unboundedConfirm",
@@ -7420,13 +7420,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1962,
-      "measuredSeconds": 1.31,
+      "distinctStates": 1322,
+      "measuredSeconds": 1.59,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.23,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 2.75 at start)",
-      "identity": "d4239acefbce4cffa576c0f747fee94ffc9abeb2519d2d2e2b570722c01ba150"
+      "measuredCpuSeconds": 2.75,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.85 at start)",
+      "identity": "8b6e2a8e99194cd79dd7070d534595afb69aa70e0d023e9baa40adfd90abe407"
     },
     {
       "config": "StopProtocol.runtimeNoShare",
@@ -7437,13 +7437,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 51696,
-      "measuredSeconds": 1.73,
+      "distinctStates": 35684,
+      "measuredSeconds": 1.83,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 4.71,
+      "measuredCpuSeconds": 4.53,
       "budgetCpuSeconds": 13,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.77 at start)",
-      "identity": "31e8e099ee60c2476b62788a1c7f533f3d483d131c2f5d664e65fbbd9dafeba1"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.85 at start)",
+      "identity": "0dfe64c21472be3187a15ca534c221d1608268e419d3a43aa77df63daad0e45b"
     },
     {
       "config": "ProcessMarker.unscopedReap",
@@ -10314,7 +10314,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 64,
       "measuredSeconds": 1.9,
       "measuredReuse": "off",

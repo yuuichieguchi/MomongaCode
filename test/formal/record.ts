@@ -11,6 +11,7 @@ const TIME_LINE = /^\s*([\d.]+) real\s+([\d.]+) user\s+([\d.]+) sys/m;
 const LOCK_WAIT_LINE = /run-lock: heavy run starts after waiting ([\d.]+) s/;
 const DISTINCT_LINE = /(\d[\d,]*) states generated, (\d[\d,]*) distinct states found/g;
 const INVARIANT_LINE = /Invariant \S+ is violated/;
+const ACTION_PROPERTY_LINE = /Action property \S+ is violated/;
 
 export type Measurement = { readonly distinctStates: number; readonly measuredSeconds: number; readonly measuredCpuSeconds: number };
 
@@ -28,7 +29,7 @@ export const recordsTier = (tier: string, env: Readonly<Record<string, string | 
 const exitCodeOf = (stdout: string): 0 | 12 | 13 | undefined => {
   if (stdout.includes(COMPLETION_LINE)) return 0;
   if (INVARIANT_LINE.test(stdout)) return 12;
-  if (stdout.includes(TEMPORAL_LINE)) return 13;
+  if (stdout.includes(TEMPORAL_LINE) || ACTION_PROPERTY_LINE.test(stdout)) return 13;
   return undefined;
 };
 
