@@ -77,7 +77,7 @@ describe('editUserSettings is the one writer of a settings file and takes the se
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(ORIGINAL);
   });
 
-  it('with no lock timeout the wait has no fixed 10 s: it lasts until the operation\'s signal ends it, with that signal\'s reason', async (context) => {
+  it('with no lock timeout the wait ends at the default bound with the timeout error, before the operation\'s signal ends it', async (context) => {
     const tree = makeTree();
     const file = userSettingsOf(tree);
     lockRunDirectoryOf(tree);
@@ -97,8 +97,8 @@ describe('editUserSettings is the one writer of a settings file and takes the se
       }),
     };
     const recorded = recordingEdit();
-    await expect(editUserSettings(file, recorded.edit, { mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock(), ports }), random, signal: operation.signal })).rejects.toBe(reason);
-    expect(now - started).toBeGreaterThan(3 * DEFAULT_LOCK_TIMEOUT_MS);
+    await expect(editUserSettings(file, recorded.edit, { mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock(), ports }), random, signal: operation.signal })).rejects.toBeInstanceOf(LockWaitTimeoutError);
+    expect(now - started).toBe(DEFAULT_LOCK_TIMEOUT_MS);
     expect(recorded.calls).toEqual([]);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(ORIGINAL);
   });
