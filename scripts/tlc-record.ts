@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { recordProblems, measurementOf, recordedRow } from '../test/formal/record.ts';
-import { MANIFEST_FORMAT, readManifest } from '../test/formal/manifest-reader.ts';
+import { recordProblems, measurementOf, recordedRow, writeManifestRows } from '../test/formal/record.ts';
+import { readManifest } from '../test/formal/manifest-reader.ts';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const manifestPath = path.join(repoRoot, 'specs', 'tla', 'manifest.json');
@@ -29,9 +29,6 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { entries: Record<string, unknown>[] };
 const next = await recordedRow(repoRoot, row, log, manifest.startupCpuSeconds, load);
-const index = raw.entries.findIndex((entry) => entry['config'] === config);
-raw.entries[index] = { ...raw.entries[index], ...next };
-fs.writeFileSync(manifestPath, `${JSON.stringify({ ...raw, format: MANIFEST_FORMAT }, null, 2)}\n`);
+writeManifestRows(manifestPath, [next]);
 process.stdout.write(`${config}: ${measurement.distinctStates} distinct states, ${measurement.measuredSeconds} s wall, ${measurement.measuredCpuSeconds} CPU s, budget ${next['budgetCpuSeconds']} CPU s, identity recorded\n`);

@@ -132,6 +132,8 @@ describe('checking one configuration', () => {
       java: createJavaIdentityReader({ env: javaEnv }),
       limitMs: limitOf(entry),
       now: () => new Date(NOW),
+      record: false,
+      loadAverage: () => 0,
       ...overrides,
     };
   };

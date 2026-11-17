@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cfgNames } from './cfg-names.ts';
 import { specIdentityOf } from './reuse.ts';
+import { recordsTier } from './record.ts';
 import type { CfgNames } from './cfg-names.ts';
 import { moduleOf, readManifest } from './manifest.ts';
 import type { ManifestEntry } from './manifest.ts';
@@ -174,8 +175,9 @@ describe('the rules that choose the every-run rows (formal-models C20, E1 to E7)
 describe('the recorded identity of every row', () => {
   it('matches the spec closure, cfg, JSON inputs and args that the row was measured with', async () => {
     const repoRoot = path.resolve(import.meta.dirname, '..', '..');
+    const recording = recordsTier(process.env['MOMONGA_TLC_TIER'] === 'deep' ? 'deep' : 'every-run', process.env);
     const stale: string[] = [];
-    for (const entry of manifest.entries) if (entry.identity !== (await specIdentityOf(repoRoot, entry))) stale.push(entry.config);
+    for (const entry of manifest.entries) if (entry.identity !== (await specIdentityOf(repoRoot, entry)) && !(recording && entry.tier === 'deep')) stale.push(entry.config);
     expect(stale, `re-measure these rows with scripts/tlc-record.ts: ${stale.join(', ')}`).toEqual([]);
   });
 });

@@ -607,6 +607,7 @@ describe('the rows of a tier run at once', () => {
     script: sleepingScript('deep', deepLog),
     repoRoot: root,
     env: {},
+    startupCpuSeconds: 3,
   });
 
   describeTier({
@@ -617,6 +618,7 @@ describe('the rows of a tier run at once', () => {
     script: sleepingScript('every-run', everyRunLog),
     repoRoot: root,
     env: {},
+    startupCpuSeconds: 3,
   });
 
   const mostAtOnce = (log: string): number => {
@@ -643,4 +645,4 @@ describe('the rows of a tier run at once', () => {
   });
 });
 
-describeTier({ tier: selectedTier, entries: tierEntries, modules: 'manifest' in loaded ? loaded.manifest.modules : [], manifestConfigs, script: tlcScript, repoRoot, env: process.env });
+describeTier({ tier: selectedTier, entries: tierEntries, modules: 'manifest' in loaded ? loaded.manifest.modules : [], manifestConfigs, script: tlcScript, repoRoot, env: process.env, startupCpuSeconds: 'manifest' in loaded ? loaded.manifest.startupCpuSeconds : 0 });
