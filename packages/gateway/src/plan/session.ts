@@ -503,6 +503,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
           return action(held.entry, held.refusal);
         },
         signal,
+        () => account.dirty,
       );
 
   const lockedSinceLoad =
@@ -549,6 +550,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         return false;
       },
       signal,
+      () => account.dirty,
     );
 
   const loadNow = async (account: Account, signal: AbortSignal): Promise<void> => {

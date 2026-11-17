@@ -24,12 +24,12 @@ const countingLocks = (inner: ListableCredentialStore): { store: ListableCredent
     calls: () => calls,
     store: {
       ...inner,
-      withKey: async (key, action, signal) => {
+      withKey: async (key, action, signal, holdsAfter) => {
         calls += 1;
         active += 1;
         most = Math.max(most, active);
         try {
-          return await inner.withKey(key, action, signal);
+          return await inner.withKey(key, action, signal, holdsAfter);
         } finally {
           active -= 1;
         }

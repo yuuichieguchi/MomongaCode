@@ -47,6 +47,7 @@ export type EncryptedCredentialStoreOptions = {
   lock: KernelLockMechanism;
   ports?: FileLockPorts;
   random?: Random;
+  lockTimeoutMs?: number;
 };
 
 type CreationStep = (typeof CREDENTIAL_KEY_CREATION_STEPS)[number];
@@ -155,7 +156,7 @@ const keyNameOfMarker = (text: string, markerFile: string): string => {
 export const createEncryptedCredentialStore = (options: EncryptedCredentialStoreOptions): ListableCredentialStore => {
   const ports = options.ports ?? systemFileLockPorts;
   const random = options.random ?? systemRandom;
-  const records = createFileCredentialStore(options.directory, { lock: options.lock, ports });
+  const records = createFileCredentialStore(options.directory, { lock: options.lock, ports, ...(options.lockTimeoutMs === undefined ? {} : { lockTimeoutMs: options.lockTimeoutMs }) });
   const markerFile = path.join(options.stateDirectory, CREDENTIAL_KEY_MARKER_FILE);
   const lockFile = path.join(options.stateDirectory, CREDENTIAL_KEY_LOCK_NAME);
 
@@ -294,7 +295,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
   return {
     ...storeThroughScope({
       read: async (key, signal) => decode(key, await records.read(key, signal), options.plaintextTokenFiles(), signal),
-      withKey: (key, action, signal) => records.withKey(key, (inner) => action(entryOf(key, inner, signal)), signal),
+      withKey: (key, action, signal, holdsAfter) => records.withKey(key, (inner) => action(entryOf(key, inner, signal)), signal, holdsAfter),
     }),
     listKeys,
   };
