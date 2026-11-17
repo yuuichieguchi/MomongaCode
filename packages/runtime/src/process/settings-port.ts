@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialNamesOf, loadSettings, stripCredentialEnv } from '@momonga/config';
-import type { AutoFitKey, CredentialRules, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
+import { appendPermissionRule, approveProjectItems, autoFitKeyOf, readClassifierProbeKeys, ConfigError, settingsWriterPorts, systemFileLockPorts, credentialNamesOf, loadSettings, stripCredentialEnv } from '@momonga/config';
+import type { AutoFitKey, CredentialRules, FlagApproval, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import { createBinaryHashCache, createHeldHostReadings, createHostExec, hostPaths, settledOrAborted } from '@momonga/foundation';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
@@ -27,6 +27,7 @@ export type SettingsComposition = {
   sessionCreateSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   sessionReadSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   keptLayers(use: SettingsUse): KeptLayers;
+  recordFlagApprovals(projectDir: string, approved: readonly FlagApproval[], signal: AbortSignal): Promise<void>;
   envFor(session: Pick<Session, 'env' | 'cwd'>, signal: AbortSignal): Promise<ToolEnv>;
   referenceEnvFor(session: Pick<Session, 'env' | 'cwd'>, snapshot: UserSnapshot, signal: AbortSignal): Promise<ToolEnv>;
   sandboxNetwork(session: Pick<Session, 'cwd' | 'sandboxNetwork'>, signal: AbortSignal): Promise<SandboxNetworkSetting>;
@@ -146,5 +147,8 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     },
   };
 
-  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, sandboxNetwork: sessionSandboxNetwork, trustOracle, admitted };
+  const recordFlagApprovals = (projectDir: string, approved: readonly FlagApproval[], signal: AbortSignal): Promise<void> =>
+    approveProjectItems(home, projectDir, approved.map((item) => ({ kind: 'mcp', name: item.name, config: item.config, digest: item.digest })), settingsWriterPorts(home, { lock, ports: systemFileLockPorts, signal }));
+
+  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, recordFlagApprovals, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, sandboxNetwork: sessionSandboxNetwork, trustOracle, admitted };
 };

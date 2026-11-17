@@ -1,5 +1,5 @@
 import { loadMcpServers } from '@momonga/config';
-import type { McpServerEntry, SettingsUse } from '@momonga/config';
+import type { FlagApproval, McpServerEntry, SettingsUse } from '@momonga/config';
 import { AUTHORIZATION_WAIT_MS, CredentialStoreError, canonicalJson, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { McpAuthorizationError } from '@momonga/mcp';
@@ -43,7 +43,7 @@ export type McpAdminOptions = {
   timers: ServiceTimers;
   logger: JsonLogger;
   report(error: unknown): void;
-  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle' | 'recordFlagApprovals'>;
   remote: Omit<McpRemotePorts, 'network'>;
   network: NetworkOf;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
@@ -65,7 +65,7 @@ type Attempt = {
 };
 
 export const loadSessionMcpServers = (
-  options: { home: string; settings: Pick<SettingsComposition, 'trustOracle' | 'keptLayers' | 'referenceEnvFor'> },
+  options: { home: string; settings: Pick<SettingsComposition, 'trustOracle' | 'keptLayers' | 'referenceEnvFor' | 'recordFlagApprovals'> },
   session: Pick<Session, 'cwd' | 'mcpServers' | 'env'>,
   env: ToolEnv,
   snapshot: UserSnapshot,
@@ -82,6 +82,7 @@ export const loadSessionMcpServers = (
     user: snapshot.user,
     kept: options.settings.keptLayers(use),
     sessionServers: session.mcpServers,
+    ...(use === 'admit' ? { recordFlagApprovals: (approved: readonly FlagApproval[]) => options.settings.recordFlagApprovals(session.cwd, approved, signal) } : {}),
   }));
 
 const failureOf = (server: string, error: unknown): { code: string; message: string } => {

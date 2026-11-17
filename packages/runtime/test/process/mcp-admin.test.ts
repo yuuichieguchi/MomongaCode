@@ -98,6 +98,7 @@ const setup = async (remoteUrl: string = REMOTE_URL) => {
       },
       trustOracle: { isTrusted: () => true },
       keptLayers: (use) => ({ store: cache.kept, use }),
+      recordFlagApprovals: async () => {},
     },
     remote: { openAuthorizationUrl: () => Promise.reject(new Error('the admin must supply its own opener')) } as never,
     network: unconfiguredDerivedNetworkOf,

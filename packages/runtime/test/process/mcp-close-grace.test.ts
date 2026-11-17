@@ -104,6 +104,7 @@ const adminSetup = async () => {
       },
       trustOracle: { isTrusted: () => true },
       keptLayers: (use) => ({ store: cache.kept, use }),
+      recordFlagApprovals: async () => {},
     },
     remote: { openAuthorizationUrl: () => Promise.reject(new Error('not used')) } as never,
     network: unconfiguredDerivedNetworkOf,
