@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { bsdFileLock, createLockCapability, sqliteFileLock } from '@momonga/foundation';
+import { bsdFileLock, createLockCapability, lockPathNameOf, sqliteFileLock } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism, LockCapabilityProbe } from '@momonga/foundation';
 
 export type RunClass = 'heavy' | 'light';
@@ -237,10 +237,16 @@ const liveHolderClause = async (mechanism: KernelLockMechanism, lockPath: string
 const waitingHeavyClause = async (mechanism: KernelLockMechanism, waiterPath: string): Promise<string> =>
   `waiting ${await clauseOfHeld(waiterPath, 'heavy', mechanism)}`;
 
-const checkHeavy = async ({ request, mechanism }: AttemptContext): Promise<Busy | undefined> => {
+const lockUnitsNamed = async ({ request, mechanism }: AttemptContext, pattern: RegExp): Promise<string[]> => {
+  const units = (await fs.promises.readdir(request.dir)).map((name) => lockPathNameOf(mechanism, name)).filter((name) => pattern.test(name));
+  return [...new Set(units)].sort();
+};
+
+const checkHeavy = async (context: AttemptContext): Promise<Busy | undefined> => {
+  const { request, mechanism } = context;
   const heavyPath = heavyPathOf(request.dir);
   if (await mechanism.isHeld(heavyPath)) return { kind: 'busy', clauses: [await clauseOfHeld(heavyPath, 'heavy', mechanism)] };
-  const waiterNames = (await fs.promises.readdir(request.dir)).filter((name) => HEAVY_WAITER_NAME.test(name)).sort();
+  const waiterNames = await lockUnitsNamed(context, HEAVY_WAITER_NAME);
   const waiters: string[] = [];
   for (const name of waiterNames) {
     const waiterPath = path.join(request.dir, name);
@@ -282,7 +288,7 @@ const heavyAttempt = async (context: AttemptContext): Promise<Attempt> => {
   const heavy = await claimHeavy(context);
   if ('kind' in heavy) return heavy;
   return disposedOnFailure(heavy.lock, async () => {
-    const lightNames = (await fs.promises.readdir(context.request.dir)).filter((name) => LIGHT_NAME.test(name)).sort();
+    const lightNames = await lockUnitsNamed(context, LIGHT_NAME);
     const lightHolders: string[] = [];
     for (const name of lightNames) {
       const clause = await scanOne(context, path.join(context.request.dir, name));
