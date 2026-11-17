@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, acquireProcessLock, inspectProcessLock, kernelLockNamed, sqliteFileLock } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, acquireProcessLock, claimPathOf, inspectProcessLock, kernelLockNamed, sqliteFileLock, systemFileLockPorts, withFileLock } from '@momonga/foundation';
 import { resolveKernelLock } from '../src/platform/kernel-lock.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir, fixedLockCapability } from '@momonga/testkit';
 import { exitOf } from './support/lock-processes.ts';
@@ -97,5 +97,21 @@ describe('the lock used on Linux and Windows, held by another process', () => {
     expect(await inspectProcessLock(lockPath, { mechanism: sqliteFileLock })).toEqual({ state: 'free' });
     const lock = await claimOrThrow(lockPath);
     registerCleanup(context, () => lock.release());
+  });
+});
+
+describe('a sidecar claim of a data file under the sqlite mechanism', () => {
+  it('writes its holder beside the data file and leaves the data file as it was, while held, after release, and after dispose', async (context) => {
+    const dataFile = path.join(withTempDir(context), 'plan-active.json');
+    const content = '{"default":"main"}';
+    fs.writeFileSync(dataFile, content);
+    const claimPath = claimPathOf(sqliteFileLock, dataFile, 'sidecar');
+    const first = await withFileLock(claimPath, async () => fs.readFileSync(dataFile, 'utf8'), { ports: systemFileLockPorts, mechanism: sqliteFileLock });
+    expect(first).toBe(content);
+    expect(fs.readFileSync(dataFile, 'utf8')).toBe(content);
+    const lock = await claimOrThrow(claimPath);
+    lock.writeHolder(String(process.pid));
+    lock.dispose();
+    expect(fs.readFileSync(dataFile, 'utf8')).toBe(content);
   });
 });

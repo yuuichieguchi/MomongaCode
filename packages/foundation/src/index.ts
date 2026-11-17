@@ -114,7 +114,7 @@ export { RETRY_KINDS, claimRetry, markIgnored, groupRecordOutcome, readAttemptRe
 export type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
 export type { MarkerHandle } from './platform/marker-file.ts';
-export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, probeRemovesOpenFiles, sqliteFileLock } from './platform/sqlite-lock.ts';
+export { LOCK_DATABASE_SUFFIX, LOCK_HOLDER_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, probeRemovesOpenFiles, sqliteFileLock } from './platform/sqlite-lock.ts';
 export type { SqliteLockOps, UnlinkOpenProbePorts } from './platform/sqlite-lock.ts';
 export { removeFilesThenRelease } from './platform/holder-file.ts';
 export type { LockFileIdentity } from './platform/file-identity.ts';

@@ -1,5 +1,5 @@
 import type { HeldKernelLock, KernelLockMechanism } from './kernel-lock.ts';
-import { LOCK_DATABASE_SUFFIX } from './sqlite-lock.ts';
+import { LOCK_DATABASE_SUFFIX, LOCK_HOLDER_SUFFIX } from './sqlite-lock.ts';
 
 export const LEFTOVER_LOCK_FORMS = ['entry', 'sidecar'] as const;
 
@@ -26,7 +26,7 @@ export const sidecarSuffixOf = (mechanism: Pick<KernelLockMechanism, 'name'>): s
 
 const COMPANION_SUFFIXES: Readonly<Record<MechanismName, readonly string[]>> = {
   'file-lock': [],
-  'sqlite-lock': ['-journal'],
+  'sqlite-lock': ['-journal', LOCK_HOLDER_SUFFIX],
 };
 
 export const sidecarNameSuffixesOf = (mechanism: Pick<KernelLockMechanism, 'name'>): { sidecar: string; companions: readonly string[] } => {

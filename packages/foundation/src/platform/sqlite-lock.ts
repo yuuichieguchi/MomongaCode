@@ -10,6 +10,7 @@ import type { CapabilityResult } from '../capability-probe.ts';
 import { systemRandom } from '../system-random.ts';
 
 export const LOCK_DATABASE_SUFFIX = '.sqlite';
+export const LOCK_HOLDER_SUFFIX = '-holder';
 
 const SQLITE_BUSY = 5;
 const SQLITE_RESULT_CODE_MASK = 0xff;
@@ -18,6 +19,8 @@ const isBusy = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'errcode' in error && typeof error.errcode === 'number' && (error.errcode & SQLITE_RESULT_CODE_MASK) === SQLITE_BUSY;
 
 const databasePathOf = (lockPath: string): string => `${lockPath}${LOCK_DATABASE_SUFFIX}`;
+
+const holderPathOf = (lockPath: string): string => `${databasePathOf(lockPath)}${LOCK_HOLDER_SUFFIX}`;
 
 export type OpenLockDatabase = (databasePath: string) => DatabaseSync;
 
@@ -124,7 +127,6 @@ const beginExclusive = (database: DatabaseSync): 'acquired' | 'held' => {
 
 const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string, database: DatabaseSync): HeldKernelLock => {
   let open = true;
-  let holderWritten = false;
   const release = (): void => {
     if (!open) return;
     open = false;
@@ -139,14 +141,11 @@ const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string
   };
   return {
     descriptor: undefined,
-    writeHolder: (text) => {
-      writeHolderFile(lockPath, text);
-      holderWritten = true;
-    },
+    writeHolder: (text) => writeHolderFile(holderPathOf(lockPath), text),
     release,
     dispose: () => {
       try {
-        if (holderWritten) ops.remove(lockPath);
+        ops.remove(holderPathOf(lockPath));
         if (ops.removesOpenFiles) ops.remove(databasePath);
       } finally {
         release();
@@ -197,8 +196,8 @@ export const createSqliteFileLock = (ops: SqliteLockOps): KernelLockMechanism =>
   claim: async (lockPath) => claimDatabase(ops, lockPath),
   claimSync: (lockPath) => claimDatabase(ops, lockPath),
   isHeld: async (lockPath) => probeDatabase(ops, lockPath),
-  readHolder: readHolderFile,
-  readHolderSync: readHolderFileSync,
+  readHolder: (lockPath) => readHolderFile(holderPathOf(lockPath)),
+  readHolderSync: (lockPath) => readHolderFileSync(holderPathOf(lockPath)),
   claimInheritable: undefined,
   adoptInherited: undefined,
 });
