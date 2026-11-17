@@ -3310,6 +3310,19 @@
     },
     {
       "config": "PlanCredential.twoGensPersistFail",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 476000,
+      "measuredSeconds": 10.73,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 40.52,
+      "budgetCpuSeconds": 85,
+      "note": "measured cold (reuse off, scripts/tlc.sh, workers 5, nice 15, 1-minute load about 11 at start). Persist fault in the two-generation model: the generation whose record is dirty keeps the record lock until the persist succeeded or the process ends, so the other generation gives up at its bound and never sends the spent refresh token"
+    },
+    {
+      "config": "PlanCredential.twoGensPersistFailNoHold",
       "role": "evidence",
       "expect": {
         "violates": "SingleUse",
@@ -3317,12 +3330,12 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 43443,
-      "measuredSeconds": 3.23,
+      "distinctStates": 42295,
+      "measuredSeconds": 3.1,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 10.59,
-      "budgetCpuSeconds": 25,
-      "note": "measured cold (reuse off, scripts/tlc.sh, workers 5, nice 15, 1-minute load 4.79 at start). Persist fault in the two-generation model: the disk keeps the spent refresh token while the memory token is dirty and the store lock is released, so the other generation sends it again. Finding open: the trace is in the commit message; the row turns to holds when the product fix lands"
+      "measuredCpuSeconds": 8.76,
+      "budgetCpuSeconds": 21,
+      "note": "measured cold (reuse off, scripts/tlc.sh, workers 5, nice 15, 1-minute load about 11 at start). The old behaviour (TwoGens rereadNoHold): the record lock is released while the memory token is dirty, so the other generation re-reads the spent refresh token from disk and sends it"
     },
     {
       "config": "PlanCredential.twoGensNoReread",
