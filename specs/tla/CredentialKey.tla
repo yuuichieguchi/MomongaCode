@@ -78,12 +78,15 @@ Fast(p) ==
                  ELSE /\ pc' = [pc EXCEPT ![p] = "done"]
                       /\ UNCHANGED <<base, key>>
             ELSE IF marker /= 0
-                 THEN IF Variant = "recreateOnReadFailure" /\ marker \notin items
+                 THEN IF Variant = "recreateOnReadFailure" /\ marker \in items
                       THEN /\ base' = [base EXCEPT ![p] = marker]
                            /\ pc' = [pc EXCEPT ![p] = "gen"]
                            /\ UNCHANGED key
-                      ELSE /\ ReadKeyOf(p, marker)
-                           /\ UNCHANGED base
+                      ELSE IF marker \in items
+                           THEN /\ ReadKeyOf(p, marker)
+                                /\ UNCHANGED base
+                           ELSE /\ pc' = [pc EXCEPT ![p] = "locking"]
+                                /\ UNCHANGED <<base, key>>
                  ELSE IF Variant = "noLock"
                       THEN /\ base' = [base EXCEPT ![p] = 0]
                            /\ pc' = [pc EXCEPT ![p] = "gen"]
@@ -101,11 +104,11 @@ Lock(p) ==
 
 Reread(p) ==
     /\ pc[p] = "locked"
-    /\ IF marker /= 0
+    /\ IF marker /= 0 /\ marker \in items
        THEN /\ lock' = 0
             /\ ReadKeyOf(p, marker)
             /\ UNCHANGED base
-       ELSE /\ base' = [base EXCEPT ![p] = 0]
+       ELSE /\ base' = [base EXCEPT ![p] = marker]
             /\ pc' = [pc EXCEPT ![p] = "gen"]
             /\ UNCHANGED <<lock, key>>
     /\ UNCHANGED <<rpc, marker, items, ever, records, nextName, ix, gen, todo, crashes, optIn, toggled, removed>>
@@ -270,10 +273,10 @@ MarkerImpliesKey ==
     marker /= 0 => (marker \in ever /\ (~removed => marker \in items))
 
 UnreadableNeverRecreates ==
-    \A p \in Writers : pc[p] = "creating" => base[p] = 0
+    \A p \in Writers : pc[p] = "creating" => (base[p] = 0 \/ base[p] \notin items)
 
 MarkerWrittenOnce ==
-    [][marker' /= marker => (marker = 0 \/ marker' = 0)]_vars
+    [][marker' /= marker => (marker = 0 \/ marker \notin items \/ marker' = 0)]_vars
 
 NoPlaintextUnlessOptIn ==
     [][\A r \in records' \ records : r.kind = "plain" => optIn]_vars
