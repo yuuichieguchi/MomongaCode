@@ -2,6 +2,7 @@ import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fakeGroupPort } from './support/group-port-fakes.ts';
 import { afterMicrotasks, createTempDir, HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, killGroupsForCleanup, killPidsForCleanup, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, sleepDrivenTiming, testProcessInspector } from '@momonga/testkit';
 import { POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, Timing } from '@momonga/foundation';
@@ -481,7 +482,7 @@ describe('markerReapClockBoundMs', () => {
     };
     const warnings: string[] = [];
 
-    const result = await reapMarkedProcesses({ marker, killGraceMs: KILL_GRACE_MS, label: 'daemon', onWarning: (warning) => warnings.push(warning), kill, timing, inspector });
+    const result = await reapMarkedProcesses({ marker, killGraceMs: KILL_GRACE_MS, label: 'daemon', onWarning: (warning) => warnings.push(warning), kill, groupPort: fakeGroupPort(kill), timing, inspector });
 
     expect(result).toEqual({ removed: false });
     expect(signals).toEqual([

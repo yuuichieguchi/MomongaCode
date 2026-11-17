@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { KILL_CONFIRM_MS, POLL_INTERVAL_MS, markerReapClockBoundMs, reapMarkedProcesses } from '@momonga/foundation';
 import type { ProcessInspector, Timing } from '@momonga/foundation';
+import { fakeGroupPort } from './support/group-port-fakes.ts';
 
 const RECORDED_GROUP = 525_252;
 const OWN_GROUP = 525_251;
@@ -52,7 +53,7 @@ const holderIgnoringTerm = (releaseAfterKillMs: number | undefined) => {
     signals.push({ pid, signal });
     if (signal === 'SIGKILL') killedAt ??= current;
   };
-  return { timing, inspector, kill, signals, now: () => current, killedAt: () => killedAt };
+  return { timing, inspector, kill, groupPort: fakeGroupPort(kill), signals, now: () => current, killedAt: () => killedAt };
 };
 
 const GRACES = [0, 2000, 30_000];
@@ -62,7 +63,7 @@ describe('a marker reap confirms its SIGKILL in its own window K = KILL_CONFIRM_
     const marker = writeMarker();
     const host = holderIgnoringTerm(2000);
     const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs, label: 'daemon', onWarning: (warning) => warnings.push(warning), kill: host.kill, timing: host.timing, inspector: host.inspector });
+    const result = await reapMarkedProcesses({ marker, killGraceMs, label: 'daemon', onWarning: (warning) => warnings.push(warning), kill: host.kill, groupPort: host.groupPort, timing: host.timing, inspector: host.inspector });
     expect(host.signals).toEqual([
       { pid: -RECORDED_GROUP, signal: 'SIGTERM' },
       { pid: -RECORDED_GROUP, signal: 'SIGKILL' },
@@ -76,7 +77,7 @@ describe('a marker reap confirms its SIGKILL in its own window K = KILL_CONFIRM_
     const marker = writeMarker();
     const host = holderIgnoringTerm(undefined);
     const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs, label: 'daemon', onWarning: (warning) => warnings.push(warning), kill: host.kill, timing: host.timing, inspector: host.inspector });
+    const result = await reapMarkedProcesses({ marker, killGraceMs, label: 'daemon', onWarning: (warning) => warnings.push(warning), kill: host.kill, groupPort: host.groupPort, timing: host.timing, inspector: host.inspector });
     expect(result).toEqual({ removed: false });
     expect(fs.existsSync(marker)).toBe(true);
     expect(warnings).toHaveLength(1);
