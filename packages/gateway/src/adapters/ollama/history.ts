@@ -3,7 +3,7 @@ import type { AdapterInputItem, ContentPart, ReasoningOrigin } from '@momonga/pr
 import { callArgumentsObject, readableHistoryOf } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageSourceOf, isImagePart } from '../shared/image-part.ts';
-import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
+import { fenceOf, reasoningTextOf, textOfContent } from '../shared/input-text.ts';
 import { ownReasoning } from '../shared/reasoning-origin.ts';
 
 export type OllamaMessage = Record<string, unknown>;
@@ -69,7 +69,7 @@ export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: Reas
     }
     flush();
     if (item.type === 'compaction_summary') {
-      const { role, content } = compactionSummaryMessage(item.summary, 'model');
+      const { role, content } = compactionSummaryMessage(item.summary, 'model', fenceOf(fence));
       messages.push({ role, content });
     } else if (item.type === 'function_call_output') {
       const name = namesByCallId.get(item.call_id);

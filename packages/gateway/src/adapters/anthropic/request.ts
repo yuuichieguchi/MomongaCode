@@ -10,7 +10,7 @@ import { isJsonOnlyEnforced, jsonReplyFormatOf } from '../shared/json-reply.ts';
 import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
-import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
+import { fenceOf, reasoningTextOf, textOfContent } from '../shared/input-text.ts';
 import { ownReasoning } from '../shared/reasoning-origin.ts';
 
 export type CacheControl = { type: 'ephemeral' };
@@ -94,7 +94,7 @@ const partBlocksOf = (content: string | readonly ContentPart[]): Array<Anthropic
 
 type Converted = { role: AnthropicMessage['role']; blocks: AnthropicBlock[] };
 
-const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin): Converted | undefined => {
+const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin, fence: string | undefined): Converted | undefined => {
   switch (item.type) {
     case 'reasoning': {
       const own = ownReasoning(item, origin);
@@ -103,7 +103,7 @@ const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin): Converted | 
         : { role: 'assistant', blocks: [{ type: 'thinking', thinking: reasoningTextOf(own), signature: own.signature }] };
     }
     case 'compaction_summary': {
-      const summary = compactionSummaryMessage(item.summary, 'model');
+      const summary = compactionSummaryMessage(item.summary, 'model', fenceOf(fence));
       return { role: 'user', blocks: textBlocksOf(textOfContent(summary.content)) };
     }
     case 'function_call':
@@ -145,7 +145,7 @@ const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOr
   const readable = readableHistoryItemOf(input, fence);
   for (const [index, item] of input.entries()) {
     const kept = readable(item);
-    const converted = kept === undefined ? undefined : blocksOf(kept, origin);
+    const converted = kept === undefined ? undefined : blocksOf(kept, origin, fence);
     if (converted === undefined || converted.blocks.length === 0) continue;
     if (index < prefixLength) stablePrefixEnd = converted.blocks.at(-1);
     const placed = converted.blocks.map((block): Placed => ({ block, origin: index }));
@@ -161,7 +161,7 @@ const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOr
   };
 };
 
-export const messagesOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): AnthropicMessage[] => convertMessages(input, origin).messages;
+export const messagesOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin, fence?: string): AnthropicMessage[] => convertMessages(input, origin, fence).messages;
 
 type PlacedSystem = { block: AnthropicTextBlock; origin: number };
 

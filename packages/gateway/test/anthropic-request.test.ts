@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { AdapterInputItem, AdapterRequest, ContentPart } from '@momonga/protocol';
 import { UnsupportedInputError } from '../src/adapters/shared/failures.ts';
 import { buildMessagesBody } from '../src/adapters/anthropic/request.ts';
-import { MODEL_FRAMING } from './cc-support.ts';
+import { summaryTextOf } from './cc-support.ts';
 
 const MAX_TOKENS = 4096;
 const PNG_BASE64 =
@@ -69,7 +69,7 @@ describe('buildMessagesBody', () => {
   it('renders a compaction summary as a user turn', () => {
     const body = bodyOf([{ type: 'compaction_summary', summary: 'earlier <work>' }]);
     expect(body.messages).toEqual([
-      { role: 'user', content: [{ type: 'text', text: `<conversation_summary>\n${MODEL_FRAMING}\nearlier &lt;work>\n</conversation_summary>` }] },
+      { role: 'user', content: [{ type: 'text', text: summaryTextOf('earlier <work>') }] },
     ]);
   });
 
@@ -222,7 +222,7 @@ describe('cache breakpoints', () => {
   });
 
   it('marks nothing when breakpoints are disabled', () => {
-    const body = buildMessagesBody({ model: 'm', input: [summary, user('x')], tools: [tool] }, MAX_TOKENS, { cache: undefined }, EVERY_REASONING_IS_OWN);
+    const body = buildMessagesBody({ model: 'm', input: [summary, user('x')], tools: [tool], fence: TEST_FENCE }, MAX_TOKENS, { cache: undefined }, EVERY_REASONING_IS_OWN);
     expect(breakpoints(body as ReturnType<typeof cached>)).toEqual([]);
   });
 

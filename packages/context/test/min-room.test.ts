@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MIN_ROOM_TOKENS, WORKING_STATE_MESSAGE_MIN_TOKENS, textOfContent, workingStateMessage } from '@momonga/context';
 import { MIN_SUMMARY_TOKENS, summaryItemTokensFor, tokensForText } from '@momonga/protocol';
+import { TEST_FENCE } from '@momonga/testkit';
 
 const MIN_ITEM_TOKENS = 64;
 
@@ -14,7 +15,7 @@ describe('MIN_ROOM_TOKENS', () => {
   });
 
   it('counts the framing and the tags of the working-state message, not only its lines', () => {
-    const empty = tokensForText(textOfContent(workingStateMessage('').content));
+    const empty = tokensForText(textOfContent(workingStateMessage('', TEST_FENCE).content));
     expect(WORKING_STATE_MESSAGE_MIN_TOKENS).toBeGreaterThan(empty);
   });
 });

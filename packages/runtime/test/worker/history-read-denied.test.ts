@@ -6,6 +6,8 @@ import type { AnyTool } from '@momonga/tools';
 import { makeEnv, textOf } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
+const FIXTURE_FENCE = 'a'.repeat(32);
+
 const USAGE = { input_tokens: 5, output_tokens: 1, total_tokens: 6 };
 
 const historyRead: AnyTool = defineTool<Record<string, unknown>>({
@@ -25,7 +27,7 @@ const historyRead: AnyTool = defineTool<Record<string, unknown>>({
 const compactedJournal = (): RunEventPayload[] => [
   { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('m1', 'answer one')], usage: USAGE } },
   { type: 'user.message', text: 'question two' },
-  { type: 'context.compacted', item: compactionSummaryMessage('GOAL:\ng', 'model'), summary: 'GOAL:\ng', replacedThroughSeq: 2, source: 'model' },
+  { type: 'context.compacted', item: compactionSummaryMessage('GOAL:\ng', 'model', FIXTURE_FENCE), summary: 'GOAL:\ng', replacedThroughSeq: 2, source: 'model' },
   { type: 'user.message', text: 'question three' },
 ];
 
@@ -37,7 +39,7 @@ const workingStateOf = async (deny: boolean): Promise<{ text: string; status: st
   env.gateway.script.push(textStep('Done.'));
   expect(await env.runOnce(env.worker('worker-1', { toolList: () => [historyRead] }))).toBe('yielded');
   const body = env.gateway.streams.at(-1)?.body as { input: unknown[] } | undefined;
-  const text = (body?.input ?? []).map((item) => textOf(item)).find((entry) => entry.includes('<working_state>')) ?? '';
+  const text = (body?.input ?? []).map((item) => textOf(item)).find((entry) => entry.includes('<working_state boundary=')) ?? '';
   return { text, status: env.run(run.id).status };
 };
 

@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, largestSummaryCapFor, summaryRequestInputLimitFor, wireUsageOf } from '@momonga/protocol';
+import { compactionSummaryText } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterContext,
@@ -164,9 +165,10 @@ const countOnTarget = async (
   call: CallIdentity,
 ): Promise<Counted> => {
   const capabilities = await narrowed.capabilitiesOf(target);
+  const fence = request.momonga?.fence ?? services.fenceBoundary(resolved.forAdapter);
   const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, adapterTargetOf(target));
   const counted = asGatewayError(target, () =>
-    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter, request.momonga?.fence ?? services.fenceBoundary(resolved.forAdapter)), capabilities.allowedTools, target.display, toolChoiceWire),
+    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter, fence), capabilities.allowedTools, target.display, toolChoiceWire),
   );
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
@@ -197,7 +199,7 @@ const countOnTarget = async (
   }
   const countable: InputItem[] = resolved.forAdapter.map((item) =>
     item.type === 'compaction_summary'
-      ? { type: 'message', role: 'user', content: [{ type: 'input_text', text: item.summary }] }
+      ? { type: 'message', role: 'user', content: [{ type: 'input_text', text: compactionSummaryText(item.summary, 'model', fence) }] }
       : item,
   );
   const context = adapterContextOf(services, target, capabilities, signal, attemptNumber, (await recordSendOf(services, call, target, undefined, signal)).callKey);
@@ -323,7 +325,7 @@ const compactOnce = async (
       targetName: target.name,
       role: COMPACTION_ROLE,
       startedAtMs: services.clock.now(),
-      request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
+      request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined, fence: request.momonga?.fence ?? services.fenceBoundary(resolved.forAdapter) },
     });
   const failSpan = (span: AttemptSpan, failure: unknown): void => span.fail(errorTypeOf(failure), failure, describeError(failure));
   const outcome = await callTargets(services, supporting, narrowed, signal, deadlineAt, async (target, attemptNumber, guarded) => {

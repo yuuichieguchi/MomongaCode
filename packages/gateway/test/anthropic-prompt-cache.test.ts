@@ -1,6 +1,6 @@
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
-import { anthropicCountTokensReply, anthropicTextReply } from '@momonga/testkit';
+import { TEST_FENCE, anthropicCountTokensReply, anthropicTextReply } from '@momonga/testkit';
 import type { AdapterInputItem, Capabilities } from '@momonga/protocol';
 import { buildMessagesBody } from '../src/adapters/anthropic/request.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -16,7 +16,7 @@ const summary: AdapterInputItem = { type: 'compaction_summary', summary: 'earlie
 const system: AdapterInputItem = { type: 'message', role: 'system', content: 'rules' };
 const tool = { type: 'function', name: 'read_file', description: 'Read', parameters: { type: 'object', properties: {} } } as const;
 
-const FOUR_PLACES = { model: 'm', input: [system, summary, user('one'), assistant('two'), user('three')], instructions: 'first', tools: [tool] };
+const FOUR_PLACES = { model: 'm', input: [system, summary, user('one'), assistant('two'), user('three')], instructions: 'first', tools: [tool], fence: TEST_FENCE };
 
 const breakpointsIn = (value: unknown): number => JSON.stringify(value).split('"cache_control"').length - 1;
 

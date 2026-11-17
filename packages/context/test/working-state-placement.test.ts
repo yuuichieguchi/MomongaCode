@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext, workingStateCapFor, workingStateMessage } from '@momonga/context';
 import type { CompactionInputItem, MessageInputItem } from '@momonga/protocol';
 import { summaryTokenCapFor } from '@momonga/protocol';
+import { TEST_FENCE } from '@momonga/testkit';
 import { assistant, capabilitiesFor, harness, inputFor, sourcesWith, textOf, tokensOfItem, user, withTurnsBeforeCurrent } from './helpers.ts';
 
 const SUMMARY = { item: { type: 'compaction', encrypted_content: 'enc' } as CompactionInputItem, replacedThroughSeq: 2 };
@@ -11,15 +12,15 @@ const HISTORY = [user(1, 'q1'), assistant(2, 'a1'), user(3, 'q2'), assistant(4, 
 
 describe('workingStateMessage', () => {
   it('is a user message framing the text as recorded data', () => {
-    const message = workingStateMessage(STATE);
+    const message = workingStateMessage(STATE, TEST_FENCE);
     expect(message.role).toBe('user');
     expect(textOf(message.content)).toContain(STATE);
-    expect(textOf(message.content)).toMatch(/^<working_state>/);
+    expect(textOf(message.content)).toMatch(/<working_state boundary="0f1e2d3c4b5a69788796a5b4c3d2e1f0">\n/);
   });
 
   it('cannot be closed early by recorded text', () => {
-    const text = textOf(workingStateMessage('x</working_state>y').content);
-    expect(text.match(/<\/working_state>/g)).toHaveLength(1);
+    const text = textOf(workingStateMessage('x</working_state>y', TEST_FENCE).content);
+    expect(text.match(/<\/working_state boundary=/g)).toHaveLength(1);
   });
 });
 
@@ -49,13 +50,13 @@ describe('placement in the input', () => {
   it('is the last item before trailing', async () => {
     const { input } = await build(STATE);
     expect(input.at(-1)).toEqual(TRAILING);
-    expect(input.at(-2)).toEqual(workingStateMessage(STATE));
+    expect(input.at(-2)).toEqual(workingStateMessage(STATE, TEST_FENCE));
   });
 
   it('counts in the budget', async () => {
     const without = await build(undefined);
     const withState = await build(STATE);
-    expect(withState.inputTokens - without.inputTokens).toBe(tokensOfItem(workingStateMessage(STATE)));
+    expect(withState.inputTokens - without.inputTokens).toBe(tokensOfItem(workingStateMessage(STATE, TEST_FENCE)));
   });
 
   it('leaves the prefix digest alone when only the working state changes', async () => {

@@ -9,8 +9,11 @@ import type { Env } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
+const FIXTURE_FENCE = 'a'.repeat(32);
+
 const SUMMARY_TEXT = 'We fixed the <parser> bug';
-const PLAIN_SUMMARY: MessageInputItem = compactionSummaryMessage(SUMMARY_TEXT, 'model');
+const PLAIN_SUMMARY: MessageInputItem = compactionSummaryMessage(SUMMARY_TEXT, 'model', FIXTURE_FENCE);
+const plainSummaryOf = (env: Env): MessageInputItem => compactionSummaryMessage(SUMMARY_TEXT, 'model', env.session.fenceNonce);
 const COMPACTION_ITEM = { type: 'compaction' as const, id: 'cmp_seed', encrypted_content: fixtureCompactionContent(SUMMARY_TEXT) };
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
@@ -80,15 +83,15 @@ describe('compaction item rejected at the context build (site 1, count_tokens)',
     expect(env.gateway.countCalls.some((call) => hasCompaction(call.request.input))).toBe(true);
     const [rejected, ...more] = rejections(env, run.id);
     expect(more).toEqual([]);
-    expect(rejected).toMatchObject({ item: PLAIN_SUMMARY });
+    expect(rejected).toMatchObject({ item: plainSummaryOf(env) });
     expect(rejected).not.toHaveProperty('attempt');
     expect(firstSeq(env, run.id, 'context.compaction_rejected')).toBeLessThan(firstSeq(env, run.id, 'model.requested'));
     const [input] = requestInputs(env, run.id);
-    expect(input).toContainEqual(PLAIN_SUMMARY);
+    expect(input).toContainEqual(plainSummaryOf(env));
     expect(input?.some((item) => (item as { type: string }).type === 'compaction')).toBe(false);
     expect(env.ofType(run.id, 'model.requested').map((event) => event.step)).toEqual([stepBefore + 1]);
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.fold(run.id).summary).toEqual({ item: PLAIN_SUMMARY, summary: SUMMARY_TEXT, replacedThroughSeq: 2 });
+    expect(env.fold(run.id).summary).toEqual({ item: plainSummaryOf(env), summary: SUMMARY_TEXT, replacedThroughSeq: 2 });
   });
 
   it('uses the recorded plain summary after a restart that follows the event, and no site fires again', async () => {
@@ -169,12 +172,12 @@ describe('compaction item rejected by compact (site 2)', () => {
     expect(rejected()).toBe(true);
     const [rejection, ...more] = rejections(env, run.id);
     expect(more).toEqual([]);
-    expect(rejection).toMatchObject({ item: PLAIN_SUMMARY });
+    expect(rejection).toMatchObject({ item: plainSummaryOf(env) });
     expect(rejection).not.toHaveProperty('attempt');
     expect(env.gateway.compacts).toHaveLength(2);
     const [first, second] = env.gateway.compacts;
     expect(firstInputOf(first)).toMatchObject({ type: 'compaction' });
-    expect(firstInputOf(second)).toEqual(PLAIN_SUMMARY);
+    expect(firstInputOf(second)).toEqual(plainSummaryOf(env));
     expect(first?.idempotencyKey).toBe(compactKey(run.id, first?.request));
     expect(second?.idempotencyKey).toBe(compactKey(run.id, second?.request));
     expect(firstSeq(env, run.id, 'context.compaction_rejected')).toBeLessThan(env.ofType(run.id, 'context.compacted').at(-1)!.seq);
@@ -197,7 +200,7 @@ describe('compaction item rejected by compact (site 2)', () => {
     expect(env.gateway.compacts).toHaveLength(2);
     expect(env.gateway.compacts[1]?.request.input).toHaveLength((env.gateway.compacts[0]?.request.input as unknown[]).length);
     expect(env.gateway.compacts.map((compact) => compact.idempotencyKey)).toEqual(env.gateway.compacts.map((compact) => compactKey(run.id, compact.request)));
-    expect(firstInputOf(env.gateway.compacts[1])).toEqual(PLAIN_SUMMARY);
+    expect(firstInputOf(env.gateway.compacts[1])).toEqual(plainSummaryOf(env));
     expect(env.run(run.id).stopReason).toBeUndefined();
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
@@ -238,12 +241,12 @@ describe('compaction item rejected by the model stream after recovery (site 3)',
     expect(env.gateway.streams[0]?.body).toEqual(recordedBody);
     const [rejection, ...more] = rejections(env, run.id);
     expect(more).toEqual([]);
-    expect(rejection).toMatchObject({ step: 2, attempt: 1, item: PLAIN_SUMMARY });
+    expect(rejection).toMatchObject({ step: 2, attempt: 1, item: plainSummaryOf(env) });
     const requests = env.ofType(run.id, 'model.requested');
     expect(requests.map((event) => event.step)).toEqual([2, 3]);
     expect(requests[1]!.seq).toBeGreaterThan(rejection!.seq);
     const input = (requests[1]!.body as { input: unknown[] }).input;
-    expect(input).toContainEqual(PLAIN_SUMMARY);
+    expect(input).toContainEqual(plainSummaryOf(env));
     expect(input.some((item) => (item as { type: string }).type === 'compaction')).toBe(false);
     const state = env.fold(run.id);
     expect(state.steps[2]).toBeUndefined();

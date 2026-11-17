@@ -1,10 +1,11 @@
 import {
+  FENCE_BOUNDARY_LENGTH,
   INHERITED_FACT_SEQ,
   MAX_JOURNAL_SEQ_DIGITS,
   RUN_ID_CHARS,
   WORKING_FACT_KINDS,
   WORKING_STATE_SUMMARY_RATIO,
-  recordedDataMessage,
+  fenceUntrusted,
   summaryTokenCapFor,
   tokensForText,
 } from '@momonga/protocol';
@@ -61,9 +62,15 @@ export const workingStateCapFor = (capabilities: Capabilities): number => {
   return Math.min(summaryCap, Math.max(Math.ceil(WORKING_STATE_SUMMARY_RATIO * summaryCap), MANDATORY_TOKENS));
 };
 
-export const workingStateMessage = (text: string): MessageInputItem => recordedDataMessage({ tag: WORKING_STATE_TAG, origin: FRAMING, text });
+export const workingStateMessage = (text: string, sessionBoundary: string): MessageInputItem => ({
+  type: 'message',
+  role: 'user',
+  content: `${FRAMING}\n${fenceUntrusted(WORKING_STATE_TAG, {}, text, sessionBoundary)}`,
+});
 
-export const widestMandatoryWorkingStateMessage = (): MessageInputItem => workingStateMessage(widestMandatoryText());
+const WIDEST_BOUNDARY = '0'.repeat(FENCE_BOUNDARY_LENGTH);
+
+export const widestMandatoryWorkingStateMessage = (): MessageInputItem => workingStateMessage(widestMandatoryText(), WIDEST_BOUNDARY);
 
 export const WORKING_STATE_MESSAGE_MIN_TOKENS = tokensForText(String(widestMandatoryWorkingStateMessage().content));
 

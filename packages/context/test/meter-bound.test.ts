@@ -106,7 +106,7 @@ describe('forced deficit against the ceiling and the live bound', () => {
 
   it.for([
     { label: 'region frees less than the live deficit', chars: [1099, 1099, 4171, 4171, 4171, 4170], closes: false },
-    { label: 'region closes the live deficit', chars: [1699, 1699, 3871, 3871, 3871, 3870], closes: true },
+    { label: 'region closes the live deficit', chars: [1787, 1699, 3871, 3871, 3871, 3782], closes: true },
   ])('measures against the live bound when the observed excess exceeds the sizing ratio: $label', async ({ chars, closes }) => {
     const floor = marginFloorFor(8192);
     const meter = await meterWithObservedMiss(W8192, fakeCounter(0), 0.5);
