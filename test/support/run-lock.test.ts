@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from '@momonga/testkit/child-process';
+import { execFileSync, spawn, spawnSync } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
 import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { killGroup } from '../../scripts/support/cpu-budget.ts';
 import { RUN_LOCK_DEFAULT_WAIT_SECONDS } from '../../scripts/support/run-lock.ts';
 import config from '../../vitest.config.ts';
 
@@ -67,6 +68,7 @@ afterEach(async () => {
   for (const run of started.splice(0)) {
     if (run.child.exitCode === null && run.child.signalCode === null) run.child.kill('SIGKILL');
     await run.exit;
+    if (run.child.pid !== undefined) killGroup(run.child.pid);
   }
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -78,11 +80,11 @@ const NO_WAIT_NAMED: ChildEnv = { MOMONGA_RUN_LOCK_WAIT_SECONDS: undefined };
 const baseEnv = (extra: ChildEnv = {}): ChildEnv => {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined && !key.startsWith('VITEST') && key !== 'MOMONGA_RUN_LOCK') env[key] = value;
-  return { ...env, MOMONGA_RUN_LOCK_WAIT_SECONDS: '0', MOMONGA_DEV_STATE_DIR: state, FIXTURE_OUT: out, ...extra };
+  return { ...env, MOMONGA_RUN_LOCK_WAIT_SECONDS: '0', MOMONGA_RUN_CPU_BUDGET_SECONDS: '600', MOMONGA_DEV_STATE_DIR: state, FIXTURE_OUT: out, ...extra };
 };
 
 const startProcess = (command: string, args: string[], cwd: string, env: ChildEnv): Started => {
-  const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let output = '';
   const collect = (chunk: Buffer): void => {
     output += chunk.toString();
@@ -121,7 +123,7 @@ const hold = async (runClass: 'heavy' | 'light'): Promise<{ run: Started; releas
   const release = path.join(root, `release-${runClass}`);
   const tokenFile = path.join(root, `token-${runClass}`);
   releaseFiles.push(release);
-  const run = startProcess(process.execPath, [WRAPPER, runClass, '--', process.execPath, '-e', holderScript(tokenFile, release)], REPO, baseEnv());
+  const run = startProcess(process.execPath, [WRAPPER, runClass, '--budget-cpu-seconds', '30', '--', process.execPath, '-e', holderScript(tokenFile, release)], REPO, baseEnv());
   await until(() => fs.existsSync(tokenFile) && lockEntries().some((entry) => entry.endsWith('.info')), run);
   return { run, release, token: fs.readFileSync(tokenFile, 'utf8') };
 };
@@ -234,5 +236,88 @@ describe('the run lock global setup classifies a vitest run and holds its lock',
     expect(byName['packaging']?.provide?.['momonga.runClass']).toBe('heavy');
     expect(byName['e2e']?.provide?.['momonga.runClass']).toBe('heavy');
     expect(byName['calibration']?.provide?.['momonga.runClass']).toBe('heavy');
+  });
+});
+
+const groupMembers = (pgid: number): number[] =>
+  execFileSync('ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .filter(([, group]) => group === pgid)
+    .map(([pid]) => pid as number);
+
+const groupGone = (pgid: number): Promise<void> =>
+  pollUntil(() => groupMembers(pgid).length === 0, { description: `process group ${pgid} to be gone`, boundMs: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+const heavyIsFree = (): number | null =>
+  spawnSync(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '5', '--', 'true'], { cwd: REPO, env: baseEnv(), stdio: 'ignore' }).status;
+
+const pidIn = async (file: string, run: Started): Promise<number> => {
+  await until(() => fs.existsSync(file) && fs.readFileSync(file, 'utf8').trim() !== '', run);
+  return Number(fs.readFileSync(file, 'utf8').trim());
+};
+
+describe('the lock runner bounds the command it holds the lock for', () => {
+  it('refuses a command with no CPU budget and leaves the lock free', async () => {
+    const run = startProcess(process.execPath, [WRAPPER, 'heavy', '--', 'true'], REPO, baseEnv());
+
+    expect(await run.exit).toBe(64);
+    expect(run.output()).toContain('--budget-cpu-seconds <seconds>');
+    expect(heavyIsFree()).toBe(0);
+  });
+
+  it('ends the whole group of a command that burns CPU past its budget, names the budget, and frees the lock', async () => {
+    const pidFile = path.join(root, 'pid');
+    const run = startProcess(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '1', '--', 'sh', '-c', `echo $$ > ${pidFile}; while :; do :; done`], REPO, baseEnv());
+    const pgid = await pidIn(pidFile, run);
+
+    expect(await run.exit).toBe(75);
+    expect(run.output()).toContain('run-lock: the command passed its CPU budget of 1 s');
+    await groupGone(pgid);
+    expect(heavyIsFree()).toBe(0);
+  });
+
+  it('counts a grandchild toward the budget and ends it with the group', async () => {
+    const pidFile = path.join(root, 'pid');
+    const grandchildFile = path.join(root, 'grandchild');
+    const script = `echo $$ > ${pidFile}; sh -c 'while :; do :; done' & echo $! > ${grandchildFile}; wait`;
+    const run = startProcess(process.execPath, [WRAPPER, 'light', '--budget-cpu-seconds', '1', '--', 'sh', '-c', script], REPO, baseEnv());
+    const pgid = await pidIn(pidFile, run);
+    const grandchild = await pidIn(grandchildFile, run);
+
+    expect(await run.exit).toBe(75);
+    await groupGone(pgid);
+    expect(groupMembers(pgid)).not.toContain(grandchild);
+    expect(heavyIsFree()).toBe(0);
+  });
+
+  it('ends the group and frees the lock when the process that started the runner is gone', async () => {
+    const pidFile = path.join(root, 'pid');
+    const starter = startProcess('sh', ['-c', `${JSON.stringify(process.execPath)} ${JSON.stringify(WRAPPER)} heavy --budget-cpu-seconds 600 -- sh -c 'echo $$ > ${pidFile}; sleep 600' & wait`], REPO, baseEnv());
+    const pgid = await pidIn(pidFile, starter);
+    starter.child.kill('SIGKILL');
+    await starter.exit;
+
+    await groupGone(pgid);
+    await pollUntil(() => heavyIsFree() === 0, { description: 'the heavy lock to be free', boundMs: REAL_PROCESS_TEST_TIMEOUT_MS });
+  });
+});
+
+describe('the run lock global setup bounds the vitest run that holds the lock', () => {
+  it('refuses a run whose projects record no CPU budget when none is given', async () => {
+    const run = fixtureRun(['a/x.test.ts'], { MOMONGA_RUN_CPU_BUDGET_SECONDS: undefined });
+
+    expect(await run.exit).not.toBe(0);
+    expect(run.output()).toContain('run-lock: no CPU budget for project a');
+    expect(tokenFiles()).toEqual([]);
+  });
+
+  it('ends the vitest run that burns CPU past its budget and frees the lock', async () => {
+    fs.writeFileSync(path.join(fixture, 'b', 'z.test.ts'), "test('burns', () => { for (;;) {} });\n");
+    const run = fixtureRun(['b/z.test.ts'], { MOMONGA_RUN_CPU_BUDGET_SECONDS: '2' });
+
+    expect(await run.exit).not.toBe(0);
+    expect(run.output()).toContain('run-lock: the command passed its CPU budget of 2 s');
+    expect(heavyIsFree()).toBe(0);
   });
 });

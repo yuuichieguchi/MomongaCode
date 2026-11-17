@@ -55,7 +55,7 @@ describe('the whole-run guard', () => {
 
   it('keeps the whole-run variable out of the test reuse key', () => {
     const digests = { digestOf: () => 'absent', treeDigest: () => '' };
-    const globals = globalsOf([], digests, { [WHOLE_RUN_ENV]: '1', [TEST_REUSE_ENV]: '1' });
+    const globals = globalsOf({}, digests, { [WHOLE_RUN_ENV]: '1', [TEST_REUSE_ENV]: '1' });
     expect(globals.env).not.toHaveProperty(WHOLE_RUN_ENV);
   });
 });

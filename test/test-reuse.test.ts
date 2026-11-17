@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTempDir } from '@momonga/testkit';
-import { REUSE_RECORD_FORMAT, createRepoDigests, fileFiltersOf, projectsOf, replayedSelected, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
+import { REUSE_RECORD_FORMAT, createRepoDigests, globalsOf, harnessOf, readRecord, fileFiltersOf, projectsOf, replayedSelected, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
 import type { ReuseGlobals } from './support/test-reuse.ts';
 
-const GLOBALS: ReuseGlobals = { node: 'v24.0.0', platform: 'darwin', arch: 'arm64', harness: { 'package-lock.json': 'lock' }, env: {} };
+const GLOBALS: ReuseGlobals = { node: 'v24.0.0', platform: 'darwin', arch: 'arm64', harness: { unit: { 'package-lock.json': 'lock' }, e2e: { 'package-lock.json': 'lock' } }, env: {} };
 
 const digestsOf = (files: Record<string, string>) => ({
   digestOf: (file: string): string => (file in files ? `file:${files[file]}` : 'absent'),
@@ -52,7 +52,7 @@ describe('the record of a green test file', () => {
   it('is not replayed under another Node version, lockfile, harness file or MOMONGA_ variable', () => {
     const record = recordFor({ project: 'unit', file: 'test/a.test.ts', inputs: ['test/a.test.ts'], whole: false }, digestsOf(files), GLOBALS);
     expect(isReplayable(record, digestsOf(files), { ...GLOBALS, node: 'v25.0.0' })).toBe(false);
-    expect(isReplayable(record, digestsOf(files), { ...GLOBALS, harness: { 'package-lock.json': 'other' } })).toBe(false);
+    expect(isReplayable(record, digestsOf(files), { ...GLOBALS, harness: { ...GLOBALS.harness, unit: { 'package-lock.json': 'other' } } })).toBe(false);
     expect(isReplayable(record, digestsOf(files), { ...GLOBALS, env: { MOMONGA_TLC_TIER: 'deep' } })).toBe(false);
   });
 
@@ -121,5 +121,109 @@ describe('the replayed files a run counts', () => {
     expect(replayedSelected(replayed, projectsOf(whole), fileFiltersOf(whole))).toBe(3);
     const named = ['node', 'vitest', 'run', '--project', 'unit', 'test/a.test.ts', '-t', 'name'];
     expect(replayedSelected(replayed, projectsOf(named), fileFiltersOf(named))).toBe(1);
+  });
+});
+
+describe('the harness files in the key of a project', () => {
+  const roots: string[] = [];
+
+  afterEach(() => {
+    for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const repoOf = (files: Record<string, string>): string => {
+    const root = createTempDir();
+    roots.push(root);
+    for (const [file, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), text);
+    }
+    return root;
+  };
+
+  const repo = {
+    'package.json': '{}',
+    'vitest.config.ts': "import { plan } from './test/support/plan.ts';\n",
+    'test/support/plan.ts': "export const plan = 1;\n",
+    'test/support/unit-setup.ts': "import { shared } from './shared.ts';\n",
+    'test/support/shared.ts': "import x from '@momonga/foundation';\n",
+    'packages/foundation/package.json': JSON.stringify({ name: '@momonga/foundation', exports: { '.': './src/index.ts' } }),
+    'packages/foundation/src/index.ts': "export * from './a.ts';\n",
+    'packages/foundation/src/a.ts': 'export const a = 1;\n',
+    'e2e/global-setup.ts': "import { ledger } from './support/ledger.ts';\n",
+    'e2e/support/ledger.ts': 'export const ledger = 1;\n',
+    'test/support/loaded.ts': 'export const loaded = 1;\n',
+    'packages/vendored/package.json': JSON.stringify({ name: '@momonga/vendored', exports: { './lite': { types: './lite.d.ts', default: './lite.js' } } }),
+  };
+  const spec = { shared: ['package.json', 'vitest.config.ts'], projects: { unit: ['test/support/unit-setup.ts'], e2e: ['e2e/global-setup.ts'] } };
+
+  it('holds the config and the setup files of each project with their static import closure, computed', () => {
+    const harness = harnessOf(repoOf(repo), spec);
+
+    expect(harness['unit']).toEqual(['package.json', 'packages/foundation/src/a.ts', 'packages/foundation/src/index.ts', 'test/support/plan.ts', 'test/support/shared.ts', 'test/support/unit-setup.ts', 'vitest.config.ts']);
+    expect(harness['e2e']).toEqual(['e2e/global-setup.ts', 'e2e/support/ledger.ts', 'package.json', 'test/support/plan.ts', 'vitest.config.ts']);
+  });
+
+  const recordsUnder = (files: Record<string, string>) => {
+    const root = repoOf(files);
+    const digests = createRepoDigests(root, Object.keys(files));
+    const globals = globalsOf(harnessOf(root, spec), digests, {});
+    return { digests, globals };
+  };
+
+  const changed = (file: string) => ({ ...repo, [file]: `${repo[file as keyof typeof repo]}// edited\n` });
+
+  it('leaves a unit record replayable after an edit to a support file only the e2e setup loads', () => {
+    const before = recordsUnder(repo);
+    const unit = recordFor({ project: 'unit', file: 'test/a.test.ts', inputs: [], whole: false }, before.digests, before.globals);
+    const e2e = recordFor({ project: 'e2e', file: 'e2e/a.test.ts', inputs: [], whole: false }, before.digests, before.globals);
+    const after = recordsUnder(changed('e2e/support/ledger.ts'));
+
+    expect(isReplayable(unit, after.digests, after.globals)).toBe(true);
+    expect(isReplayable(e2e, after.digests, after.globals)).toBe(false);
+  });
+
+  it('invalidates exactly the records whose test file loaded an edited support file', () => {
+    const before = recordsUnder(repo);
+    const loaded = recordFor({ project: 'unit', file: 'test/a.test.ts', inputs: ['test/support/loaded.ts'], whole: false }, before.digests, before.globals);
+    const other = recordFor({ project: 'unit', file: 'test/b.test.ts', inputs: [], whole: false }, before.digests, before.globals);
+    const after = recordsUnder(changed('test/support/loaded.ts'));
+
+    expect(isReplayable(loaded, after.digests, after.globals)).toBe(false);
+    expect(isReplayable(other, after.digests, after.globals)).toBe(true);
+  });
+
+  it('invalidates the records of the project whose setup file, or a file it imports, was edited', () => {
+    const before = recordsUnder(repo);
+    const unit = recordFor({ project: 'unit', file: 'test/a.test.ts', inputs: [], whole: false }, before.digests, before.globals);
+    const e2e = recordFor({ project: 'e2e', file: 'e2e/a.test.ts', inputs: [], whole: false }, before.digests, before.globals);
+
+    for (const file of ['test/support/unit-setup.ts', 'test/support/shared.ts', 'packages/foundation/src/a.ts']) {
+      const after = recordsUnder(changed(file));
+      expect(isReplayable(unit, after.digests, after.globals), file).toBe(false);
+      expect(isReplayable(e2e, after.digests, after.globals), file).toBe(true);
+    }
+    const afterConfig = recordsUnder(changed('test/support/plan.ts'));
+    expect(isReplayable(unit, afterConfig.digests, afterConfig.globals)).toBe(false);
+    expect(isReplayable(e2e, afterConfig.digests, afterConfig.globals)).toBe(false);
+  });
+});
+
+describe('a stored record of another format', () => {
+  it('is read as no record, never thrown on and never replayed, so the next green run replaces it', () => {
+    const dir = createTempDir();
+    try {
+      const file = path.join(dir, 'old.json');
+      fs.writeFileSync(file, JSON.stringify({ format: 'momonga-test-reuse/1', project: 'unit', file: 'test/a.test.ts', whole: false, inputs: [], key: 'k' }));
+      expect(readRecord(file)).toBeUndefined();
+      fs.writeFileSync(file, JSON.stringify({ format: REUSE_RECORD_FORMAT, project: 'unit' }));
+      expect(() => readRecord(file)).toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the run CPU budget variable out of the key, since it cannot change a green outcome', () => {
+    expect(globalsOf({}, digestsOf({}), { MOMONGA_RUN_CPU_BUDGET_SECONDS: '60', MOMONGA_TLC_TIER: 'deep' }).env).toEqual({ MOMONGA_TLC_TIER: 'deep' });
   });
 });
