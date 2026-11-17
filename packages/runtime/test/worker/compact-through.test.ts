@@ -8,6 +8,7 @@ import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import type { BudgetAccount } from '../../src/worker/admitted-request.ts';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { compactThrough } from '../../src/worker/context-step.ts';
+import { tokenPolicyOf } from '../../src/worker/token-pin.ts';
 import { capabilitiesFor } from './harness.ts';
 import { unlimitedBudget } from './unlimited-budget.ts';
 import { TEST_FENCE } from '@momonga/testkit';
@@ -132,6 +133,7 @@ const contextFor = (options: ContextOptions = {}) => {
     meter: { countItem: async () => SUMMARY_ITEM_TOKENS, count: async () => ({ inputTokens: COUNTS.tokensAfter }) },
     roles: options.roles ?? {},
     capabilities: capabilitiesFor(40_000),
+    token: tokenPolicyOf(undefined),
     verificationCommands: [],
     readers: () => ({}),
     systemPrompt: 'You are the compact-through test agent.',

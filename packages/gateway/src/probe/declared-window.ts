@@ -41,13 +41,13 @@ export class DeclaredWindowAboveReportedError extends PreconditionFailedError {
   }
 }
 
-export const refusingAdapter = (adapter: ProviderAdapter, refusal: PreconditionFailedError): ProviderAdapter => ({
+export const refusingAdapter = (adapter: ProviderAdapter, refusalAt: () => PreconditionFailedError): ProviderAdapter => ({
   ...adapter,
   capabilities: async () => {
-    throw refusal;
+    throw refusalAt();
   },
   create: async function* () {
     yield* [];
-    throw refusal;
+    throw refusalAt();
   },
 });

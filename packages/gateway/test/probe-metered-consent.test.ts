@@ -33,7 +33,7 @@ const metered = async (samples = 1) => {
       model: 'qwen-fake',
       apiKey: 'fake-paid-key',
       samples,
-      metered: { display: DISPLAY, declaredContextWindow: DECLARED_WINDOW },
+      metered: { displayOf: () => DISPLAY, declaredContextWindow: DECLARED_WINDOW },
     });
   const chatRequests = () => fake.requests.filter((request) => request.path === '/v1/chat/completions');
   return { fake, dir, key, probe, chatRequests };

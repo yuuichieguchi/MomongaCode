@@ -76,7 +76,7 @@ export const meteredGateOf = (probeRecordDir: string, key: EndpointKey, measurem
   consented: () => requireMeasurementConsent(probeRecordDir, key, measurement, samples),
 });
 
-export const endpointPrecondition = (target: string, upstream: UpstreamEndpoint, ports: ProbeHostPorts, model: string, apiKey: (signal: AbortSignal) => Promise<string | undefined>): ProbePrecondition => ({
+export const endpointPrecondition = (displayOf: () => string, upstream: UpstreamEndpoint, ports: ProbeHostPorts, model: string, apiKey: (signal: AbortSignal) => Promise<string | undefined>): ProbePrecondition => ({
   boundMs: IDENTITY_READ_TIMEOUT_MS,
   check: async (signal) => {
     const listing = await readModelsListing(probeEndpointOf(upstream, await apiKey(signal)), ports, signal);
@@ -85,7 +85,7 @@ export const endpointPrecondition = (target: string, upstream: UpstreamEndpoint,
       kind: 'refused',
       message: `the server does not list the model "${model}"`,
       detail: 'GET /v1/models has no entry whose id is the id of the model',
-      remedy: `set the id of the model "${target}" to one that GET /v1/models lists, or serve the model under that id`,
+      remedy: `set the id of the model "${displayOf()}" to one that GET /v1/models lists, or serve the model under that id`,
     };
   },
 });
@@ -120,7 +120,7 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
     key: options.key,
     probeRecordDir: options.probeRecordDir,
     lock: options.lock,
-    precondition: endpointPrecondition(endpointLockKeyOf(options.key).target, options.upstream, options.ports, options.model, async () => options.apiKey),
+    precondition: endpointPrecondition(() => endpointLockKeyOf(options.key).target, options.upstream, options.ports, options.model, async () => options.apiKey),
     measure: measureEndpoint(measureOptionsOf(options)),
     currency: {
       userDialects: options.userDialects ?? NO_USER_DIALECTS,

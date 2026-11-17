@@ -45,7 +45,7 @@ describe('the tools a target is offered', () => {
   });
 
   it('do not change with the length of the task, because the task is not part of the floor', async () => {
-    const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+    const capabilities = capabilitiesFor(1_600, { maxOutputTokens: 1024 });
     const { ports } = harness(capabilities);
     const task = (text: string) => ({ type: 'message' as const, role: 'user' as const, content: text });
     const short = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task: task('Do the work.') }) }), ports);

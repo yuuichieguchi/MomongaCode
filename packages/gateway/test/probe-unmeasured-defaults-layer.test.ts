@@ -15,7 +15,7 @@ const targetOf = (written: Record<string, unknown>, report: ProbeReport | null, 
   createProbedEndpointTarget({
     toolCalling,
     readReported: async () => ({}),
-    targetName: 'remote',
+    displayOf: () => 'remote',
     endpoint: 'unix:/nowhere',
     model: 'm',
     declared: UNMEASURED_DEFAULTS,

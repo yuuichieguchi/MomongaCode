@@ -72,7 +72,7 @@ describe('a probed endpoint target carries the measured JSON-only mode', () => {
 
   const capabilitiesOf = (declared: Capabilities, report: ProbeReport) =>
     createProbedEndpointTarget({ written: declared,
-      toolCalling: 'auto', readReported: async () => ({}), targetName: 'remote',
+      toolCalling: 'auto', readReported: async () => ({}), displayOf: () => 'remote',
       endpoint: 'unix:/nowhere',
       model: 'm',
       declared,

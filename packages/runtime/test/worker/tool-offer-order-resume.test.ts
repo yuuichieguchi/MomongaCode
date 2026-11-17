@@ -15,7 +15,7 @@ const withoutLoader = (names: readonly string[]): string[] => names.filter((name
 
 const workTools = (env: Env) => () => env.toolbox.tools().filter((tool) => WORK_TOOLS.includes(tool.name));
 
-const PINNED_WINDOW = 1300;
+const PINNED_WINDOW = 1400;
 
 const pinnedDigestsOf = (env: Env, runId: string): string[] =>
   env.ofType(runId, 'run.started').map((event) => (event.pins as { toolSetDigest: string }).toolSetDigest);
