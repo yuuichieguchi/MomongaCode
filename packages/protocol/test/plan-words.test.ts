@@ -55,6 +55,7 @@ describe('the words of the plan API are protocol constants (A4)', () => {
       'jwks_unavailable',
       'identity_mismatch',
       'identity_not_exchanged',
+      'identity_late',
     ]);
     expect(Object.keys(PLAN_SIGN_IN_FAILURE_RULES)).toEqual(Object.values(PLAN_SIGN_IN_FAILURE));
     expect(PLAN_SIGN_IN_FAILURES).toEqual(Object.values(PLAN_SIGN_IN_FAILURE));
