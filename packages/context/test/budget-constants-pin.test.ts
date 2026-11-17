@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { budgetFor, inputCeilingFor, itemCapFor } from '@momonga/context';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
+  FENCE_BOUNDARY_LENGTH,
   MARGIN_RATIO,
   MAX_SUMMARY_TOKENS,
   MIN_MARGIN,
@@ -14,7 +15,9 @@ import {
   marginFloorFor,
   outputReserveFor,
   summaryItemTokensFor,
+  compactionSummaryMessage,
   summaryTokenCapFor,
+  tokensForText,
 } from '@momonga/protocol';
 import { capabilitiesFor } from './helpers.ts';
 
@@ -28,16 +31,16 @@ describe('budget constants are pinned by literal values', () => {
     expect(SUMMARY_WINDOW_RATIO).toBe(0.06);
     expect(SUMMARY_ROOM_RATIO).toBe(0.3);
     expect(SUMMARY_ACCEPT_RATIO).toBe(1.3);
-    expect(SUMMARY_ITEM_OVERHEAD).toBe(69);
+    expect(SUMMARY_ITEM_OVERHEAD).toBe(tokensForText(String(compactionSummaryMessage('', 'model', 'b'.repeat(FENCE_BOUNDARY_LENGTH)).content)));
     expect(SUMMARY_PROMPT_TOKENS).toBe(484);
   });
 
   it.for([
-    [113, 216],
-    [189, 315],
-    [246, 389],
-  ] as const)('summaryItemTokensFor(%i) is %i', ([cap, tokens]) => {
-    expect(summaryItemTokensFor(cap)).toBe(tokens);
+    [113],
+    [189],
+    [246],
+  ] as const)('summaryItemTokensFor(%i) is the accepted summary tokens plus the item overhead', ([cap]) => {
+    expect(summaryItemTokensFor(cap)).toBe(Math.ceil(cap * SUMMARY_ACCEPT_RATIO) + SUMMARY_ITEM_OVERHEAD);
   });
 });
 

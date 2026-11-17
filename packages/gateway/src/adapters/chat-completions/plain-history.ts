@@ -21,8 +21,8 @@ export const toolCallsText = (calls: ReadonlyArray<{ name: string; arguments: un
 
 export const finalReplyText = (text: string): string => canonicalJson({ kind: 'final', text });
 
-export const summaryMessageOf = (summary: string): ChatMessage => {
-  const { role, content } = compactionSummaryMessage(summary, 'model');
+export const summaryMessageOf = (summary: string, boundary: string): ChatMessage => {
+  const { role, content } = compactionSummaryMessage(summary, 'model', boundary);
   return { role, content };
 };
 
@@ -102,7 +102,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
     }
     flushCalls();
     if (item.type === 'compaction_summary') {
-      list.push(summaryMessageOf(item.summary));
+      list.push(summaryMessageOf(item.summary, fenceOf(options.boundary)));
     } else if (item.type === 'function_call_output') {
       const name = namesByCallId.get(item.call_id);
       if (name === undefined) {
@@ -140,7 +140,7 @@ export const nativeHistoryOf = (input: readonly AdapterInputItem[], origin: Reas
     }
     flushCalls();
     if (item.type === 'compaction_summary') {
-      list.push(summaryMessageOf(item.summary));
+      list.push(summaryMessageOf(item.summary, fenceOf(fence)));
     } else if (item.type === 'function_call_output') {
       list.push({ role: 'tool', tool_call_id: item.call_id, content: textOfContent(item.output) });
     } else if (item.role === 'user') {

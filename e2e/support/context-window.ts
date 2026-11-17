@@ -71,7 +71,7 @@ const widestFactlessWorkingStateText = (capabilities: Capabilities): string => {
 
 const factlessWorkingStateTokensOf = async (client: GatewayCountClient, capabilities: Capabilities): Promise<number> => {
   const meter = createTokenMeter({ counter: { count: (request) => client.gateway.countTokens(request, { signal: AbortSignal.timeout(E2E_MARGIN_MS) }) }, model: E2E_MODEL, capabilities });
-  return meter.countItem(workingStateMessage(widestFactlessWorkingStateText(capabilities)), { callNames: {}, withTools: true });
+  return meter.countItem(workingStateMessage(widestFactlessWorkingStateText(capabilities), TEST_FENCE), { callNames: {}, withTools: true });
 };
 
 const calibrationDataset = (): string =>

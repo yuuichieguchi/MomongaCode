@@ -654,7 +654,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
   const workingStateItems: InputItem[] =
-    sources.summary === undefined || sources.workingState === undefined ? [] : [workingStateMessage(sources.workingState(readersOffered(sources.readers, tools)))];
+    sources.summary === undefined || sources.workingState === undefined ? [] : [workingStateMessage(sources.workingState(readersOffered(sources.readers, tools)), input.fence)];
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
   const roomLeft = ceiling - floorTokens;
@@ -963,7 +963,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   const workingStateGrowth = async (): Promise<number> => {
     if (sources.projectedWorkingState === undefined) return 0;
-    const projected = await meter.countItem(workingStateMessage(sources.projectedWorkingState), countContextFor(''));
+    const projected = await meter.countItem(workingStateMessage(sources.projectedWorkingState, input.fence), countContextFor(''));
     const current = workingStateItems[0] === undefined ? 0 : await meter.countItem(workingStateItems[0], countContextFor(''));
     return Math.max(0, projected - current);
   };
@@ -1049,7 +1049,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
             before: [...layers],
             after: [
               ...withTask(slots.slice(cutIndex + 1)),
-              ...(sources.projectedWorkingState === undefined ? workingStateItems : [workingStateMessage(sources.projectedWorkingState)]),
+              ...(sources.projectedWorkingState === undefined ? workingStateItems : [workingStateMessage(sources.projectedWorkingState, input.fence)]),
               ...trailing,
             ],
             tools: [...tools],

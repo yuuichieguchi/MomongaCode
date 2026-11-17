@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SUMMARY_ITEM_OVERHEAD, compactionSummaryMessage, tokensForText } from '@momonga/protocol';
 
-const emptyTokens = (origin: 'model' | 'code'): number => tokensForText(String(compactionSummaryMessage('', origin).content));
+const emptyTokens = (origin: 'model' | 'code'): number => tokensForText(String(compactionSummaryMessage('', origin, '0'.repeat(32)).content));
 
 describe('SUMMARY_ITEM_OVERHEAD', () => {
   it('is the token estimate of the larger empty framed summary message', () => {

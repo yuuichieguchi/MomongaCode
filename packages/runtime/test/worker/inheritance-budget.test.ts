@@ -72,7 +72,7 @@ describe('compaction of inherited history', () => {
     const big = (label: string, size = 6000): string => `${label} `.padEnd(size, 'a');
     await completeSeeded(env, 'question one', [
       requestedPayload(1),
-      respondedPayload(1, [assistantMessage('msg_1', big('answer one', 6400))]),
+      respondedPayload(1, [assistantMessage('msg_1', big('answer one', 7000))]),
       { type: 'user.message', text: 'question two' },
       requestedPayload(2),
       respondedPayload(2, [assistantMessage('msg_2', big('answer two'))]),
@@ -173,7 +173,6 @@ describe('pinned_overflow across runs', () => {
 
 describe('an inherited compaction item the gateway rejects', () => {
   const SUMMARY_TEXT = 'We fixed the <parser> bug';
-  const PLAIN_SUMMARY: MessageInputItem = compactionSummaryMessage('We fixed the <parser> bug', 'model');
 
   it('is replaced by the plain summary in run 2, which completes', async () => {
     const env = await makeEnv();
@@ -199,13 +198,13 @@ describe('an inherited compaction item the gateway rejects', () => {
     expect(env.ofType(second.id, 'context.compaction_rejected')).toHaveLength(1);
     const input = firstRequestInput(env, second.id);
     expect(input.some((item) => item.type === 'compaction')).toBe(false);
-    expect(input).toContainEqual(PLAIN_SUMMARY);
+    expect(input).toContainEqual(compactionSummaryMessage('We fixed the <parser> bug', 'model', env.session.fenceNonce));
     const conversation = firstConversation(env, second.id);
     expect(conversation.slice(-4, -1)).toEqual([
       ['user', 'question two'],
       ['assistant', 'answer two'],
       ['user', 'question three'],
     ]);
-    expect(conversation.at(-1)?.[1]).toMatch(/^<working_state>/);
+    expect(conversation.at(-1)?.[1]).toMatch(/\n<working_state boundary="[0-9a-f]{32}">\n/);
   });
 });

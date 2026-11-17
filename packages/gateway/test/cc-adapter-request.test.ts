@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import type { AdapterRequest } from '@momonga/protocol';
-import { CC_CAPABILITIES, collect, lastCompletionBody, listDirTool, makeAdapter, readFileTool, startFake, terminalOf, userText, MODEL_FRAMING } from './cc-support.ts';
+import { CC_CAPABILITIES, collect, lastCompletionBody, listDirTool, makeAdapter, readFileTool, startFake, terminalOf, userText, summaryTextOf, SUMMARY_FENCE } from './cc-support.ts';
 
 const API_KEY = 'momonga-test-api-key';
 
 const historyRequest = (): AdapterRequest => ({
+  fence: SUMMARY_FENCE,
   model: 'system',
   instructions: 'Be terse.',
   input: [
@@ -46,7 +47,7 @@ describe('chat-completions request mapping', () => {
     expect(system).not.toContain('Earlier we discussed the parser.');
     expect(messages[1]).toEqual({
       role: 'user',
-      content: `<conversation_summary>\n${MODEL_FRAMING}\nEarlier we discussed the parser.\n</conversation_summary>\n\nHello`,
+      content: `${summaryTextOf('Earlier we discussed the parser.')}\n\nHello`,
     });
   });
 
@@ -55,7 +56,7 @@ describe('chat-completions request mapping', () => {
     await collect(makeAdapter(fake), historyRequest());
     const messages = lastCompletionBody(fake).messages as any[];
     expect(messages).toHaveLength(6);
-    expect(messages[1]).toEqual({ role: 'user', content: `<conversation_summary>\n${MODEL_FRAMING}\nEarlier we discussed the parser.\n</conversation_summary>\n\nHello` });
+    expect(messages[1]).toEqual({ role: 'user', content: `${summaryTextOf('Earlier we discussed the parser.')}\n\nHello` });
     expect(messages[2]).toEqual({ role: 'assistant', content: 'Hi there' });
     expect(messages[3].role).toBe('assistant');
     expect([null, undefined, '']).toContain(messages[3].content);

@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MIN_ITEM_CAP,
   MIN_ROOM_TOKENS,
   PinnedOverflowError,
   PinnedRoomError,
   buildContext,
+  WORKING_STATE_MESSAGE_MIN_TOKENS,
   inputCeilingFor,
   itemCapFor,
   measurePinned,
 } from '@momonga/context';
+import { MIN_SUMMARY_TOKENS, summaryItemTokensFor } from '@momonga/protocol';
 import type { InputItem } from '@momonga/protocol';
 import {
   READ_TOOL,
@@ -69,27 +72,27 @@ describe('PinnedOverflowError names the ceiling and the breakdown', () => {
 describe('minimum room above the pinned prefix', () => {
   const capabilities = capabilitiesFor(1024);
 
-  it('is 317 tokens: an item, the summary item of the smallest summary, and the smallest working-state message', () => {
-    expect(MIN_ROOM_TOKENS).toBe(317);
+  it('is an item, the summary item of the smallest summary, and the smallest working-state message', () => {
+    expect(MIN_ROOM_TOKENS).toBe(MIN_ITEM_CAP + summaryItemTokensFor(MIN_SUMMARY_TOKENS) + WORKING_STATE_MESSAGE_MIN_TOKENS);
   });
 
-  it('fails with the minimum-room subtype when the prefix fits but leaves 316 tokens', async () => {
-    const error = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1570) }) }), harness(capabilities).ports).catch(
+  it('fails with the minimum-room subtype when the prefix fits but leaves one token less than the minimum', async () => {
+    const error = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1394) }) }), harness(capabilities).ports).catch(
       (caught: unknown) => caught,
     );
 
     expect(error).toBeInstanceOf(PinnedRoomError);
     expect(error).toBeInstanceOf(PinnedOverflowError);
     const room = error as PinnedRoomError;
-    expect(room.pinnedTokens).toBe(420);
+    expect(room.pinnedTokens).toBe(736 - (MIN_ROOM_TOKENS - 1));
     expect(room.ceiling).toBe(736);
-    expect(room.room).toBe(316);
-    expect(room.minimum).toBe(317);
+    expect(room.room).toBe(MIN_ROOM_TOKENS - 1);
+    expect(room.minimum).toBe(MIN_ROOM_TOKENS);
   });
 
-  it('builds when exactly 317 tokens remain', async () => {
-    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1566) }) }), harness(capabilities).ports);
-    expect(built.inputTokens).toBe(419);
+  it('builds when exactly the minimum remains', async () => {
+    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1390) }) }), harness(capabilities).ports);
+    expect(built.inputTokens).toBe(inputCeilingFor(capabilities) - MIN_ROOM_TOKENS);
   });
 
   it('fails measurePinned with the same subtype', async () => {

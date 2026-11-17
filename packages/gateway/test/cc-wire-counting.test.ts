@@ -1,5 +1,5 @@
-import { TEST_FENCE } from '@momonga/testkit';
-import { fenceToolOutput } from '@momonga/protocol';
+import { TEST_FENCE, fenceBoundaryIn } from '@momonga/testkit';
+import { fenceToolOutput, fenceUntrusted } from '@momonga/protocol';
 import { toolResultBlock } from '../src/adapters/chat-completions/plain-history.ts';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
@@ -172,7 +172,8 @@ describe('POST /v1/momonga/count_tokens counts the chat-completions wire', () =>
     const { harness, fake } = await gatewayFor('native');
     const body = { input: [signedCompaction('Earlier <work> was done.'), userText('continue')] };
     const wire = (await sentWire(harness, fake, body)) as { messages: Array<{ content: string }> };
-    expect(wire.messages[0]?.content).toBe(`<conversation_summary>\n${MODEL_FRAMING}\nEarlier &lt;work> was done.\n</conversation_summary>\n\ncontinue`);
+    const boundary = fenceBoundaryIn(wire.messages[0]?.content ?? '');
+    expect(wire.messages[0]?.content).toBe(`${MODEL_FRAMING}\n${fenceUntrusted('conversation_summary', {}, 'Earlier <work> was done.', boundary)}\n\ncontinue`);
     const counted = await count(harness, body);
     expect(counted.status).toBe(200);
     expect(counted.body.input_tokens).toBe(tokensOfWire(wire));

@@ -15,6 +15,7 @@ import { LOWEST_REASONING_EFFORT, outputTokensFor } from './capabilities.ts';
 import type { Capabilities } from './capabilities.ts';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from './characters-per-token.ts';
 import { compactionSummaryMessage } from './compaction-summary.ts';
+import { FENCE_BOUNDARY_LENGTH } from './user-content.ts';
 import { tokensForText } from './estimate-tokens.ts';
 import type { CountTokensMethod, CountTokensResult } from './gateway-api.ts';
 
@@ -26,9 +27,10 @@ export const MIN_MARGIN = 32;
 export const ESTIMATED_ERROR_BOUND_RATIO = ESTIMATED_ERROR.num / ESTIMATED_ERROR.den;
 export const MIN_SUMMARY_TOKENS = 64;
 export const MAX_SUMMARY_TOKENS = 4096;
+const SUMMARY_BOUNDARY_WIDTH = '0'.repeat(FENCE_BOUNDARY_LENGTH);
 export const SUMMARY_ITEM_OVERHEAD = Math.max(
-  tokensForText(String(compactionSummaryMessage('', 'model').content)),
-  tokensForText(String(compactionSummaryMessage('', 'code').content)),
+  tokensForText(String(compactionSummaryMessage('', 'model', SUMMARY_BOUNDARY_WIDTH).content)),
+  tokensForText(String(compactionSummaryMessage('', 'code', SUMMARY_BOUNDARY_WIDTH).content)),
 );
 export const SUMMARY_PROMPT_TOKENS = 484;
 export const SUMMARY_FOCUS_LABEL = 'The user asked for this focus in the note. Give it the most room; the rules above still hold.';

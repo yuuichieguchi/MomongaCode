@@ -12,22 +12,22 @@ const call = (argumentsText: string) => ({ type: 'function_call', id: 'fc_1', ca
 
 describe('the content a chat span carries and the one JSON depth bound', () => {
   it('carries the parsed arguments of a call within the bound, and the text of malformed arguments', () => {
-    expect(chatRequestContentOf([call('{"a":1}')], null, null).inputMessages).toEqual([
+    expect(chatRequestContentOf([call('{"a":1}')], null, null, 'b'.repeat(32)).inputMessages).toEqual([
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'call_1', name: 'Tree', arguments: { a: 1 } }] },
     ]);
-    expect(chatRequestContentOf([call('{not json')], null, null).inputMessages).toEqual([
+    expect(chatRequestContentOf([call('{not json')], null, null, 'b'.repeat(32)).inputMessages).toEqual([
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'call_1', name: 'Tree', arguments: '{not json' }] },
     ]);
   });
 
   it('replaces the arguments of a request call deeper than the bound by the placeholder', () => {
-    expect(chatRequestContentOf([call(TOO_DEEP)], null, null).inputMessages).toEqual([
+    expect(chatRequestContentOf([call(TOO_DEEP)], null, null, 'b'.repeat(32)).inputMessages).toEqual([
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'call_1', name: 'Tree', arguments: ARGUMENTS_TOO_DEEP }] },
     ]);
   });
 
   it('replaces a tool output deeper than the bound by the placeholder that names a tool output', () => {
-    expect(chatRequestContentOf([{ type: 'function_call_output', call_id: 'call_1', output: TOO_DEEP }], null, null).inputMessages).toEqual([
+    expect(chatRequestContentOf([{ type: 'function_call_output', call_id: 'call_1', output: TOO_DEEP }], null, null, 'b'.repeat(32)).inputMessages).toEqual([
       { role: 'tool', parts: [{ type: 'tool_call_response', id: 'call_1', response: TOOL_OUTPUT_TOO_DEEP }] },
     ]);
   });

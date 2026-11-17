@@ -13,6 +13,8 @@ export const sessionFenceOf = (session: { fenceNonce: string }): string => sessi
 
 export const FENCE_BOUNDARY_MARKER = '[fence-boundary]';
 
+export const FENCE_BOUNDARY_LENGTH = 32;
+
 const withoutBoundary = (text: string, boundary: string): string => text.replaceAll(boundary, FENCE_BOUNDARY_MARKER);
 
 const fenceHeadOf = (tag: string, attributes: Readonly<Record<string, string>>, boundary: string): string =>

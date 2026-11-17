@@ -198,7 +198,7 @@ const compactedPrefix: RunEventPayload[] = [
   { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'searched for x'), summary: 'searched for x', replacedThroughSeq: 2 },
 ];
 
-const plainSummary = compactionSummaryMessage('searched for x', 'model');
+const plainSummary = compactionSummaryMessage('searched for x', 'model', '0'.repeat(32));
 
 export const compactionRejectedAtBuildRun: RecordedRun = {
   name: 'compaction rejected at build',

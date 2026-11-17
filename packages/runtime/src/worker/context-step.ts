@@ -119,7 +119,7 @@ const workingStateOf = (ctx: ClaimContext, state: RunState): ((readers: Referenc
 const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
   state.history.length === 0
     ? undefined
-    : renderedWorkingState(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage('', 'model'), ''), workingStateCapFor(ctx.capabilities), ctx.readers());
+    : renderedWorkingState(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage('', 'model', sessionFenceOf(sessionOf(ctx))), ''), workingStateCapFor(ctx.capabilities), ctx.readers());
 
 type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[]; offered: string; governing: string; kinds: string };
 
@@ -389,7 +389,7 @@ const countsWith = async (ctx: ClaimContext, plan: CompactionSource, item: Compa
 };
 
 const deterministicCompaction = async (ctx: ClaimContext, plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): Promise<CompactedPayload> => {
-  const item = compactionSummaryMessage(DETERMINISTIC_SUMMARY_TEXT, 'code');
+  const item = compactionSummaryMessage(DETERMINISTIC_SUMMARY_TEXT, 'code', sessionFenceOf(sessionOf(ctx)));
   return {
     type: 'context.compacted',
     item,
@@ -610,7 +610,7 @@ export const recoverRejectedCompaction = async (ctx: ClaimContext, error: unknow
     });
     return 'done';
   }
-  ctx.journal.append([{ type: 'context.compaction_rejected', ...(position ?? {}), item: compactionSummaryMessage(summary.summary, 'model') }]);
+  ctx.journal.append([{ type: 'context.compaction_rejected', ...(position ?? {}), item: compactionSummaryMessage(summary.summary, 'model', sessionFenceOf(sessionOf(ctx))) }]);
   return 'recovered';
 };
 
