@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../src/process-ports.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createUdsClient, createJsonLogger, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -20,7 +21,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
     models: modelsOf({ local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...(billing === undefined ? {} : { billing }) } }),
     ...(pricing === undefined ? {} : { pricing }),
   });
-  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+  const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

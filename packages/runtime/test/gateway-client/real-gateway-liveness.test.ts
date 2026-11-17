@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../../gateway/src/process-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -57,7 +58,7 @@ beforeAll(async () => {
     (cleanup) => {
       closeGateway = cleanup;
     },
-    () => startGatewayProcess({ platform: process.platform,
+    () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

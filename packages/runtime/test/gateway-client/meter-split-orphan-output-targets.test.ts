@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../../gateway/src/process-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -52,7 +53,7 @@ const launch = async (home: string) => {
   await prepareGatewayHome(home);
   const gateway = await registerOwned(
     (cleanup) => void closers.push(cleanup),
-    () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' }),
+    () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' }),
   );
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   closers.push(() => client.destroy().catch(() => {}));

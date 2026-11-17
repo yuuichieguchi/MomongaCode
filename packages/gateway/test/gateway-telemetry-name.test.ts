@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../src/process-ports.ts';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,7 +34,7 @@ describe('gateway process telemetry name (system timers)', () => {
     const home = makeHome();
     writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath) }) });
     captureStdout();
-    const handle = await registerOwned(registerCleanup, () => startGatewayProcess({ platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }));
+    const handle = await registerOwned(registerCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }));
     const client = clientFor(handle.socketPath);
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hi') }));
     expect(response.status).toBe(200);

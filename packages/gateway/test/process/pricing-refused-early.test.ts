@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../src/process-ports.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -19,7 +20,7 @@ describe('a pricing list the settings refuse stops the gateway before any part i
       pricing: [PRICE, { ...PRICE, inputPerMTok: 9 }],
     });
     await expect(
-      registerOwned(context, () => startGatewayProcess({ platform: process.platform,
+      registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
         locks: testLocks(),
         generation: FIRST_GENERATION,
         home,
