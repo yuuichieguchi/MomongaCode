@@ -4324,13 +4324,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 31425144,
-      "measuredSeconds": 441.54,
+      "distinctStates": 28444,
+      "measuredSeconds": 2.07,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2280.75,
-      "budgetCpuSeconds": 4565,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.09 at start)",
-      "identity": "bedd931b79cac8d4f82f4eebd7b88092dd5fb4f204ee7c3bd771c8cb20658f21"
+      "measuredCpuSeconds": 5.51,
+      "budgetCpuSeconds": 15,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.83 at start)",
+      "identity": "fe6d037b49a6ffeb4a718a113060051cdaf95e11469575d4709e3a331d1501c9"
     },
     {
       "config": "ProcessMarker.retryLive",
