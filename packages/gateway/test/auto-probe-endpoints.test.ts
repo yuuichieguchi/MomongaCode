@@ -81,11 +81,12 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
     const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system', testKernelLock());
 
+    let lockHeld = true;
     let lockPolls = 0;
     const timers = {
       ...systemTiming,
       setTimeout: (callback: () => void, ms: number): unknown => {
-        if (ms === POLL_INTERVAL_MS) lockPolls += 1;
+        if (lockHeld && ms === POLL_INTERVAL_MS) lockPolls += 1;
         return systemTiming.setTimeout(callback, ms);
       },
     };
@@ -98,6 +99,7 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     expect(settled).toBe(false);
     expect(fs.existsSync(probeRecordDir) ? fs.readdirSync(probeRecordDir).filter((name) => name.endsWith('.json')) : []).toEqual([]);
 
+    lockHeld = false;
     held.release();
     await probing;
     expect(fs.readdirSync(probeRecordDir).filter((name) => name.endsWith('.json'))).toHaveLength(1);
