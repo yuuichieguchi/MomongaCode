@@ -15,7 +15,7 @@ import { createE2eHome } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { createRuntimeClient } from './runtime-client.ts';
 import { startStack } from './stack.ts';
-import { chatCompletions, messagesOf, reportedTokensOf, textReply } from './upstream.ts';
+import { chatCompletions, messagesOf, reportedTokensOf, reportedTokensOfRequest, textReply } from './upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './wait.ts';
 import { firstGeneration } from '@momonga/testkit';
 
@@ -296,7 +296,7 @@ describe('acceptance (a) support', () => {
     for (const [index, event] of requested.entries()) expect((await count.count(event.data['body'])).input_tokens).toBe(wireTokensOfBody(modelPosts[index]?.body));
     const completed = ofType(journal, 'tool.completed');
     expect(predicted.journal.filter((event) => event.type === 'tool.completed').map((event) => event.data['output'])).toEqual(completed.map((event) => event.data['output']));
-    for (const post of modelPosts) expect(wireTokensOfBody(post.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
+    for (const post of modelPosts) expect(reportedTokensOfRequest(post.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
   });
 });
 
