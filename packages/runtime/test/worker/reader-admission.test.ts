@@ -53,6 +53,7 @@ const toolNamesOf = (body: unknown): string[] => ((body as { tools?: { name: str
 
 const envFor = async (observedCapacity: boolean): Promise<Env> => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW, { maxOutputTokens: OUTPUT }), mode: 'bypassPermissions' });
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
   env.settings.contextValue = { ...env.settings.contextValue, observedCapacity };
   return env;
 };

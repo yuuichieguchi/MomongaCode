@@ -44,7 +44,7 @@ const workToolsOf = (env: Env, extra: readonly AnyTool[] = []) => (): AnyTool[] 
 
 const deferralEnv = async (context: Partial<ResolvedContextSettings> = {}, capabilities?: Capabilities) => {
   const env = await makeEnv(capabilities === undefined ? {} : { capabilities });
-  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: true };
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: true, conciseDescriptions: false };
   env.settings.contextValue = { ...TOKEN_SETTINGS_OFF, ...context };
   return env;
 };

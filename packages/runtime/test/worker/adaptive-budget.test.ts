@@ -39,6 +39,7 @@ const shareOf = (env: Env, runId: string): unknown => env.ofType(runId, 'run.sta
 
 const adaptiveEnv = async (): Promise<Env> => {
   const env = await makeEnv({ mode: 'bypassPermissions' });
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
   env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: true, autoCompact: true };
   return env;
 };
@@ -54,6 +55,7 @@ const startRun = async (env: Env): Promise<string> => {
 describe('adaptive memory budget at run start', () => {
   it('pins a share only when the setting is on, for the same window', async () => {
     const off = await makeEnv({ mode: 'bypassPermissions' });
+    off.settings.toolsValue = { ...off.settings.toolsValue, deferral: false, conciseDescriptions: false };
     off.settings.contextValue = { ...off.settings.contextValue, adaptiveBudget: false };
     await finishPasts(off, 20, { injected: 1, used: 0 });
     const on = await adaptiveEnv();
@@ -229,6 +231,7 @@ describe('a pinned share', () => {
     const notes = [0, 1, 2, 3].map((index) => `note ${index} ${'keep the notes '.repeat(33).trim()}`);
     const recalledIn = async (adaptive: boolean): Promise<number> => {
       const env = await makeEnv({ mode: 'bypassPermissions', capabilities: capabilitiesFor(4000) });
+      env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
       env.gateway.script.push(...notes.map((text, index) => callsStep([{ callId: `call_m_${index}`, name: 'MemorySave', args: { text, scope: 'user' } }])), textStep('Saved.'));
       await env.enqueue('Remember this', { history: 'fresh' });
       await env.runOnce(memoryWorker(env, 'saver'));

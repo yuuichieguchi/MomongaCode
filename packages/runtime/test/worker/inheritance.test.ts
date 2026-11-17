@@ -64,6 +64,7 @@ const nextRun = async (env: Env, task: string, answer = 'Next answer.'): Promise
 describe('two runs in one session', () => {
   it('sends run 1 conversation in order and then the run 2 task, with context.inherited before run.started', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     await answered(env, 'Say hello', 'Hello there.');
     const second = await nextRun(env, 'And again', 'Again.');
 
@@ -83,6 +84,7 @@ describe('two runs in one session', () => {
 
   it('does not re-execute inherited tool calls and records no tool.call before its own response', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([echo('call_e_1', 'one')]), textStep('Echoed.'));
     const first = await env.enqueue('Echo one');
     await settle(env, first.id);
@@ -122,6 +124,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('closes calls of a run cancelled between model.responded and recordCalls', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...env.settings.contextValue, outputFormatters: [] };
     const first = await env.enqueue('Write both');
     await env.seed(first.id, [startedPayload(), requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1')), functionCallItem(writeCall(env, 'call_w_2'))])], 'release');
@@ -134,6 +137,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('closes a call whose approval wait was withdrawn by the cancel', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([writeCall(env, 'call_w_1')]));
     const first = await env.enqueue('Write it');
     await env.runOnce(env.worker());
@@ -148,6 +152,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('closes the repeated call of a run stopped by the loop check', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...env.settings.contextValue, loopGuidance: false };
     env.gateway.script.push(callsStep([echo('call_l_1', 'same')]), callsStep([echo('call_l_1', 'same')]), callsStep([echo('call_l_1', 'same')]));
     const first = await env.enqueue('Loop', { limits: { loopThreshold: 3 } });
@@ -161,6 +166,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('closes the calls of a run that failed after its model response', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const first = await env.enqueue('Write it');
     const claim = await env.seed(first.id, [requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1'))])], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'server_error', message: 'upstream failed' } })).kind).toBe('ok');
@@ -172,6 +178,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('marks a started call of a failed run as having an unknown effect', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const first = await env.enqueue('Write it');
     const file = path.join(env.project, 'call_w_1.txt');
     const claim = await env.seed(
@@ -189,6 +196,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
 
   it('closes a call whose run reached its deadline while its approval waited', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([writeCall(env, 'call_w_1')]));
     const first = await env.enqueue('Write it', { deadlineAt: START_MS + 60_000 });
     await env.runOnce(env.worker());
@@ -215,6 +223,7 @@ describe('interrupted run 1 in the request of run 2', () => {
 
   it('sends the partial text as an incomplete assistant item, then the interrupted marker, then the task', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const first = await env.enqueue('Talk');
     const opening: StreamEvent[] = [
       { type: 'response.created', sequence_number: 0, response: responseResource({ id: 'resp_partial', model: MODEL_ID, status: 'in_progress' }) },
@@ -248,6 +257,7 @@ describe('interrupted run 1 in the request of run 2', () => {
 
   it('sends the unanswered task, the marker and the new task as three separate user items', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const blocked = gated(textStep('never delivered'), 0);
     env.gateway.script.push(blocked);
     const first = await env.enqueue('First request');
@@ -270,6 +280,7 @@ describe('interrupted run 1 in the request of run 2', () => {
 describe('run-local limits and loop detection', () => {
   it('gives run 2 its own maxSteps and maxTotalTokens and starts its usage at 0', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([echo('call_e_1', 'one')], usageOf(400, 10)), textStep('First done.', { usage: usageOf(400, 10) }));
     const first = await env.enqueue('Echo one', { limits: { maxSteps: 2, maxTotalTokens: 100_000 } });
     expect((await settle(env, first.id)).status).toBe('COMPLETED');
@@ -291,6 +302,7 @@ describe('run-local limits and loop detection', () => {
 
   it('does not count run 1 calls toward a loop in run 2', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([echo('call_s_1', 'same')]), callsStep([echo('call_s_1', 'same')]), textStep('Stopped repeating.'));
     const first = await env.enqueue('Echo', { limits: { loopThreshold: 3 } });
     expect((await settle(env, first.id)).status).toBe('COMPLETED');
@@ -307,6 +319,7 @@ describe('run-local limits and loop detection', () => {
 
   it('still stops a genuine loop inside run 2 at its own third repetition', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...env.settings.contextValue, loopGuidance: false };
     env.gateway.script.push(callsStep([echo('call_s_1', 'same')]), callsStep([echo('call_s_1', 'same')]), textStep('Stopped repeating.'));
     const first = await env.enqueue('Echo', { limits: { loopThreshold: 3 } });
@@ -326,6 +339,7 @@ describe('run-local limits and loop detection', () => {
 describe('a response rejected for a reused call id is not inherited', () => {
   it('lets run 3 inherit run 1 and the run 2 task, without any part of the rejected response', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.rewriteCallIds = false;
     env.gateway.script.push(callsStep([echo('call_1', 'first')]), textStep('Done one.'));
     const first = await env.enqueue('Echo first');
@@ -355,6 +369,7 @@ describe('a response rejected for a reused call id is not inherited', () => {
 describe('first claim CANCELLING', () => {
   it('still appends context.inherited, keeps the inherited conversation and drops only the cancelled task', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     await answered(env, 'Say hello', 'Hello there.');
     const second = await env.enqueue('Cancelled early');
     await env.seed(second.id, [], 'crash');
@@ -380,6 +395,7 @@ describe('first claim CANCELLING', () => {
 describe('inheritance failures', () => {
   it('fails run 2 with previous_run_unreadable after exactly one attempt; fresh recovers and the next run inherits from it only', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const first = await answered(env, 'Say hello', 'Hello there.');
     plantUnreadableEvent(env, first, 2);
 
@@ -410,6 +426,7 @@ describe('inheritance failures', () => {
 
   it('fails with previous_run_inconsistent when the predecessor is missing', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     await answered(env, 'Say hello', 'Hello there.');
     env.gateway.script.push(textStep('only reached without inheritance'));
     const second = await env.enqueue('Orphan');
@@ -423,6 +440,7 @@ describe('inheritance failures', () => {
 
   it('ends CANCELLED, not FAILED, when a cancel is requested while the inheritance fails', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const first = await answered(env, 'Say hello', 'Hello there.');
     plantUnreadableEvent(env, first, 2);
     const second = await env.enqueue('Cancelled while broken');
@@ -445,6 +463,7 @@ describe('inheritance failures', () => {
 describe('a run that does not inherit', () => {
   it('starts a fresh run with only its own task even after a conversation', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     await answered(env, 'Say hello', 'Hello there.');
     env.gateway.script.push(textStep('Fresh.'));
     const second = await env.enqueue('Fresh', { history: 'fresh' });
@@ -458,6 +477,7 @@ describe('a run that does not inherit', () => {
 describe('a projected assistant message keeps its shape', () => {
   it('sends run 1 answer item unchanged in run 2', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(textStep('Kept verbatim.', { itemId: 'msg_kept' }));
     const first = await env.enqueue('Say it');
     await settle(env, first.id);
@@ -482,6 +502,7 @@ const LONG_TURNS: RunEventPayload[] = [
 
 const compactedSession = async (): Promise<{ env: Env; compactRun: string }> => {
   const env = await makeEnv({ capabilities: capabilitiesFor(200_000) });
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
   const first = await env.enqueue('question one');
   await env.seed(first.id, LONG_TURNS, 'release');
   env.gateway.script.push(textStep('Done.'));
@@ -520,6 +541,7 @@ describe('a run that inherits a summary records the inherited compaction', () =>
 
   it('writes none for a run that inherits no summary, nor for the run that compacted', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     await answered(env, 'Say hello', 'Hello there.');
     const second = await nextRun(env, 'And again', 'Again.');
     expect(env.ofType(second, 'context.inherited_compacted')).toEqual([]);

@@ -7,6 +7,7 @@ import { callsStep, textStep } from './scripts.ts';
 describe('worker tool loop', () => {
   it('runs read-only calls of one step together, then sends their outputs in the next step', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const bothStarted = deferred<void>();
     let started = 0;
     env.toolbox.hooks['Echo'] = async () => {
@@ -75,6 +76,7 @@ describe('worker tool loop', () => {
 
   it('records the plan from a plan tool as plan.updated', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([{ callId: 'call_p_1', name: 'UpdatePlan', args: { step: 'write tests' } }]), textStep('Planned.'));
     const run = await env.enqueue('Plan the work');
 
@@ -94,6 +96,7 @@ describe('worker tool loop', () => {
 
   it('includes the locations reported by the tool in tool.call', async () => {
     const env = await makeEnv({ mode: 'acceptEdits' });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const target = `${env.project}/notes.txt`;
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'hi' } }]), textStep('Written.'));
     const run = await env.enqueue('Write notes');

@@ -15,6 +15,7 @@ const liveListing = (): Capabilities => capabilitiesFor(2 * WINDOW, { maxOutputT
 
 const overheadTokens = async (): Promise<number> => {
   const env = await makeEnv({ capabilities: pinned() });
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
   env.gateway.script.push(textStep('Done.'));
   await env.enqueue('x');
   await env.runOnce(env.worker());
@@ -31,6 +32,7 @@ describe('the build ceiling of a claim resumed after the calibration of the mode
     expect(inputCeilingFor(liveListing())).not.toBe(liveCeiling);
     const wanted = Math.floor((pinnedCeiling + liveCeiling) / 2) - (await overheadTokens());
     const env = await makeEnv({ capabilities: pinned() });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
     const run = await env.enqueue('y'.repeat(4 * wanted));
 
@@ -61,6 +63,7 @@ describe('the tool floor of a claim resumed after the calibration of the model t
 
   it('reads the ratio from the claim listing and keeps the pinned window, so the resumed build leaves out tools for room', async () => {
     const env = await makeEnv({ capabilities: pinnedSmall() });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
     const run = await env.enqueue('Write it');
 

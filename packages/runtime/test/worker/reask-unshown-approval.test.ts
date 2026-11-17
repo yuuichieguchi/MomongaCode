@@ -15,6 +15,7 @@ const recordedBeforeShown = (dbPath: string, approvalId: string): void => {
 describe('a pending approval recorded before the approval carried what it shows', () => {
   it('is asked again with the shown content and a new digest, and nothing runs on the old question', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'approved' } }]));
     const run = await env.enqueue('Write the file');

@@ -46,6 +46,7 @@ const ask = async (env: Env, seen: Seen[], limits: Record<string, unknown> = {},
 describe('worker input request', () => {
   it('creates an elicitation, journals the request, keeps the checkpoint and releases to WAITING_HUMAN', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const seen: Seen[] = [];
 
     const { run, outcome } = await ask(env, seen);
@@ -68,6 +69,7 @@ describe('worker input request', () => {
 
   it('uses approvalTtlMs from run.limits for the expiry of the request', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
 
     const { run } = await ask(env, [], { approvalTtlMs: 123_000 });
 
@@ -76,6 +78,7 @@ describe('worker input request', () => {
 
   it('never expires the request after the deadline of the run', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const deadlineAt = START_MS + 60_000;
     env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
     const run = await env.enqueue('Ask the user', { deadlineAt });
@@ -87,6 +90,7 @@ describe('worker input request', () => {
 
   it('resumes the call with the checkpoint and the answers of the person and completes the run', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const seen: Seen[] = [];
     const { run } = await ask(env, seen);
     const inputId = env.ofType(run.id, 'tool.elicitation.requested')[0]?.inputId as string;
@@ -107,6 +111,7 @@ describe('worker input request', () => {
 
   it('stops the run with approval_timeout and journals the cancellation when the request expires', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const { run } = await ask(env, [], { approvalTtlMs: 1000 });
 
     env.clock.advance(1000);
@@ -142,6 +147,7 @@ describe('cancelling a run that waits for input', () => {
 
   it('hands the checkpoint of the waiting call to its tool, clears it and cancels the run', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const released: Array<Record<string, unknown>> = [];
     const { run, key } = await seedAwaiting(env);
 
@@ -157,6 +163,7 @@ describe('cancelling a run that waits for input', () => {
 
   it('cancels the run and journals an error notice when the tool cannot release the checkpoint, keeping the record for retry', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const { run, key } = await seedAwaiting(env);
 
     await env.runOnce(
