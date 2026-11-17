@@ -2,8 +2,8 @@ import { PERSON_CAPABILITY_HEADER } from '@momonga/protocol';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient, fixedSocket } from '@momonga/foundation';
-import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
+import { createUdsClient, fixedSocket, jsonValueOrText } from '@momonga/foundation';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, callInputTracker } from '@momonga/protocol';
 import { DEFAULT_KEEP_RECENT_TURNS } from '../packages/context/src/levels.ts';
 import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, stackPinsOf, summaryRoute, wireTokensOfBody } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
@@ -41,6 +41,12 @@ const writeSkill = (root: string, name: string, description: string, resources: 
 
 const journalOf = (home: E2eHome, runId: string): JournalEvent[] =>
   journalOfRows(readDb<EventRow>(home.paths.databases.runtime, 'SELECT seq, type, payload_json FROM events WHERE run_id = ? ORDER BY seq', runId));
+
+const inputOfCall = (journal: readonly JournalEvent[], callId: string): unknown => {
+  const tracker = callInputTracker(jsonValueOrText);
+  for (const event of journal) tracker.observe({ type: event.type, response: event.data['response'] } as Parameters<typeof tracker.observe>[0]);
+  return tracker.inputOf({ callId });
+};
 
 const statusOf = (home: E2eHome, runId: string): { status: string; stopReason: string | null; error: string | null } =>
   readDb<{ status: string; stop_reason: string | null; error_json: string | null }>(
@@ -156,7 +162,7 @@ describe('g: agent skills', () => {
       expect(firstRequest).not.toContain(BODY_MARKER);
 
       const call = ofType(journal, 'tool.call').find((event) => event.data['name'] === 'activate_skill');
-      expect(call?.data['rawInput']).toEqual({ name: 'pdf' });
+      expect(inputOfCall(journal, String(call?.data['callId']))).toEqual({ name: 'pdf' });
       const completed = ofType(journal, 'tool.completed')[0];
       expect(String(completed?.data['output'])).toContain('<skill_content name="pdf">');
       expect(String(completed?.data['output'])).toContain(BODY_MARKER);

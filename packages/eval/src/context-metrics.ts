@@ -1,8 +1,8 @@
-import { isRecord } from '@momonga/foundation';
+import { isRecord, jsonValueOrText } from '@momonga/foundation';
 import { HISTORY_READ_TOOL, HISTORY_SEARCH_TOOL, WHOLE_RUN_FROM, compactionLossSignals } from '@momonga/memory';
 import type { CompactionLossKind } from '@momonga/memory';
-import { assistantTextOf } from '@momonga/protocol';
-import type { PublicRunEvent } from '@momonga/protocol';
+import { assistantTextOf, callInputTracker } from '@momonga/protocol';
+import type { PublicRunEvent, RunEvent } from '@momonga/protocol';
 import { bindingRuleIds } from './context-dataset.ts';
 import type { ContextRule, GoldAnchor } from './context-dataset.ts';
 import { eventsOfType } from './observe.ts';
@@ -78,14 +78,17 @@ const overlapOf = (left: readonly GoldRange[], right: readonly GoldRange[]): num
 
 const historyRangesOf = (events: readonly PublicRunEvent[]): GoldRange[] => {
   const sequenced = events.filter(isSequenced);
+  const inputs = callInputTracker(jsonValueOrText);
+  for (const event of events) inputs.observe(event as RunEvent);
   const delivered = new Set(
     eventsOfType(events, 'tool.completed')
       .filter((done) => done.status === 'completed' && done.denial === undefined)
       .map((done) => done.callId),
   );
   return eventsOfType(events, 'tool.call').flatMap((call) => {
-    if (call.name !== HISTORY_READ_TOOL || !delivered.has(call.callId) || !isRecord(call.rawInput)) return [];
-    const { runId, step, seqFrom, seqTo } = call.rawInput;
+    const input = inputs.inputOf(call);
+    if (call.name !== HISTORY_READ_TOOL || !delivered.has(call.callId) || !isRecord(input)) return [];
+    const { runId, step, seqFrom, seqTo } = input;
     if (runId !== undefined && runId !== call.runId) return [];
     let from = typeof seqFrom === 'number' ? seqFrom : WHOLE_RUN_FROM;
     let to = Math.min(typeof seqTo === 'number' ? seqTo : call.seq, call.seq);
