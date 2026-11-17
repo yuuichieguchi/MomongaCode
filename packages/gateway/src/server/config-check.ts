@@ -19,12 +19,12 @@ const requireNonNegativeInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 0) throw new RangeError(`createGateway: ${name} must be a non-negative integer, got ${value}`);
 };
 
-export const checkModels = (options: Pick<FixedModelsOptions, 'config' | 'adapters'>): void => {
-  const { config, adapters } = options;
+export const checkModels = (options: { config: FixedModelsOptions['config']; adapterNames: ReadonlySet<string> }): void => {
+  const { config, adapterNames } = options;
   const { targets, chains } = config.models;
   const configured = Object.keys(targets);
   for (const [name, target] of Object.entries(targets)) {
-    if (!Object.hasOwn(adapters, name)) throw new Error(`createGateway: model "${name}" has no adapter`);
+    if (!adapterNames.has(name)) throw new Error(`createGateway: model "${name}" has no adapter`);
     requirePositiveInteger(`maxConcurrency of model "${name}"`, target.maxConcurrency);
     requireNonNegativeInteger(`admissionTimeoutMs of model "${name}"`, target.admissionTimeoutMs);
   }
@@ -37,7 +37,7 @@ export const limitsOf = (options: GatewayOptions): GatewayLimits => ('epochs' in
 
 export const checkGatewayOptions = (options: GatewayOptions): void => {
   const { debugTcp } = options;
-  if (!('epochs' in options)) checkModels(options);
+  if (!('epochs' in options)) checkModels({ config: options.config, adapterNames: new Set(Object.keys(options.adapters)) });
   const config = limitsOf(options);
   requirePositiveInteger('retry.maxAttempts', config.retry.maxAttempts);
   requirePositiveInteger('retry.totalWaitMs', config.retry.totalWaitMs);
