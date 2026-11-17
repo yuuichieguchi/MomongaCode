@@ -7886,13 +7886,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 51934500,
-      "measuredSeconds": 1201.2,
+      "distinctStates": 16024200,
+      "measuredSeconds": 374.42,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6216.91,
-      "budgetCpuSeconds": 12437,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.01 at start)",
-      "identity": "edd0786f454f8ed1713dcf91719edac3a336b365ee0d536d0a4344ac1a0270be"
+      "measuredCpuSeconds": 1977.41,
+      "budgetCpuSeconds": 3958,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.52 at start)",
+      "identity": "2ea843bd9151fbb6704c5c7bf19d1721327dc231f92073fc4d11e7ecebcd5492"
     },
     {
       "config": "ManagedServer.twoTargets",
