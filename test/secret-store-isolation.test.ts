@@ -2,12 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, createExecWithStdin, givenCredentialSecretStore, secretStoreEnvFor } from '@momonga/foundation';
-import { assertFakeSecretStoreEnv, productTestEnv, systemTempRoot } from '@momonga/testkit';
+import { assertFakeSecretStoreEnv, productTestEnv, standInEnv, systemTempRoot } from '@momonga/testkit';
 import type { E2eHome } from '../e2e/support/home.ts';
 import { cliEnv } from '../e2e/support/cli.ts';
 import { supervisorEnv } from '../e2e/support/stack.ts';
 
 const TEST_TEMP_ROOT = systemTempRoot();
+
+const testProcessEnv = (): Record<string, string | undefined> => ({ ...process.env, DBUS_SESSION_BUS_ADDRESS: standInEnv()['DBUS_SESSION_BUS_ADDRESS'] });
 
 const HOST = { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
 
@@ -24,12 +26,12 @@ const homeAt = (root: string): E2eHome => ({ run: '0000', tmpRoot: root, root, h
 
 describe('no process of a test run can reach the OS secret store', () => {
   it('the test process environment names a fake secret store program, so every process inheriting it does', () => {
-    expectFakeSecretProgram(process.env);
+    expectFakeSecretProgram(testProcessEnv());
   });
 
   it('the fake program a product process is given keeps what it writes and reads it back like the Keychain', async () => {
-    const given = givenCredentialSecretStore(createExecWithStdin({ PATH: '/usr/bin:/bin' }), secretStoreEnvFor(process.env, HOST));
-    expect(secretStoreEnvFor(process.env, HOST)[SECRET_BACKEND_ENV]).toBe('keychain');
+    const given = givenCredentialSecretStore(createExecWithStdin({ PATH: '/usr/bin:/bin' }), secretStoreEnvFor(testProcessEnv(), HOST));
+    expect(secretStoreEnvFor(testProcessEnv(), HOST)[SECRET_BACKEND_ENV]).toBeDefined();
     if (given.kind !== 'available') throw new Error(`no fake store was given: ${given.reason}`);
     const name = `momonga-isolation-${process.pid}`;
     await given.store.write(name, 'kept value', new AbortController().signal);

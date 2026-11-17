@@ -7,6 +7,7 @@ import { afterMicrotasks, waitFor, createTempDir } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
 import { HELD_RETRY_MS } from '../src/constants.ts';
+import { HOST_SECRET_STORE as STORE } from './support/host-secret-store.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness, settingsDeclaring, settingsOnDisk, writeInvalidSettings, writeSettings } from './support/p2-manager-harness.ts';
 import { pollUntil } from './support/p2-poll.ts';
@@ -126,12 +127,12 @@ describe('gatewayEnv secret store discovery', () => {
     }
   });
 
-  it('passes no D-Bus address when the chosen store does not declare it', () => {
-    const bin = binWith('security');
+  it.skipIf(STORE.declaresBus)('passes no D-Bus address when the chosen store does not declare it', () => {
+    const bin = binWith(STORE.program);
     try {
       const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, referencingSecret(), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, HOST));
-      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
-      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
+      expect(env[SECRET_BACKEND_ENV]).toBe(STORE.backend);
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, STORE.program));
       expect(env['DBUS_SESSION_BUS_ADDRESS']).toBeUndefined();
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
@@ -139,11 +140,11 @@ describe('gatewayEnv secret store discovery', () => {
   });
 
   it('passes the store choice even when no target references a secret, because the credential store needs it (N81)', () => {
-    const bin = binWith('security');
+    const bin = binWith(STORE.program);
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
-      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
-      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
+      expect(env[SECRET_BACKEND_ENV]).toBe(STORE.backend);
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, STORE.program));
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
     }
@@ -152,9 +153,9 @@ describe('gatewayEnv secret store discovery', () => {
   it('passes the reason when the host has no store, with no target referencing a secret (N81)', () => {
     const bin = binWith();
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
-      expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
+      expect(env[SECRET_REFUSAL_ENV]).toMatch(STORE.refusal);
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
     }
@@ -163,11 +164,11 @@ describe('gatewayEnv secret store discovery', () => {
 
 describe('runtimeEnv secret store choice (N81)', () => {
   it('passes the store choice to the runtime at every start, after the credential names are removed', () => {
-    const bin = binWith('security');
+    const bin = binWith(STORE.program);
     try {
-      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
-      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
-      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
+      expect(env[SECRET_BACKEND_ENV]).toBe(STORE.backend);
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, STORE.program));
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
     }
@@ -176,8 +177,8 @@ describe('runtimeEnv secret store choice (N81)', () => {
   it('passes the reason to the runtime when the host has no store', () => {
     const bin = binWith();
     try {
-      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u' }, HOST));
-      expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
+      expect(env[SECRET_REFUSAL_ENV]).toMatch(STORE.refusal);
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
     }
