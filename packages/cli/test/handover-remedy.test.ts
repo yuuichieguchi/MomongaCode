@@ -138,6 +138,7 @@ describe('a move that stays tells the remedy of the surface that stays', () => {
       session: () => 'session-7',
       cursor: () => 4,
       pending: () => 0,
+      quiescence: () => undefined,
       say: () => undefined,
     });
     const text = await stayedTextOf(surface, '/h/run/handover/session-7.json');

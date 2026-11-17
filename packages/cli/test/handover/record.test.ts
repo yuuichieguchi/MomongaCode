@@ -44,6 +44,7 @@ describe('the handover record (16.4, red test 7)', () => {
     ['an ACP bridge', ACP],
     ['an attach', ATTACH],
     ['a headless run', HEADLESS],
+    ['a headless run already quiescent', { ...HEADLESS, quiescent: { onQuiescent: 'report' as const } }],
   ])('round trips every field of %s, with the notes in order and their anchors', (_name, record) => {
     expect(parseRecord(textOf(record))).toEqual({ kind: 'record', record });
   });
