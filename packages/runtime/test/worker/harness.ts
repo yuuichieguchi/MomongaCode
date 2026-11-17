@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
 import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, nodeFileSystemSync, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
+import { pinnedFloorFor } from '@momonga/context';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS, imageCapability } from '@momonga/protocol';
@@ -25,7 +26,7 @@ import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } 
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
 import { RUN_STATE_PAGE_EVENTS } from '../../src/memory/journal-thread-limits.ts';
-import { createFakeGateway } from './fake-gateway.ts';
+import { createFakeGateway, inputTokensOf } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
 import { createFakeSettings } from './fake-settings.ts';
 import type { FakeSettings } from './fake-settings.ts';
@@ -33,7 +34,7 @@ import { createFakeToolbox } from './fake-tools.ts';
 import type { FakeToolbox } from './fake-tools.ts';
 import { createFakeTracer } from './fake-tracer.ts';
 import type { FakeTracer } from './fake-tracer.ts';
-import { MODEL_ID, resetResponseIds } from './scripts.ts';
+import { MODEL_ID, resetResponseIds, textStep } from './scripts.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
 import { installedRuleSolver, productRuleVerifier } from '../../src/process/rule-verifier.ts';
@@ -66,6 +67,31 @@ export const capabilitiesFor = (contextWindow: number, { imageInput, imageTokens
       maxConcurrency: 1,
       source: 'declared',
     }, ...overrides, ...imageCapability(imageInput ?? false, imageTokens) })
+
+export const FULL_TOOLSET_WINDOW = 8192;
+
+export const fullToolsetPinnedTokens = async (task: string): Promise<number> => {
+  const env = await makeEnv({ capabilities: capabilitiesFor(FULL_TOOLSET_WINDOW, { maxOutputTokens: 1024 }) });
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
+  env.gateway.script.push(textStep('Done.'));
+  await env.enqueue(task);
+  await env.runOnce(env.worker());
+  const body = env.gateway.streams[0]?.body;
+  if (body === undefined) throw new Error('the measuring run made no model call');
+  return inputTokensOf(body);
+};
+
+export const smallestWindowWhosePinnedFloorAccepts = (pinnedTokens: number, capabilitiesOf: (window: number) => Capabilities): number => {
+  if (pinnedFloorFor(capabilitiesOf(FULL_TOOLSET_WINDOW)) < pinnedTokens) throw new Error('no window in the probe range keeps the whole toolset under the pinned floor');
+  let low = 1;
+  let high = FULL_TOOLSET_WINDOW;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (pinnedFloorFor(capabilitiesOf(middle)) >= pinnedTokens) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+};
 
 export { fakeSandbox };
 
