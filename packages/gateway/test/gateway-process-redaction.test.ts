@@ -6,7 +6,7 @@ import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClie
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir, registerOwned, testLocks } from '@momonga/testkit';
+import { FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir, registerOwned, testLocks } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -309,8 +309,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   await placeFakeFm(home, fm.binaryPath);
-  const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: FM_HOST_PLATFORM,
-    locks: testLocks(),
+  const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  ...FM_HOST, locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),

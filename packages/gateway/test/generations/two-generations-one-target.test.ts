@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
-import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, prepareHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
@@ -27,7 +27,7 @@ const socketOf = (record: DumpRecord): string => record.argv[record.argv.indexOf
 
 describe('two generations serve one managed target, each with its own instance (design-update 18.2.1 to 18.2.3, 20.57)', () => {
   it('gives each generation its own socket, lock and marker directory, and keeps the CLI instance outside every generation', () => {
-    const paths = momongaPaths('/Users/someone', FM_HOST_PLATFORM, {});
+    const paths = momongaPaths('/Users/someone', FM_HOST.platform, {});
     const of = (generation: number) => managedInstancePaths(paths, { owner: 'gateway', generation, purpose: 'serve', provider: 'gateway', incarnation: 1 });
     const cli = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'apple' });
 
@@ -56,8 +56,8 @@ describe('two generations serve one managed target, each with its own instance (
     const home = makeHome();
     prepareHome(home, 2);
     writeSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED } }) });
-    const paths = momongaPaths(home, FM_HOST_PLATFORM, {});
-    const launch = (generation: number) => launchGateway({ platform: FM_HOST_PLATFORM, generation, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const paths = momongaPaths(home, FM_HOST.platform, {});
+    const launch = (generation: number) => launchGateway({ ...FM_HOST, generation, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const first = await launch(1);
     expect((await readJson(await postJson(clientFor(first.socketPath), '/v1/responses', ASK))).status).toBe(200);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
-import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, createTempDir, removeTempDir, startFakeChatCompletions } from '@momonga/testkit';
+import { FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, createTempDir, removeTempDir, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
@@ -69,7 +69,7 @@ describe('gateway probe on a HOME that has never run momonga', () => {
     fs.mkdirSync(path.join(home, '.momonga'), { mode: 0o700 });
     fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { connections: [{ adapter: 'managed', server: 'fm', binary: fm.binaryPath, models: [{ id: 'system' }] }] } }), { mode: 0o600 });
 
-    const result = await runCli(home, ['gateway', 'probe', 'system', '--samples', '1'], { platform: FM_HOST_PLATFORM, exec: fakeExec });
+    const result = await runCli(home, ['gateway', 'probe', 'system', '--samples', '1'], { platform: FM_HOST.platform, exec: FM_HOST.exec, hostLaunch: async () => FM_HOST.launch });
 
     expect(result.codes).toEqual([0]);
     expect(result.stdout).toContain('probed system: model system, context window 8192 (reported)');
