@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, probeFailed, runtimeMaxCloseMs, scopeToGeneration, syncPaths, sleep } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration, testProcessInspector } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration, lockFileOf, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { DAEMON_MARKER_KILL_GRACE_MS } from '../src/constants.ts';
 import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
@@ -446,7 +446,7 @@ describe('orphan reap at supervisor start', () => {
       },
       markerPorts: {
         reapMarkerDirectory: async () => {
-          seenAtReap.push({ lock: fs.existsSync(lockPath), socket: fs.existsSync(socketPath) });
+          seenAtReap.push({ lock: fs.existsSync(lockFileOf(testKernelLock(), lockPath)), socket: fs.existsSync(socketPath) });
           return reap.promise;
         },
       },
