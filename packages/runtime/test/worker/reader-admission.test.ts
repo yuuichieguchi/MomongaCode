@@ -4,13 +4,15 @@ import type { AnyTool } from '@momonga/tools';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
+import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 
 const WINDOW = 5_000;
 const OUTPUT = 1_024;
 const FILLERS = 8;
 const FILLER_DESCRIPTION_CHARS = 1_200;
-const PAD_CHARS = 1_600;
+const INITIAL_PAD_CHARS = 1_600;
+const BLOCKED_COMPACTION = /the latest compactable region of (\d+) tokens would free (\d+) after a summary of (\d+), but (\d+) are needed/;
 const HISTORY_CHARS = 1_500;
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 const SUMMARY = 'GOAL:\ng\nSTATE:\ns\nDONE:\nd\nTODO:\nt\nDECISIONS:\nx\nGUARDRAILS:\ny';
@@ -29,8 +31,8 @@ const readOnly = (name: string, descriptionChars: number, output: () => string, 
     ...extra,
   } as never);
 
-const tools = (): AnyTool[] => [
-  readOnly('Pad', 10, () => 'p'.repeat(PAD_CHARS)),
+const tools = (padChars: number): AnyTool[] => [
+  readOnly('Pad', 10, () => 'p'.repeat(padChars)),
   ...Array.from({ length: FILLERS }, (_unused, index) => readOnly(`Filler${index}`, FILLER_DESCRIPTION_CHARS, () => 'ok')),
   readOnly('HistoryRead', FILLER_DESCRIPTION_CHARS, () => 'events', { tier: 'optional', reads: 'history_range' }),
 ];
@@ -58,15 +60,31 @@ const envFor = async (observedCapacity: boolean): Promise<Env> => {
   return env;
 };
 
+const scenarioRun = async (observedCapacity: boolean, padChars: number) => {
+  const env = await envFor(observedCapacity);
+  const run = await env.enqueue('question one');
+  await env.seed(run.id, history(), 'release');
+  env.gateway.compactSummaries.push(SUMMARY);
+  env.gateway.script.push(callsStep([{ callId: 'call_pad_1', name: 'Pad', args: {} }]), textStep('Done.'));
+
+  await env.runOnce(env.worker('w1', { toolList: () => tools(padChars) }));
+  return { env, run };
+};
+
+const padCharsForCompaction = async (observedCapacity: boolean): Promise<number> => {
+  const { env, run } = await scenarioRun(observedCapacity, INITIAL_PAD_CHARS);
+  const stop = env.ofType(run.id, 'notice').find((notice) => notice.code === 'context_wrap_up');
+  const blocked = BLOCKED_COMPACTION.exec(stop?.message ?? '');
+  if (blocked === null) throw new Error('the budget stop does not report the compaction it attempted');
+  const [, , freed, , deficit] = blocked.map(Number);
+  const missing = (deficit as number) - (freed as number);
+  if (missing <= 0) return INITIAL_PAD_CHARS;
+  return INITIAL_PAD_CHARS - (missing + 1) * ESTIMATED_CHARACTERS_PER_TOKEN;
+};
+
 describe.for([false, true])('the reader of the replaced range joins the admitted tool list at the first compaction (observed capacity %s)', (observedCapacity) => {
   it('is dropped at admission, because no range was replaced yet, and carried by the next request after the compaction', async () => {
-    const env = await envFor(observedCapacity);
-    const run = await env.enqueue('question one');
-    await env.seed(run.id, history(), 'release');
-    env.gateway.compactSummaries.push(SUMMARY);
-    env.gateway.script.push(callsStep([{ callId: 'call_pad_1', name: 'Pad', args: {} }]), textStep('Done.'));
-
-    await env.runOnce(env.worker('w1', { toolList: tools }));
+    const { env, run } = await scenarioRun(observedCapacity, await padCharsForCompaction(observedCapacity));
 
     const compacted = env.ofType(run.id, 'context.compacted');
     expect(compacted).toHaveLength(1);
@@ -77,13 +95,7 @@ describe.for([false, true])('the reader of the replaced range joins the admitted
   });
 
   it('journals the join as a tool load when the admitted list was frozen', async () => {
-    const env = await envFor(observedCapacity);
-    const run = await env.enqueue('question one');
-    await env.seed(run.id, history(), 'release');
-    env.gateway.compactSummaries.push(SUMMARY);
-    env.gateway.script.push(callsStep([{ callId: 'call_pad_1', name: 'Pad', args: {} }]), textStep('Done.'));
-
-    await env.runOnce(env.worker('w1', { toolList: tools }));
+    const { env, run } = await scenarioRun(observedCapacity, await padCharsForCompaction(observedCapacity));
 
     const loaded = env.ofType(run.id, 'tool.loaded');
     expect(loaded.length > 0).toBe(observedCapacity);
