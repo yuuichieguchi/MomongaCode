@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
-import { LOCK_DATABASE_SUFFIX, LOCK_HOLDER_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, LOCK_HOLDER_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from '../src/platform/sqlite-lock.ts';
 import type { SqliteLockOps } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
 

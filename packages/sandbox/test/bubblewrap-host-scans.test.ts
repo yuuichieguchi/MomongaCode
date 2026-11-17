@@ -76,6 +76,8 @@ const listing = (inner: FilesystemPort, visited: string[], onChildren: () => voi
   },
 });
 
+const tmpfsTargets = (args: readonly string[]): string[] => args.flatMap((arg, index) => (args[index - 1] === '--tmpfs' ? [arg] : []));
+
 const SOURCES = ['bubblewrap.ts', 'placeholder-journal.ts'].map((name) => fileURLToPath(new URL(`../src/${name}`, import.meta.url)));
 
 describe('the bubblewrap planner reaches the file system only through its port, asynchronously', () => {
@@ -89,7 +91,7 @@ describe('the bubblewrap planner reaches the file system only through its port, 
     const direct = await planBubblewrap(input, { cwd: work }, NEVER_CANCELLED, nodeFilesystemPort(testKernelLock()));
     const deferred = await planBubblewrap(input, { cwd: work }, NEVER_CANCELLED, deferring(nodeFilesystemPort(testKernelLock())));
     expect(deferred).toEqual(direct);
-    expect(deferred.args.join(' ')).toContain(path.join(work, 'src', 'deep', '.env'));
+    expect(tmpfsTargets(deferred.args)).toContain(path.join(work, 'src'));
   });
 });
 
@@ -100,7 +102,7 @@ describe('the walk for blocked paths', () => {
     const visited: string[] = [];
     const plan = await planBubblewrap(policy({ fileRules }), { cwd: work }, NEVER_CANCELLED, listing(nodeFilesystemPort(testKernelLock()), visited));
     expect(visited.filter((directory) => directory.startsWith(path.join(work, 'node_modules')))).toEqual([]);
-    expect(plan.args.join(' ')).toContain(path.join(work, 'src', 'deep', '.env'));
+    expect(tmpfsTargets(plan.args)).toContain(path.join(work, 'src'));
   });
 
   it('stops when the signal of the asker aborts, and the plan rejects', async () => {
