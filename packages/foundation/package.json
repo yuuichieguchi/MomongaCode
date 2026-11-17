@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./sqlite": "./src/sqlite.ts",
     "./secret-store": "./src/secret-store.ts",
-    "./program-search": "./src/program-search.ts"
+    "./program-search": "./src/program-search.ts",
+    "./node-file-system": "./src/node-file-system.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",
