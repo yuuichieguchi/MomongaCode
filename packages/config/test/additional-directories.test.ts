@@ -20,7 +20,7 @@ describe('user additionalDirectories resolution', () => {
     fs.mkdirSync(real);
     fs.symlinkSync(real, path.join(tree.home, 'linked-extra'), 'dir');
     writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/linked-extra', './real-extra'] } });
-    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const result = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     expect(result.settings.permissions.additionalDirectories).toEqual([real, real]);
   });
 
@@ -29,7 +29,7 @@ describe('user additionalDirectories resolution', () => {
     const present = path.join(tree.home, 'present-extra');
     fs.mkdirSync(present);
     const file = writeJson(userSettingsPath(tree), { autoUpdates: false, permissions: { additionalDirectories: ['~/missing-extra', '~/present-extra'] } });
-    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const result = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     expect(result.settings.permissions.additionalDirectories).toEqual([present]);
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.warnings).toEqual([`${file}: additionalDirectories entry "~/missing-extra" does not exist; skipped`]);
@@ -39,7 +39,7 @@ describe('user additionalDirectories resolution', () => {
     const tree = makeTree();
     fs.writeFileSync(path.join(tree.home, 'plain-file'), '');
     writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/missing-extra', './plain-file'] } });
-    const error = await failureOf(loadUserSettings({ home: tree.home, signal: new AbortController().signal }));
+    const error = await failureOf(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }));
     expect(error).toBeInstanceOf(ConfigError);
     expect(error.message).toMatch(/ is not a directory$/);
   });
@@ -48,7 +48,7 @@ describe('user additionalDirectories resolution', () => {
     const tree = makeTree();
     fs.writeFileSync(path.join(tree.home, 'plain-file'), '');
     const file = writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['./plain-file'] } });
-    const error = await failureOf(loadUserSettings({ home: tree.home, signal: new AbortController().signal }));
+    const error = await failureOf(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }));
     expect(error).toBeInstanceOf(ConfigError);
     expect(error.message).toContain(`${file}: additionalDirectories entry `);
     expect(error.message).toContain('./plain-file');
@@ -60,7 +60,7 @@ describe('user additionalDirectories resolution', () => {
     fs.symlinkSync(path.join(tree.home, 'loop-b'), path.join(tree.home, 'loop-a'));
     fs.symlinkSync(path.join(tree.home, 'loop-a'), path.join(tree.home, 'loop-b'));
     const file = writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/loop-a'] } });
-    const error = await failureOf(loadUserSettings({ home: tree.home, signal: new AbortController().signal }));
+    const error = await failureOf(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }));
     expect(error).toBeInstanceOf(ConfigError);
     expect(error.message).toContain(`${file}: additionalDirectories entry `);
     expect(error.message).toMatch(/ cannot be resolved: /);
@@ -69,7 +69,7 @@ describe('user additionalDirectories resolution', () => {
   it('a missing user entry is skipped by loadSettings with the same warning', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['~/missing-extra'] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions.additionalDirectories).toEqual([]);
     expect(result.warnings).toEqual([`${file}: additionalDirectories entry "~/missing-extra" does not exist; skipped`]);
   });

@@ -39,7 +39,7 @@ describe('the defaults of the two core areas are on (design core-on 1, test 1)',
 describe('loadSettings with the core areas on by default (design core-on 1, test 2)', () => {
   it('resolves the on values when no settings file exists', async () => {
     const tree = makeTree();
-    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual(ON_CONTEXT);
     expect(settings.tools).toEqual(ON_TOOLS);
     expect(settings.memory).toEqual(ON_MEMORY);
@@ -48,7 +48,7 @@ describe('loadSettings with the core areas on by default (design core-on 1, test
   it('turns off exactly the keys a user layer turns off', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { context: { outputFormatters: [], cachePrefix: false }, memory: { reflection: { enabled: false } } });
-    const { settings } = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const { settings } = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     expect(settings.context).toEqual({ ...ON_CONTEXT, outputFormatters: [], cachePrefix: false });
     expect(settings.tools).toEqual(ON_TOOLS);
     expect(settings.memory).toEqual({ ...ON_MEMORY, reflection: { enabled: false } });
@@ -58,7 +58,7 @@ describe('loadSettings with the core areas on by default (design core-on 1, test
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { context: { cachePrefix: false } });
     writeJson(projectSettingsPath(tree), { context: { outputFormatters: ['log'] }, tools: { deferral: false }, memory: { repositoryFacts: false } });
-    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ ...ON_CONTEXT, cachePrefix: false, outputFormatters: ['log'] });
     expect(settings.tools).toEqual({ ...ON_TOOLS, deferral: false });
     expect(settings.memory).toEqual({ ...ON_MEMORY, repositoryFacts: false });

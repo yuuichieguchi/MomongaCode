@@ -95,7 +95,7 @@ describe('the probe command writes the record under the key probeRecordKeyOf giv
     const fake = await startFakeOllama({ cacheProbe: 'none' });
     const home = freshHome();
     writeOllamaSettings(home, `${fake.origin}/`);
-    const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
+    const { settings } = await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
     const [resolved] = settings.models.models.values();
     if (resolved === undefined) throw new Error('the settings resolved no model');
     const key = endpointKeyFor(resolved);

@@ -356,7 +356,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const slash = {
       ...harness.context,
       commands: [],
-      backend: { ...harness.context.backend, ...folderTrustFakes({ settingsPlace: () => ({ home: harness.place.home, projectDir: project }), trust: undefined, trustItems: undefined, cwd: () => project, record: () => undefined }), settings: async () => readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
+      backend: { ...harness.context.backend, ...folderTrustFakes({ settingsPlace: () => ({ home: harness.place.home, projectDir: project }), trust: undefined, trustItems: undefined, cwd: () => project, record: () => undefined }), settings: async () => readSettingsSnapshot({ env: process.env, home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }) },
       background: (_label: string, work: (signal: AbortSignal) => Promise<unknown>) => work(new AbortController().signal),
     } as unknown as SlashContext;
     await runSettingsScreen(slash, []);
@@ -407,7 +407,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const harness = flowOf(context, threeModels(), []);
     const project = path.join(harness.place.home, 'project');
     fs.mkdirSync(project);
-    const snapshot = await readSettingsSnapshot({ home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal });
+    const snapshot = await readSettingsSnapshot({ env: process.env, home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal });
     expect(settingsFileLines(snapshot)[0]).toBe(`Settings file: ${harness.place.settingsFile}`);
   });
 

@@ -26,7 +26,7 @@ const socketTarget = (socketPath: string) => ({ adapter: 'chat-completions', pro
 
 const loadWithSocket = (tree: Tree, socketPath: string) => {
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', socketTarget(socketPath))] } });
-  return loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  return loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 };
 
 const loadMcp = (tree: Tree) => loadMcpServers({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {} });
@@ -41,7 +41,7 @@ describe('project additionalDirectories containment', () => {
     const inside = path.join(tree.project, 'inside');
     fs.mkdirSync(inside);
     writeJson(projectSettingsPath(tree), { permissions: { additionalDirectories: [path.join(caseVariant(tree.project), 'INSIDE')] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: caseVariant(tree.project), cli: {}, trust: { isTrusted: () => true } });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: caseVariant(tree.project), cli: {}, trust: { isTrusted: () => true } });
     expect(result.settings.permissions.additionalDirectories).toEqual([inside]);
     expect(result.warnings.filter((warning) => warning.includes('additionalDirectories'))).toEqual([]);
   });
@@ -50,7 +50,7 @@ describe('project additionalDirectories containment', () => {
     const tree = makeTree();
     const outside = makeDir();
     const file = writeJson(projectSettingsPath(tree), { permissions: { additionalDirectories: [outside] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions.additionalDirectories).toEqual([]);
     expect(result.warnings.some((warning) => warning.includes(file) && warning.includes('outside the project'))).toBe(true);
   });

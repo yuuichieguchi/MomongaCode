@@ -873,7 +873,7 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
 
 export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: ServerProgram, signal: AbortSignal, onWarning: (message: string) => void): Promise<string> => {
   const { listManagedModel, noneSandboxLaunchOf, systemProcessFiles } = await import('@momonga/gateway');
-  const { settings } = await loadUserSettings({ home: ports.home, signal });
+  const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal });
   const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } };
   const description = registeredServer(serverRegistryOf(declared, paths.settingsFile), program.id);
   if (description === undefined) throw new TypeError(`the server program ${program.id} is not in the registry of server programs`);
@@ -901,7 +901,7 @@ export const serversDetector =
   (ports: Pick<CliPorts, 'home' | 'exec' | 'files'>, fetch: OutboundFetch | typeof globalThis.fetch): ModelsShell['detect'] =>
   async (request) => {
     const { detectLocalServers } = await import('@momonga/gateway');
-    const { settings } = await loadUserSettings({ home: ports.home, signal: request.signal });
+    const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal: request.signal });
     return detectLocalServers({ ...request, fetch, ...localManagedPorts(settings.models.servers, ports) });
   };
 

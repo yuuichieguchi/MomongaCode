@@ -6,7 +6,7 @@ import { makeTree, projectSettingsPath, trusting, writeJson, writeText } from '.
 import type { Tree } from './helpers.ts';
 
 const failureOf = async (tree: Tree): Promise<Error> => {
-  const outcome = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }).then(
+  const outcome = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }).then(
     () => undefined,
     (error: unknown) => error,
   );
@@ -18,7 +18,7 @@ describe('loadSettings raises ConfigError for project settings content', () => {
   it('a missing project additionalDirectories entry is no failure: it is skipped with a warning naming the file', async () => {
     const tree = makeTree();
     const file = writeJson(projectSettingsPath(tree), { permissions: { additionalDirectories: ['./missing'] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions.additionalDirectories).toEqual([]);
     expect(result.warnings).toEqual([`${file}: additionalDirectories entry "./missing" does not exist; skipped`]);
   });

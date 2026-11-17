@@ -42,7 +42,7 @@ const makeTree = () => {
 };
 
 const cacheOf = (home: string, appliedRecord: string) =>
-  createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, appliedRecord } as UserSettingsCacheOptions);
+  createUserSettingsCache({ env: process.env, home, onWarning: () => undefined, keptRecords: noKeptRecords, appliedRecord } as UserSettingsCacheOptions);
 
 const modelOf = async (cache: ReturnType<typeof cacheOf>): Promise<string | undefined> => servedModelOf((await cache.loadOrKeep(NOT_ABORTED)).settings);
 
@@ -75,7 +75,7 @@ describe('S7: the applied record is ordered by seq (design-settings-live 15.1, N
     tree.write('{ "models": ');
     const cache = cacheOf(tree.home, tree.record);
     expect(await modelOf(cache)).toBe('b');
-    expect(await writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom, lock: testKernelLock() })).toEqual({ kind: 'invalid' });
+    expect(await writeAppliedRecord(tree.home, tree.record, undefined, { env: process.env, signal: NOT_ABORTED, random: systemRandom, lock: testKernelLock() })).toEqual({ kind: 'invalid' });
     expect(fs.readFileSync(tree.record).equals(before)).toBe(true);
   });
 });

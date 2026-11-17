@@ -419,7 +419,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const { cache, settings } = await step('settings', async () => {
       const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
-      const created = createUserSettingsCache({
+      const created = createUserSettingsCache({ env: process.env,
         home: canonicalHome,
         onWarning,
         keptRecords: diskKeptRecords(fileSystem, systemRandom, keptSettingsDirectory(canonicalHome), kernelLock),

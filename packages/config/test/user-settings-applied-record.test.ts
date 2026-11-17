@@ -43,7 +43,7 @@ const makeHome = () => {
 };
 
 const cacheOf = (home: string, appliedRecord?: string) =>
-  createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, ...(appliedRecord === undefined ? {} : { appliedRecord }) } as UserSettingsCacheOptions);
+  createUserSettingsCache({ env: process.env, home, onWarning: () => undefined, keptRecords: noKeptRecords, ...(appliedRecord === undefined ? {} : { appliedRecord }) } as UserSettingsCacheOptions);
 
 const modelOf = async (cache: ReturnType<typeof cacheOf>): Promise<string | undefined> => servedModelOf((await cache.loadOrKeep(NOT_ABORTED)).settings);
 
