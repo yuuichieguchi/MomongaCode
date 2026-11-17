@@ -9,7 +9,7 @@ import type { CheckOutcome, CheckRequest } from './check-entry.ts';
 import { cfgFor, completedOutput, holdsEntry, invariantEntry, invariantViolationOutput, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
 import type { ManifestEntry } from './manifest.ts';
 import { TLC_WORKERS } from './runner.ts';
-import { HARNESS_FILES, RAN_REASONS, createJavaIdentityReader, createResultStore } from './reuse.ts';
+import { RAN_REASONS, createJavaIdentityReader, createResultStore } from './reuse.ts';
 import type { JavaIdentity, ResultStore } from './reuse.ts';
 
 const realRoot = path.resolve(import.meta.dirname, '..', '..');
@@ -53,10 +53,6 @@ const javaStubBin = (dir: string): string => {
 };
 
 const fixtureRepository = (root: string): void => {
-  for (const file of HARNESS_FILES) {
-    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
-    fs.copyFileSync(path.join(realRoot, file), path.join(root, file));
-  }
   writeFile(path.join(root, '.cache', 'tla', 'tla2tools.jar'), 'fake jar bytes');
   writeFile(path.join(root, 'specs', 'tla', 'Tiny.tla'), tinySpec);
   for (const config of ['Tiny', 'Tiny.broken', 'Tiny.live']) writeFile(path.join(root, 'specs', 'tla', `${config}.cfg`), cfgFor('Small'));

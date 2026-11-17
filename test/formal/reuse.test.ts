@@ -7,24 +7,27 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { cfgFor, holdsEntry, tinySpec, writeFile } from './fixtures.ts';
 import type { ManifestEntry } from './manifest.ts';
-import { HARNESS_FILES, canonicalJson, closureOf, createJavaIdentityReader, createResultStore, keyOf, keyPartsOf, refusalOf, reuseModeOf, sha256Hex } from './reuse.ts';
+import { canonicalJson, closureOf, createJavaIdentityReader, createResultStore, keyOf, keyPartsOf, refusalOf, reuseModeOf, sha256Hex } from './reuse.ts';
 import type { JavaIdentity, KeyParts, ResultRecord, StoreOps } from './reuse.ts';
 import { pollUntil } from '@momonga/testkit';
 
 
 const JAVA: JavaIdentity = { runtime: '22.0.1+8-16', vm: 'OpenJDK 64-Bit Server VM', os: 'Mac OS X', arch: 'aarch64' };
 
+const HARNESS_SOURCES = ['scripts/tlc.sh', 'test/formal/runner.ts', 'test/formal/verdict.ts', 'test/formal/manifest-reader.ts', 'test/formal/cfg-names.ts', 'test/formal/reuse.ts', 'test/formal/check-entry.ts', 'test/formal/tier.ts'] as const;
+
+const VIOLATING: ManifestEntry = { ...holdsEntry, expect: { violates: 'Small', exitCode: 12 } };
+
 const digestOf = (seed: string): string => sha256Hex(seed);
 
 const flipFirstHex = (digest: string): string => `${digest[0] === '0' ? '1' : '0'}${digest.slice(1)}`;
 
 const baseParts = (): KeyParts => ({
-  format: 'momonga-tlc-key/2',
+  format: 'momonga-tlc-key/3',
   config: 'Tiny',
-  harness: Object.fromEntries(HARNESS_FILES.map((file) => [file, digestOf(file)])),
   jar: digestOf('jar'),
   java: { ...JAVA },
-  workers: 5,
+  workers: null,
   args: ['-fp', '0'],
   cfg: digestOf('cfg'),
   modules: [['Tiny', digestOf('Tiny.tla')]],
@@ -95,12 +98,6 @@ describe('the key of a run', () => {
       withField((parts) => {
         parts['config'] = 'Tiny.broken';
       }),
-      ...HARNESS_FILES.map((file) =>
-        withField((parts) => {
-          const harness = parts['harness'] as Record<string, string>;
-          harness[file] = flipFirstHex(harness[file] as string);
-        }),
-      ),
       withField((parts) => {
         parts['jar'] = flipFirstHex(parts['jar'] as string);
       }),
@@ -126,9 +123,13 @@ describe('the key of a run', () => {
         parts['inputs'] = [['Handover.actors.json', flipFirstHex(digestOf('Handover.actors.json'))]];
       }),
     ];
-    expect(variants).toHaveLength(HARNESS_FILES.length + 11);
+    expect(variants).toHaveLength(11);
     const keys = new Set([keyOf(baseParts()), ...variants.map((parts) => keyOf(parts))]);
-    expect(keys.size).toBe(HARNESS_FILES.length + 12);
+    expect(keys.size).toBe(12);
+  });
+
+  it('has no field for the harness sources: they are not an input of the result of a TLC run', () => {
+    expect(Object.keys(baseParts()).sort()).toEqual(['args', 'cfg', 'config', 'format', 'inputs', 'jar', 'java', 'modules', 'workers']);
   });
 });
 
@@ -139,7 +140,7 @@ describe('the parts of a key read from a repository', () => {
 
   beforeEach(() => {
     root = createTempRoot();
-    for (const file of HARNESS_FILES) writeFile(path.join(root, file), `harness ${file}\n`);
+    for (const file of HARNESS_SOURCES) writeFile(path.join(root, file), `source ${file}\n`);
     writeFile(path.join(root, 'test', 'formal', 'manifest.ts'), 'export const EVERY_RUN_BUDGET_RATIO = 23;\n');
     writeFile(path.join(root, '.cache', 'tla', 'tla2tools.jar'), 'fake jar bytes');
     writeFile(specFile('Tiny.tla'), tinySpec);
@@ -168,7 +169,6 @@ describe('the parts of a key read from a repository', () => {
     ['measuredCpuSeconds', () => ({ ...holdsEntry, measuredCpuSeconds: 99 })],
     ['budgetCpuSeconds', () => ({ ...holdsEntry, budgetCpuSeconds: 201 })],
     ['distinctStates', () => ({ ...holdsEntry, distinctStates: 4 })],
-    ['expect', () => ({ ...holdsEntry, expect: { violates: 'Small', exitCode: 12 } })],
     ['role', () => ({ ...holdsEntry, role: 'evidence' })],
     ['tier', () => ({ ...holdsEntry, tier: 'deep' })],
   ];
@@ -205,38 +205,43 @@ describe('the parts of a key read from a repository', () => {
     expect(await partsFor()).toEqual(before);
   });
 
-  it('gives another key when the one reader of a configuration changes', async () => {
-    const before = await keyFor();
-    fs.appendFileSync(path.join(root, 'test', 'formal', 'cfg-names.ts'), ' ');
-    expect(await keyFor()).not.toBe(before);
+  it.each(HARNESS_SOURCES)('gives the same parts when the harness source %s changes, the invocation being the same', async (file) => {
+    const before = await partsFor();
+    fs.appendFileSync(path.join(root, file), ' ');
+    expect(await partsFor()).toEqual(before);
   });
 
-  it('gives another key when one byte of the manifest reader changes', async () => {
+  it('gives the same key when every harness source is removed, since no source is read for the key', async () => {
     const before = await keyFor();
-    fs.appendFileSync(path.join(root, 'test', 'formal', 'manifest-reader.ts'), ' ');
-    expect(await keyFor()).not.toBe(before);
+    for (const file of HARNESS_SOURCES) fs.rmSync(path.join(root, file));
+    expect(await keyFor()).toBe(before);
   });
 
-  it('holds the stated fields with repository-relative harness paths and the closure modules', async () => {
+  it('holds the stated fields with the closure modules and the arguments of the invocation', async () => {
     const parts = (await partsFor()) as KeyParts;
-    expect(Object.keys(parts.harness).sort()).toEqual([...HARNESS_FILES].sort());
-    expect(Object.keys(parts.harness)).toContain('test/formal/cfg-names.ts');
     expect(parts.modules).toEqual([['Tiny', sha256Hex(tinySpec)]]);
     expect(parts.cfg).toBe(sha256Hex(cfgFor('Small')));
     expect(parts.jar).toBe(sha256Hex('fake jar bytes'));
     expect(parts.args).toEqual(['-fp', '0']);
-    expect(parts.workers).toBe(5);
+    expect(parts.workers).toBeNull();
     expect(parts.java).toEqual(JAVA);
     expect(parts.config).toBe('Tiny');
     expect(parts.inputs).toEqual([['Handover.actors.json', sha256Hex('[]\n')]]);
-    expect(parts.format).toBe('momonga-tlc-key/2');
+    expect(parts.format).toBe('momonga-tlc-key/3');
+  });
+
+  it('keys a row that expects a violation on its workers, and a holding row on none of them', async () => {
+    const parts = (workers: number, entry: ManifestEntry) => keyPartsOf({ repoRoot: root, entry, args: [...entry.args, '-fp', '0'], workers, java: JAVA });
+    expect(((await parts(5, VIOLATING)) as KeyParts).workers).toBe(5);
+    expect(keyOf((await parts(5, VIOLATING)) as KeyParts)).not.toBe(keyOf((await parts(4, VIOLATING)) as KeyParts));
+    expect(await parts(4, holdsEntry)).toEqual(await parts(5, holdsEntry));
+    expect(((await parts(4, holdsEntry)) as KeyParts).workers).toBeNull();
   });
 
   it.each([
     ['the jar', '.cache/tla/tla2tools.jar'],
     ['the configuration file', 'specs/tla/Tiny.cfg'],
     ['the root module', 'specs/tla/Tiny.tla'],
-    ['a harness file', 'test/formal/runner.ts'],
   ])('reports %s as unreadable when it is missing, without throwing', async (_label, file) => {
     fs.rmSync(path.join(root, file));
     expect(await partsFor()).toEqual({ unreadable: file });
