@@ -69,7 +69,7 @@ describe('the counters a started gateway lists', () => {
     const launchWithSecret = async (value: string) => {
       const home = makeHome();
       writeSettings(home, settings);
-      const host = fakeSecretHost(makeHome(), KEYCHAIN_HOST);
+      const host = await fakeSecretHost(makeHome(), KEYCHAIN_HOST);
       const security = portOnSecretHost(createFakeSecurityPort(() => ({ [SECRET_NAME]: value })), KEYCHAIN_HOST, host);
       const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security });
       const counters = await listedCounters(handle.socketPath);

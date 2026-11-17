@@ -1,6 +1,6 @@
 import { defineProductSchema } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { RUN_STATUSES, STOP_REASONS, nonEmptyString as text } from '@momonga/protocol';
 import { DatasetError, describeFirstError, jsonOf } from './dataset.ts';
 
 export const INJECT_FORMAT = 'momonga-inject/1';
@@ -66,7 +66,6 @@ export type InjectionScenario = {
 
 export type InjectionScenarios = { format: typeof INJECT_FORMAT; name: string; scenarios: InjectionScenario[] };
 
-const text = { type: 'string', minLength: 1 } as const;
 const count = { type: 'integer', minimum: 1 } as const;
 
 const EXPECT_PROPERTIES = {

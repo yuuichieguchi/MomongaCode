@@ -8,12 +8,15 @@ import { withMarkerState } from './marker-state.ts';
 import { nodeProcFs } from './procfs.ts';
 import type { ProcFs } from './procfs.ts';
 import { isProcessAlive } from '../process-alive.ts';
+import type { Timing } from '../timing.ts';
+import { systemWaitTiming } from '../system-timing.ts';
 import { createWindowsInspector } from './windows-inspector.ts';
 import { hostKeptGroups } from './windows-kept-groups.ts';
 import type { KeptGroupControl } from './windows-kept-groups.ts';
 
 export type InspectorPorts = {
   run: CommandRunner;
+  timing: Pick<Timing, 'setTimeout' | 'clearTimeout'>;
   procfs: ProcFs;
   env: Readonly<Record<string, string | undefined>>;
   uid(): number;
@@ -37,7 +40,7 @@ const hostUid = (): number => {
   return process.getuid();
 };
 
-export const hostInspectorPorts = (capability: LockCapabilityProbe): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, capability, jobs: hostKeptGroups(), alive: (pid) => isProcessAlive(pid) });
+export const hostInspectorPorts = (capability: LockCapabilityProbe): InspectorPorts => ({ run: nodeCommandRunner, timing: systemWaitTiming, procfs: nodeProcFs, env: process.env, uid: hostUid, capability, jobs: hostKeptGroups(), alive: (pid) => isProcessAlive(pid) });
 
 export const createProcessInspector = (platform: NodeJS.Platform, ports: InspectorPorts): ProcessInspector => {
   switch (platform) {
@@ -46,7 +49,7 @@ export const createProcessInspector = (platform: NodeJS.Platform, ports: Inspect
     case 'linux':
       return withMarkerState(createLinuxInspector({ procfs: ports.procfs, uid: ports.uid() }), ports.capability);
     case 'win32':
-      return withMarkerState(createWindowsInspector({ run: ports.run, env: ports.env, groups: ports.jobs, alive: ports.alive }), ports.capability);
+      return withMarkerState(createWindowsInspector({ run: ports.run, timing: ports.timing, env: ports.env, groups: ports.jobs, alive: ports.alive }), ports.capability);
     default:
       throw new UnsupportedPlatformError(platform, 'process inspection');
   }

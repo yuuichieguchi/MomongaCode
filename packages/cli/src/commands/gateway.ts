@@ -209,13 +209,19 @@ const probeOllama = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { probeOllamaTarget, reachableEndpoint, PERSON_TRAFFIC } = await import('@momonga/gateway');
-  const { report, key } = await probeOllamaTarget({
+  const { DEFAULT_SAMPLES, isMeteredTarget, measurementBoundOf, probeOllamaTarget, reachableEndpoint, saveMeasurementConsent, PERSON_TRAFFIC } = await import('@momonga/gateway');
+  const key = endpointRecordKeyOf(subject, target);
+  const metered = isMeteredTarget(target) ? { display: subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  if (metered !== undefined && options.consented) {
+    await saveMeasurementConsent(paths.probe, key, measurementBoundOf(metered.declaredContextWindow, options.samples ?? DEFAULT_SAMPLES), resolveLayoutLocks(paths).mechanism);
+  }
+  const { report } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
+    ...(metered === undefined ? {} : { metered }),
     ports: probePortsOf(ports, PERSON_TRAFFIC),
     lock: resolveLayoutLocks(paths).mechanism,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
-    key: endpointRecordKeyOf(subject, target),
+    key,
     model: target.model,
     contextWindow: target.capabilities.contextWindow,
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),

@@ -150,7 +150,7 @@ const startRemoteStack = async (
   for (const record of options.records?.(hostId) ?? []) await store.write(`plan/${PROFILE_ID}/${String(record['account'])}`, JSON.stringify(record), new AbortController().signal);
   const settingsWith = (network: Record<string, unknown>) => ({ credentials: { plaintextTokenFiles: true }, models: pinnedTargets(options.accounts), network });
   replaceSettings(home, settingsWith(options.network));
-  const handle = await registerOwned(context, () => startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

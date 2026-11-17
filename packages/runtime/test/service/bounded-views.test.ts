@@ -88,6 +88,31 @@ describe('the view of one session', () => {
 });
 
 describe('the view of a run and its report', () => {
+  it('shows the run as the report read it, when the run changes after the report', async () => {
+    let afterReport: (() => Promise<unknown>) | undefined;
+    const env = await startService({
+      wrapStore: (store) => ({
+        ...store,
+        journalFacts: {
+          ...store.journalFacts,
+          report: async (request, signal) => {
+            const reply = await store.journalFacts.report(request, signal);
+            await afterReport?.();
+            return reply;
+          },
+        },
+      }),
+    });
+    const session = await env.createSession();
+    const run = await env.createRun(session.id);
+    afterReport = () => env.store.requestCancel(run.id);
+
+    const answered = await env.http('GET', `/v1/runs/${run.id}`);
+
+    expect(answered.json.run.report.status).not.toBe('CANCELLING');
+    expect(answered.json.run.status).toBe(answered.json.run.report.status);
+  });
+
   it('never answers a report whose status is newer than the status of the view', async () => {
     let moveOn: (() => Promise<unknown>) | undefined;
     const env = await startService({

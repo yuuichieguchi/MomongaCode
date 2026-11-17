@@ -253,9 +253,9 @@ export const createLockCapability = ({
   };
 };
 
-export type LayoutLocks = { capability: LockCapabilityProbe; mechanism: KernelLockMechanism };
+export type LayoutLocks = { capability: LockCapabilityProbe; mechanism: KernelLockMechanism; mechanismOf(dir: string): KernelLockMechanism };
 
 export const resolveLayoutLocks = (paths: { callLocks: string; lockProof: string }): LayoutLocks => {
   const capability = createLockCapability({ proofDir: paths.lockProof });
-  return { capability, mechanism: resolveKernelLock(paths.callLocks, { capability }) };
+  return { capability, mechanism: resolveKernelLock(paths.callLocks, { capability }), mechanismOf: (dir) => resolveKernelLock(dir, { capability }) };
 };

@@ -17,7 +17,7 @@ const HEADROOM_TOKENS_PER_STEP = 20;
 
 const padCharsFittingOneSummaryRequest = (): number => {
   const capabilities = capabilitiesFor(CONTEXT_WINDOW);
-  const regionRoom = summaryInputCeilingFor(capabilities) - SUMMARY_PROMPT_TOKENS - largestSummaryCapFor(capabilities) - REGION_FRAME_TOKENS;
+  const regionRoom = summaryInputCeilingFor(capabilities, largestSummaryCapFor(capabilities)) - SUMMARY_PROMPT_TOKENS - largestSummaryCapFor(capabilities) - REGION_FRAME_TOKENS;
   const tokensPerStep = Math.floor(regionRoom / PADDED_STEPS_COMPACTED) - HEADROOM_TOKENS_PER_STEP;
   return tokensPerStep * ESTIMATED_CHARACTERS_PER_TOKEN;
 };

@@ -44,6 +44,17 @@ describe('the key of a verdict', () => {
     expect(verdictKey(changed, SOLVER)).not.toBe(verdictKey(base, SOLVER));
   });
 
+  it('is the same for two sessions of one project, which share the folder and the session scratch role', () => {
+    const role = '/home/u/.momonga/tmp/sessions/session-scratch';
+    const firstSession = { ...facts, exemptDirectory: role, sessionId: 'session-a' } as never;
+    const secondSession = { ...facts, exemptDirectory: role, sessionId: 'session-b' } as never;
+    expect(verdictKey(verdictSubjectOf(secondSession), SOLVER)).toBe(verdictKey(verdictSubjectOf(firstSession), SOLVER));
+  });
+
+  it('changes when the folder changes, because the verification reads it', () => {
+    expect(verdictKey(verdictSubjectOf({ ...facts, cwd: '/elsewhere' }), SOLVER)).not.toBe(verdictKey(base, SOLVER));
+  });
+
   it('changes with the scratch folder a session exempts, and when no folder is exempt', () => {
     expect(verdictKey({ ...base, exemptDirectory: '/home/u/.momonga/tmp/sessions/s2' }, SOLVER)).not.toBe(verdictKey(base, SOLVER));
     expect(verdictKey({ ...base, exemptDirectory: null }, SOLVER)).not.toBe(verdictKey(base, SOLVER));

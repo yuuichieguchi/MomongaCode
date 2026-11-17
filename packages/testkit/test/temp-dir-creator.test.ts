@@ -41,6 +41,19 @@ describe('createTempDir and removeTempDir', () => {
     }
   });
 
+  it('names a folder with the given prefix inside the given parent, when a prefix is set', async () => {
+    const parent = createTempDir();
+    try {
+      const dir = createTempDir({ parent, prefix: 'mme-abcd-' });
+      expect(path.dirname(dir)).toBe(parent);
+      expect(path.basename(dir).startsWith('mme-abcd-')).toBe(true);
+      expect(path.basename(dir).length).toBe('mme-abcd-'.length + 6);
+      expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    } finally {
+      await removeTempDir(parent);
+    }
+  });
+
   it('names the system temporary folder resolved, the base of folders that are not homes', () => {
     expect(systemTempRoot()).toBe(fs.realpathSync(os.tmpdir()));
   });

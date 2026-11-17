@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createOwnedDirectory, lockFormOf, sweepLeftovers } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, createOwnedDirectory, lockFormOf, sqliteFileLock, sweepLeftovers } from '@momonga/foundation';
+import { claimPathOf, sidecarOf } from '../src/platform/lock-form.ts';
 import type { LeftoverFiles, LockForm } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startClaimHolder, expectedKernelLockOn } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
@@ -11,10 +12,9 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const ENTRY_NAME = 'entry.json.tmp';
 
-const PRIMITIVES: ReadonlyArray<{ test: string; platform: NodeJS.Platform; form: LockForm }> = [
-  { test: 'T1, entry form (darwin, O_EXLOCK on the entry)', platform: 'darwin', form: 'entry' },
-  { test: 'T2, sidecar form (linux and win32, SQLite BEGIN EXCLUSIVE on <entry>.sqlite)', platform: 'linux', form: 'sidecar' },
-];
+const hostLock = expectedKernelLockOn(process.platform);
+
+const PRIMITIVES: ReadonlyArray<{ test: string; form: LockForm }> = [{ test: `the host mechanism ${hostLock.name}`, form: lockFormOf(hostLock, 'file') }];
 
 const nodeLeftoverFiles: LeftoverFiles = {
   readdir: (directory) => fs.promises.readdir(directory),
@@ -22,11 +22,11 @@ const nodeLeftoverFiles: LeftoverFiles = {
 };
 
 describe('the kernel lock is released when its holder is killed with SIGKILL', () => {
-  for (const { test, platform, form } of PRIMITIVES) {
+  for (const { test, form } of PRIMITIVES) {
     it(
       `${test}: a second process is refused while the holder lives and claims after the kill`,
       async (context) => {
-        const mechanism = expectedKernelLockOn(platform);
+        const mechanism = hostLock;
         expect(lockFormOf(mechanism, 'file')).toBe(form);
         const entry = path.join(makeTemporaryDirectory(), ENTRY_NAME);
         const holder = await startHolder(context, entry, mechanism.name);
@@ -42,11 +42,11 @@ describe('the kernel lock is released when its holder is killed with SIGKILL', (
 });
 
 describe('R1 on real kernel locks: the sweep keeps an entry whose holder lives and removes it once the holder is killed', () => {
-  for (const { test, platform } of PRIMITIVES) {
+  for (const { test } of PRIMITIVES) {
     it(
       `${test}: kept while held, removed with its sidecar after SIGKILL`,
       async (context) => {
-        const mechanism = expectedKernelLockOn(platform);
+        const mechanism = hostLock;
         const directory = makeTemporaryDirectory();
         const entry = path.join(directory, ENTRY_NAME);
         const holder = await startHolder(context, entry, mechanism.name);
@@ -63,9 +63,8 @@ describe('R1 on real kernel locks: the sweep keeps an entry whose holder lives a
   }
 });
 
-const DIRECTORY_SIDECARS: ReadonlyArray<{ platform: NodeJS.Platform; claimPathOf(directory: string): string; sidecarOf(directory: string): string }> = [
-  { platform: 'darwin', claimPathOf: (directory) => `${directory}.lock`, sidecarOf: (directory) => `${directory}.lock` },
-  { platform: 'linux', claimPathOf: (directory) => directory, sidecarOf: (directory) => `${directory}.sqlite` },
+const DIRECTORY_SIDECARS: ReadonlyArray<{ platform: string; claimPathOf(directory: string): string; sidecarOf(directory: string): string }> = [
+  { platform: hostLock.name, claimPathOf: (directory) => claimPathOf(hostLock, directory, lockFormOf(hostLock, 'directory')), sidecarOf: (directory) => sidecarOf(hostLock, directory) },
 ];
 
 describe('S2: a directory entry has the sidecar form under every mechanism, on real kernel locks', () => {
@@ -73,7 +72,7 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
     it(
       `${platform} mechanism: a scratch directory is kept with its sidecar while its holder lives, and both go after SIGKILL`,
       async (context) => {
-        const mechanism = expectedKernelLockOn(platform);
+        const mechanism = hostLock;
         expect(lockFormOf(mechanism, 'directory')).toBe('sidecar');
         const parent = makeTemporaryDirectory();
         const scratch = path.join(parent, 'scratch-0a1b2c');
@@ -94,7 +93,7 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
     it(
       `${platform} mechanism: an orphaned sidecar is removed under its own claim, and kept while held`,
       async (context) => {
-        const mechanism = expectedKernelLockOn(platform);
+        const mechanism = hostLock;
         const parent = makeTemporaryDirectory();
         const gone = path.join(parent, 'scratch-gone');
         const holder = await startClaimHolder(context, claimPathOf(gone), mechanism.name);
@@ -109,13 +108,13 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
     );
 
     it(`${platform} mechanism: createOwnedDirectory locks the sidecar before the directory exists, and dispose removes the directory, then the sidecar`, async () => {
-      const mechanism = expectedKernelLockOn(platform);
+      const mechanism = hostLock;
       const parent = makeTemporaryDirectory();
       const existedAtClaim: boolean[] = [];
       const observing = {
         ...mechanism,
         claim: async (lockPath: string) => {
-          const directory = platform === 'darwin' ? lockPath.slice(0, -'.lock'.length) : lockPath;
+          const directory = hostLock.name === 'file-lock' ? lockPath.slice(0, -'.lock'.length) : lockPath;
           existedAtClaim.push(fs.existsSync(directory));
           return mechanism.claim(lockPath);
         },
@@ -133,4 +132,18 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
       expect(fs.readdirSync(parent)).toEqual([]);
     });
   }
+});
+
+describe('the sqlite lock database and its journal are one leftover unit', () => {
+  it('sweeps a journal beside a leftover entry with the entry, and keeps nothing', async () => {
+    const dir = makeTemporaryDirectory();
+    const entry = path.join(dir, 'session-3');
+    fs.writeFileSync(entry, 'stray');
+    fs.writeFileSync(`${entry}${LOCK_DATABASE_SUFFIX}`, '');
+    fs.writeFileSync(`${entry}${LOCK_DATABASE_SUFFIX}-journal`, '');
+    fs.writeFileSync(path.join(dir, `session-4${LOCK_DATABASE_SUFFIX}-journal`), '');
+    const swept = await sweepLeftovers({ directories: [{ directory: dir, isLeftover: () => true }], lock: sqliteFileLock });
+    expect(swept.kept).toEqual([]);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
 });

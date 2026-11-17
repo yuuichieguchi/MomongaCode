@@ -21,14 +21,14 @@ const countingStore = (events: FakeEvent[], answering: string[]) => {
       readTypes.push([...types]);
       return events.filter((event) => types.includes(event.type));
     },
-    answeringTargetsOf: (_runId: string) => [...answering],
+    answeringTargetsOf: async (_runId: string) => [...answering],
   };
   return { store, readTypes };
 };
 
 const answeredBy = async (events: FakeEvent[], answering: string[]) => {
   const { store, readTypes } = countingStore(events, answering);
-  const view = await answeredByOf(store as unknown as Parameters<typeof answeredByOf>[0], 'run-1');
+  const view = await answeredByOf(store as unknown as Parameters<typeof answeredByOf>[0], 'run-1', new AbortController().signal);
   return { view, readTypes };
 };
 
@@ -115,5 +115,17 @@ describe('GET /v1/runs/:id/answered-by answers a normal run state with its typed
 
     expect(response.status).toBe(200);
     expect(response.json).toEqual({ answeredBy: [] });
+  });
+
+  it('gives up the lookup when the request is aborted, even if the answerers record never answers', async () => {
+    const store = {
+      readRunEventsOfTypes: () => [],
+      answeringTargetsOf: () => new Promise<string[]>(() => undefined),
+    };
+    const request = new AbortController();
+    const looked = answeredByOf(store as unknown as Parameters<typeof answeredByOf>[0], 'run-1', request.signal);
+    request.abort(new Error('the request was closed'));
+
+    await expect(looked).rejects.toThrow('the request was closed');
   });
 });

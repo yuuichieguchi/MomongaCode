@@ -57,7 +57,6 @@ export type BodyRecord = {
   kind: BodyKind;
   content: string;
   createdAtMs: number;
-  expiresAtMs: number;
 };
 
 export type StoredBody = { id: number; body: BodyRecord };
@@ -70,7 +69,7 @@ export type TraceStore = {
   bodiesOfRunAfter(runId: string, afterId: number, limit: number): StoredBody[];
   spansOfRunAfter(runId: string, afterSeq: number, count: number): IngestedSpan[];
   purgeRuns(runIds: readonly string[], cutoffMs: number): number;
-  moveLegacyContent(options: { retentionMs: number }): number;
+  moveLegacyContent(): number;
   compact(): void;
   close(): void;
 };
@@ -158,12 +157,18 @@ CREATE INDEX bodies_by_expiry ON bodies (expires_at_ms);
 CREATE INDEX spans_with_content ON spans (ingest_seq) WHERE ${CONTENT_PRESENT};
 `;
 
+const DROP_BODY_EXPIRY = `
+DROP INDEX bodies_by_expiry;
+ALTER TABLE bodies DROP COLUMN expires_at_ms;
+`;
+
 export const TRACE_STORE_MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial', sql: INITIAL_SCHEMA },
   { version: 2, name: 'chat-span-billing', sql: RECORD_BILLING_OF_EARLIER_CHAT_SPANS },
   { version: 3, name: 'span-ingest-sequence', sql: INGEST_SEQUENCE },
   { version: 4, name: 'run-ingest-index', sql: RUN_INGEST_INDEX },
   { version: 5, name: 'content-bodies', sql: CONTENT_BODIES },
+  { version: 6, name: 'no-body-expiry', sql: DROP_BODY_EXPIRY },
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -279,7 +284,6 @@ const decodeBody = (row: Row): BodyRecord => {
     kind: readOneOf(table, identity, row, 'kind', BODY_KINDS),
     content: readText(table, identity, row, 'content'),
     createdAtMs: readInteger(table, identity, row, 'created_at_ms'),
-    expiresAtMs: readInteger(table, identity, row, 'expires_at_ms'),
   };
 };
 
@@ -309,7 +313,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     `UPDATE spans SET attributes_json = json_remove(attributes_json, ${BODY_KINDS.map(() => '?').join(', ')}) WHERE trace_id = ? AND span_id = ?`,
   ),
   insertBody: db.prepare(
-    `INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms) VALUES (?, ?, ?, ?, ?)`,
   ),
   spansForRun: db.prepare('SELECT * FROM spans WHERE run_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
   spansOfRunAfter: db.prepare('SELECT * FROM spans WHERE run_id = ? AND ingest_seq > ? ORDER BY ingest_seq'),
@@ -368,7 +372,7 @@ const createStore = (db: DatabaseSync, statements: Statements): TraceStore => {
     return deleted;
   };
 
-  const moveLegacyContent = ({ retentionMs }: { retentionMs: number }): number =>
+  const moveLegacyContent = (): number =>
     immediateTx(db, () => {
       let bytes = 0;
       let moved = 0;
@@ -386,7 +390,7 @@ const createStore = (db: DatabaseSync, statements: Statements): TraceStore => {
         if (moved > 0 && bytes + size > DEFAULT_MAX_QUEUED_BYTES) break;
         const traceId = readText('spans', identity, row, 'trace_id');
         const spanId = readText('spans', identity, row, 'span_id');
-        for (const body of bodies) statements.insertBody.run(traceId, spanId, body.kind, body.content, endMs, endMs + retentionMs);
+        for (const body of bodies) statements.insertBody.run(traceId, spanId, body.kind, body.content, endMs);
         statements.stripContent.run(...BODY_KINDS.map(jsonPath), traceId, spanId);
         bytes += size;
         moved += 1;
@@ -421,14 +425,7 @@ const createStore = (db: DatabaseSync, statements: Statements): TraceStore => {
           );
         }
         for (const body of bodies) {
-          statements.insertBody.run(
-            body.traceId,
-            body.spanId,
-            body.kind,
-            body.content,
-            body.createdAtMs,
-            body.expiresAtMs,
-          );
+          statements.insertBody.run(body.traceId, body.spanId, body.kind, body.content, body.createdAtMs);
         }
       });
     },

@@ -6,7 +6,7 @@ import { findProgramOnPathSync } from '@momonga/foundation/program-search';
 import { nodeFileSystemSync } from '../../packages/foundation/src/node-file-system.ts';
 import { SECRET_STORE_SEARCHED_PROGRAMS, credentialReadScript, credentialWriteScript } from '@momonga/foundation/secret-store';
 import { MOMONGA_LAUNCHES } from '../../packages/cli/src/daemon/launcher.ts';
-import { URL_OPENER_PROGRAMS, urlOpenerFileForSync } from '../../packages/foundation/src/open-browser.ts';
+import { URL_OPENER_PROGRAMS } from '../../packages/foundation/src/open-browser.ts';
 import { chosenSecretProgramOutsideFakes, givenSecretProgramOutsideFakes, isInsideFakeSecretPrograms, realFileOf } from '../../packages/testkit/src/secret-store-env-check.ts';
 
 const LAUNCHERS = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const;
@@ -131,12 +131,11 @@ const resolvedCommand = (command: string, env: ProcessEnv, cwd: unknown): string
 
 const NOT_A_FILE_NAME: ReadonlySet<string> = new Set(['ENAMETOOLONG', 'EINVAL', 'ERR_INVALID_ARG_VALUE']);
 
-const realFileOfWord = (file: string): string | undefined => {
+const startedFileOf = (file: string): string => {
   try {
-    const real = realFileOf(file);
-    return real !== undefined && fs.statSync(real).isFile() ? real : undefined;
+    return realFileOf(file) ?? file;
   } catch (error) {
-    if (NOT_A_FILE_NAME.has(String((error as NodeJS.ErrnoException).code))) return undefined;
+    if (NOT_A_FILE_NAME.has(String((error as NodeJS.ErrnoException).code))) return file;
     throw error;
   }
 };
@@ -144,7 +143,7 @@ const realFileOfWord = (file: string): string | undefined => {
 const realFileStartedBy = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
   if (command === undefined || command === '') return undefined;
   const found = resolvedCommand(command, env, cwd);
-  return found === undefined ? undefined : realFileOfWord(found);
+  return found === undefined ? undefined : startedFileOf(found);
 };
 
 const realSecretProgram = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
@@ -170,7 +169,8 @@ const browserOutsideFakes = (env: ProcessEnv, cwd: unknown): string | undefined 
 };
 
 const inheritedOpenerOutsideFakes = (): string | undefined => {
-  const opener = urlOpenerFileForSync(process.env, nodeFileSystemSync);
+  const browser = process.env['BROWSER'];
+  const opener = browser !== undefined && browser !== '' ? browser : URL_OPENER_PROGRAMS.map((program) => findProgramOnPathSync(program, process.env, nodeFileSystemSync)).find((file) => file !== undefined);
   return opener === undefined || isInsideFakeSecretPrograms(opener) ? undefined : opener;
 };
 

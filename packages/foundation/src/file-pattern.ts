@@ -639,3 +639,13 @@ export const testFileMatcher = (matcher: FileMatcher, candidate: string, ignoreC
   const normalised = candidate.normalize('NFC');
   return { own: testExpression(matcher.own, normalised, ignoreCase), below: testExpression(matcher.below, normalised, ignoreCase) };
 };
+
+export const componentCountOf = (directory: string): number => directory.split('/').filter((part) => part !== '').length;
+
+export const matchDepthOf = (matcher: FileMatcher): number | undefined => {
+  const { own } = matcher;
+  if (own.kind === 'none') return 0;
+  if (own.kind === 'subpath') return undefined;
+  if (own.rule.segments.some((segment) => segment.kind === 'globstar')) return undefined;
+  return componentCountOf(own.rule.directory) + own.rule.segments.length;
+};

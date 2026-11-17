@@ -1,5 +1,5 @@
 import { TEST_FENCE } from '@momonga/testkit';
-import { fenceUntrusted } from '@momonga/protocol';
+import { fenceToolOutput, fenceUntrusted } from '@momonga/protocol';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
@@ -233,8 +233,10 @@ describe('compaction transcript with images', () => {
     const content = (message as { content: ContentPart[] }).content;
     expect(content.map((part) => part.type)).toEqual(['input_text', 'input_image', 'input_text', 'input_image', 'input_text']);
     expect((content[0] as { text: string }).text).toBe(`<transcript>\n${el('item', { role: 'user' }, 'look')}`);
-    expect((content[2] as { text: string }).text).toBe(`${el('item', { role: 'user' }, 'after')}\n${el('tool_call', { id: 'c1', name: 'shot' }, '{}')}\n`);
-    expect((content[4] as { text: string }).text.startsWith('\n</transcript>\n')).toBe(true);
+    const [toolOutputOpen = '', toolOutputClose = ''] = fenceToolOutput('c1', 'shot', 'SLOT', TEST_FENCE).split('SLOT');
+    expect((content[2] as { text: string }).text).toBe(`${el('item', { role: 'user' }, 'after')}\n${el('tool_call', { id: 'c1', name: 'shot' }, '{}')}\n${toolOutputOpen}`);
+    expect((content[4] as { text: string }).text.startsWith(toolOutputClose)).toBe(true);
+    expect((content[4] as { text: string }).text).toContain('\n</transcript>\n');
   });
 });
 

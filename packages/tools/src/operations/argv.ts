@@ -13,6 +13,7 @@ import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { ToolExecutionError } from '../types.ts';
 import { appendGitConfig, gitProxyEnvironment, withNetwork } from '../read-only-call.ts';
+import type { ConfigEntry } from '../git-config-table.ts';
 import type { ProbeContext, ToolContext } from '../types.ts';
 import { openGitCredentialChannel } from './git-credential.ts';
 import type { GitCredentialChannel, GitOriginCredential } from './git-credential.ts';
@@ -48,7 +49,7 @@ export type SandboxedRunnerPorts = {
   inspector: ProcessInspector;
 };
 
-const LOCAL_DESTINATION = /^(file:\/\/|\/)/;
+const LOCAL_DESTINATION = /^(file:\/\/|\/|\.{1,2}\/|[A-Za-z]:[\\/])/;
 const PROXIED_SCHEMES: readonly string[] = ['http:', 'https:'];
 const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 
@@ -91,6 +92,28 @@ const destinationsOf = (network: RenderedNetwork): readonly string[] => (network
 
 const TRUST_FILE_NAME = 'ca.pem';
 
+export const PATH_VALUED_HTTP_KEYS: readonly string[] = [
+  'http.sslCert',
+  'http.sslKey',
+  'http.sslCertType',
+  'http.sslKeyType',
+  'http.sslCertPasswordProtected',
+  'http.sslCAPath',
+  'http.sslBackend',
+  'http.sslCipherList',
+  'http.sslVersion',
+  'http.pinnedPubkey',
+  'http.proxySSLCert',
+  'http.proxySSLKey',
+  'http.proxySSLCAInfo',
+  'http.proxySSLCertPasswordProtected',
+];
+
+export const trustConfigOf = (bundle: string): ConfigEntry[] => [
+  ...PATH_VALUED_HTTP_KEYS.map((key): ConfigEntry => [key, '']),
+  ['http.sslCAInfo', bundle],
+];
+
 const withTrust = async (ports: SandboxedRunnerPorts, options: ArgvOptions, granted: GrantedNetwork): Promise<GrantedNetwork> => {
   const { files } = options.context;
   const directory = await files.mkdtemp(path.join(ports.credentialRoot, 'mmca-'));
@@ -103,7 +126,7 @@ const withTrust = async (ports: SandboxedRunnerPorts, options: ArgvOptions, gran
   }
   return {
     ...granted,
-    env: appendGitConfig(granted.env, [['http.sslCAInfo', bundle]]),
+    env: appendGitConfig(granted.env, trustConfigOf(bundle)),
     settle: async () => {
       try {
         return await granted.settle();

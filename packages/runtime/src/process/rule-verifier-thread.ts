@@ -1,5 +1,5 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { systemClock, systemWaitTiming } from '@momonga/foundation';
+import { systemTiming, systemWaitTiming } from '@momonga/foundation';
 import type { Clock, Timing, UnixSocketPolicy } from '@momonga/foundation';
 import type { RuleVerdict, RuleVerdictPhase } from '@momonga/protocol';
 import { ShellNotFoundError, createHostFilesystem, nodeGlobPorts } from '@momonga/policy';
@@ -47,7 +47,7 @@ export const hostPhasesOf = ({ askedAtMs, enteredAtMs, loadedAtMs, instantiatedA
   { phase: 'instantiate', ms: instantiatedAtMs - loadedAtMs },
 ];
 
-export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock, timing, onEntered }: { signal: AbortSignal; clock: Clock; timing: Timing; onEntered: () => void }): Promise<RuleVerification> => {
+export const runRuleVerifyJob = async (job: RuleVerifyJob, { signal, clock, timing, onEntered }: { signal: AbortSignal; clock: Clock & Pick<Timing, 'monotonicMs'>; timing: Timing; onEntered: () => void }): Promise<RuleVerification> => {
   const enteredAtMs = clock.now();
   signal.throwIfAborted();
   const verifier = await import('@momonga/verify');
@@ -84,7 +84,7 @@ if (!isMainThread && parentPort !== null && isRuleVerifyJob(workerData)) {
     if (isRuleVerifyAbort(message)) asker.abort(new Error(message.abort));
   });
   const post = (reply: RuleVerifyReply): void => port.postMessage(reply);
-  void runRuleVerifyJob(workerData, { signal: asker.signal, clock: systemClock, timing: systemWaitTiming, onEntered: () => port.postMessage({ entered: true }) }).then(
+  void runRuleVerifyJob(workerData, { signal: asker.signal, clock: systemTiming, timing: systemWaitTiming, onEntered: () => port.postMessage({ entered: true }) }).then(
     (verification) => post({ ok: true, ...verification }),
     (error: unknown) => post({ ok: false, reason: error instanceof Error ? error.message : String(error) }),
   );

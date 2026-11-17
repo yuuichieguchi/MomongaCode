@@ -72,15 +72,14 @@ const attributesJsonRows = (file: string): string[] => {
   }
 };
 
-const bodyRows = (file: string): { span_id: string; kind: string; content: string; created_at_ms: number; expires_at_ms: number }[] => {
+const bodyRows = (file: string): { span_id: string; kind: string; content: string; created_at_ms: number }[] => {
   const db = new DatabaseSync(file, { readOnly: true });
   try {
-    return db.prepare('SELECT span_id, kind, content, created_at_ms, expires_at_ms FROM bodies ORDER BY id').all() as {
+    return db.prepare('SELECT span_id, kind, content, created_at_ms FROM bodies ORDER BY id').all() as {
       span_id: string;
       kind: string;
       content: string;
       created_at_ms: number;
-      expires_at_ms: number;
     }[];
   } finally {
     db.close();
@@ -116,7 +115,6 @@ describe('the trace store keeps message content only in bodies (D-8)', () => {
     expect(bodies.map((body) => body.kind).sort()).toEqual([...CONTENT_KEYS].sort());
     for (const body of bodies) {
       expect(body.content).toBe(contentValue(body.kind, 'one'));
-      expect(body.expiresAtMs - body.createdAtMs).toBe(RETENTION_MS);
     }
   });
 
@@ -190,7 +188,6 @@ describe('the trace store keeps message content only in bodies (D-8)', () => {
       }
       const bodies = bodyRows(file);
       expect(bodies, `seed ${seed}`).toHaveLength(expectedBodies);
-      for (const body of bodies) expect(body.expires_at_ms - body.created_at_ms, `seed ${seed}`).toBe(RETENTION_MS);
     }
   });
 });
@@ -219,7 +216,7 @@ describe('legacy spans that carry content (migration of D-8)', () => {
     insertLegacySpan(file, 'e'.repeat(16), endMs + 1, { [RUN_ATTRIBUTE]: RUN_ID, [CONTENT_KEYS[0] as string]: contentValue(CONTENT_KEYS[0] as string, 'second') });
 
     let moved = 0;
-    for (let batch = store.moveLegacyContent({ retentionMs: RETENTION_MS }); batch > 0; batch = store.moveLegacyContent({ retentionMs: RETENTION_MS })) {
+    for (let batch = store.moveLegacyContent(); batch > 0; batch = store.moveLegacyContent()) {
       moved += batch;
     }
     expect(moved).toBe(2);
@@ -232,12 +229,11 @@ describe('legacy spans that carry content (migration of D-8)', () => {
     expect(first.map((row) => row.kind).sort()).toEqual([...CONTENT_KEYS].sort());
     for (const row of first) {
       expect(row.content).toBe(contentValue(row.kind, 'legacy'));
-      expect(row.expires_at_ms).toBe(endMs + RETENTION_MS);
     }
     expect(bodyRows(file).filter((row) => row.span_id === 'e'.repeat(16)).map((row) => row.content)).toEqual([
       contentValue(CONTENT_KEYS[0] as string, 'second'),
     ]);
-    expect(store.moveLegacyContent({ retentionMs: RETENTION_MS })).toBe(0);
+    expect(store.moveLegacyContent()).toBe(0);
   });
 });
 

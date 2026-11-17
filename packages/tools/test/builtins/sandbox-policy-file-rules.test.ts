@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROTECTED_SET, ruleEnforcementOf, momongaLayout } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, ruleEnforcementOf, momongaLayout, standardSecretLocations } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -51,6 +51,17 @@ describe('buildSandboxPolicy and file rules', () => {
     const inside = path.join(layout.home, '.momonga', 'projects');
     fs.mkdirSync(inside, { recursive: true });
     expect(await codeOf(() => buildSandboxPolicy({ ...options, readAllowed: [inside] }, NEVER_CANCELLED))).toBe('read_allowed_inside_owned_root');
+  });
+
+  it('names every secret location the sandbox denies when a readAllowed entry lies inside one', async () => {
+    const { layout, options } = await optionsFor();
+    const inside = path.join(layout.home, '.momonga', 'projects');
+    fs.mkdirSync(inside, { recursive: true });
+    const message = await buildSandboxPolicy({ ...options, readAllowed: [inside] }, NEVER_CANCELLED).then(
+      () => '',
+      (error: unknown) => (error as Error).message,
+    );
+    for (const location of standardSecretLocations(options.layout)) expect(message).toContain(location.label);
   });
 
   it('accepts a readAllowed entry inside the skills directory of home/.momonga', async () => {

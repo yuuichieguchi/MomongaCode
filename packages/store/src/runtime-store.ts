@@ -319,8 +319,8 @@ const prepareStatements = (db: DatabaseSync) => ({
   insertRun: db.prepare(RUN_INSERT_SQL),
   writeRun: db.prepare(RUN_WRITE_SQL),
   insertEvent: db.prepare(
-    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json, pinned_digest, call_id, approval_id, tool_name, notice_code, model_call_json)
-     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload, :pinnedDigest, :callId, :approvalId, :toolName, :noticeCode, :modelCallJson)`,
+    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json, pinned_digest, shown, call_id, approval_id, tool_name, notice_code, model_call_json)
+     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload, :pinnedDigest, :shown, :callId, :approvalId, :toolName, :noticeCode, :modelCallJson)`,
   ),
   dueWaitingRuns: db.prepare(
     `SELECT r.id FROM runs r
@@ -365,12 +365,12 @@ const prepareStatements = (db: DatabaseSync) => ({
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
   pendingPermissionRequests: db.prepare(
     `SELECT e.* FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
-     WHERE a.status = 'pending' AND a.kind = 'permission'
+     WHERE a.status = 'pending' AND a.kind = 'permission' AND e.shown IS NULL
      ORDER BY a.run_id, e.seq`,
   ),
   pendingPermissionRequestsOfRun: db.prepare(
     `SELECT e.* FROM approvals a JOIN events e ON e.run_id = a.run_id AND e.type = 'tool.permission.requested' AND e.approval_id = a.id
-     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission'
+     WHERE a.run_id = :runId AND a.status = 'pending' AND a.kind = 'permission' AND e.shown IS NULL
      ORDER BY e.seq`,
   ),
   listSweeperOwned: db.prepare(
@@ -494,11 +494,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const lifetime = new AbortController();
   const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, fileSystemSync: options.fileSystemSync, random, lock: options.lock });
   const decodeContext = decodeContextOf(db);
-  const approvalOps = createApprovalStore(db, clock, decodeContext);
-  const memories = createMemoryStore(db, clock, decodeContext);
+  const approvalOps = createApprovalStore(db, clock, random, decodeContext);
+  const memories = createMemoryStore(db, clock, random, decodeContext);
   const contextCharges = createContextChargeStore(db, clock, decodeContext);
   const reflection = createReflectionStore(db, clock, { memories, endedRun: { append: (runId, payloads) => appendToEndedRun(runId, payloads) } }, decodeContext);
-  const governing = createGoverningFactStore(db, clock, decodeContext);
+  const governing = createGoverningFactStore(db, clock, random, decodeContext);
   const issueWatch = createIssueWatchStore(db, clock);
   const runFacts = createRunFactsStore(db, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
@@ -549,7 +549,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const unshownRequestsOf = (rows: readonly Row[]): { runId: string; approvalId: string }[] =>
-    decodeEvents(rows).flatMap((event) => (event.type === 'tool.permission.requested' && event.shown === undefined ? [{ runId: event.runId, approvalId: event.approvalId }] : []));
+    rows.map((row) => {
+      const reader = readerFor('events', String(row['id']), row);
+      return { runId: reader.string('run_id'), approvalId: reader.string('approval_id') };
+    });
 
   const decodeKnownEvents = (rows: readonly Row[]): (RunEvent | SessionEvent)[] => {
     observeDecode(rows);
@@ -594,6 +597,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       type: event.payload.type,
       payload,
       pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
+      shown: event.payload.type === 'tool.permission.requested' && event.payload.shown !== undefined ? 1 : null,
       ...columnsOf(event.payload),
     });
     if (event.runId !== null && event.seq !== null && event.step !== null) derived.recordAppended({ eventId: Number(inserted.lastInsertRowid), runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
@@ -758,7 +762,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
     const previous = sql.latestRunOfSession.get({ sessionId });
     const shell = pendingUserShell(sessionId);
-    const id = uuidv7(clock);
+    const id = uuidv7(clock, random);
     const now = clock.now();
     sql.insertRun.run({
       id,
@@ -1333,7 +1337,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return transaction<InboxAddResult>(() => {
         if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
         if (inboxTable.pendingCount(sessionId) >= INBOX_MAX_PENDING) return { kind: 'full' };
-        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images, attachments: input.attachments, terms: input.run, origin });
+        const added = inboxTable.insert({ id: uuidv7(clock, random), sessionId, delivery: input.delivery, text: input.text, images: input.images, attachments: input.attachments, terms: input.run, origin });
         const open = inboxTable.sessionHasOpenRun(sessionId);
         if (open) announceInbox(sessionId);
         else startNextQueued(sessionId);
@@ -1384,7 +1388,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const store: RuntimeStore = {
     createSession: (input) =>
       transaction(() => {
-        const id = uuidv7(clock);
+        const id = uuidv7(clock, random);
         sql.insertSession.run({
           id,
           cwd: input.cwd,
@@ -1482,7 +1486,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         }
         const parentSession = requireSession(parent.sessionId);
         const now = clock.now();
-        const sessionId = uuidv7(clock);
+        const sessionId = uuidv7(clock, random);
         sql.insertSession.run({
           id: sessionId,
           cwd: parentSession.cwd,
@@ -1496,7 +1500,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           createdAt: now,
           fenceNonce: random.hex(FENCE_NONCE_BYTE_LENGTH),
         });
-        const runId = uuidv7(clock);
+        const runId = uuidv7(clock, random);
         sql.insertRun.run({
           id: runId,
           sessionId,

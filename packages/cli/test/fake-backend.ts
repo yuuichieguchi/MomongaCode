@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { applyCapabilityOverride, INBOX_FULL_CODE, INBOX_MAX_PENDING, inboxFullMessage, parseCanon } from '@momonga/protocol';
+import { INBOX_FULL_CODE, INBOX_MAX_PENDING, inboxFullMessage, parseCanon, imageCapability } from '@momonga/protocol';
 import { SCRIPTED_MODEL, SCRIPTED_PROVIDER, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
 import type { Capabilities, CapabilityOverride, LocalServerDetection, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
@@ -147,9 +147,8 @@ export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain
   };
 };
 
-export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities =>
-  applyCapabilityOverride(
-    {
+export const capabilitiesOf = ({ imageInput, imageTokens, ...overrides }: CapabilityOverride = {}): Capabilities =>
+  ({ ...{
       contextWindow: 8192,
       maxOutputTokens: 2048,
       toolCalling: 'native',
@@ -163,9 +162,7 @@ export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities
       usageReported: true,
       maxConcurrency: 1,
       source: 'declared',
-    },
-    overrides,
-  );
+    }, ...overrides, ...imageCapability(imageInput ?? false, imageTokens) })
 
 const noPlanRoute = (route: string) => async (): Promise<never> => {
   throw new Error(`the fake backend serves no plan route ${route}`);

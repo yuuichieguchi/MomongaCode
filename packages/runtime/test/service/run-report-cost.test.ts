@@ -35,7 +35,9 @@ const inlineControl = (dbPath: string, store: () => RuntimeStore): ContributionP
       if (last === undefined || chunk.length < READ_CHUNK) break;
       after = last.seq;
     }
-    return { lastSeq: events.at(-1)?.seq ?? 0, report: buildRunReport(events) };
+    const run = store().getRun(runId);
+    if (run === undefined) throw new Error(`run ${runId} does not exist`);
+    return { lastSeq: events.at(-1)?.seq ?? 0, report: buildRunReport(events), run };
   },
 });
 

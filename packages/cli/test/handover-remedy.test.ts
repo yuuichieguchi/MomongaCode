@@ -93,10 +93,10 @@ describe('the remedy a handover prints is accepted by the command it names (cli-
   });
 
   it('a record that cannot be read leads to the list of sessions, and a record of another kind to what it holds', () => {
-    const unread = adoptionOf({ file: '/h/run/handover/acp-1731300000000.json', session: 'acp-1731300000000', parsed: { kind: 'refused', reason: 'the record is not JSON' }, terminal: undefined }, ['acp']);
+    const unread = adoptionOf({ file: '/h/run/handover/acp-1731300000000.json', parsed: { kind: 'refused', reason: 'the record is not JSON' }, terminal: undefined }, ['acp']);
     if (unread.kind !== 'refused') throw new Error('the unreadable record was not refused');
     expect(commandsIn(restoreRefusedText(unread)).map(acceptedBy)).toEqual([{ by: 'root', reopen: { kind: 'pick' } }]);
-    const other = adoptionOf({ file: '/h/run/handover/session-7.json', session: 'session-7', parsed: { kind: 'record', record: ATTACH }, terminal: undefined }, ['tui']);
+    const other = adoptionOf({ file: '/h/run/handover/session-7.json', parsed: { kind: 'record', record: ATTACH }, terminal: undefined }, ['tui']);
     if (other.kind !== 'refused') throw new Error('the record of another kind was not refused');
     expect(commandsIn(restoreRefusedText(other)).map(acceptedBy)).toEqual([{ by: 'attach', argument: 'run-id', value: 'run-9' }]);
   });

@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { claimPathOf, lockFormOf } from '@momonga/foundation';
+import { testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { runUpdate } from '../src/commands/update.ts';
 import { UpdateError } from '../src/update/errors.ts';
@@ -36,6 +38,14 @@ const expectRejected = async (harness: UpdateHarness, code: UpdateError['code'])
 };
 
 const darwin: HarnessOptions = { platform: 'darwin' };
+
+const leftByCrashedUpdate = async (file: string): Promise<void> => {
+  const lock = testKernelLock();
+  fs.writeFileSync(file, 'partial');
+  const outcome = await lock.claim(claimPathOf(lock, file, lockFormOf(lock, 'file')));
+  if (outcome.kind !== 'claimed') throw new Error(`the lock of ${file} is held by another process`);
+  outcome.lock.release();
+};
 
 describe('momonga update: a good update', () => {
   it('replaces the executable with the verified release, keeping its mode, and leaves no staging file', async (context) => {
@@ -111,7 +121,7 @@ describe('momonga update: a good update', () => {
 
   it('removes staging files left behind by an earlier crashed update', async (context) => {
     const harness = await setupUpdate(context);
-    fs.writeFileSync(path.join(harness.dir, '.momonga-update.deadbeef'), 'partial');
+    await leftByCrashedUpdate(path.join(harness.dir, '.momonga-update.deadbeef'));
     fs.writeFileSync(path.join(harness.dir, 'unrelated'), 'keep');
     publish(harness);
 

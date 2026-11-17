@@ -1,6 +1,6 @@
 import { syncPaths } from '@momonga/foundation';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -39,7 +39,7 @@ import {
   endpointScopeOf,
 } from '@momonga/foundation';
 import type { FileSystem, GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism, EndpointScope } from '@momonga/foundation';
-import { sourceBuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
+import { prebuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
 import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
@@ -174,10 +174,6 @@ export const WINDOWS_KEEPER_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..
 export const nodeSourceKeeperFiles: SourceKeeperFiles = {
   exists: (file) => existsSync(file),
   read: (file) => readFileSync(file),
-  mkdirPrivate: (directory) => void mkdirSync(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE }),
-  write: (file, bytes) => writeFileSync(file, bytes, { mode: PRIVATE_DIRECTORY_MODE }),
-  rename: (from, to) => renameSync(from, to),
-  remove: (target) => rmSync(target, { recursive: true, force: true }),
 };
 
 export const runKeeperBuild = (script: string, workDir: string): number | null => {
@@ -186,24 +182,20 @@ export const runKeeperBuild = (script: string, workDir: string): number | null =
   return run.status;
 };
 
-export const hostSourceBuiltWindowsKeeper = (executablesRoot: string): (() => string) =>
-  sourceBuiltWindowsKeeper({ script: WINDOWS_KEEPER_BUILD_SCRIPT, executablesRoot, build: runKeeperBuild, files: nodeSourceKeeperFiles, random: systemRandom });
+export const hostSourceBuiltWindowsKeeper = (executablesRoot: string, lock: KernelLockMechanism): (() => Promise<() => string>) =>
+  sourceBuiltWindowsKeeper({ script: WINDOWS_KEEPER_BUILD_SCRIPT, executablesRoot, build: runKeeperBuild, files: nodeSourceKeeperFiles, random: systemRandom, lock });
 
 export const LINUX_SOCKET_GUARD_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'linux-socket-guard.ts');
 
-export const runSocketGuardBuild = (script: string, workDir: string): number | null => {
-  const run = spawnSync(process.execPath, [script, '--work-dir', workDir, '--compiler', 'host'], { stdio: ['ignore', 'ignore', 'inherit'] });
-  if (run.error !== undefined) throw run.error;
-  return run.status;
-};
+export const LINUX_SOCKET_GUARD_BUILT_DIRECTORY = path.resolve(import.meta.dirname, '..', '..', '..', 'dist', 'linux-socket-guard');
 
 export const hostPlatform = (): NodeJS.Platform => process.platform;
 
 export const hostExtractedLinuxSocketGuard = (asset: (name: string) => Uint8Array, executablesRoot: string, lock: KernelLockMechanism): Promise<string> =>
   ensureBundledLinuxSocketGuard({ asset, executablesRoot, random: systemRandom, files: nodeFileSystem, lock });
 
-export const hostSourceBuiltLinuxSocketGuard = (executablesRoot: string): (() => string) =>
-  sourceBuiltLinuxSocketGuard({ script: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, build: runSocketGuardBuild, files: nodeSourceKeeperFiles, random: systemRandom });
+export const hostPrebuiltLinuxSocketGuard = (executablesRoot: string, lock: KernelLockMechanism): (() => Promise<() => string>) =>
+  prebuiltLinuxSocketGuard({ builtDirectory: LINUX_SOCKET_GUARD_BUILT_DIRECTORY, builder: LINUX_SOCKET_GUARD_BUILD_SCRIPT, executablesRoot, files: nodeSourceKeeperFiles, random: systemRandom, lock });
 
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
   const child = launchApart(spec.command, spec.args, {

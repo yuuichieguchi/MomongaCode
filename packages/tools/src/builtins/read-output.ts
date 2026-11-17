@@ -1,11 +1,12 @@
 import { defineTool, ToolExecutionError } from '../types.ts';
+import { READ_OUTPUT_TOOL_NAME } from '@momonga/protocol';
 import { pageToFit } from '../paging.ts';
 import { DEFAULT_LINE_LIMIT, pageNumberedLines, pastEndMessage, splitLines } from './format.ts';
 
 type ReadOutputInput = { handle: string; offset?: number; limit?: number };
 
 export const readOutputTool = defineTool<ReadOutputInput>({
-  name: 'ReadOutput',
+  name: READ_OUTPUT_TOOL_NAME,
   tier: 'essential',
   reads: 'output_handle',
   description: `Reads a saved tool output by the handle reported when the output was truncated. Returns at most ${DEFAULT_LINE_LIMIT} lines by default in cat -n format; use offset (1-based line) and limit to page.`,
@@ -30,7 +31,7 @@ export const readOutputTool = defineTool<ReadOutputInput>({
   pagesOutput: true,
   timeoutMs: 10_000,
   title: (input) => `Read output ${input.handle.slice(0, 12)}`,
-  subject: () => ({ kind: 'none', tool: 'ReadOutput' }),
+  subject: () => ({ kind: 'none', tool: READ_OUTPUT_TOOL_NAME }),
   execute: async (input, ctx) => {
     const offset = input.offset ?? 1;
     const range = { lineStart: offset, lineEnd: offset + (input.limit ?? DEFAULT_LINE_LIMIT) - 1 };

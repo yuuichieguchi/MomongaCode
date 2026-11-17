@@ -16,7 +16,6 @@ import {
   resolveLayoutLocks,
   listGenerations,
   lockReadsHeld,
-  nodeFileSystem,
   operationLimit,
   orderVersions,
   probeGenerationLocks,
@@ -33,7 +32,7 @@ import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { PollTimeout, pollUntil } from '../poll.ts';
-import type { CliPorts, DetachedExit } from '../ports.ts';
+import type { CliFiles, CliPorts, DetachedExit } from '../ports.ts';
 import { CANDIDATE_CHECK_TIMEOUT_MS } from '../update/install.ts';
 import { reportVersionInvocation, superviseInvocation } from './launcher.ts';
 import { anotherVersionInstalledText, installedVersionUnreportedText, startFailureText } from './start-failure.ts';
@@ -51,7 +50,7 @@ export class DaemonStartError extends Error {
   }
 }
 
-export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers' | 'endpointScope'>;
+export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers' | 'endpointScope' | 'files'>;
 
 export type DaemonConnection = { health: SupervisorHealth; clientIsOlder: boolean };
 
@@ -278,9 +277,9 @@ export const reopenSessionMessage = (daemonVersion: string): string => `momonga 
 export const olderCommandMessage = (daemonVersion: string): string =>
   `momonga was updated to v${daemonVersion} while this command was running; run it again. Your tasks are not affected.`;
 
-const directoryGone = async (directory: string): Promise<boolean> => {
+export const directoryGone = async (files: Pick<CliFiles, 'lstat'>, directory: string): Promise<boolean> => {
   try {
-    await nodeFileSystem.lstat(directory);
+    await files.lstat(directory);
     return false;
   } catch (error) {
     if (errnoCodeOf(error) === 'ENOENT') return true;
@@ -288,9 +287,9 @@ const directoryGone = async (directory: string): Promise<boolean> => {
   }
 };
 
-const abandonFailureOf = async (paths: MomongaPaths, own: OwnStart, lock: KernelLockMechanism): Promise<StartFailure> => {
+const abandonFailureOf = async (files: Pick<CliFiles, 'lstat'>, paths: MomongaPaths, own: OwnStart, lock: KernelLockMechanism): Promise<StartFailure> => {
   const generation = own.ref.generation;
-  if (await directoryGone(generationLayout(homeOf(paths), generation).dir)) return { reason: 'directory-missing' };
+  if (await directoryGone(files, generationLayout(homeOf(paths), generation).dir)) return { reason: 'directory-missing' };
   if (own.sawSupervisor) return { reason: 'stopped-before-ready' };
   const record = await readStartRecord(paths, generation);
   if (record.kind === 'missing') return { reason: 'record-missing' };
@@ -300,12 +299,12 @@ const abandonFailureOf = async (paths: MomongaPaths, own: OwnStart, lock: Kernel
   return { reason: 'version-differs' };
 };
 
-const startFailureOf = async (paths: MomongaPaths, own: OwnStart, olderStartedFirst: CurrentGeneration | undefined, lock: KernelLockMechanism): Promise<StartFailure & { cause?: unknown }> => {
+const startFailureOf = async (files: Pick<CliFiles, 'lstat'>, paths: MomongaPaths, own: OwnStart, olderStartedFirst: CurrentGeneration | undefined, lock: KernelLockMechanism): Promise<StartFailure & { cause?: unknown }> => {
   const outcome = own.spawned?.();
   if (outcome !== undefined && 'error' in outcome) return { reason: 'launch-failed', detail: outcome.error instanceof Error ? outcome.error.message : String(outcome.error), cause: outcome.error };
   if (outcome !== undefined && outcome.exit.code !== 0) return { reason: 'exited-before-ready', detail: exitDescription(outcome.exit) };
   if (olderStartedFirst !== undefined) return { reason: 'older-started-first', detail: olderStartedFirst.version };
-  return abandonFailureOf(paths, own, lock);
+  return abandonFailureOf(files, paths, own, lock);
 };
 
 const notPointingAtLog = { pointsAtLog: false };
@@ -358,7 +357,7 @@ const refuseAnotherInstalledVersion = async (ports: InstalledProbe & Pick<Daemon
 };
 
 const startFailure = async (
-  ports: InstalledProbe & Pick<DaemonPorts, 'version'>,
+  ports: InstalledProbe & Pick<DaemonPorts, 'version' | 'files'>,
   paths: MomongaPaths,
   own: OwnStart,
   current: CurrentGeneration | undefined,
@@ -367,7 +366,7 @@ const startFailure = async (
   signal: AbortSignal | undefined,
 ): Promise<Error> => {
   const serving = current !== undefined && currentHeld ? current : undefined;
-  const { cause, ...failure } = await startFailureOf(paths, own, serving !== undefined && serving.generation > own.ref.generation ? serving : undefined, lock);
+  const { cause, ...failure } = await startFailureOf(ports.files, paths, own, serving !== undefined && serving.generation > own.ref.generation ? serving : undefined, lock);
   if (failure.reason === 'version-differs') {
     const installed = await installedVersionOf(ports, paths, signal);
     if (orderVersions(ports.version, installed) === 'older') return new DaemonStartError(belowFloorMessage(ports.version, installed), paths.logFiles.supervisor, notPointingAtLog);
@@ -482,7 +481,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       currentHeld: currentHeld && currentHealth !== undefined,
       currentDraining: currentHealth?.phase === 'draining',
       ownSupervisorGone,
-      ownDirectoryGone: await directoryGone(generationLayout(homeOf(paths), started.ref.generation).dir),
+      ownDirectoryGone: await directoryGone(ports.files, generationLayout(homeOf(paths), started.ref.generation).dir),
     });
     if (outcome === 'success' && currentHealth !== undefined) return { health: currentHealth, clientIsOlder: orderVersions(ports.version, currentHealth.version) === 'older' };
     if (outcome === 'failed') throw await startFailure(ports, paths, started, current, currentHeld, lock, signal);

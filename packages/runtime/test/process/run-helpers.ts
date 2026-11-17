@@ -178,7 +178,7 @@ export const startGateway = async (temp: RunHome, options: StartGatewayOptions =
   await prepareGeneration(temp);
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    await registerOwned(onCleanup, () => startGatewayProcess({
+    await registerOwned(onCleanup, () => startGatewayProcess({ platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home: temp.home,

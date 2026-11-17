@@ -20,7 +20,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
     models: modelsOf({ local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...(billing === undefined ? {} : { billing }) } }),
     ...(pricing === undefined ? {} : { pricing }),
   });
-  const handle = await registerOwned(context, () => startGatewayProcess({
+  const handle = await registerOwned(context, () => startGatewayProcess({ platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,

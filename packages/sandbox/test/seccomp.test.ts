@@ -12,7 +12,6 @@ const ARCHITECTURE = 4;
 const FIRST_ARGUMENT = 16;
 const SECOND_ARGUMENT = 24;
 
-const KILL_PROCESS = 0x80000000;
 const ALLOW = 0x7fff0000;
 const ASK_THE_GUARD = 0x7fc00000;
 const NOT_PERMITTED = 0x00050001;
@@ -43,7 +42,7 @@ describe('the socket filter of the Linux sandbox', () => {
     expect(decoded(socketFilter('x64', 'no-unix-sockets'))).toEqual([
       [LOAD, 0, 0, ARCHITECTURE],
       [JUMP_IF_EQUAL, 1, 0, X64.architecture],
-      [RETURN, 0, 0, KILL_PROCESS],
+      [RETURN, 0, 0, NOT_PERMITTED],
       [LOAD, 0, 0, NUMBER],
       [JUMP_IF_AT_LEAST, 0, 1, 0x40000000],
       [RETURN, 0, 0, NO_SUCH_CALL],
@@ -71,7 +70,7 @@ describe('the socket filter of the Linux sandbox', () => {
     expect(decoded(socketFilter('x64', 'named-unix-sockets'))).toEqual([
       [LOAD, 0, 0, ARCHITECTURE],
       [JUMP_IF_EQUAL, 1, 0, X64.architecture],
-      [RETURN, 0, 0, KILL_PROCESS],
+      [RETURN, 0, 0, NOT_PERMITTED],
       [LOAD, 0, 0, NUMBER],
       [JUMP_IF_AT_LEAST, 0, 1, 0x40000000],
       [RETURN, 0, 0, NO_SUCH_CALL],
@@ -100,7 +99,7 @@ describe('the socket filter of the Linux sandbox', () => {
     expect(decoded(socketFilter('arm64', 'no-unix-sockets'))).toEqual([
       [LOAD, 0, 0, ARCHITECTURE],
       [JUMP_IF_EQUAL, 1, 0, ARM64.architecture],
-      [RETURN, 0, 0, KILL_PROCESS],
+      [RETURN, 0, 0, NOT_PERMITTED],
       [LOAD, 0, 0, NUMBER],
       [JUMP_IF_EQUAL, 6, 0, ARM64.socket],
       [JUMP_IF_EQUAL, 7, 0, ARM64.socketpair],
@@ -126,7 +125,7 @@ describe('the socket filter of the Linux sandbox', () => {
     expect(decoded(socketFilter('arm64', 'named-unix-sockets'))).toEqual([
       [LOAD, 0, 0, ARCHITECTURE],
       [JUMP_IF_EQUAL, 1, 0, ARM64.architecture],
-      [RETURN, 0, 0, KILL_PROCESS],
+      [RETURN, 0, 0, NOT_PERMITTED],
       [LOAD, 0, 0, NUMBER],
       [JUMP_IF_EQUAL, 9, 0, ARM64.socket],
       [JUMP_IF_EQUAL, 8, 0, ARM64.socketpair],
@@ -168,5 +167,19 @@ describe('the socket filter of the Linux sandbox', () => {
     expect(socketFilterArchitectureOf('arm64')).toBe('arm64');
     expect(() => socketFilterArchitectureOf('riscv64')).toThrow(SandboxPolicyError);
     expect(() => socketFilterArchitectureOf('riscv64')).toThrow('the Linux sandbox has no socket filter for the processor architecture riscv64');
+  });
+
+  it('answers a call made under a foreign architecture with a refusal the caller sees, and never kills the process', () => {
+    for (const architecture of ['x64', 'arm64'] as const) {
+      for (const kind of ['no-unix-sockets', 'named-unix-sockets'] as const) {
+        const program = decoded(socketFilter(architecture, kind));
+        expect(program.slice(0, 3)).toEqual([
+          [LOAD, 0, 0, ARCHITECTURE],
+          [JUMP_IF_EQUAL, 1, 0, architecture === 'x64' ? X64.architecture : ARM64.architecture],
+          [RETURN, 0, 0, NOT_PERMITTED],
+        ]);
+        expect(program.some(([code, , , value]) => code === RETURN && value === 0x80000000)).toBe(false);
+      }
+    }
   });
 });

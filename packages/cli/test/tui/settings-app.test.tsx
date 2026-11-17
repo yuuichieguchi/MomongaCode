@@ -2,14 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ExternalEditorPort } from '../../src/tui/external-editor.ts';
-import { KEYS, untilOutput } from '../ink-helpers.ts';
+import { KEYS, TUI_TEST_TIMEOUT_MS, untilOutput } from '../ink-helpers.ts';
 import { command, freshPlace, localFileOf, outputHolds, press, startAt, stored, typeInto, unwrapped, writeSettings } from './settings-harness.tsx';
 import type { Place, Started } from './settings-harness.tsx';
 import { testKernelLock } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: TUI_TEST_TIMEOUT_MS });
 
 const CLEAR = `${KEYS.ctrlA}${KEYS.ctrlK}`;
 const SUBMIT = `${KEYS.ctrlX}${KEYS.enter}`;

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { migrate } from '@momonga/foundation';
 import { STOP_REASONS } from '@momonga/protocol';
-import { projectInheritance } from '@momonga/store';
+import { projectInheritance } from './support/projection.ts';
 import { MIGRATIONS } from '../src/schema.ts';
 import { claimed, closureEntry, ended, foldOf, task, requested, responded, callItem, toolCall } from './inherit-fixtures.ts';
 import type { InheritedEvent } from './inherit-fixtures.ts';

@@ -5,7 +5,7 @@ export { decodeRunState, encodeRunState } from './codec.ts';
 export { settledEventIdOf } from './run-facts.ts';
 export { ITEM_EVENT_TYPES, itemCountOf, itemsOfEvent } from './history-items.ts';
 export type { ItemFacts, ProducedItem } from './history-items.ts';
-export { INHERITANCE_ERROR_CODES, InheritanceError, applyInheritance, applyReferenceInheritance, isReferenceInherited, projectInheritance, referenceDigest } from './inherit.ts';
+export { INHERITANCE_ERROR_CODES, InheritanceError, applyInheritance, applyReferenceInheritance, isReferenceInherited, referenceDigest } from './inherit.ts';
 export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload, ReferencePayload, UnaskedCommands } from './inherit.ts';
 export { lowerBoundTokens } from './inherit-reference.ts';
 export type {

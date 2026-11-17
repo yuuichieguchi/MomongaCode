@@ -635,12 +635,12 @@ const startedRun = async (ports: CliPorts, session: CliSession, options: Headles
   if (session.created.trustNotice !== undefined) ports.stderr.write(noteText([`momonga: ${session.created.trustNotice}`]));
   const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
   if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
-    const message = readinessShownText(readiness, 'shell');
+    const message = readinessShownText(readiness, 'cli');
     ports.stderr.write(`${escapedLines(leadWith('momonga: ', message.split('\n')))}\n`);
     writeRefusedResult(ports, options.format, TARGET_NOT_READY, message);
     return { kind: 'refused' };
   }
-  if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'shell').split('\n')))}\n`);
+  if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'cli').split('\n')))}\n`);
   const sessionId = session.created.session.id;
   const invocation = await resolveSkillInvocation(session.client, sessionId, prompt, options.skill);
   const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));

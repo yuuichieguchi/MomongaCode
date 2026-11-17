@@ -33,25 +33,25 @@ const holdLifelineWrites = (child: FakeChild): HeldWrite => {
 };
 
 const runtimeHarness = async (context: Parameters<typeof createManagerHarness>[0]): Promise<{ harness: ManagerHarness; child: FakeChild; write: HeldWrite }> => {
-  const harness = createManagerHarness(context, { role: 'runtime' });
+  const harness = await createManagerHarness(context, { role: 'runtime' });
   await harness.spawnInitial();
   const child = harness.port.last();
   return { harness, child, write: holdLifelineWrites(child) };
 };
 
 describe('the stop budget of each child is derived from the four values of its stop', () => {
-  it('a runtime under term has runtimeStopBudgetMs of the values: drain + abort + derived teardown + margin', () => {
+  it('a runtime under term has runtimeStopBudgetMs of the values: drain + abort + derived teardown + margin', async () => {
     expect(stopBudgetMs('runtime', 'term', VALUES)).toBe(RUNTIME_TERM_BUDGET_MS);
     expect(stopBudgetMs('runtime', 'term', { ...VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(8050 + 20_125 + 5000);
   });
 
-  it('a runtime under int has the derived abort budget 8050 plus the derived teardown plus the margin, with no drain (design 2.6)', () => {
+  it('a runtime under int has the derived abort budget 8050 plus the derived teardown plus the margin, with no drain (design 2.6)', async () => {
     expect(RUNTIME_ABORT_BUDGET_MS).toBe(DERIVED_ABORT_BUDGET_MS);
     expect(stopBudgetMs('runtime', 'int', VALUES)).toBe(RUNTIME_SIGINT_BUDGET_MS);
     expect(stopBudgetMs('runtime', 'int', { ...VALUES, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 })).toBe(8050 + 200_125 + 5000);
   });
 
-  it('a gateway budget ignores the runtime values', () => {
+  it('a gateway budget ignores the runtime values', async () => {
     expect(stopBudgetMs('gateway', 'term', VALUES)).toBe(1200 + 4 * 300 + 10_075 + 5000);
     expect(stopBudgetMs('gateway', 'term', { ...VALUES, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 })).toBe(1200 + 4 * 300 + 10_075 + 5000);
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { attestedTokens, checkSummary, claimedTokens } from '@momonga/context';
+import { checkSummary, claimedTokens } from '@momonga/context';
 import type { FidelityRecord } from '@momonga/context';
+import { attestedIn } from './fidelity-support.ts';
 
 const CWD = '/proj';
 
@@ -10,7 +11,7 @@ type Extra = { pinned?: string; critical?: readonly string[]; workingState?: str
 
 const check = (summary: string, from: FidelityRecord = record(), extra: Extra = {}) =>
   checkSummary(summary, {
-    attested: attestedTokens(claimedTokens(summary), from, CWD),
+    attested: attestedIn(claimedTokens(summary), from, CWD),
     pinned: extra.pinned ?? '',
     critical: extra.critical ?? [],
     workingState: extra.workingState ?? '',

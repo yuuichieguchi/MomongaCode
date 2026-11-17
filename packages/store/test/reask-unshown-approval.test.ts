@@ -64,4 +64,19 @@ describe('a pending approval recorded before the approval carried what it shows'
     expect(store.approvals.get(approvals[0]?.id ?? '')?.status).toBe('pending');
     expect(mustRun(store, runId).status).toBe('WAITING_HUMAN');
   });
+
+  it('marks the request row at append: shown is null for a request without its shown content and 1 for one with it', async () => {
+    const { store } = harness();
+    const { approvals } = await waitingOn(store, async (claim) => [await requestedBeforeShown(store, claim, 'call_1'), await requestFor(store, claim, 'call_2')]);
+    const db = openDatabase(dbPathOf(store), { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
+    try {
+      const rows = db.prepare("SELECT approval_id, shown FROM events WHERE type = 'tool.permission.requested' ORDER BY seq").all() as { approval_id: string; shown: number | null }[];
+      expect(rows).toEqual([
+        { approval_id: approvals[0]?.id, shown: null },
+        { approval_id: approvals[1]?.id, shown: 1 },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
 });

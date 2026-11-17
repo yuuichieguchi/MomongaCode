@@ -5,7 +5,7 @@ import type { NetworkRequest, SandboxNetworkSetting } from '@momonga/foundation'
 import { SANDBOX_NETWORK_SCOPES } from '@momonga/sandbox';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { AnyTool, BashLimits } from '../types.ts';
-import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
+import { COMMAND_TOOL_NAME, USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
 import { STOP_NOT_CONFIRMED_NOTE } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
@@ -192,7 +192,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
   };
 };
 
-export const shellCommandSubject = (command: string): { kind: 'command'; tool: string; command: string } => ({ kind: 'command', tool: 'Bash', command });
+export const shellCommandSubject = (command: string): { kind: 'command'; tool: string; command: string } => ({ kind: 'command', tool: COMMAND_TOOL_NAME, command });
 
 export type OfferedBash = { kind: 'resolved'; path: string } | { kind: 'missing'; reason: string };
 
@@ -240,6 +240,11 @@ const conciseNetworkOf = (offer: BuiltinToolOffer): string => {
   return `The sandbox has no network; set network to "open" when the command needs it. ${settingSentenceOf(offer)}`;
 };
 
+const networkAlternativesOf = (offer: BuiltinToolOffer): unknown[] => [
+  { enum: ['open'] },
+  ...(takesHosts(offer.sandbox) ? [{ type: 'object', properties: { hosts: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } }, required: ['hosts'], additionalProperties: false }] : []),
+];
+
 const networkParameterOf = (offer: BuiltinToolOffer): string => {
   if (!keepsCommandsOffTheNetwork(offer.sandbox)) return `Network access the command needs. "open": unrestricted, which a command without a sandbox has in any case; a list of hosts cannot be kept without a sandbox. ${settingSentenceOf(offer)}`;
   const hosts = takesHosts(offer.sandbox) ? ' {"hosts": ["registry.example.org", "example.org:443"]}: only those hosts (a name or an IP address, optionally with :port), through a proxy.' : '';
@@ -252,7 +257,7 @@ export const bashDescriptionOf = (offer: BuiltinToolOffer): { description: strin
 });
 
 export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<BashInput>({
-  name: 'Bash',
+  name: COMMAND_TOOL_NAME,
   ...bashDescriptionOf(offer),
   conciseParameterDescriptions: {
     command: 'Command to run',
@@ -276,10 +281,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
       description: { type: 'string', description: 'Short description of what the command does' },
       run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
       network: {
-        anyOf: [
-          { enum: ['open'] },
-          { type: 'object', properties: { hosts: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } }, required: ['hosts'], additionalProperties: false },
-        ],
+        anyOf: networkAlternativesOf(offer),
         description: networkParameterOf(offer),
       },
     },
@@ -304,7 +306,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
       return await started;
     }
     const timeout = foregroundTimeoutOf(input, ctx.limits.bash);
-    const { file: marker, fd: markerFd, mode: markerMode, settle } = await requireSpawnMarker(ctx, 'Bash');
+    const { file: marker, fd: markerFd, mode: markerMode, settle } = await requireSpawnMarker(ctx, COMMAND_TOOL_NAME);
     const nonce = ctx.random.hex(CWD_NONCE_BYTES);
     const script = `${trapScript(nonce)}\n${input.command}`;
     const network = await openGrantedNetwork(ctx);

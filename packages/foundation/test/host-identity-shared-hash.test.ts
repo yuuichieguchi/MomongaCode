@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, createHeldHostReadings, readProbeKeyComponents } from '@momonga/foundation';
-import type { HostExec, HostExecAnswer } from '@momonga/foundation';
+import type { FileSystem, HostExec, HostExecAnswer, ReadHandle } from '@momonga/foundation';
 import { createTempDir } from '@momonga/testkit';
 
 const directories: string[] = [];
@@ -22,25 +21,52 @@ const binaryFile = (): string => {
   return file;
 };
 
-type HeldStreams = { streams: Readable[]; statsSettled(): number };
+type HeldRead = { push(text: string | null): void; destroyed: boolean };
+
+type HeldStreams = { files: Pick<FileSystem, 'stat' | 'openRead'>; streams: HeldRead[]; statsSettled(): number };
 
 const holdTheReads = (): HeldStreams => {
-  const streams: Readable[] = [];
+  const streams: HeldRead[] = [];
   let settled = 0;
   const realStat = fs.promises.stat.bind(fs.promises);
-  vi.spyOn(fs.promises, 'stat').mockImplementation((async (file: fs.PathLike) => {
-    try {
-      return await realStat(file);
-    } finally {
-      settled += 1;
-    }
-  }) as typeof fs.promises.stat);
-  vi.spyOn(fs, 'createReadStream').mockImplementation((() => {
-    const stream = new Readable({ read: () => undefined });
-    streams.push(stream);
-    return stream;
-  }) as unknown as typeof fs.createReadStream);
-  return { streams, statsSettled: () => settled };
+  const files: Pick<FileSystem, 'stat' | 'openRead'> = {
+    stat: async (file) => {
+      try {
+        return await realStat(file);
+      } finally {
+        settled += 1;
+      }
+    },
+    openRead: async () => {
+      const waiting: Array<(chunk: Buffer | null) => void> = [];
+      const queued: Array<Buffer | null> = [];
+      const read: HeldRead = {
+        destroyed: false,
+        push: (text) => {
+          const chunk = text === null ? null : Buffer.from(text);
+          const resolve = waiting.shift();
+          if (resolve !== undefined) resolve(chunk);
+          else queued.push(chunk);
+        },
+      };
+      streams.push(read);
+      const handle: ReadHandle = {
+        stat: () => Promise.reject(new Error('the held read has no stat')),
+        chmod: () => Promise.reject(new Error('the held read has no chmod')),
+        read: async (page) => {
+          const chunk = queued.length > 0 ? (queued.shift() as Buffer | null) : await new Promise<Buffer | null>((resolve) => waiting.push(resolve));
+          if (chunk === null) return 0;
+          return chunk.copy(page);
+        },
+        readAt: () => Promise.reject(new Error('the held read has no positional read')),
+        close: async () => {
+          read.destroyed = true;
+        },
+      };
+      return handle;
+    },
+  };
+  return { files, streams, statsSettled: () => settled };
 };
 
 const outcomeOf = (promise: Promise<unknown>): Promise<{ value: unknown } | { error: unknown }> =>
@@ -56,7 +82,7 @@ describe('the shared hash of one binary belongs to no single asker', () => {
   it('gives the second asker the digest of the one read after the first asker left', async () => {
     const file = binaryFile();
     const held = holdTheReads();
-    const cache = createBinaryHashCache();
+    const cache = createBinaryHashCache(held.files);
     const first = new AbortController();
     const second = new AbortController();
     const leftBecause = new Error('the first asker left');
@@ -77,7 +103,7 @@ describe('the shared hash of one binary belongs to no single asker', () => {
   it('runs the read to completion after its only asker left, and gives the next asker that digest without a second read', async () => {
     const file = binaryFile();
     const held = holdTheReads();
-    const cache = createBinaryHashCache();
+    const cache = createBinaryHashCache(held.files);
     const only = new AbortController();
     const left = new Error('the only asker left');
 

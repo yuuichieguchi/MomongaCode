@@ -176,7 +176,7 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
   const globs = layout.globs ?? {};
   const entries = layout.entries ?? {};
   const resolveCalls: FakeResolveCall[] = [];
-  const platform = layout.platform ?? process.platform;
+  const platform: NodeJS.Platform = layout.platform ?? 'darwin';
   return {
     resolveCalls,
     platform,

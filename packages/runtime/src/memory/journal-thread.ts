@@ -239,7 +239,7 @@ export const reportHandler = (db: DatabaseSync, reader: VisitingReader): Journal
       firstCreatedAt: createdAtOf(firstEventAt.get({ runId }), runId),
       lastCreatedAt: createdAtOf(lastEventAt.get({ runId, lastSeq: run.lastSeq }), runId),
     });
-    return { lastSeq: run.lastSeq, report };
+    return { lastSeq: run.lastSeq, report, run };
   };
 };
 

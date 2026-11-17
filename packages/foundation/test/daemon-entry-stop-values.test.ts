@@ -19,7 +19,7 @@ const launch = async () => {
   const lifelines: Array<{ onEnd(): void; onLine(line: string): void }> = [];
   const stderr: string[] = [];
   const unread: string[] = [];
-  const io: EntryIo = {
+  const io: EntryIo = { platform: process.platform,
     argv: ARGV,
     env: { HOME },
     home: HOME,
