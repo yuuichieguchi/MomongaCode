@@ -1,4 +1,5 @@
 import type { FakeTimers, PendingTimer } from './fake-timers.ts';
+import { POLL_INTERVAL_MS } from '@momonga/foundation';
 import { HARNESS_WAIT_MS } from './wait-for.ts';
 
 export type DriveFakeTimeOptions = {
@@ -32,7 +33,10 @@ export const driveFakeTime = async (timers: FakeTimers, options: DriveFakeTimeOp
     await settle();
     if (done()) return;
     if (performance.now() - startedAt > deadlineMs) throw fail(`the real-time deadline of ${deadlineMs} ms passed`);
-    if (!ready()) continue;
+    if (!ready()) {
+      await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      continue;
+    }
     const watched = timers.pending().filter(considered);
     const candidates = watched.filter((timer) => timer.dueAt <= horizonAt);
     if (candidates.length === 0) {
