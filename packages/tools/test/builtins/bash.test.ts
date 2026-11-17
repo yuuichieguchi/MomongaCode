@@ -4,6 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { nodeShellHost } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
@@ -249,16 +250,35 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
   });
 
   it('kills the whole process group on timeout', async () => {
-    const tools = await makeBuiltins({ realSandbox: true });
+    const timeoutMs = 1000;
+    const host = nodeShellHost();
+    const held: (() => void)[] = [];
+    const callTimer = {
+      ...host.child,
+      setTimeout: (callback: () => void, ms: number): unknown => {
+        if (ms !== timeoutMs) return host.child.setTimeout(callback, ms);
+        held.push(callback);
+        return callback;
+      },
+      clearTimeout: (handle: unknown): void => {
+        const index = held.indexOf(handle as () => void);
+        if (index >= 0) held.splice(index, 1);
+        else host.child.clearTimeout(handle);
+      },
+    };
+    const tools = await makeBuiltins({ realSandbox: true, executor: { shellHost: { ...host, child: callTimer } } });
     const childPidFile = path.join(tools.layout.project, 'child.pid');
-    const command = `sleep 30 & echo $! > ${childPidFile}; wait`;
-    const outcome = await tools.run('Bash', { command, timeout: 1000 }, {}, 'allow_once');
-    const result = resultOf(outcome);
+    const command = `sleep 30 & echo $! > ${childPidFile}.tmp; mv ${childPidFile}.tmp ${childPidFile}; wait`;
+    const running = tools.run('Bash', { command, timeout: timeoutMs }, {}, 'allow_once');
+    expect(await waitFor(() => fs.existsSync(childPidFile), 10_000)).toBe(true);
+    const child = Number(fs.readFileSync(childPidFile, 'utf8').trim());
+    trackPid(child);
+    expect(held).toHaveLength(1);
+    held.splice(0).forEach((fire) => fire());
+    const result = resultOf(await running);
     expect(result).toEqual({ status: 'failed', command, output: 'Bash timed out after 1000 ms. Its side effects are unknown; inspect the current state before retrying.' });
     const [pgid] = attachedGroups(tools);
     expect(typeof pgid).toBe('number');
-    const child = Number(fs.readFileSync(childPidFile, 'utf8').trim());
-    trackPid(child);
     expect(await waitFor(() => !isAlive(-(pgid as number)) && !isAlive(child), 5000)).toBe(true);
   });
 
