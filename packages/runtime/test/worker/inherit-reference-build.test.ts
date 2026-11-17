@@ -32,6 +32,8 @@ const noticesOf = (env: Env, runId: string): string[] => env.ofType(runId, 'noti
 const runNeutral = (env: Env, sessionId: string, text: string): string =>
   env.store.listRuns(sessionId).reduce((neutral, run, ordinal) => neutral.split(run.id).join(`<run-${ordinal}>`), text);
 
+const fenceNeutral = (text: string): string => text.replace(/boundary=(\\?")[0-9a-f]{32}\\?"/g, 'boundary=$1<fence>$1');
+
 const withoutEvictedCount = (notice: string): string => notice.replace(/\d+ tool outputs were replaced by handles/, 'N tool outputs were replaced by handles');
 
 const evictedCountOf = (notice: string): number => Number(/(\d+) tool outputs were replaced by handles/.exec(notice)?.[1] ?? Number.NaN);
@@ -75,7 +77,7 @@ const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Sh
     env,
     trace,
     outcome: outcomeOf(env, child.id),
-    requests: requestInputs(env, child.id).map((input) => runNeutral(env, child.sessionId, envNeutralJson(env, input))),
+    requests: requestInputs(env, child.id).map((input) => fenceNeutral(runNeutral(env, child.sessionId, envNeutralJson(env, input)))),
     notices: noticesOf(env, child.id).map((notice) => runNeutral(env, child.sessionId, notice)),
   };
 };
