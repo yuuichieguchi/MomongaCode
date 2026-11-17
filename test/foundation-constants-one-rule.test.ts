@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as foundation from '@momonga/foundation';
 import { hasRow } from './support/host-bounds-scan.ts';
+import { parsedProductSource, productSources, relativeOf } from './support/source-scan.ts';
 
 const CONSTANTS_DOCUMENT_VARIABLE = 'MOMONGA_CONSTANTS_DOCUMENT';
 const FOUNDATION_ROWS = 'foundation-supervisor-packaging.md';
@@ -19,6 +20,20 @@ const NAMED_WITHOUT_A_UNIT = [
 ];
 
 describe('a foundation constant is one rule with one name', () => {
+  it('imports the sweep interval from its one module in every product file that uses it', () => {
+    const importers = productSources()
+      .flatMap((file) => {
+        const binding = parsedProductSource(file).imports.get('SWEEP_INTERVAL_MS');
+        return binding === undefined ? [] : [`${relativeOf(file)} from ${binding.module}`];
+      });
+    expect(importers).toEqual([
+      'packages/gateway/src/process.ts from @momonga/foundation',
+      'packages/runtime/src/memory/reflection-bound.ts from ../service/service.ts',
+      'packages/runtime/src/process/start-runtime-process.ts from @momonga/foundation',
+      'packages/runtime/src/service/service.ts from @momonga/foundation',
+    ]);
+  });
+
   it('has one stdio flush bound for the exiting daemon and the child the supervisor waits for', () => {
     expect(Object.keys(foundation)).not.toContain('STDIO_EXIT_FLUSH_MS');
     expect(Object.keys(foundation)).not.toContain('CHILD_STDIO_FLUSH_MS');
