@@ -9,6 +9,7 @@ import {
   generationLayout,
   generationMarkerDirectories,
   generationSpawnScratch,
+  kernelLockNamed,
   momongaPaths,
   nodeGenerationReaperFiles,
   publishCurrentGeneration,
@@ -149,6 +150,30 @@ describe('T-L2-1 and T-L2-2 (14.4 A2, 15.8): the start window, with real kernel 
     await expect(passOf(s.paths, [])).resolves.toEqual({ removed: [3], kept: [], busy: false });
     expect(fs.existsSync(layout.dir)).toBe(false);
     expect(fs.existsSync(layout.markers)).toBe(false);
+  });
+});
+
+describe('T-L2-1 and T-L2-2 under the sqlite mechanism, named by the test, not by the host', () => {
+  it('keeps a generation whose starter holds starting.lock, and removes it only after the starter was killed', async (context) => {
+    const s = setup();
+    const layout = s.prepare(3);
+    const lock = kernelLockNamed('sqlite-lock');
+    const starter = await startLockHolder(context, layout.startingLock, 'sqlite-lock');
+    await expect(passOf(s.paths, [], { lock })).resolves.toEqual({ removed: [], kept: [], busy: false });
+    expect(fs.existsSync(layout.dir)).toBe(true);
+    await kill(starter);
+    await expect(passOf(s.paths, [], { lock })).resolves.toEqual({ removed: [3], kept: [], busy: false });
+    expect(fs.existsSync(layout.dir)).toBe(false);
+  });
+
+  it('removes a generation whose supervisor was killed while it held supervisor.lock under sqlite', async (context) => {
+    const s = setup();
+    const layout = s.prepare(4);
+    const lock = kernelLockNamed('sqlite-lock');
+    const supervisor = await startLockHolder(context, layout.locks.supervisor, 'sqlite-lock');
+    await expect(passOf(s.paths, [], { lock })).resolves.toEqual({ removed: [], kept: [], busy: false });
+    await kill(supervisor);
+    await expect(passOf(s.paths, [], { lock })).resolves.toEqual({ removed: [4], kept: [], busy: false });
   });
 });
 

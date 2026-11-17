@@ -36,6 +36,21 @@ export const sidecarNameSuffixesOf = (mechanism: Pick<KernelLockMechanism, 'name
 
 export const sidecarOf = (mechanism: Pick<KernelLockMechanism, 'name'>, entry: string): string => `${entry}${sidecarSuffixOf(mechanism)}`;
 
+export type SidecarOwner = { base: string; companion: boolean };
+
+export const sidecarOwnerOf = (suffixes: { sidecar: string; companions: readonly string[] }, name: string): SidecarOwner | undefined => {
+  for (const companion of suffixes.companions) {
+    if (name.endsWith(companion) && name.length > companion.length) return { base: name.slice(0, -companion.length), companion: true };
+  }
+  if (name.endsWith(suffixes.sidecar) && name.length > suffixes.sidecar.length) return { base: name.slice(0, -suffixes.sidecar.length), companion: false };
+  return undefined;
+};
+
+export const lockPathNameOf = (mechanism: Pick<KernelLockMechanism, 'name'>, name: string): string => {
+  if (!MECHANISM_FORMS[mechanism.name].mechanismAddsSuffix) return name;
+  return sidecarOwnerOf(sidecarNameSuffixesOf(mechanism), name)?.base ?? name;
+};
+
 export const claimPathOf = (mechanism: Pick<KernelLockMechanism, 'name'>, entry: string, form: LockForm): string =>
   form === 'entry' || MECHANISM_FORMS[mechanism.name].mechanismAddsSuffix ? entry : sidecarOf(mechanism, entry);
 

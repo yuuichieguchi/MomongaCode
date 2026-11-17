@@ -2,7 +2,7 @@ import type { FileSystem } from './node-file-system.ts';
 import path from 'node:path';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { claimPathOf, lockFormOf, sidecarNameSuffixesOf } from './platform/lock-form.ts';
+import { claimPathOf, lockFormOf, sidecarNameSuffixesOf, sidecarOwnerOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
 
 export type LeftoverFiles = Pick<FileSystem, 'readdir'> & {
@@ -55,15 +55,8 @@ const unitsOf = (names: readonly string[], registered: LeftoverDirectory, suffix
     units.set(name, created);
     return created;
   };
-  const sidecarOwnerOf = (name: string): { base: string; companion: boolean } | undefined => {
-    for (const companion of suffixes.companions) {
-      if (name.endsWith(companion) && name.length > companion.length) return { base: name.slice(0, -companion.length), companion: true };
-    }
-    if (name.endsWith(suffixes.sidecar) && name.length > suffixes.sidecar.length) return { base: name.slice(0, -suffixes.sidecar.length), companion: false };
-    return undefined;
-  };
   for (const name of names) {
-    const owner = sidecarOwnerOf(name);
+    const owner = sidecarOwnerOf(suffixes, name);
     if (owner !== undefined && registered.isLeftover(owner.base)) {
       const unit = unitOf(owner.base);
       unit.sidecar = true;
