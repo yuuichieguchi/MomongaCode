@@ -8,7 +8,7 @@ import { START_MS, makeDir, registerCleanup } from './helpers.ts';
 
 describe('the run ingest index of the trace store', () => {
   it('is migration 4 and serves the billed chat spans of a run in ingest order', () => {
-    expect(TRACE_STORE_MIGRATIONS.map((migration) => migration.version)).toEqual(TRACE_STORE_MIGRATIONS.map((_, index) => index + 1));
+    expect(TRACE_STORE_MIGRATIONS.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6]);
 
     const file = path.join(makeDir(), 'traces.db');
     const legacy = openDatabase(file, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
