@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import * as config from '@momonga/config';
 import { loadSettings, loadUserSettings } from '@momonga/config';
 import { distrusting, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
-const DEFAULT_COMMANDS = ['npm test', 'pnpm test', 'yarn test', 'cargo test', 'pytest', 'go test ./...', 'swift test', 'make test'];
 const DEFAULT_MANIFESTS = ['package.json', 'pnpm-lock.yaml', 'Cargo.toml', 'pyproject.toml', 'go.mod', 'Package.swift', 'Makefile'];
 
 const TOKEN_ON = { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
@@ -18,8 +18,13 @@ describe('context settings defaults', () => {
     expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
   });
 
-  it('lists the documented verification commands and manifests', async () => {
-    expect((await resolvedWith({})).verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
+  it('lists the documented verification manifests and no commands, the completion conditions come from the accepted check', async () => {
+    expect((await resolvedWith({})).verification).toEqual({ manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
+    expect((await resolvedWith({})).verification).not.toHaveProperty('commands');
+  });
+
+  it('exports no default verification commands', () => {
+    expect(config).not.toHaveProperty('DEFAULT_VERIFICATION_COMMANDS');
   });
 
   it('keeps the adaptive budget and automatic compaction on', async () => {
@@ -84,7 +89,7 @@ describe('context settings values', () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { verification: { commands: ['make verify'], manifests: [] } });
     const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
-    expect(settings.verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
+    expect(settings.verification).toEqual({ manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
   });
 });
 

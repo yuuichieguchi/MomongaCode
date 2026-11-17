@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
+import { DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { CreateResponseBody, StreamEvent } from '@momonga/protocol';
 import type { GatewayCallOptions } from '@momonga/runtime';
@@ -16,6 +16,8 @@ import { capabilitiesFor } from '../worker/harness.ts';
 import { textStep } from '../worker/scripts.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
 import { bash, exported, fileTool, finishClaimed, checked } from './reflection-fixture.ts';
+
+const CHECK_COMMANDS = ['npm test'];
 
 type Reflector = { runOne(signal: AbortSignal): Promise<'idle' | 'busy' | 'ran'> };
 type Job = { state: string; attempts: number; lastError: string | null };
@@ -84,7 +86,7 @@ const setup = async () => {
   const memory = { maxTokens: undefined as number | undefined };
   const settings = {
     trusted: () => true,
-    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], conditions: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
+    verification: async () => ({ commands: [...CHECK_COMMANDS], conditions: [...CHECK_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true, ...(memory.maxTokens === undefined ? {} : { maxTokens: memory.maxTokens }) }, forgetAfterDays: 90 }),
   };
   const reflector = exported<(options: unknown) => Reflector>('createReflector')({
