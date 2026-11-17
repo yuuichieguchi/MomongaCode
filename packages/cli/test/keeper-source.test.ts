@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_MANIFEST_ASSET, sha256Hex } from '@momonga/foundation';
+import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_MANIFEST_ASSET, claimPathOf, lockFormOf, sha256Hex, sidecarOf } from '@momonga/foundation';
 import type { KeeperPreparation } from '@momonga/foundation';
 import { provideEmbeddedWindowsKeeper } from '../src/keeper/host.ts';
 import { nodeSourceKeeperFiles } from '../src/node-ports.ts';
@@ -149,5 +149,32 @@ describe('outside a single executable the composition root provides the keeper b
       () => true,
     );
     expect(provided).toEqual([]);
+  });
+});
+
+describe('the work directory of a from-source build is claimed the product way', () => {
+  it('holds the sidecar claim of the work directory while the build runs', async () => {
+    let claimedDuringBuild: boolean | undefined;
+    const world = worldOf((workDir) => {
+      claimedDuringBuild = fs.existsSync(sidecarOf(world.ports.lock, workDir));
+      writesKeeper(workDir);
+      return 0;
+    });
+    await sourceBuiltWindowsKeeper(world.ports)();
+    expect(claimedDuringBuild).toBe(true);
+  });
+
+  it('removes a work directory that a killed build left with no holder, on the next source run', async () => {
+    const world = worldOf((workDir) => {
+      writesKeeper(workDir);
+      return 0;
+    });
+    const dead = path.join(world.ports.executablesRoot, 'windows-keeper-source-0123456789abcdef');
+    fs.mkdirSync(path.join(dead, 'windows-keeper'), { recursive: true });
+    const outcome = await world.ports.lock.claim(claimPathOf(world.ports.lock, dead, lockFormOf(world.ports.lock, 'directory')));
+    if (outcome.kind !== 'claimed') throw new Error('the dead work directory is held by no one in this test');
+    outcome.lock.release();
+    await sourceBuiltWindowsKeeper(world.ports)();
+    expect(fs.existsSync(dead)).toBe(false);
   });
 });
