@@ -148,3 +148,68 @@ describe('loadMcpServers', () => {
     expect(result.warnings.some((w) => w.includes(file))).toBe(true);
   });
 });
+
+describe('B-267: enableAllProjectMcpServers approves a new project server and asks again about a changed one', () => {
+  const signal = new AbortController().signal;
+
+  it('approves a server the project newly declares without a prompt, and hands its digest to the recorder', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });
+    writeJson(mcpJsonPath(tree), { mcpServers: { fresh: { command: 'fresh' } } });
+    const recorded: unknown[] = [];
+    const result = await loadMcpServers({
+      signal,
+      home: tree.home,
+      projectDir: tree.project,
+      trust: trusting(tree),
+      env: ENV,
+      referenceEnv: ENV,
+      recordFlagApprovals: async (approved) => {
+        recorded.push(...approved);
+      },
+    });
+    expect(result.enabled.map((s) => s.name)).toEqual(['fresh']);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.approvedByFlag).toEqual([{ name: 'fresh', digest: approvalDigestOf({ command: 'fresh' }), config: { command: 'fresh' } }]);
+    expect(recorded).toEqual(result.approvedByFlag);
+  });
+
+  it('asks about a server whose definition changed since it was approved, and shows what changed', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      enableAllProjectMcpServers: true,
+      enabledMcpjsonServers: [{ name: 'tool', digest: approvalDigestOf({ command: 'old' }), config: { command: 'old' } }],
+    });
+    writeJson(mcpJsonPath(tree), { mcpServers: { tool: { command: 'new' } } });
+    const recorded: unknown[] = [];
+    const result = await loadMcpServers({
+      signal,
+      home: tree.home,
+      projectDir: tree.project,
+      trust: trusting(tree),
+      env: ENV,
+      referenceEnv: ENV,
+      recordFlagApprovals: async (approved) => {
+        recorded.push(...approved);
+      },
+    });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([{ name: 'tool', scope: 'project', config: { command: 'new' }, digest: approvalDigestOf({ command: 'new' }), changed: true }]);
+    expect(result.warnings.some((w) => w.includes('"tool" changed since it was approved'))).toBe(true);
+    expect(result.approvedByFlag).toEqual([]);
+    expect(recorded).toEqual([]);
+  });
+
+  it('keeps an unchanged approved server approved without recording it again', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      enableAllProjectMcpServers: true,
+      enabledMcpjsonServers: [{ name: 'tool', digest: approvalDigestOf({ command: 'same' }), config: { command: 'same' } }],
+    });
+    writeJson(mcpJsonPath(tree), { mcpServers: { tool: { command: 'same' } } });
+    const result = await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV, referenceEnv: ENV });
+    expect(result.enabled.map((s) => s.name)).toEqual(['tool']);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.approvedByFlag).toEqual([]);
+  });
+});

@@ -76,7 +76,7 @@ export type ToolRuntimeOptions = {
   forgeFetch?: ForgeFetch;
   helperSelf: HelperSelf;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle' | 'sandboxNetwork'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle' | 'sandboxNetwork' | 'recordFlagApprovals'>;
   reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;

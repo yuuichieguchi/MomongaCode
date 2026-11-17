@@ -72,7 +72,7 @@ export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, Pendin
 export { assertSessionMcpServers, loadMcpServers, projectMcpServersFile, serverKeyOfLabel } from './mcp-servers.ts';
 export { mcpServerNameProblem, mcpServerUrlProblem, mcpServerUrlProblemOf } from './mcp-server-rules.ts';
 export type { McpServerUrlProblem } from './mcp-server-rules.ts';
-export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope, PendingMcpServer, ServerKeyOfLabel } from './mcp-servers.ts';
+export type { FlagApproval, LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope, PendingMcpServer, ServerKeyOfLabel } from './mcp-servers.ts';
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, NETWORK_RULE_SUBJECT, OPERATION_RULE_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA, SETTING_DEFAULTS_BY, SETTING_UNIT_OF } from './settings-schema.ts';
