@@ -139,8 +139,6 @@ export const spawnSleeper = (): number => {
   return pid;
 };
 
-export const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
 export const until = (predicate: () => boolean | Promise<boolean>, description: string, timeoutMs = 20_000): Promise<void> => pollUntil(predicate, { description, boundMs: timeoutMs });
 
 export const isAlive = (pid: number): boolean => {
