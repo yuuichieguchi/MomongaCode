@@ -18,7 +18,7 @@ const filesBesideHeldSocket = (socketName: string): string[] => {
   const lock = `${socketName}.lock`;
   if (testKernelLock().name === 'file-lock') return [socketName, lock];
   const database = `${lock}${LOCK_DATABASE_SUFFIX}`;
-  return [socketName, database, `${database}${SQLITE_JOURNAL_SUFFIX}`, `${database}${SQLITE_HOLDER_SUFFIX}`];
+  return [socketName, database, `${database}${SQLITE_JOURNAL_SUFFIX}`, `${database}${SQLITE_HOLDER_SUFFIX}`].sort();
 };
 
 const cleanups: Array<() => Promise<void> | void> = [];
