@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentWarningSource, skillWarningSource, updateNoticeSource } from '../src/tui/notices.ts';
+import { agentWarningSource, mcpWarningSource, skillWarningSource, updateNoticeSource } from '../src/tui/notices.ts';
 import { fakeRuntime } from './acp-harness.ts';
 import { setupUpdate } from './update-harness.ts';
 
@@ -19,6 +19,18 @@ describe('startup notice sources', () => {
     runtime.skillList = { skills: [], warnings: ['Project skills were skipped because the folder is not trusted'] };
 
     expect(await skillWarningSource({ runtime, session: runtime.session })).toEqual(['Project skills were skipped because the folder is not trusted']);
+  });
+
+  it('reads the load warnings of the session MCP servers from the Run API', async () => {
+    const runtime = fakeRuntime();
+    runtime.mcpWarnings = async (sessionId) => {
+      expect(sessionId).toBe(runtime.session.id);
+      return ['The address of remote is plain http to another computer: what you send to it is not encrypted.'];
+    };
+
+    expect(await mcpWarningSource({ runtime, session: runtime.session })).toEqual([
+      'The address of remote is plain http to another computer: what you send to it is not encrypted.',
+    ]);
   });
 
   it('shows an update result once and marks it announced', async (context) => {

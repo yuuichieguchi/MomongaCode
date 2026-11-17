@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { approvalDigestOf } from '@momonga/config';
+import { approvalDigestOf, plainHttpWarningText } from '@momonga/config';
 import { OperationLimitError, StoreCallEndedError } from '@momonga/foundation';
 import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
 import { McpAuthorizationError } from '@momonga/mcp';
@@ -63,9 +63,9 @@ const CLOSE_GRACE_MS = 40;
 const ADMIN_CLIENT_VERSION = '0.0.0-admin-test';
 const CONNECT_TIMEOUT_MS = 45_000;
 
-const setup = async () => {
+const setup = async (remoteUrl: string = REMOTE_URL) => {
   const temp = await makeTempHome();
-  writeUserSettings(temp.home, { mcpServers: { local: { command: 'node', args: ['server.js'] }, remote: { type: 'http', url: REMOTE_URL } } });
+  writeUserSettings(temp.home, { mcpServers: { local: { command: 'node', args: ['server.js'] }, remote: { type: 'http', url: remoteUrl } } });
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
   const { store } = openStore(temp, clock);
@@ -251,6 +251,27 @@ describe('createMcpAdmin servers', () => {
     await admin.close(CLOSE_GRACE_MS);
 
     expect(pools[0]?.closes).toBe(1);
+  });
+});
+
+describe('createMcpAdmin warnings of the session servers', () => {
+  it('returns the plain http warning of a user server addressed in cleartext, and probes nothing', async () => {
+    const { admin, session, pools } = await setup('http://192.168.1.20:8080/mcp');
+
+    expect(await admin.warnings(session.id, controllerSignal())).toEqual([plainHttpWarningText('remote')]);
+    expect(pools.flatMap((pool) => pool.probes)).toEqual([]);
+  });
+
+  it('returns no warning for a user server addressed over https', async () => {
+    const { admin, session } = await setup();
+
+    expect(await admin.warnings(session.id, controllerSignal())).toEqual([]);
+  });
+
+  it('answers an unknown session with not found', async () => {
+    const { admin } = await setup();
+
+    await expect(admin.warnings('missing', controllerSignal())).rejects.toMatchObject({ status: 404 });
   });
 });
 

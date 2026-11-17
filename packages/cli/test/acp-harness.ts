@@ -324,6 +324,7 @@ export const fakeRuntime = (): FakeRuntime => {
     jobs: unexpected('jobs'),
     childRuns: unexpected('childRuns'),
     mcpServers: unexpected('mcpServers'),
+    mcpWarnings: unexpected('mcpWarnings'),
     startMcpAuthorization: unexpected('startMcpAuthorization'),
     mcpAuthorization: unexpected('mcpAuthorization'),
     cancelMcpAuthorization: unexpected('cancelMcpAuthorization'),

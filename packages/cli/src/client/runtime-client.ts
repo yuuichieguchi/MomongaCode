@@ -25,6 +25,7 @@ import {
   checkUserShellPending,
   checkMcpAuthorization,
   checkMcpServers,
+  checkMcpWarnings,
   checkMemories,
   checkMemory,
   checkPolicyGovernance,
@@ -190,6 +191,7 @@ export type RuntimeClient = {
   getElicitation(id: string): Promise<ElicitationView>;
   resolveElicitation(id: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<ResolvedElicitation>;
   mcpServers(sessionId: string): Promise<McpServerView[]>;
+  mcpWarnings(sessionId: string): Promise<string[]>;
   startMcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
   mcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
   cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
@@ -579,6 +581,12 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkMcpServers(body, `GET ${path}`).servers;
   };
 
+  const mcpWarnings = async (sessionId: string): Promise<string[]> => {
+    const path = `/v1/sessions/${pathSegment(sessionId)}/mcp/warnings`;
+    const { body } = await send('GET', path, [200]);
+    return checkMcpWarnings(body, `GET ${path}`).warnings;
+  };
+
   const authorizationPath = (sessionId: string, server: string): string => `/v1/sessions/${pathSegment(sessionId)}/mcp/servers/${pathSegment(server)}/authorization`;
 
   const startMcpAuthorization = async (sessionId: string, server: string): Promise<McpAuthorizationView> => {
@@ -918,6 +926,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     getElicitation,
     resolveElicitation,
     mcpServers,
+    mcpWarnings,
     startMcpAuthorization,
     mcpAuthorization,
     cancelMcpAuthorization,
