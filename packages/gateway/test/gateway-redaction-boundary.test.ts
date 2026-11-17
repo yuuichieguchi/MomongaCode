@@ -98,7 +98,6 @@ describe('S1: upstream text crosses one redaction boundary', () => {
           !/^const adapters: Record<string, ProviderAdapter> = \{\};$/.test(line) &&
           !/Object\.values\(adapters\)\.map\(\(adapter\) => adapter\.close\?\.\(\)\)/.test(line) &&
           !/^adapters\[name\] = /.test(line) &&
-          !/^checkModels\(\{ config, adapters \}\);$/.test(line) &&
           !/^adapters,$/.test(line),
       );
     expect(processUses).toEqual([]);
@@ -108,9 +107,7 @@ describe('S1: upstream text crosses one redaction boundary', () => {
       .map(({ line }) => line.trim())
       .filter(
         (line) =>
-          !/^const \{[^}]*\badapters\b[^}]*\} = options;$/.test(line) &&
-          !/Object\.hasOwn\(adapters, name\)/.test(line) &&
-          !/^export const checkModels = \(options: Pick<FixedModelsOptions, 'config' \| 'adapters'>\): void => \{$/.test(line),
+          !/^if \(!\('epochs' in options\)\) checkModels\(\{ config: options\.config, adapterNames: new Set\(Object\.keys\(options\.adapters\)\) \}\);$/.test(line),
       );
     expect(configUses).toEqual([]);
   });

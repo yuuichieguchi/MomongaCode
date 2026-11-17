@@ -1461,7 +1461,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         for (const [name, part] of parts) {
           adapters[name] = part.adapter;
         }
-        checkModels({ config, adapters });
+        checkModels({ config, adapterNames: new Set(parts.keys()) });
         const router = createRouter({
           config,
           adapters,
