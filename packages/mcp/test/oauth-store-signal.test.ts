@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore, nodeFileSystem } from '@momonga/foundation';
+import { OperationLimitError, SHUTDOWN_SETTING_LIMITS, StoreCallEndedError, createFileCredentialStore, lockPathNameOf, nodeFileSystem } from '@momonga/foundation';
 import { DEFAULT_LOCK_TIMEOUT_MS } from '../../foundation/src/file-lock.ts';
 import type { FileLockPorts } from '@momonga/foundation';
 import { McpInputSuspension, MIN_TASK_POLL_MS, createManagedConnection } from '@momonga/mcp';
@@ -58,7 +58,7 @@ describe('MCP OAuth provider store waits (N81)', () => {
     const waiting = createFileCredentialStore(directory, { lock: testKernelLock(), ports });
     const lockDirectory = `${directory}.locks`;
     const [lockName] = fs.readdirSync(lockDirectory);
-    await startLockHolder(context, path.join(lockDirectory, lockName as string));
+    await startLockHolder(context, path.join(lockDirectory, lockPathNameOf(testKernelLock(), lockName as string)));
     const controller = new AbortController();
     const provider = createMcpOAuthProvider({
       server: 'remote',
