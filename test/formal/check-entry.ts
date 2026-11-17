@@ -62,7 +62,7 @@ const storedFactsOf = (run: TlcRun): StoredFacts | undefined => {
 
 type KeyedRead = { readonly unkeyed: RanReason } | { readonly key: string };
 
-const keyOfRun = async (request: CheckRequest, args: readonly string[]): Promise<KeyedRead> => {
+const keyOfRun = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode' | 'env' | 'java' | 'limitMs'>, args: readonly string[]): Promise<KeyedRead> => {
   if (request.mode === 'off') return { unkeyed: 'reuse off' };
   const refusal = refusalOf(request.env);
   if (refusal !== undefined) return { unkeyed: refusal };
@@ -70,6 +70,14 @@ const keyOfRun = async (request: CheckRequest, args: readonly string[]): Promise
   if (java === undefined) return { unkeyed: 'java not readable' };
   const parts = await keyPartsOf({ repoRoot: request.repoRoot, entry: request.entry, args, workers: TLC_WORKERS, java });
   return 'unreadable' in parts ? { unkeyed: 'input not readable' } : { key: keyOf(parts) };
+};
+
+export const reusableOf = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode' | 'env' | 'store' | 'java' | 'limitMs'>): Promise<boolean> => {
+  if (request.mode === 'off') return false;
+  const keyed = await keyOfRun(request, [...request.entry.args, ...FIXED_FINGERPRINT_ARGS]);
+  if ('unkeyed' in keyed) return false;
+  const found = await request.store.read(request.entry.config, keyed.key);
+  return found.kind === 'hit' && problemsOf(request.entry, found.record.facts).length === 0;
 };
 
 export const checkEntry = async (request: CheckRequest): Promise<CheckOutcome> => {

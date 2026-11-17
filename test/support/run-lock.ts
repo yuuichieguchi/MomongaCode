@@ -7,6 +7,8 @@ import { wholeRunRefusalOf } from './whole-run-guard.ts';
 import type { ProjectRunClass, SelectionProject } from '../../scripts/support/run-class.ts';
 import { CPU_BUDGET_ENV, breachLine, killTree, usageLine, watchTree } from '../../scripts/support/cpu-budget.ts';
 import { vitestProjectBudgetOf } from '../../scripts/support/run-budgets.ts';
+import { tierRunPlanOf } from '../formal/tier-budget.ts';
+import { reuseModeOf } from '../formal/reuse.ts';
 import { RUN_LOCK_ENV, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, parseBudgetSeconds, parseWaitSeconds, runLockDirsOf, unusableMessage, untilStopped } from '../../scripts/support/run-lock.ts';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -62,6 +64,20 @@ const budgetOf = (projectNames: readonly string[]): number => {
   }, 0);
 };
 
+const tierBudgetOf = async (selected: readonly string[], stateDirPath: string): Promise<number> => {
+  if (process.env[CPU_BUDGET_ENV] !== undefined) return 0;
+  if (!selected.some((file) => file.startsWith(path.join(REPO_ROOT, 'test', 'formal') + path.sep))) return 0;
+  const plan = await tierRunPlanOf({
+    tier: process.env['MOMONGA_TLC_TIER'] === 'deep' ? 'deep' : 'every-run',
+    manifestPath: path.join(REPO_ROOT, 'specs', 'tla', 'manifest.json'),
+    repoRoot: REPO_ROOT,
+    stateDir: stateDirPath,
+    env: process.env,
+    reuse: reuseModeOf(process.env) === 'on',
+  });
+  return plan.budgetCpuSeconds;
+};
+
 const endTreeAt = (breach: Parameters<typeof breachLine>[0]): void => {
   process.stderr.write(`${breachLine(breach)}\n`);
   killTree(process.pid).then(
@@ -80,9 +96,10 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const selected = state.getPaths();
   const selectionProjects = await Promise.all(projects.map(selectionProjectOf));
   const selectedSet = new Set(selected);
-  const budgetCpuSeconds = budgetOf(selectionProjects.filter(({ files }) => files.some((file) => selectedSet.has(file))).map(({ name }) => name));
+  const projectBudgetCpuSeconds = budgetOf(selectionProjects.filter(({ files }) => files.some((file) => selectedSet.has(file))).map(({ name }) => name));
   const waitSeconds = waitSecondsOf(process.env[RUN_LOCK_WAIT_ENV]);
   const dir = stateDir();
+  const budgetCpuSeconds = projectBudgetCpuSeconds + (await tierBudgetOf(selected, dir));
   const runClass = await classOfSelection({
     selected,
     projects: selectionProjects,

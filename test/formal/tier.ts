@@ -5,8 +5,7 @@ import { stateDirOf } from '../../scripts/support/dev-state.ts';
 import { checkEntry, createTierReport } from './check-entry.ts';
 import type { ManifestEntry, ModuleLimits, Tier } from './manifest-reader.ts';
 import { moduleOf } from './manifest-reader.ts';
-import { recordedRowOf, recordsTier, writeManifestRows } from './record.ts';
-import type { Measurement } from './record.ts';
+import { createManifestRowWriter, recordedRowOf, recordsTier } from './record.ts';
 import { createJavaIdentityReader, createResultStore, reuseModeOf } from './reuse.ts';
 import type { JavaIdentity, ResultStore } from './reuse.ts';
 import { TLC_WORKERS, notProvedText } from './runner.ts';
@@ -52,7 +51,7 @@ export const describeTier = (options: TierOptions): void => {
 
   suite(`TLC over every ${tier} configuration in the manifest`, () => {
     const report = createTierReport(tier);
-    const recorded = new Map<string, { entry: ManifestEntry; measurement: Measurement; load: number }>();
+    const writeRow = createManifestRowWriter(path.join(repoRoot, 'specs', 'tla', 'manifest.json'));
     let opened: TierSession | undefined;
 
     const openSession = (): TierSession => {
@@ -74,12 +73,6 @@ export const describeTier = (options: TierOptions): void => {
 
     afterAll(async () => {
       report.print();
-      if (recorded.size > 0) {
-        const rows = [];
-        for (const { entry, measurement, load } of recorded.values()) rows.push(await recordedRowOf(repoRoot, entry, measurement, options.startupCpuSeconds, load));
-        writeManifestRows(path.join(repoRoot, 'specs', 'tla', 'manifest.json'), rows);
-        process.stderr.write(`record mode: ${rows.length} rows written to specs/tla/manifest.json\n`);
-      }
       if (loadError !== undefined || opened?.reuses !== true) return;
       const cleanup = await opened.store.removeOrphans(manifestConfigs);
       if (cleanup.reason !== undefined) process.stderr.write(`store cleanup: ${cleanup.reason}\n`);
@@ -99,7 +92,10 @@ export const describeTier = (options: TierOptions): void => {
           const { mode, store, java, record } = session();
           const outcome = await checkEntry({ entry, script, repoRoot, mode, env, store, java, limitMs, now, record, loadAverage: () => os.loadavg()[0] as number });
           report.add(entry.config, outcome);
-          if (outcome.outcome === 'ran' && outcome.measurement !== undefined && outcome.loadAtStart !== undefined) recorded.set(entry.config, { entry, measurement: outcome.measurement, load: outcome.loadAtStart });
+          if (outcome.outcome === 'ran' && outcome.measurement !== undefined && outcome.loadAtStart !== undefined) {
+            await writeRow(await recordedRowOf(repoRoot, entry, outcome.measurement, options.startupCpuSeconds, outcome.loadAtStart));
+            process.stderr.write(`record mode: ${entry.config} written to specs/tla/manifest.json\n`);
+          }
           const limits = options.modules.find((module) => module.module === moduleOf(entry.config));
           if (limits === undefined) throw new Error(`${entry.config}: the manifest has no modules entry for ${moduleOf(entry.config)}`);
           process.stderr.write(notProvedText(entry.config, limits));

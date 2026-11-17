@@ -99,3 +99,12 @@ export const writeManifestRows = (manifestPath: string, rows: readonly Record<st
   fs.writeFileSync(temporary, `${JSON.stringify(raw, null, 2)}\n`);
   fs.renameSync(temporary, manifestPath);
 };
+
+export const createManifestRowWriter = (manifestPath: string): ((row: Record<string, unknown>) => Promise<void>) => {
+  let queue: Promise<void> = Promise.resolve();
+  return (row) => {
+    const written = queue.then(() => writeManifestRows(manifestPath, [row]));
+    queue = written.catch(() => undefined);
+    return written;
+  };
+};
