@@ -28,7 +28,7 @@ afterEach(() => {
 
 const depsOf = (written: string[], completed: number[]): ProgramDeps => {
   const sink = { write: (text: string): boolean => (written.push(text), true) };
-  const ports = { version: '9.9.9', home, cwd: home, platform: process.platform, interrupt: new AbortController().signal, terminal: undefined, stdout: sink, stderr: sink } as unknown as CliPorts;
+  const ports = { version: '9.9.9', home, cwd: home, env: {}, platform: process.platform, interrupt: new AbortController().signal, terminal: undefined, stdout: sink, stderr: sink } as unknown as CliPorts;
   const entry = async (): Promise<number> => 0;
   return {
     ports,
