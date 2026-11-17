@@ -164,7 +164,7 @@ describe('a fabricated model summary', () => {
     const event = onlyCompaction(env, run.id);
     expect(event.source).toBe('deterministic');
     expect(event.summary).not.toContain('ghost');
-    expect(event.item).toEqual(compactionSummaryMessage(event.summary, 'code'));
+    expect(event.item).toEqual(compactionSummaryMessage(event.summary, 'code', env.session.fenceNonce));
     expect(event.fidelity?.fabricated).toEqual(['src/ghost.ts']);
     expect(lastInputText(env)).not.toContain('src/ghost.ts');
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -199,7 +199,7 @@ describe('an escalating gateway failure', () => {
     await runToEnd(env);
     const event = onlyCompaction(env, run.id);
     expect(event.source).toBe('deterministic');
-    expect(event.item).toEqual(compactionSummaryMessage(event.summary, 'code'));
+    expect(event.item).toEqual(compactionSummaryMessage(event.summary, 'code', env.session.fenceNonce));
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.message.startsWith('Compaction failed'))).toEqual([]);
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
@@ -302,8 +302,8 @@ describe('working state in the model request', () => {
 describe('replay and recovery', () => {
   it('reuses a recorded deterministic compaction on a new claim', async () => {
     const payloads = conversation();
-    const deterministic = compactionSummaryMessage('recorded', 'code');
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+    const deterministic = compactionSummaryMessage('recorded', 'code', env.session.fenceNonce);
     const run = await env.enqueue('question one');
     await env.seed(run.id, [...payloads.slice(0, 7), { type: 'context.compacted', item: deterministic, summary: 'recorded', replacedThroughSeq: 6, source: 'deterministic' }, ...payloads.slice(7)], 'crash');
     await runToEnd(env);
@@ -317,7 +317,7 @@ describe('unchanged behaviour', () => {
   it('never rejects a message summary at the gateway', async () => {
     const env = await makeEnv();
     const run = await env.enqueue('question one');
-    await env.seed(run.id, [responded(1, [assistantMessage('m1', 'a')]), { type: 'user.message', text: 'q2' }, { type: 'context.compacted', item: compactionSummaryMessage('s', 'code'), summary: 's', replacedThroughSeq: 2, source: 'deterministic' }], 'release');
+    await env.seed(run.id, [responded(1, [assistantMessage('m1', 'a')]), { type: 'user.message', text: 'q2' }, { type: 'context.compacted', item: compactionSummaryMessage('s', 'code', env.session.fenceNonce), summary: 's', replacedThroughSeq: 2, source: 'deterministic' }], 'release');
     await runToEnd(env);
     expect(env.ofType(run.id, 'context.compaction_rejected')).toEqual([]);
     expect(env.run(run.id).status).toBe('COMPLETED');

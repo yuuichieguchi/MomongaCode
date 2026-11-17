@@ -12,6 +12,7 @@ import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
 import { ownReasoning } from '../shared/reasoning-origin.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
+import { fenceOf } from '../shared/input-text.ts';
 
 export type AdditionalToolsItem = { type: 'additional_tools'; role: 'developer'; tools: FunctionTool[] };
 
@@ -54,7 +55,7 @@ const relayable = (content: string | ContentPart[], allowed: ReadonlySet<Content
 
 const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_TYPES, 'input_image']);
 
-const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin, systemRole: SystemRole): InputItem | undefined => {
+const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin, systemRole: SystemRole, fence: string | undefined): InputItem | undefined => {
   switch (item.type) {
     case 'reasoning': {
       const own = ownReasoning(item, origin);
@@ -67,7 +68,7 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin, systemRole: Sys
       };
     }
     case 'compaction_summary':
-      return compactionSummaryMessage(item.summary, 'model');
+      return compactionSummaryMessage(item.summary, 'model', fenceOf(fence));
     case 'message':
       return { type: 'message', role: item.role === 'system' ? systemRole : item.role, content: relayable(item.content, item.role === 'user' ? USER_PART_TYPES : TEXT_PART_TYPES) };
     case 'function_call':
@@ -129,7 +130,7 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     return schema === undefined ? flagged : { ...flagged, parameters: schema as NonNullable<FunctionTool['parameters']> };
   });
   const systemRole = rendering.systemRole ?? DEFAULT_SYSTEM_ROLE;
-  const input = readableHistoryOf(request.input, request.fence).flatMap((item) => itemOf(item, origin, systemRole) ?? []);
+  const input = readableHistoryOf(request.input, request.fence).flatMap((item) => itemOf(item, origin, systemRole, request.fence) ?? []);
   const additional = tools.length > 0 && (rendering.toolPlacement ?? DEFAULT_TOOL_PLACEMENT) === 'additional_tools';
   return {
     ...request.unknownFields,

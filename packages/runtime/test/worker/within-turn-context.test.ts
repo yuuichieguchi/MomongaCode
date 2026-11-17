@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { canonicalJson } from '@momonga/foundation';
+import { MIN_ROOM_TOKENS } from '@momonga/context';
 import type { InputItem, RunEventPayload } from '@momonga/protocol';
 import { capabilitiesFor, compactKey, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
@@ -60,7 +61,7 @@ describe('in-turn eviction', () => {
 });
 
 describe('in-turn compaction', () => {
-  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) }));
+  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1600) }));
 
   it('compacts the rendered steps before the protected ones with the summary cap and retains_user_request, and rebuilds summary, task, retained', async () => {
     const env = await makeEnv({ capabilities: W4000 });
@@ -158,7 +159,7 @@ describe('budget stop with nothing compacted', () => {
 });
 
 describe('budget stop counts of the final attempt', () => {
-  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) }));
+  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1600) }));
   const noticeOf = (env: Env, runId: string): string => noticesOf(env, runId).find((message) => message.startsWith('The context needs')) ?? '';
   const hasCompactionItem = (input: unknown): boolean => Array.isArray(input) && input.some((item: InputItem) => item.type === 'compaction');
 
@@ -293,7 +294,7 @@ describe('forced compaction failure decided by code', () => {
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
       bigStep('k0', { letter: 'a', size: 0, pad: padOf(0, 2200) }),
-      bigStep('k1', { letter: 'a', size: 0, pad: padOf(1, 9000) }),
+      bigStep('k1', { letter: 'a', size: 0, pad: padOf(1, 8700) }),
       textStep('sent after the deterministic summary'),
     );
     env.gateway.compactHook = async () => {
@@ -343,7 +344,7 @@ describe('compaction after a rejected model summary', () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(
-      ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })),
+      ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1450) })),
       ...Array.from({ length: quietSteps }, (_unused, index) => bigStep(`q${index}`, { letter: 'a', size: 0, pad: padOf(index, 40) })),
       bigStep('overflow', { letter: 'a', size: 0, pad: padOf(9, 3600) }),
       textStep('done'),
@@ -367,7 +368,7 @@ describe('compaction after a rejected model summary', () => {
 });
 
 describe('minimum room at claim', () => {
-  it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than 317 tokens', async () => {
+  it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than the minimum room', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(10372));
@@ -379,7 +380,7 @@ describe('minimum room at claim', () => {
     expect(failed.status).toBe('FAILED');
     expect(failed.error?.code).toBe('pinned_overflow');
     expect(failed.error?.message).toMatch(
-      /^The pinned context fits \(\d+ of 2920 tokens\) but leaves only \d+ tokens for the conversation; at least 317 are needed for one tool call, one tool result, a summary and the working state\. Reduce the fixed prefix \(deny rules for unused tools, plan mode, shorter instructions\) or use a larger window\.$/,
+      new RegExp(`^The pinned context fits \\(\\d+ of 2920 tokens\\) but leaves only \\d+ tokens for the conversation; at least ${MIN_ROOM_TOKENS} are needed for one tool call, one tool result, a summary and the working state\\. Reduce the fixed prefix \\(deny rules for unused tools, plan mode, shorter instructions\\) or use a larger window\\.$`),
     );
     expect(env.gateway.streams).toEqual([]);
   });

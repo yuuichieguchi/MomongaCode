@@ -38,7 +38,7 @@ export type AttemptSpanInput = {
   targetName: string;
   role: string;
   startedAtMs: number;
-  request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
+  request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined; fence: string };
 };
 
 export type BilledUsage = { usage: Usage; usageSource: UsageSource; cacheWriteInputTokens: number | undefined };
@@ -91,7 +91,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
   );
   const { telemetry } = input;
   if (telemetry.captureMessageContent) {
-    recordChatRequestContent(span, chatRequestContentOf(input.request.input, input.request.instructions, input.request.tools));
+    recordChatRequestContent(span, chatRequestContentOf(input.request.input, input.request.instructions, input.request.tools, input.request.fence));
   }
   let ended = false;
   const end = (): void => {

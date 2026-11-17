@@ -1,5 +1,6 @@
 import { spanValueOfJsonText } from '@momonga/foundation';
 import type { ChatRequestContent, GenAiMessage, GenAiPart, GenAiToolDefinition } from '@momonga/observability';
+import { compactionSummaryText } from '@momonga/protocol';
 import type { AdapterInputItem, ContentPart, FunctionTool, ItemField } from '@momonga/protocol';
 
 const NON_TEXT_PART = '[non-text content omitted]';
@@ -24,7 +25,7 @@ const textParts = (content: string | readonly ContentPart[]): GenAiPart[] =>
 
 const responseOf = (output: string | readonly ContentPart[]): unknown => (typeof output === 'string' ? spanValueOfJsonText(output, 'tool output') : output.map(textOfPart).join('\n'));
 
-const inputMessageOf = (item: AdapterInputItem): GenAiMessage[] => {
+const inputMessageOf = (item: AdapterInputItem, fence: string): GenAiMessage[] => {
   switch (item.type) {
     case 'message':
       return [{ role: item.role, parts: textParts(item.content) }];
@@ -33,7 +34,7 @@ const inputMessageOf = (item: AdapterInputItem): GenAiMessage[] => {
     case 'function_call_output':
       return [{ role: 'tool', parts: [{ type: 'tool_call_response', id: item.call_id, response: responseOf(item.output) }] }];
     case 'compaction_summary':
-      return [{ role: 'user', parts: [{ type: 'text', content: item.summary }] }];
+      return [{ role: 'user', parts: [{ type: 'text', content: compactionSummaryText(item.summary, 'model', fence) }] }];
     case 'reasoning':
       return [];
   }
@@ -50,9 +51,10 @@ export const chatRequestContentOf = (
   input: readonly AdapterInputItem[],
   instructions: string | null | undefined,
   tools: readonly FunctionTool[] | null | undefined,
+  fence: string,
 ): ChatRequestContent => ({
   ...(instructions === undefined || instructions === null ? {} : { systemInstructions: [{ type: 'text', content: instructions }] }),
-  inputMessages: input.flatMap(inputMessageOf),
+  inputMessages: input.flatMap((item) => inputMessageOf(item, fence)),
   ...(tools === undefined || tools === null || tools.length === 0 ? {} : { toolDefinitions: tools.map(definitionOf) }),
 });
 

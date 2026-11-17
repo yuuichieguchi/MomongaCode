@@ -178,7 +178,7 @@ const openAttempt = async (
       targetName: target.name,
       role: job.role,
       startedAtMs: services.clock.now(),
-      request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
+      request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools, fence: job.body.momonga?.fence ?? services.fenceBoundary(resolved.forAdapter) },
     });
   const callKey = upstreamCallKey(call, target.name);
   const failBeforeSend = (error: unknown): never => {

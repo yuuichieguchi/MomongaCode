@@ -49,7 +49,7 @@ describe('budget constants shared through the protocol', () => {
 
   it('pins the measured summary prompt and item overhead', () => {
     expect(SUMMARY_PROMPT_TOKENS).toBe(484);
-    expect(SUMMARY_ITEM_OVERHEAD).toBe(69);
+    expect(SUMMARY_ITEM_OVERHEAD).toBe(91);
   });
 
   it.for([
@@ -84,9 +84,9 @@ describe('summaryTokenCapFor', () => {
 
 describe('summaryItemTokensFor', () => {
   it.for([
-    [64, 84 + 69],
-    [100, 130 + 69],
-    [246, 320 + 69],
+    [64, 84 + 91],
+    [100, 130 + 91],
+    [246, 320 + 91],
   ] as const)('budgets cap %i as %i tokens: the 1.3x acceptance bound plus the item overhead', ([cap, tokens]) => {
     expect(summaryItemTokensFor(cap)).toBe(tokens);
     expect(summaryItemTokensFor(cap)).toBe(Math.ceil(SUMMARY_ACCEPT_RATIO * cap) + SUMMARY_ITEM_OVERHEAD);

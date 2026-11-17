@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext, workingStateMessage } from '@momonga/context';
 import type { TokenCounter } from '@momonga/context';
 import type { FunctionTool, GoverningFactView, InputItem, MemoryView, MessageInputItem, TokenAnatomy } from '@momonga/protocol';
+import { TEST_FENCE } from '@momonga/testkit';
 import {
   PROJECT,
   READ_TOOL,
@@ -104,7 +105,7 @@ describe('the anatomy of a built context', () => {
     const built = await buildContext(inputFor(capabilities, { sources }), harness(capabilities).ports);
 
     expect(built.anatomy.layers.summary).toBe(tokensOfItem(summaryItem));
-    expect(built.anatomy.layers.workingState).toBe(tokensOfItem(workingStateMessage('Files written: src/parser.ts')));
+    expect(built.anatomy.layers.workingState).toBe(tokensOfItem(workingStateMessage('Files written: src/parser.ts', TEST_FENCE)));
     expect(built.anatomy.layers.history).toEqual({ user: tokensOfItem(TASK), assistant: tokensOfItem(sources.history[2]!.item), toolCalls: 0, toolOutputs: 0 });
   });
 

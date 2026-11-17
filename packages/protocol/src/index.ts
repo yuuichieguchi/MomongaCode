@@ -336,7 +336,7 @@ export type {
 } from './working-facts.ts';
 export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
-export { DETERMINISTIC_SUMMARY_TEXT, SUMMARY_FRAMING, compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
+export { DETERMINISTIC_SUMMARY_TEXT, SUMMARY_FRAMING, compactionSummaryMessage, compactionSummaryText, decodeCompactionSummary } from './compaction-summary.ts';
 export type { SummaryOrigin } from './compaction-summary.ts';
 export { FIDELITY_CLAIMS, FIDELITY_FOLD_BEHAVIOUR_DIGESTS, FIDELITY_FOLD_VERSION, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
 export type { ClaimedToken, FidelityClaim, TokenMatcher } from './fidelity-match.ts';
@@ -572,7 +572,7 @@ export type {
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
 export { issueRunInput } from './issue-run.ts';
-export { ATTACHED_FILE_TAG, FENCE_BOUNDARY_MARKER, FORGE_ISSUE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceToolOutput, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
+export { ATTACHED_FILE_TAG, FENCE_BOUNDARY_LENGTH, FENCE_BOUNDARY_MARKER, FORGE_ISSUE_TAG, TOOL_OUTPUT_TAG, USER_SHELL_TAG, attachedFileText, attachmentText, fenceToolOutput, fenceUntrusted, imageDataUrl, includedShellTexts, sessionFenceOf, userMessageContent, userShellText } from './user-content.ts';
 export type { UserMessageExtras } from './user-content.ts';
 export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';

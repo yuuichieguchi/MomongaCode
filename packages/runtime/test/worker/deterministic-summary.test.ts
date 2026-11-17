@@ -60,10 +60,10 @@ describe('a deterministic summary holds no model text', () => {
   });
 
   it.each(['escalating', 'rejected'] as const)('after a %s compaction is the fixed sentence in its code frame, with no previous prose', async (cause) => {
-    const { event } = await deterministicAfter(cause);
+    const { event, env } = await deterministicAfter(cause);
     expect(event.summary).not.toContain(MARKER);
     expect(event.summary).toBe(DETERMINISTIC_SUMMARY_TEXT);
-    expect(event.item).toEqual(compactionSummaryMessage(DETERMINISTIC_SUMMARY_TEXT, 'code'));
+    expect(event.item).toEqual(compactionSummaryMessage(DETERMINISTIC_SUMMARY_TEXT, 'code', env.session.fenceNonce));
   });
 
   it('keeps the previous prose out of the next model request', async () => {
@@ -71,10 +71,11 @@ describe('a deterministic summary holds no model text', () => {
     expect(JSON.stringify(env.gateway.streams.at(-1)?.body)).not.toContain(MARKER);
   });
 
-  it('gives identical bytes for two runs of the same journal', async () => {
+  it('gives identical bytes for two runs of the same journal, apart from the session boundary the item carries', async () => {
     const first = await deterministicAfter('escalating');
     const second = await deterministicAfter('escalating');
-    expect(JSON.stringify(second.event.item)).toBe(JSON.stringify(first.event.item));
+    const bytesOf = (run: { event: { item: unknown }; env: Env }): string => JSON.stringify(run.event.item).replaceAll(run.env.session.fenceNonce, 'SESSION_BOUNDARY');
+    expect(bytesOf(second)).toBe(bytesOf(first));
     expect(second.event.summary).toBe(first.event.summary);
   });
 

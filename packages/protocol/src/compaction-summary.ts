@@ -1,6 +1,6 @@
 import { decodePayloadSegment, splitEnvelope } from './envelope-grammar.ts';
 import type { MessageInputItem } from './open-responses.ts';
-import { recordedDataMessage } from './recorded-data.ts';
+import { fenceUntrusted } from './user-content.ts';
 
 const SUPPORTED_VERSION = 1;
 export const decodeCompactionSummary = (encryptedContent: string): string | undefined => {
@@ -26,5 +26,11 @@ export const SUMMARY_FRAMING = {
 export const DETERMINISTIC_SUMMARY_TEXT =
   'A model summary of the earlier events is not available. The facts recorded by code are in the working state; the recorded events are the record.';
 
-export const compactionSummaryMessage = (text: string, origin: SummaryOrigin): MessageInputItem =>
-  recordedDataMessage({ tag: SUMMARY_TAG, origin: SUMMARY_FRAMING[origin], text });
+export const compactionSummaryText = (text: string, origin: SummaryOrigin, sessionBoundary: string): string =>
+  `${SUMMARY_FRAMING[origin]}\n${fenceUntrusted(SUMMARY_TAG, {}, text, sessionBoundary)}`;
+
+export const compactionSummaryMessage = (text: string, origin: SummaryOrigin, sessionBoundary: string): MessageInputItem => ({
+  type: 'message',
+  role: 'user',
+  content: compactionSummaryText(text, origin, sessionBoundary),
+});
