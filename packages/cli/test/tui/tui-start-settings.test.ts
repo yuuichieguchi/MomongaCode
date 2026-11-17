@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { readTuiStart, setByPerson } from '../../src/tui/tui-start-settings.ts';
 import { freshPlace, localFileOf, writeSettings } from './settings-harness.tsx';
 
-const read = (place: ReturnType<typeof freshPlace>) => readTuiStart({ home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => false });
+const read = (place: ReturnType<typeof freshPlace>) => readTuiStart({ env: {}, home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => false });
 
 describe('the terminal settings at the start', () => {
   it('are read through the merged loader, with the layer each value came from', async () => {
@@ -27,11 +27,11 @@ describe('the terminal settings at the start', () => {
   it('apply the project layer of a trusted folder at the start, and do not apply it when the folder is not trusted', async () => {
     const place = freshPlace();
     writeSettings(place.projectFile, { tui: { theme: 'light' } });
-    const trusted = await readTuiStart({ home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => true });
+    const trusted = await readTuiStart({ env: {}, home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => true });
     if (trusted.kind !== 'loaded') throw new Error('expected the settings to load');
     expect(trusted.settings.theme).toBe('light');
     expect(trusted.sources.theme).toBe('project');
-    const untrusted = await readTuiStart({ home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => false });
+    const untrusted = await readTuiStart({ env: {}, home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => false });
     if (untrusted.kind !== 'loaded') throw new Error('expected the settings to load');
     expect(untrusted.settings.theme).toBe('auto');
   });

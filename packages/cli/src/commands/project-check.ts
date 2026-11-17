@@ -5,7 +5,7 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import type { CliPorts } from '../ports.ts';
 import { UsageError } from '../usage-error.ts';
 
-type CheckPorts = Pick<CliPorts, 'cwd' | 'interrupt' | 'stdout'>;
+type CheckPorts = Pick<CliPorts, 'cwd' | 'env' | 'interrupt' | 'stdout'>;
 
 const writerOf = (ports: CheckPorts, paths: MomongaPaths) => settingsWriterPorts(paths.home, { lock: resolveLayoutLocks(paths).mechanism, signal: ports.interrupt });
 
@@ -15,7 +15,7 @@ const folderLine = async (ports: CheckPorts, shown: string): Promise<void> => {
 };
 
 export const projectCheckShow = async (ports: CheckPorts, paths: MomongaPaths): Promise<number> => {
-  const check = await readProjectCheck({ env: process.env, home: paths.home, projectDir: ports.cwd, signal: ports.interrupt });
+  const check = await readProjectCheck({ env: ports.env, home: paths.home, projectDir: ports.cwd, signal: ports.interrupt });
   await folderLine(ports, check === undefined ? 'no check' : 'declined' in check ? 'declined' : check.commands.join(' && '));
   return 0;
 };

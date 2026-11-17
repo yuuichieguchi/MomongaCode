@@ -50,13 +50,13 @@ export const lastStopLines = (lastStop: StopValues, settingsNow: StopValues): st
 
 const generationDocumentOf = (entry: LiveGeneration, lastStop: StopValues | undefined) => ({ role: entry.role, generation: entry.generation, ...entry.health, lastStop: lastStop ?? null });
 
-export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'stderr' | 'clock' | 'interrupt' | 'endpointScope'>, paths: MomongaPaths, options: { json: boolean }): Promise<number> => {
+export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'stderr' | 'clock' | 'env' | 'interrupt' | 'endpointScope'>, paths: MomongaPaths, options: { json: boolean }): Promise<number> => {
   const live = await listLiveGenerations(ports, paths);
   const serving = live.find((entry) => entry.role === 'serving');
   const others = live.filter((entry) => entry !== serving);
   const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(paths.home, entry.generation).stopRecord)] as const)));
   const settingsNow = [...lastStops.values()].some((values) => values !== undefined)
-    ? await readUserStopValuesOrDefault({ env: process.env, home: paths.home, signal: ports.interrupt, onNotice: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`) })
+    ? await readUserStopValuesOrDefault({ env: ports.env, home: paths.home, signal: ports.interrupt, onNotice: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`) })
     : undefined;
   if (options.json) {
     const ordered = [...(serving === undefined ? [] : [serving]), ...others];

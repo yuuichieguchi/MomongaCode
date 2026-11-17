@@ -307,7 +307,7 @@ describe('the TUI start note', () => {
   });
 
   it('is one of the default sources', () => {
-    const defaults = notices.defaultNoticeSources({ home: '/h', interrupt: new AbortController().signal }, {} as never);
+    const defaults = notices.defaultNoticeSources({ env: {}, home: '/h', interrupt: new AbortController().signal }, {} as never);
     expect(defaults).toContain(source());
   });
 });

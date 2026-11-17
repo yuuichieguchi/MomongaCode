@@ -9,7 +9,7 @@ export type TuiStart =
   | { readonly kind: 'loaded'; readonly settings: ResolvedTuiSettings; readonly sources: Readonly<Record<TuiKey, SettingSource>> }
   | { readonly kind: 'broken'; readonly file: string | undefined; readonly message: string };
 
-export type TuiStartPlace = { readonly home: string; readonly projectDir: string; readonly userFile: string; readonly signal: AbortSignal; readonly isTrusted: () => Promise<boolean> };
+export type TuiStartPlace = { readonly env: Readonly<Record<string, string | undefined>>; readonly home: string; readonly projectDir: string; readonly userFile: string; readonly signal: AbortSignal; readonly isTrusted: () => Promise<boolean> };
 
 const brokenBy = async (file: string | undefined, read: () => Promise<unknown>): Promise<TuiStart | undefined> => {
   try {
@@ -21,16 +21,16 @@ const brokenBy = async (file: string | undefined, read: () => Promise<unknown>):
   }
 };
 
-export const readTuiStart = async ({ home, projectDir, userFile, signal, isTrusted }: TuiStartPlace): Promise<TuiStart> => {
+export const readTuiStart = async ({ env, home, projectDir, userFile, signal, isTrusted }: TuiStartPlace): Promise<TuiStart> => {
   const trusted = await isTrusted();
-  const userBroken = await brokenBy(userFile, () => loadUserSettings({ env: process.env, home, signal }));
+  const userBroken = await brokenBy(userFile, () => loadUserSettings({ env, home, signal }));
   if (userBroken !== undefined) return userBroken;
   let settings: ResolvedTuiSettings = defaultTuiSettings();
   const layersBroken = await brokenBy(undefined, async () => {
-    settings = (await loadSettings({ env: process.env, home, projectDir, cli: {}, trust: { isTrusted: () => trusted }, signal })).settings.tui;
+    settings = (await loadSettings({ env, home, projectDir, cli: {}, trust: { isTrusted: () => trusted }, signal })).settings.tui;
   });
   if (layersBroken !== undefined) return layersBroken;
-  const snapshot = await readSettingsSnapshot({ env: process.env, home, projectDir, trusted, signal });
+  const snapshot = await readSettingsSnapshot({ env, home, projectDir, trusted, signal });
   const keys = Object.keys(defaultTuiSettings()) as TuiKey[];
   const merged = settings;
   const sourceOf = (key: TuiKey): SettingSource => {
