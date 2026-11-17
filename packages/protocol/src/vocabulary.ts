@@ -358,6 +358,9 @@ export type MessageKey = keyof MessageInputs;
 
 export type MessageInput<Key extends MessageKey> = MessageInputs[Key];
 
+export const billingChangeRefusedSentence = (given: { readonly model: string; readonly from: string; readonly to: string }): string =>
+  `Did not fall back to ${given.model}: billing from ${given.from} to ${given.to} is not allowed.`;
+
 const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: MessageInputs[Key]) => string } = {
   noModelConnected,
   modelAmbiguous: (_surface, given) => `The ${WORDS.model} "${given.text}" is served by ${serverCountText(given.choices.length)} ${WORDS.server}s: ${given.choices.join(', ')}. Write one of them.`,
@@ -400,7 +403,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   accountWithoutModel: (surface, given) => `No ${WORDS.model} uses this account yet. ${ACCOUNT_MODEL_STEP[surface](given)}`,
   serverFormNotOffered: (_surface, given) =>
     `the ${WORDS.server} ${JSON.stringify(given.server)} cannot be used on ${given.platform}: it accepts only the socket forms [${given.accepted.join(', ')}], and ${given.platform} offers [${given.offered.join(', ')}]`,
-  billingChangeRefused: (_surface, given) => `Did not fall back to ${given.model}: billing from ${given.from} to ${given.to} is not allowed.`,
+  billingChangeRefused: (_surface, given) => billingChangeRefusedSentence(given),
   daemonStarting: () => `The ${WORDS.daemon} is still starting and accepts no new work yet. The request was not run; send it again.`,
 };
 

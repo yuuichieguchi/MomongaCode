@@ -252,8 +252,8 @@ const handleResult = async (
     },
   ];
   if (fallbackDecision.fallback && fallback?.fallbackCauses !== undefined) {
-    const failed = fallback.fallbackCauses.filter((cause) => cause.reason !== BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause, 'tui'));
-    const refused = fallback.fallbackCauses.filter((cause) => cause.reason === BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause, 'tui'));
+    const failed = fallback.fallbackCauses.filter((cause) => cause.reason !== BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause));
+    const refused = fallback.fallbackCauses.filter((cause) => cause.reason === BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause));
     recorded.push({
       type: 'notice',
       level: 'warning',

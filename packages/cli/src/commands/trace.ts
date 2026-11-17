@@ -1,6 +1,6 @@
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCause, isSpanFallbackCauseList } from '@momonga/protocol';
+import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCauseOn, isSpanFallbackCauseList } from '@momonga/protocol';
 import type { RunTraceCall, SpanFallbackCause, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, TraceContentPage } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
@@ -33,7 +33,7 @@ const chatDetail = (span: RunTraceSpan): string => {
     return `  ${where}: ${typeof errorType === 'string' ? `${errorType}: ` : ''}${failure}`;
   }
   const causes = fallbackCausesOf(span);
-  return `  ${where}${causes.length === 0 ? '' : `, answered after ${causes.map((cause) => describeFallbackCause(cause, 'cli')).join('; ')}`}`;
+  return `  ${where}${causes.length === 0 ? '' : `, answered after ${causes.map((cause) => describeFallbackCauseOn(cause, 'cli')).join('; ')}`}`;
 };
 
 const spanLines = (spans: readonly RunTraceSpan[], parent: string | null, depth: number): string[] =>
