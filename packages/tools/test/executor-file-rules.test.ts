@@ -1,4 +1,3 @@
-import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +7,7 @@ import { resolveCanonicalPath, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSet, PathResolution } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
+import { MASK_ARGUMENT_CEILING } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import type { CallOutcome } from '@momonga/tools';
 import { createReadAccessMatcher } from '../src/read-access.ts';
@@ -18,6 +18,8 @@ import { minimalPolicyFor } from './helpers.ts';
 import { syncPaths } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+const DENIED_FILE_COUNT = 9200;
 
 type Recordings = {
   files_with_matches: string;
@@ -160,18 +162,37 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(listed).output).toBe(inProject(tools, carved));
   });
 
-  it.runIf(HAS_RG)('answers a directory Grep exactly when a deny rule matches more files than the argument limit can name, under the real sandbox', async () => {
+  it.runIf(HAS_RG)('searches past a fully denied directory of many files, which the sandbox masks as one directory, and keeps every denied file out, under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
-    const argumentLimit = Number(execFileSync('/usr/bin/getconf', ['ARG_MAX'], { encoding: 'utf8' }).trim());
-    const stem = 'd'.repeat(230);
-    const deniedDirectory = path.join(tools.layout.project, 'many');
-    fs.mkdirSync(deniedDirectory);
-    const count = Math.ceil(argumentLimit / stem.length) + 100;
-    for (let index = 0; index < count; index += 1) fs.writeFileSync(path.join(deniedDirectory, `${stem}-${index}.env`), 'secret');
+    const denied = path.join(tools.layout.project, 'many');
+    fs.mkdirSync(denied);
+    for (let index = 0; index < DENIED_FILE_COUNT; index += 1) fs.writeFileSync(path.join(denied, `secret-${index}.env`), 'secret');
     const visible = tools.write('notes.txt', 'secret');
-    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(many/*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
     const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options);
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
+  });
+
+  const crowdedGrep = async (): Promise<{ tools: Builtins; visible: string; run: () => Promise<unknown> }> => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const crowded = path.join(tools.layout.project, 'crowded');
+    fs.mkdirSync(crowded);
+    const visible = tools.write(path.join('crowded', 'keep.txt'), 'secret');
+    for (let index = 0; index <= Math.floor(MASK_ARGUMENT_CEILING / 3); index += 1) fs.writeFileSync(path.join(crowded, `secret-${index}.env`), 'secret');
+    const options = await withRules(tools, [ruleOf(tools, 'deny', 'Read(crowded/*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    return { tools, visible, run: async () => tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options) };
+  };
+
+  it.runIf(HAS_RG && process.platform === 'linux')('refuses a Grep whose deny set needs more mask arguments than bubblewrap can take, before any spawn, with the typed policy error named in the failed result, under the real sandbox', async () => {
+    const { run } = await crowdedGrep();
+    const outcome = (await run()) as CallOutcome;
+    expect(resultOf(outcome).status).toBe('failed');
+    expect(resultOf(outcome).output).toContain(`at most ${MASK_ARGUMENT_CEILING} arguments`);
+  });
+
+  it.runIf(HAS_RG && process.platform === 'darwin')('runs a Grep whose deny set is above the bubblewrap ceiling under seatbelt, which names no file per denied path, and keeps the denied files out', async () => {
+    const { tools, visible, run } = await crowdedGrep();
+    expect(resultOf((await run()) as CallOutcome).output).toBe(inProject(tools, visible));
   });
 
   it.runIf(HAS_RG)('keeps the exclusion of denied files whose names hold a line break or end in whitespace, and keeps a visible file beside them, under the real sandbox', async () => {
