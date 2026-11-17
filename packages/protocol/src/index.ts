@@ -106,6 +106,7 @@ export {
   summaryTokenCapFor,
 } from './budget-constants.ts';
 export type { ErrorShape } from './budget-constants.ts';
+export { MAX_TOOL_PARAMETERS_BYTES } from './tool-parameters.ts';
 export {
   ANTHROPIC_API_VERSIONS,
   DEFAULT_ANTHROPIC_API_VERSION,

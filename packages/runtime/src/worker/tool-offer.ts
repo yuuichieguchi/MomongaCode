@@ -1,5 +1,6 @@
-import { LOAD_TOOLS_TOOL_NAME } from '@momonga/protocol';
+import { LOAD_TOOLS_TOOL_NAME, MAX_TOOL_PARAMETERS_BYTES } from '@momonga/protocol';
 import type { FunctionTool } from '@momonga/protocol';
+import { canonicalJson } from '@momonga/foundation';
 import type { ToolSet } from '@momonga/tools';
 import { isRecord } from './json.ts';
 
@@ -32,13 +33,16 @@ const loaderDefinitionOf = (offered: FunctionTool, catalog: readonly FunctionToo
   strict: false,
 });
 
+export const hasOversizedParameters = (definition: FunctionTool): boolean =>
+  Buffer.byteLength(canonicalJson(definition.parameters ?? {})) > MAX_TOOL_PARAMETERS_BYTES;
+
 export const offerFor = (input: ToolOfferInput): ToolOffer => {
   const { toolSet, deferred, loaded, keepCompanionsWithoutHost, required } = input;
   if (deferred === undefined) return { tools: [...input.visible], catalog: [] };
   const offeredLoader = input.visible.find((definition) => definition.name === LOAD_TOOLS_TOOL_NAME);
   const visible = input.visible.filter((definition) => definition.name !== LOAD_TOOLS_TOOL_NAME);
   const definitionOf = new Map(visible.map((definition) => [definition.name, definition]));
-  const pinned = [...new Set(deferred)];
+  const pinned = [...new Set([...deferred, ...visible.filter(hasOversizedParameters).map((definition) => definition.name)])];
   const catalogDefinitions = pinned.flatMap((name) => {
     const definition = definitionOf.get(name);
     if (definition === undefined || name === LOAD_TOOLS_TOOL_NAME) return [];

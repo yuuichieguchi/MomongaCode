@@ -1,6 +1,9 @@
 import { MIN_ROOM_TOKENS, PinnedOverflowError } from '@momonga/context';
 import type { ClaimContext } from './claim-context.ts';
 import { hasAdmittedTools, measureToolsWith, rememberAdmittedTools } from './context-step.ts';
+import { hasOversizedParameters } from './tool-offer.ts';
+import { MAX_TOOL_PARAMETERS_BYTES } from '@momonga/protocol';
+import type { FunctionTool } from '@momonga/protocol';
 
 export type ToolAdmission = { admitted: true } | { admitted: false; reason: string };
 
@@ -21,6 +24,17 @@ const keyOf = (names: readonly string[]): string => [...names].sort().join('\n')
 const refusalOf = (names: readonly string[], tokens: number, ceiling: number): string =>
   `${names.join(', ')} was not loaded: the pinned context with ${names.length === 1 ? 'its definition' : 'their definitions'} would take ${tokens} tokens, but at most ${ceiling} fit and at least ${MIN_ROOM_TOKENS} must stay free for the conversation. Continue without it.`;
 
+const oversizedRefusalOf = (name: string): string =>
+  `${name} was not loaded: its definition takes more than the ${MAX_TOOL_PARAMETERS_BYTES} bytes of canonical JSON a tool's parameters may take. Continue without it.`;
+
+const oversizedOf = (tools: readonly FunctionTool[], names: readonly string[]): string | undefined => {
+  for (const tool of tools) {
+    if (!names.includes(tool.name)) continue;
+    if (hasOversizedParameters(tool)) return oversizedRefusalOf(tool.name);
+  }
+  return undefined;
+};
+
 const settled = (): undefined => undefined;
 
 export const createToolLoading = (contextOf: () => ClaimContext): ToolLoading => {
@@ -38,6 +52,8 @@ export const createToolLoading = (contextOf: () => ClaimContext): ToolLoading =>
     const ctx = contextOf();
     const current = batchOf(ctx);
     const after = ctx.toolOffer([...loadedNow(ctx), ...names]);
+    const oversized = oversizedOf(after.tools, names);
+    if (oversized !== undefined) return { admitted: false, reason: oversized };
     try {
       const { measure, floorTokens, kept } = await measureToolsWith(ctx, after.tools);
       if (after.tools.some((tool) => !kept.includes(tool.name))) return { admitted: false, reason: refusalOf(names, floorTokens, measure.ceiling) };
