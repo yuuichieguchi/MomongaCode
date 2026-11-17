@@ -679,7 +679,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `models.servers.<name>.command` | string (not empty) |  |  | user |
 | `models.servers.<name>.args` | array of string |  |  | user |
 | `models.servers.<name>.readyPath` | string |  |  | user |
-| `models.servers.<name>.modelFile` | string (an argument of `args`, exactly as written, that is an absolute path; it names the model file) |  |  | user |
+| `models.servers.<name>.modelFile` | string (not empty) |  |  | user |
 | `models.servers.<name>.endpoint` | object |  |  | user |
 | `models.servers.<name>.endpoint.forms` | array of `"unix"` or `"pipe"` (at least 1 entry) |  |  | user |
 | `models.dialects` | map of object |  |  | user |
@@ -703,7 +703,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `memory.forgetAfterDays` | integer (at least 1) | `90` | days | user, project, local |
 | `memory.repositoryFacts` | boolean | `true` |  | user, project, local |
 | `verification` | object |  |  | user, project, local |
-| `verification.commands` | array of string (not empty) | `["npm test","pnpm test","yarn test","cargo test","pytest","go test ./...","swift test","make test"]` |  | user, project, local |
+| `verification.commands` | array of string (not empty) |  |  | user, project, local |
 | `verification.manifests` | array of string (not empty) | `["package.json","pnpm-lock.yaml","Cargo.toml","pyproject.toml","go.mod","Package.swift","Makefile"]` |  | user, project, local |
 | `verification.required` | boolean | `false` |  | user, project, local |
 | `context` | object |  |  | user, project, local |
