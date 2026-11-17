@@ -69,9 +69,15 @@ describe('gateway probe on a HOME that has never run momonga', () => {
     fs.mkdirSync(path.join(home, '.momonga'), { mode: 0o700 });
     fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { connections: [{ adapter: 'managed', server: 'fm', binary: fm.binaryPath, models: [{ id: 'system' }] }] } }), { mode: 0o600 });
 
-    const result = await runCli(home, ['gateway', 'probe', 'system', '--samples', '1'], { platform: FM_HOST.platform, exec: FM_HOST.exec, hostLaunch: async () => FM_HOST.launch });
+    const hostPrograms: string[] = [];
+    const exec: typeof FM_HOST.exec = (file, args) => {
+      hostPrograms.push(file);
+      return FM_HOST.exec(file, args);
+    };
+    const result = await runCli(home, ['gateway', 'probe', 'system', '--samples', '1'], { platform: FM_HOST.platform, exec, hostLaunch: async () => FM_HOST.launch });
 
     expect(result.codes).toEqual([0]);
+    expect(hostPrograms).toContain('sw_vers');
     expect(result.stdout).toContain('probed system: model system, context window 8192 (reported)');
     expect(modeOf(path.join(home, '.momonga'))).toBe(0o700);
     expect(modeOf(path.join(home, '.momonga', 'run'))).toBe(0o700);

@@ -259,6 +259,7 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
     timers: managedProbeTimersOf(ports),
     launch: await ports.hostLaunch({ home: ports.home, platform: ports.platform, env: ports.env }, options.interrupt),
+    exec: ports.exec,
     stepTimeoutMs: options.stepTimeoutMs,
     model: configured.model,
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
