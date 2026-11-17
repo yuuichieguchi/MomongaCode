@@ -3,6 +3,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { Agent, buildConnector, request } from 'undici';
 import { GENERATION_RETIRED_CODE } from './generation-codes.ts';
+import { parseOutsideJson } from './json-depth.ts';
 import { acquireProcessLock } from './process-lock.ts';
 import type { AcquireProcessLockOptions } from './process-lock.ts';
 import { modeIsPrivate, ownerProblem } from './platform/privacy.ts';
@@ -60,7 +61,7 @@ const isRetiredValue = (value: unknown): boolean =>
 
 const isRetiredText = (text: string): boolean => {
   try {
-    return isRetiredValue(JSON.parse(text));
+    return isRetiredValue(parseOutsideJson(text));
   } catch {
     return false;
   }
