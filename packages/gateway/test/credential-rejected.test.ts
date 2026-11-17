@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SIGN_IN_COMMAND } from '@momonga/protocol';
 import type { ClassifiedError } from '@momonga/protocol';
 import { planProfileOf } from '@momonga/config';
 import { applyCredentialEffect } from '../src/adapters/shared/auth.ts';
@@ -41,10 +40,10 @@ describe('a credential the provider rejects after a forced refresh', () => {
     expect(health.detail).toContain(planProfileOf('chatgpt').messages.signInExpiredMessage);
   });
 
-  it('the rule text of a rejected credential names the sign-in command', () => {
+  it('the rule text of a rejected credential states the expiry with no command: the surface adds its own sign-in command', () => {
     const rejecting = rules.filter((rule) => rule.credential === 'rejected');
     expect(rejecting.length).toBeGreaterThan(0);
-    for (const rule of rejecting) expect(rule.message).toContain(SIGN_IN_COMMAND);
+    for (const rule of rejecting) expect(rule.message).toBe('The sign-in of this account has expired');
   });
 
   it('every rule message is a sentence for the person; developer notes are kept in the cause', () => {

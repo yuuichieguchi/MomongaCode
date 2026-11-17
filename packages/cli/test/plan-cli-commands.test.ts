@@ -103,6 +103,12 @@ describe('describeRunError names the command of the surface for plan errors', ()
     expect(lines[1]).toContain('sign_in_required');
   });
 
+  it('names the sign-in command of the surface for a credential the upstream refused, from the same plan data', () => {
+    const rejected = { code: 'plan_credential_rejected', message: 'The sign-in of this account has expired', plan: { profile: 'chatgpt', account: 'chatgpt' } };
+    expect(describeRunError(rejected, 'tui')[0]).toBe('The sign-in of this account has expired · Run /login to sign in again');
+    expect(describeRunError(rejected, 'cli')[0]).toBe('The sign-in of this account has expired · Run momonga auth login chatgpt --account chatgpt to sign in again');
+  });
+
   it('names momonga auth login with the profile and label from the error plan data in a headless run', () => {
     const lines = describeRunError({ ...expired, plan: { profile: 'chatgpt', account: 'chatgpt' } }, 'cli');
     expect(lines[0]).toBe('ChatGPT sign-in expired · Run momonga auth login chatgpt --account chatgpt to sign in again');
