@@ -7768,6 +7768,19 @@
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.39 at start)"
     },
     {
+      "config": "LeftoverCleanup.twoStartersSmall",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 1100,
+      "measuredSeconds": 1.87,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 3.05,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (reuse off, scripts/tlc.sh, workers 5, nice 15, 1-minute load 5.23 at start); one writer, MaxGen 1, MaxCrash 0, two starters; deep because the every-run tier with it is 216.63 s over unitSuiteSeconds 215.2 s, and the heaviest every-run row moves first"
+    },
+    {
       "config": "LeftoverCleanup.twoStarters",
       "role": "check",
       "expect": "holds",
