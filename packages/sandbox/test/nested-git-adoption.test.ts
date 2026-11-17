@@ -24,7 +24,7 @@ describe('what git itself adopts from a planted nested git directory (real git)'
   };
 
   const git = (cwd: string, ...args: string[]) => {
-    const done = spawnSync(GIT, ['-c', 'protocol.file.allow=always', ...args], {
+    const done = spawnSync(GIT, ['-c', 'protocol.file.allow=always', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args], {
       cwd,
       encoding: 'utf8',
       env: {
