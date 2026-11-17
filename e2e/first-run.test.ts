@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EXIT_FAILURE } from '@momonga/foundation';
+import { EXIT_CONFIG } from '@momonga/foundation';
 import { messageOf } from '@momonga/protocol';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
@@ -14,7 +14,7 @@ describe('the first run with nothing configured', () => {
 
     const result = await runCli(home, ['-p', 'hello']);
 
-    expect(result.code).toBe(EXIT_FAILURE);
+    expect(result.code).toBe(EXIT_CONFIG);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe(`momonga: ${messageOf('noModelConnected', 'cli')}\n`);
     expect(result.stderr).not.toMatch(/probe/i);
@@ -27,7 +27,7 @@ describe('the first run with nothing configured', () => {
 
     const result = await runCli(home, ['-p', 'hello', '--output-format', 'json']);
 
-    expect(result.code).toBe(EXIT_FAILURE);
+    expect(result.code).toBe(EXIT_CONFIG);
     const reply = JSON.parse(result.stdout) as { error?: { code?: string; message?: string } };
     expect(reply.error?.code).toBe('target_not_ready');
     expect(reply.error?.message).toContain(messageOf('noModelConnected', 'cli'));
