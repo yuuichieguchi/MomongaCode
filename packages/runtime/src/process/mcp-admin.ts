@@ -24,6 +24,7 @@ const folderScope = (folder: McpFolder): McpScope => ({ id: folderScopeId(folder
 
 export type McpAdmin = {
   servers(sessionId: string, signal: AbortSignal): Promise<McpServerView[]>;
+  warnings(sessionId: string, signal: AbortSignal): Promise<string[]>;
   startAuthorization(sessionId: string, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
@@ -109,6 +110,12 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     const entry = loaded.enabled.find((candidate) => candidate.name === name);
     if (entry === undefined) throw notFound(`${scope.cwd} has no enabled MCP server named ${name}`);
     return entry;
+  };
+
+  const warningsOf = async (scope: McpScope, signal: AbortSignal): Promise<string[]> => {
+    const snapshot = await options.settings.admitUserSnapshot(signal);
+    const loaded = await loadSessionMcpServers(options, scope, await options.settings.envFor(scope, signal), snapshot, 'admit', signal);
+    return [...loaded.warnings];
   };
 
   const poolFor = (servers: McpServerEntry[], session: Pick<Session, 'cwd'>, env: ToolEnv, remote: McpRemotePorts): McpAuthorizingPool =>
@@ -263,6 +270,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
 
   return {
     servers: async (sessionId, signal) => serversOf(sessionOf(sessionId), signal),
+    warnings: async (sessionId, signal) => warningsOf(sessionOf(sessionId), signal),
     startAuthorization: async (sessionId, name, signal) => startAuthorizationOf(sessionOf(sessionId), name, signal),
     authorization: (sessionId, name) => authorizationOf(sessionOf(sessionId).id, name),
     cancelAuthorization: (sessionId, name) => cancelAuthorizationOf(sessionOf(sessionId).id, name),

@@ -425,6 +425,7 @@ export type McpAdminPort = Parameters<typeof runtime.createRunService>[0]['mcp']
 
 export const unusedMcpAdmin: McpAdminPort = {
   servers: () => Promise.reject(new Error('this test configured no MCP admin')),
+  warnings: () => Promise.reject(new Error('this test configured no MCP admin')),
   startAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
   authorization: () => {
     throw new Error('this test configured no MCP admin');

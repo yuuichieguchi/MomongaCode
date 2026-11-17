@@ -91,6 +91,19 @@ describe('MCP server routes', () => {
     expectError(await env.http('DELETE', `/v1/sessions/${session.id}/mcp/servers/other/authorization`), 404, 'not_found');
   });
 
+  it('returns the load warnings of the session servers, which the session notices show', async () => {
+    const env = await startService({
+      mcp: {
+        ...unusedMcpAdmin,
+        warnings: () => Promise.resolve(['The address of remote is plain http to another computer: what you send to it is not encrypted.']),
+      },
+    });
+    const session = await env.createSession();
+    expect((await env.http('GET', `/v1/sessions/${session.id}/mcp/warnings`)).json).toEqual({
+      warnings: ['The address of remote is plain http to another computer: what you send to it is not encrypted.'],
+    });
+  });
+
   it('lists the servers of a folder and starts, reads and cancels an authorization by the folder, resolved to its real path, with no session made', async () => {
     const calls: string[] = [];
     const env = await startService({

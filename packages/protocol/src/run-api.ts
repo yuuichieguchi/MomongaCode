@@ -1613,6 +1613,7 @@ export const RUN_API_SCHEMAS = {
       ['servers'],
     ),
   ),
+  McpWarningsResponse: root(closed({ warnings: { type: 'array', items: string } }, ['warnings'])),
   ResolveElicitationRequest: root(closed({ responses: { type: 'object', additionalProperties: elicitationAnswer } }, ['responses'])),
   ElicitationView: root(
     closed(

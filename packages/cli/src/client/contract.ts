@@ -37,6 +37,7 @@ export const checkAgents = guard<AgentsResponse>(RUN_API_SCHEMAS.AgentsResponse)
 export const checkJobs = guard<JobsResponse>(RUN_API_SCHEMAS.JobsResponse);
 export const checkElicitation = guard<ElicitationView>(RUN_API_SCHEMAS.ElicitationView);
 export const checkMcpServers = guard<{ servers: McpServerView[] }>(RUN_API_SCHEMAS.McpServersResponse);
+export const checkMcpWarnings = guard<{ warnings: string[] }>(RUN_API_SCHEMAS.McpWarningsResponse);
 export const checkMcpAuthorization = guard<McpAuthorizationView>(RUN_API_SCHEMAS.McpAuthorizationView);
 export const checkMemories = guard<MemoriesResponse>(RUN_API_SCHEMAS.MemoriesResponse);
 export const checkMemory = guard<MemoryResponse>(RUN_API_SCHEMAS.MemoryResponse);

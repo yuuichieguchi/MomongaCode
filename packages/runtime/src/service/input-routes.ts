@@ -10,6 +10,7 @@ import { toRunView } from './views.ts';
 
 export type McpAdminPort = {
   servers(sessionId: string, signal: AbortSignal): Promise<McpServerView[]>;
+  warnings(sessionId: string, signal: AbortSignal): Promise<string[]>;
   startAuthorization(sessionId: string, name: string, signal: AbortSignal): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
@@ -86,6 +87,9 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
   const listServers: Handler = async (context) =>
     json({ servers: await mcp.servers(context.req.param('id') ?? '', AbortSignal.any([deps.closeSignal, context.req.raw.signal])) });
 
+  const listServerWarnings: Handler = async (context) =>
+    json({ warnings: await mcp.warnings(context.req.param('id') ?? '', AbortSignal.any([deps.closeSignal, context.req.raw.signal])) });
+
   const startAuthorization: Handler = async (context) => {
     deps.refuseWhileRetiring();
     return json({ authorization: await mcp.startAuthorization(context.req.param('id') ?? '', context.req.param('name') ?? '', context.req.raw.signal) }, 202);
@@ -147,5 +151,6 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
   route('/v1/runs/:id/elicitations', { GET: runElicitations });
   route('/v1/elicitations/:id', { GET: getElicitation, POST: resolveElicitation }, { person: ['POST'] });
   route('/v1/sessions/:id/mcp/servers', { GET: listServers });
+  route('/v1/sessions/:id/mcp/warnings', { GET: listServerWarnings });
   route('/v1/sessions/:id/mcp/servers/:name/authorization', { GET: getAuthorization, POST: startAuthorization, DELETE: cancelAuthorization }, { person: ['POST', 'DELETE'] });
 };
