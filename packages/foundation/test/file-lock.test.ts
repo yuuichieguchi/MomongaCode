@@ -94,7 +94,7 @@ describe('withFileLock', () => {
     await expect(failure).rejects.toBe(reason);
   });
 
-  it('a wait with the asker signal and no timeout ends at the default lock timeout', async (context) => {
+  it('a wait with no signal and no timeout ends at the default lock timeout', async (context) => {
     const lockPath = path.join(withTempDir(context), 'task.lock');
     const held = await acquireProcessLock(lockPath, undefined, { mechanism: testKernelLock() });
     registerCleanup(context, () => held.release());
@@ -113,11 +113,37 @@ describe('withFileLock', () => {
           },
         }),
       },
-      signal: NEVER_ABORTED,
     }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(LockWaitTimeoutError);
     expect(failure).toMatchObject({ timeoutMs: DEFAULT_LOCK_TIMEOUT_MS });
     expect(now - start).toBe(DEFAULT_LOCK_TIMEOUT_MS);
+  });
+
+  it('a wait with a signal and no timeout outlasts the default lock timeout and ends only on the signal', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'task.lock');
+    const held = await acquireProcessLock(lockPath, undefined, { mechanism: testKernelLock() });
+    registerCleanup(context, () => held.release());
+    let now = 1_000_000;
+    const start = now;
+    const controller = new AbortController();
+    const reason = new Error('the operation limit');
+    const failure = await withFileLock(lockPath, async () => undefined, {
+      mechanism: testKernelLock(),
+      ports: {
+        ...steppedPorts(),
+        timing: sleepDrivenTiming({
+          now: () => now,
+          sleep: async (ms) => {
+            now += ms;
+            if (now - start > 3 * DEFAULT_LOCK_TIMEOUT_MS) controller.abort(reason);
+            await new Promise<void>((resolve) => setImmediate(resolve));
+          },
+        }),
+      },
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    expect(failure).toBe(reason);
+    expect(now - start).toBeGreaterThan(3 * DEFAULT_LOCK_TIMEOUT_MS);
   });
 });
 

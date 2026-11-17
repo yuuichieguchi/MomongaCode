@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, testKernelLock, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonStart } from '../src/commands/daemon.ts';
+import { nodeFilesLockedBy } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
@@ -33,6 +34,7 @@ describe('momonga daemon start', () => {
     const written: string[] = [];
     const ports = {
       version: '2.0.0',
+      files: nodeFilesLockedBy(testKernelLock),
       env: { PATH: '/usr/bin' },
       home,
       clock: virtualClock(work),

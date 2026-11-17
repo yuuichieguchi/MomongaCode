@@ -24,7 +24,7 @@ const completed = (callId: string) => ({ type: 'tool.completed', callId, status:
 const requested = { type: 'model.requested', attempt: 0, digest: 'd' };
 const thought = (text: string, itemId = 't1') => ({ type: 'agent.thought.delta', attempt: 0, itemId, text });
 const message = (text: string, itemId = 'm1') => ({ type: 'agent.message.delta', attempt: 0, itemId, text });
-const responded = (target?: string) => ({ type: 'model.responded', attempt: 0, response: { usage: { total_tokens: 10 } }, ...(target === undefined ? {} : { target }) });
+const responded = (target?: string) => ({ type: 'model.responded', attempt: 0, response: { status: 'completed', output: [], usage: { total_tokens: 10 } }, ...(target === undefined ? {} : { target }) });
 const status = (from: string, to: string) => ({ type: 'run.status', from, to });
 const failed = { type: 'attempt.failed', attempt: 3, code: 'provider_unavailable', retryAt: 60_000, limit: 20 };
 

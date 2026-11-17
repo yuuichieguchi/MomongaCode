@@ -51,7 +51,7 @@ export type RunServiceOptions = {
   pid: number;
   startedAt: string;
   sandboxKind: (signal: AbortSignal) => Promise<SandboxKind>;
-  retention?: () => RetentionStatusView;
+  retention: () => RetentionStatusView;
   protectedRootAreas: readonly string[];
   notifier: RunNotifier;
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
@@ -190,7 +190,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     beginDraining: startDraining,
     role: () => options.role.current(),
     work: options.work,
-    health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind, ...(options.retention === undefined ? {} : { retention: options.retention }) },
+    health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind, retention: options.retention },
     protectedRootAreas: options.protectedRootAreas,
     defaults: { runTimeoutMs, limits: options.defaults.limits },
     notifier: options.notifier,

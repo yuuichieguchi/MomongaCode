@@ -61,6 +61,7 @@ const healthWith = (pids: readonly number[]): SupervisorHealth => ({
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'running',
   env: 'frozen at supervisor start',
+  retention: null,
   children: pids.map((pid, index) => ({ role: index === 0 ? 'gateway' : 'runtime', state: 'ready', pid, restarts: 0, consecutiveFailures: 0 })),
   logs: { droppedLines: 0 },
 });

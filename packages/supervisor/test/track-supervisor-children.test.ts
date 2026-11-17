@@ -16,6 +16,7 @@ const healthNaming = (pid: number): SupervisorHealth => ({
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'running',
   env: 'frozen at supervisor start',
+  retention: null,
   children: [
     { role: 'gateway', state: 'ready', pid, restarts: 0, consecutiveFailures: 0 },
     { role: 'runtime', state: 'backoff', restarts: 1, consecutiveFailures: 1 },

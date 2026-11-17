@@ -22,7 +22,7 @@ const setup = async () => {
 };
 
 const charge = (overrides: Partial<ChargeInput> = {}): ChargeInput => ({
-  purpose: 'reflection',
+  purpose: 'guideline',
   runId: null,
   project: '/work/a',
   model: 'fm',

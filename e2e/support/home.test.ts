@@ -125,6 +125,7 @@ describe('the ledger of an e2e home', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
       phase: 'running',
       env: 'frozen at supervisor start',
+      retention: null,
       children: [],
       logs: { droppedLines: 0 },
     });

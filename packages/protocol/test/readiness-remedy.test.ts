@@ -3,7 +3,7 @@ import * as protocol from '../src/index.ts';
 import { agentReadiness, readinessText } from '../src/index.ts';
 import type { NeedsProbe, Readiness } from '../src/index.ts';
 
-type Surface = 'tui' | 'shell';
+type Surface = 'tui' | 'cli';
 type NotReady = Exclude<Readiness, { state: 'ready' }>;
 
 const exported = <T>(name: string): T => {
@@ -38,7 +38,7 @@ describe('a readiness state carries its message; the remedy belongs to the place
   });
 
   it('no tools, in the shell', () => {
-    expect(readinessRemedy('no_tools', 'shell')).toBe(NO_TOOLS_SHELL);
+    expect(readinessRemedy('no_tools', 'cli')).toBe(NO_TOOLS_SHELL);
   });
 
   it('unavailable, in the interactive screen', () => {
@@ -46,14 +46,14 @@ describe('a readiness state carries its message; the remedy belongs to the place
   });
 
   it('unavailable, in the shell', () => {
-    expect(readinessRemedy('unavailable', 'shell')).toBe('Choose a model with momonga --model <model>, or set one up with momonga models add.');
+    expect(readinessRemedy('unavailable', 'cli')).toBe('Choose a model with momonga --model <model>, or set one up with momonga models add.');
   });
 
   it('the shown text of a model without tools is the message, then the remedy of the surface on its own line', () => {
     const readiness = agentReadiness({ toolCalling: 'none' });
     if (readiness.state === 'ready') throw new Error('a model without tools is not ready');
     expect(readinessText(readiness)).toBe(NO_TOOLS_MESSAGE);
-    expect(readinessShownText(readiness, 'shell')).toBe(`${NO_TOOLS_MESSAGE}\n${NO_TOOLS_SHELL}`);
+    expect(readinessShownText(readiness, 'cli')).toBe(`${NO_TOOLS_MESSAGE}\n${NO_TOOLS_SHELL}`);
   });
 
   it('the shown text of a model that needs a probe is the message and the remedy of the probe, on every surface', () => {
@@ -62,6 +62,6 @@ describe('a readiness state carries its message; the remedy belongs to the place
     const expected = `${NEEDS_PROBE.message}\n${NEEDS_PROBE.remedy}`;
     expect(readinessText(readiness)).toBe(expected);
     expect(readinessShownText(readiness, 'tui')).toBe(expected);
-    expect(readinessShownText(readiness, 'shell')).toBe(expected);
+    expect(readinessShownText(readiness, 'cli')).toBe(expected);
   });
 });

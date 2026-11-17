@@ -220,7 +220,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
   const startedAtMs = clock.now();
   const startedAt = new Date(startedAtMs).toISOString();
-  let lastRetentionSweep: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number } | undefined;
+  let lastRetentionSweep: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number } | null = null;
   const canonicalHome = await canonicalHomeOf(home, hostPaths(startDeadlineSignal(signal)));
   const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
@@ -731,7 +731,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         startedAt,
         retention: () => ({
           days: resolveRetentionSettings(settingsComposition.takeUserSnapshot().settings.retention).days,
-          ...(lastRetentionSweep === undefined ? {} : { lastSweep: lastRetentionSweep }),
+          lastSweep: lastRetentionSweep,
         }),
         sandboxKind: async (healthSignal) => {
           const lease = await sandboxes.acquire(healthSignal);

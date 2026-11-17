@@ -16,6 +16,7 @@ const PRODUCED: RunHealth = {
   steps: 0,
   jobs: 0,
   interrupts: [],
+  retention: { days: 30, lastSweep: null },
   sandbox: 'seatbelt',
 };
 

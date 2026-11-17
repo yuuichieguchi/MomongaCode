@@ -7,7 +7,7 @@ import { RunApiError } from '../src/client/runtime-client.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { readinessNoticeOf } from '../src/readiness.ts';
-import { EXIT_FAILURE } from '@momonga/foundation';
+import { EXIT_CONFIG, EXIT_FAILURE } from '@momonga/foundation';
 import { runHeadless } from '../src/run/headless.ts';
 import type { HeadlessOptions } from '../src/run/headless.ts';
 import { frameOf } from './acp-harness.ts';
@@ -63,13 +63,13 @@ const headless = async (context: Parameters<typeof withTempDir>[0], capabilities
 };
 
 describe('what a shell surface says when no model can answer', () => {
-  it('headless prints the shell text of no model connected and exits with failure when the runtime refuses the session for want of a model', async (context) => {
+  it('headless prints the shell text of no model connected and exits with the configuration code when the runtime refuses the session for want of a model', async (context) => {
     const message = messageOf('noModelConnected', 'cli');
     opening.refusal = new RunApiError('POST /v1/sessions', 409, JSON.stringify({ error: { type: 'conflict', code: 'target_not_ready', message } }));
     try {
       const result = await headless(context, capabilitiesOf());
 
-      expect(result.code).toBe(EXIT_FAILURE);
+      expect(result.code).toBe(EXIT_CONFIG);
       expect(result.stderr).toBe(`momonga: ${message}\n`);
     } finally {
       opening.refusal = undefined;
