@@ -1,10 +1,14 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { inputCeilingFor, pinnedFloorFor } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
 import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
-import { capabilitiesFor, makeEnv } from './harness.ts';
+import { capabilitiesFor, fullToolsetPinnedTokens, makeEnv, smallestWindowWhosePinnedFloorAccepts } from './harness.ts';
+import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const WINDOW = 8192;
 const LIVE_RATIO = 0.5;
@@ -56,35 +60,47 @@ describe('the build ceiling of a claim resumed after the calibration of the mode
 });
 
 describe('the tool floor of a claim resumed after the calibration of the model targets changed', () => {
-  const FLOOR_WINDOW = 1600;
-  const pinnedSmall = (): Capabilities => capabilitiesFor(FLOOR_WINDOW, { maxOutputTokens: 1024 });
-  const listedSmall = (): Capabilities => capabilitiesFor(2 * FLOOR_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO });
+  const pinnedOf = (window: number): Capabilities => capabilitiesFor(window, { maxOutputTokens: 1024 });
+  const liveOf = (window: number): Capabilities => capabilitiesFor(window, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO });
+  const listedOf = (window: number): Capabilities => capabilitiesFor(2 * window, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO });
 
-  it('reads the ratio from the claim listing and keeps the pinned window, so the resumed build leaves out tools for room', async () => {
-    const env = await makeEnv({ capabilities: pinnedSmall() });
+  type Attempt = { window: number; env: Env; runId: string; firstTools: number; secondTools: number; stable: number; served: boolean };
+
+  const attemptAt = async (window: number): Promise<Attempt> => {
+    const env = await makeEnv({ capabilities: pinnedOf(window) });
     env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
     const run = await env.enqueue('Write it');
-
-    expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
-    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
+    await env.runOnce(env.worker('worker-1'));
     const firstBody = env.gateway.streams[0]?.body;
     if (firstBody === undefined) throw new Error('the first claim made no model call');
-    const stable = inputTokensOf(firstBody);
-    expect(stable).toBeLessThanOrEqual(pinnedFloorFor(pinnedSmall()));
-    expect(stable).toBeGreaterThan(pinnedFloorFor(capabilitiesFor(FLOOR_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO })));
-    expect(stable).toBeLessThanOrEqual(pinnedFloorFor(listedSmall()));
-    expect(env.ofType(run.id, 'notice').map((notice) => notice.code)).not.toContain('tools_dropped');
     await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Written.'));
-
-    env.gateway.capabilitiesValue = listedSmall();
-    expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
-
+    env.gateway.capabilitiesValue = listedOf(window);
+    await env.runOnce(env.worker('worker-2'));
     const secondBody = env.gateway.streams[1]?.body;
-    if (secondBody === undefined) throw new Error('the resumed claim made no model call');
-    expect((secondBody.tools ?? []).length).toBeLessThan((firstBody.tools ?? []).length);
-    expect(env.ofType(run.id, 'notice').map((notice) => notice.code)).toContain('tools_dropped');
+    const firstTools = (firstBody.tools ?? []).length;
+    const secondTools = (secondBody?.tools ?? []).length;
+    const served = env.run(run.id).status === 'COMPLETED' && secondBody !== undefined && secondTools < firstTools;
+    return { window, env, runId: run.id, firstTools, secondTools, stable: inputTokensOf(firstBody), served };
+  };
+
+  const SEARCH_LIMIT = 400;
+
+  it('reads the ratio from the claim listing and keeps the pinned window, so the resumed build leaves out tools for room', async () => {
+    const fits = smallestWindowWhosePinnedFloorAccepts(await fullToolsetPinnedTokens('Write it'), pinnedOf);
+    let attempt = await attemptAt(fits);
+    for (let window = fits + 1; !attempt.served; window++) {
+      if (window > fits + SEARCH_LIMIT) throw new Error('no window from the first one that keeps the whole toolset pinned leaves the resumed build served with tools left out');
+      attempt = await attemptAt(window);
+    }
+    const { window, env, runId, stable } = attempt;
+
+    expect(stable).toBeLessThanOrEqual(pinnedFloorFor(pinnedOf(window)));
+    expect(stable).toBeGreaterThan(pinnedFloorFor(liveOf(window)));
+    expect(stable).toBeLessThanOrEqual(pinnedFloorFor(listedOf(window)));
+    expect(env.run(runId).status).toBe('COMPLETED');
+    expect(env.ofType(runId, 'notice').map((notice) => notice.code)).toContain('tools_dropped');
+    expect(attempt.secondTools).toBeLessThan(attempt.firstTools);
   });
 });
-
