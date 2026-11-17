@@ -16,7 +16,7 @@ const WRITERS: Writer[] = [
   {
     name: 'the settings editor of /config',
     fileOf: userSettingsPath,
-    write: (tree) => editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: false }, { env: process.env, lock: testKernelLock(), signal }),
+    write: (tree) => editSettings({ home: tree.home, projectDir: tree.project }, 'user', { kind: 'set', path: ['autoUpdates'], value: false }, { env: process.env, trusted: true, lock: testKernelLock(), signal }),
     expected: { kept: true, autoUpdates: false },
   },
   {

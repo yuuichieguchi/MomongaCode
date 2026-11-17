@@ -7,6 +7,7 @@ import type { TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
+import type { EditSettingsResult } from '@momonga/config';
 import { approveProjectItems, editProjectMandate, writeProjectMcpServer, recordProjectCheck, editSettings, loadSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { AcceptedCheck, ApprovedItem, CheckProposal, ProjectMandateState, SettingsLayer, SettingsOperation, SettingsSnapshot, TrustOracle } from '@momonga/config';
 import { modelDescriber, programModelOf, serversDetector } from '../commands/models.ts';
@@ -127,7 +128,7 @@ export type TuiBackend = {
   dismissedNotices(): Promise<DismissedNotices>;
   dismissNotice(key: string): Promise<void>;
   settings(): Promise<SettingsSnapshot>;
-  editSettings(layer: SettingsLayer, operation: SettingsOperation, signal: AbortSignal): Promise<void>;
+  editSettings(layer: SettingsLayer, operation: SettingsOperation, signal: AbortSignal): Promise<EditSettingsResult>;
   mcpServers(): Promise<readonly McpServerView[]>;
   folderMcpServers(): Promise<readonly McpServerView[]>;
   pendingProjectServer(name: string): Promise<ApprovedItem | undefined>;
@@ -226,7 +227,7 @@ export const createTuiBackend = (
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
     dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal, onNotice),
     settings: async () => readSettingsSnapshot({ env: process.env, home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal: closing.signal }),
-    editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { env: process.env, lock: resolveLayoutLocks(paths).mechanism, signal }),
+    editSettings: async (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { env: process.env, lock: resolveLayoutLocks(paths).mechanism, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted', signal }),
     mcpServers: () => runtime().mcpServers(current().id),
     folderMcpServers: async () => runtime().folderMcpServers({ cwd: ports.cwd, env: await environmentSnapshot(ports, closing.signal) }),
     pendingProjectServer: (name) => pendingProjectServerOf({ home: paths.home, projectDir: ports.cwd, trust: trustOracle, signal: closing.signal }, name),

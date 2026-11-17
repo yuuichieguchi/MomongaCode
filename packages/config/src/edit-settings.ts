@@ -28,7 +28,11 @@ export type SettingsOperation =
 
 export type SettingsPlace = { readonly home: string; readonly projectDir: string };
 
-export type EditSettingsOptions = { env: LayoutEnvironment; lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
+export type EditSettingsOptions = { env: LayoutEnvironment; lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number; trusted: boolean; signal: AbortSignal };
+
+export type SettingsShadow = { readonly layer: SettingsLayer; readonly file: string };
+
+export type EditSettingsResult = { readonly shadowedBy: SettingsShadow | undefined };
 
 export type SettingsLayerView = { readonly layer: SettingsLayer; readonly file: string; readonly document: Readonly<Record<string, unknown>> };
 
@@ -141,7 +145,31 @@ const apply = (document: Record<string, unknown>, file: string, operation: Setti
   }
 };
 
-export const editSettings = async (settingsPlace: SettingsPlace, layer: SettingsLayer, operation: SettingsOperation, options: EditSettingsOptions): Promise<void> => {
+const pathOf = (operation: SettingsOperation): SettingsPath | undefined => (operation.kind === 'addRule' ? undefined : operation.path);
+
+const leafAt = (document: Record<string, unknown>, keys: SettingsPath): unknown =>
+  keys.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), document);
+
+const isLeafValue = (value: unknown): boolean => value !== undefined && !Array.isArray(value) && !isRecord(value);
+
+const layersAbove = (place: SettingsPlace, layer: SettingsLayer, trusted: boolean): readonly SettingsLayer[] => {
+  if (isHome(place)) return [];
+  if (layer === 'user') return trusted ? ['local', 'project'] : ['local'];
+  if (layer === 'project') return ['local'];
+  return [];
+};
+
+const shadowOf = async (place: SettingsPlace, layer: SettingsLayer, trusted: boolean, operation: SettingsOperation, asker: Asker): Promise<SettingsShadow | undefined> => {
+  const keys = pathOf(operation);
+  if (keys === undefined) return undefined;
+  for (const above of layersAbove(place, layer, trusted)) {
+    const { file } = await locate(place, above, asker);
+    if (isLeafValue(leafAt(await documentOf(file, asker), keys))) return { layer: above, file };
+  }
+  return undefined;
+};
+
+export const editSettings = async (settingsPlace: SettingsPlace, layer: SettingsLayer, operation: SettingsOperation, options: EditSettingsOptions): Promise<EditSettingsResult> => {
   const asker = askerOf(options.signal);
   const located = await configError(() => locate(settingsPlace, layer, asker), asker);
   if (layer === 'local' && operation.kind === 'addRule') {
@@ -159,7 +187,7 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
         }),
       asker,
     );
-    return;
+    return { shadowedBy: undefined };
   }
   await editUserSettings(
     located.file,
@@ -174,6 +202,7 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
     },
     settingsWriterPorts(settingsPlace.home, options),
   );
+  return { shadowedBy: await configError(() => shadowOf(settingsPlace, layer, options.trusted, operation, asker), asker) };
 };
 
 const documentOf = async (file: string, asker: Asker): Promise<Record<string, unknown>> => {
