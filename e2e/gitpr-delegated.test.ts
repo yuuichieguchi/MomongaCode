@@ -348,8 +348,10 @@ describe('gitpr: delegated work through the real runtime, from the production st
       await trustProject(runtime, home);
       const { frames } = await runToEnd(runtime, 'Push main', ['GitPush']);
       expect(forge.requests.some((request) => request.path.includes('acme/widgets.git'))).toBe(true);
-      expect(outputsOf(frames, 'GitPush')).toHaveLength(1);
-      expect(allOutputsOf(frames)).toMatch(/code\.example\.invalid/);
+      const pushes = outputsOf(frames, 'GitPush');
+      expect(pushes, allOutputsOf(frames)).toHaveLength(2);
+      expect(pushes[0]).not.toMatch(/code\.example\.invalid/);
+      expect(pushes[1]).toMatch(/code\.example\.invalid.*CONNECT tunnel failed, response 502/s);
     } finally {
       await runtime.close();
     }
