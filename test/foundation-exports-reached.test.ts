@@ -170,6 +170,7 @@ const NAMED_ONLY_BY_TESTS: readonly string[] = [
   'killedChildSettleMs',
   'launchKept',
   'listGenerationNumbers',
+  'lockPathNameOf',
   'managedInstancePaths',
   'managedServerStopBoundMs',
   'matchesNoProxy',
