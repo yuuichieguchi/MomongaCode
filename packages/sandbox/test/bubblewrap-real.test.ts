@@ -2,7 +2,7 @@ import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, groupTerminationBoundMs } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor, testKernelLock } from '@momonga/testkit';
@@ -282,11 +282,24 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
 
   it('terminates the whole process group when aborted', async () => {
     const controller = new AbortController();
-    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', 'sleep 30 & sleep 30'], cwd: work, env: BASE_ENV }, policy(), controller.signal);
+    const ready = path.join(work, 'ready');
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', `: > ${ready}; sleep 30 & sleep 30`], cwd: work, env: BASE_ENV }, policy(), controller.signal);
     spawned.push(proc);
+    await waitFor(() => fs.existsSync(ready), { description: 'the command is running' });
     controller.abort();
     const exit = await (await proc).exited;
     expect(exit.killedBy).toBe('abort');
+  });
+
+  it('ends the whole process group within the stop bound when aborted just after spawn, whatever step ends it', async () => {
+    const controller = new AbortController();
+    const proc = await sandbox.spawn({ argv: ['/bin/sh', '-c', 'sleep 30 & sleep 30'], cwd: work, env: BASE_ENV }, policy(), controller.signal);
+    spawned.push(proc);
+    const abortedAt = Date.now();
+    controller.abort();
+    const exit = await (await proc).exited;
+    expect(Date.now() - abortedAt).toBeLessThanOrEqual(groupTerminationBoundMs(KILL_GRACE_MS));
+    expect(exit.stop).toBe('confirmed');
   });
 
   it('gives a running command that ignores SIGTERM the whole kill grace, because bwrap itself, which would end the sandbox at once, is not sent SIGTERM', async () => {
