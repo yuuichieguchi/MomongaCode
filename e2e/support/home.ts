@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, momongaPaths, scopeToGeneration, systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { stopSupervisorHolders } from '@momonga/testkit';
+import { createTempDir, stopSupervisorHolders } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
 import type { LedgerSurvivor, ProcessLedger } from './ledger.ts';
 import { readDb } from './db.ts';
@@ -80,7 +80,7 @@ export const createE2eHome = async (options: CreateE2eHomeOptions = {}): Promise
   const tmpRoot = options.tmpRoot === undefined ? realTmp : fs.realpathSync(options.tmpRoot);
   assertInside(tmpRoot, realTmp);
   await assertSocketBudget(tmpRoot, run);
-  const root = fs.mkdtempSync(path.join(tmpRoot, e2eEntryPrefix(run)));
+  const root = createTempDir({ parent: tmpRoot, prefix: e2eEntryPrefix(run) });
   if (root === os.userInfo().homedir) throw new Error(`refusing to use the user home ${root} as an e2e home`);
   const paths = momongaPaths(root, process.platform, process.env);
   await ensureMomongaDirs(paths);

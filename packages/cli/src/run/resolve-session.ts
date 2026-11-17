@@ -48,7 +48,7 @@ export const resolveSession = async (client: StoredSessions, cwd: string, wanted
   const here = namedBy(await client.listSessions(cwd), wanted);
   if (here !== undefined) return here;
   const elsewhere = namedBy(await client.listSessions(), wanted);
-  if (elsewhere !== undefined) throw new SessionRefused(messageOf('sessionInOtherFolder', 'cli', { id: elsewhere.id, folder: elsewhere.cwd }));
+  if (elsewhere !== undefined) throw new SessionRefused(messageOf('sessionInOtherFolder', 'cli', { id: elsewhere.id, folder: elsewhere.cwd, platform: process.platform }));
   throw new SessionRefused(messageOf(wanted.length < SESSION_PREFIX_MIN ? 'sessionIdTooShort' : 'sessionNotFound', 'cli', { id: wanted, minimum: SESSION_PREFIX_MIN }));
 };
 

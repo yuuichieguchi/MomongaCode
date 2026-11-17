@@ -1262,6 +1262,11 @@ const IDEMPOTENCY_GROUP_NAME = `
 ALTER TABLE idempotency ADD COLUMN group_name TEXT;
 `;
 
+const EVENT_SHOWN_FLAG = `
+ALTER TABLE events ADD COLUMN shown INTEGER;
+UPDATE events SET shown = 1 WHERE type = 'tool.permission.requested' AND json_extract(payload_json, '$.shown') IS NOT NULL;
+`;
+
 const RETENTION_SWEEPS = `
 CREATE TABLE retention_sweeps (
   session_id TEXT PRIMARY KEY,
@@ -1571,5 +1576,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 53,
     name: 'keep on an idempotency record the name of the process group its command attached, so a recovery reads the group the same way for a tool as for a background job',
     sql: IDEMPOTENCY_GROUP_NAME,
+  },
+  {
+    version: 54,
+    name: 'keep on each permission request row whether the request carries the content it shows, so the pending requests are read from the column and no payload is decoded',
+    sql: EVENT_SHOWN_FLAG,
   },
 ];

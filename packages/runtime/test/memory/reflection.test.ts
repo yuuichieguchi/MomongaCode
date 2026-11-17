@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
+import { DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
 import { canonicalJson, momongaPaths, sha256Hex } from '@momonga/foundation';
 import type { MemoryRecord, RunEventPayload } from '@momonga/protocol';
 import { protectedRootAreasOf } from '@momonga/runtime';
@@ -17,6 +17,8 @@ import { assistantMessage, failedStep, incompleteStep, textStep } from '../worke
 import { REFLECTION_INSTRUCTIONS } from '../../src/memory/reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA } from '../../src/memory/reflection-reply.ts';
 import { bash, exported, fileTool, finishClaimed, checked } from './reflection-fixture.ts';
+
+const CHECK_COMMANDS = ['npm test'];
 
 type Dropped = { ordinal: number; text: string | null; cause: 'text_rule' | 'duplicate' | 'evidence'; reason: string };
 
@@ -64,7 +66,7 @@ const setup = async ({ enabled = true, maxTokens, window = 100_000, structured =
   const gateway = createFakeGateway(capabilitiesFor(window, { structuredOutput: structured ? 'json_schema' : 'none' }));
   const settings = {
     trusted: async (target: { cwd: string }) => (await store.trust.decisionAsked(target.cwd, NEVER_CANCELLED)).decision === 'trusted',
-    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], conditions: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
+    verification: async () => ({ commands: [...CHECK_COMMANDS], conditions: [...CHECK_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled, ...(maxTokens === undefined ? {} : { maxTokens }) }, forgetAfterDays: 90 }),
   };
   const reflector = (isIdle: () => boolean = () => true, target: unknown = store, extra: Record<string, unknown> = {}): Reflector =>

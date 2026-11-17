@@ -10,7 +10,7 @@ const loadWith = async (target: Record<string, unknown>) => {
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { connections: [connectionOf('local', target)] } }), { mode: 0o600 });
   try {
-    return await loadUserSettings({ home, signal: new AbortController().signal });
+    return await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

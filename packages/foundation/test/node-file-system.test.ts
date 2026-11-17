@@ -15,6 +15,14 @@ afterEach(() => {
 });
 
 describe('nodeFileSystem', () => {
+  it.runIf(process.platform === 'darwin')('resolves a path whose letter case differs to the case the disk stores, asynchronously as synchronously', async () => {
+    const stored = fs.realpathSync.native(root);
+    const flipped = stored.replace(/[a-z]/, (letter) => letter.toUpperCase());
+    expect(flipped).not.toBe(stored);
+    expect(await nodeFileSystem.realpath(flipped)).toBe(stored);
+    expect(nodeFileSystemSync.realpathSync(flipped)).toBe(stored);
+  });
+
   it('creates nested directories, writes and reads bytes and text, and stats them', async () => {
     const file = path.join(root, 'a', 'b', 'file.txt');
     await nodeFileSystem.mkdir(path.dirname(file));

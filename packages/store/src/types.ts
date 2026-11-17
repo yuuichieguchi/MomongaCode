@@ -832,7 +832,7 @@ export type FidelityReply = {
 
 export type ReportRequest = { runId: string };
 
-export type ReportReply = { lastSeq: number; report: RunReport };
+export type ReportReply = { lastSeq: number; report: RunReport; run: Run };
 
 export type RunStateRequest = { runId: string };
 

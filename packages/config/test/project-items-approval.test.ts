@@ -13,7 +13,7 @@ const DECLARED = { deny: ['Bash(curl:*)'], steps: 20 };
 
 const writerOf = (tree: Tree) => ({ mechanism: testKernelLock(), lock: settingsFileLock(tree.home, { lock: testKernelLock() }), random: systemFileLockPorts.random, signal });
 
-const approvals = async (tree: Tree) => (await loadUserSettings({ home: tree.home, signal })).settings.projectApprovals;
+const approvals = async (tree: Tree) => (await loadUserSettings({ env: process.env, home: tree.home, signal })).settings.projectApprovals;
 
 describe('the state of the folder mandate file, for the question and the editor', () => {
   it('says there is no file', async () => {
@@ -40,7 +40,7 @@ describe('approveProjectItems: the writer of projectApprovals for the question',
     const hook = hookGroupApprovalDigestOf('PreToolUse', GROUP);
     await approveProjectItems(tree.home, tree.project, [{ kind: 'hook', event: 'PreToolUse', group: GROUP, digest: hook }, { kind: 'mandate', document: DECLARED, digest: approvalDigestOf(DECLARED) }], writerOf(tree));
     expect(await approvals(tree)).toEqual({ [tree.project]: { hooks: ['a'.repeat(64), { digest: hook, event: 'PreToolUse', group: GROUP }], mandate: { digest: approvalDigestOf(DECLARED), document: DECLARED } } });
-    const loaded = await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const loaded = await loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(loaded.settings.pendingHooks).toEqual([]);
     expect(loaded.settings.hooks).toEqual({ PreToolUse: [GROUP] });
     expect(await loadProjectMandate({ projectDir: tree.project, trusted: true, approvals: await approvals(tree), signal })).toEqual(DECLARED);
@@ -56,7 +56,7 @@ describe('approveProjectItems: the writer of projectApprovals for the question',
 });
 
 describe('the approved content is kept beside its digest, and a later change is shown against it', () => {
-  const trusted = (tree: Tree) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
+  const trusted = (tree: Tree) => ({ env: {}, home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
 
   it('stores the approved hook group and mandate document with their digests, replacing a digest-only entry of the same item', async () => {
     const tree = makeTree();
@@ -65,7 +65,7 @@ describe('the approved content is kept beside its digest, and a later change is 
     await approveProjectItems(tree.home, tree.project, [{ kind: 'hook', event: 'PreToolUse', group: GROUP, digest: hook }, { kind: 'mandate', document: DECLARED, digest: approvalDigestOf(DECLARED) }], writerOf(tree));
     expect(await approvals(tree)).toEqual({ [tree.project]: { hooks: [{ digest: hook, event: 'PreToolUse', group: GROUP }], mandate: { digest: approvalDigestOf(DECLARED), document: DECLARED } } });
     writeJson(projectSettingsPath(tree), { hooks: { PreToolUse: [GROUP] } });
-    expect((await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings.pendingHooks).toEqual([]);
+    expect((await loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings.pendingHooks).toEqual([]);
   });
 
   it('says a hook group whose event and matcher were approved with other commands changed, with the approved group', async () => {
@@ -101,7 +101,7 @@ describe('the approved content is kept beside its digest, and a later change is 
 describe('an MCP server of .mcp.json is asked about by the same mechanism', () => {
   const DOCS = { command: 'npx', args: ['docs-server'] };
   const mcpFile = (tree: Tree): string => path.join(tree.project, '.mcp.json');
-  const trusted = (tree: Tree) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
+  const trusted = (tree: Tree) => ({ env: {}, home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async () => [], signal });
   const servers = async (tree: Tree) => loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {}, referenceEnv: {}, signal });
 
   it('lists a server never approved as new, and after the approval keeps its config and starts it', async () => {
@@ -110,7 +110,7 @@ describe('an MCP server of .mcp.json is asked about by the same mechanism', () =
     const [item] = (await pendingProjectItems(trusted(tree))).items;
     expect(item).toEqual({ kind: 'mcp', name: 'docs', config: DOCS, digest: approvalDigestOf(DOCS), source: mcpFile(tree), change: { kind: 'new' } });
     await approveProjectItems(tree.home, tree.project, [{ kind: 'mcp', name: 'docs', config: DOCS, digest: approvalDigestOf(DOCS) }], writerOf(tree));
-    expect((await loadUserSettings({ home: tree.home, signal })).settings.enabledMcpjsonServers).toEqual([{ name: 'docs', digest: approvalDigestOf(DOCS), config: DOCS }]);
+    expect((await loadUserSettings({ env: process.env, home: tree.home, signal })).settings.enabledMcpjsonServers).toEqual([{ name: 'docs', digest: approvalDigestOf(DOCS), config: DOCS }]);
     expect((await servers(tree)).enabled.map((server) => server.name)).toEqual(['docs']);
     expect((await pendingProjectItems(trusted(tree))).items).toEqual([]);
   });
@@ -136,7 +136,7 @@ describe('an MCP server of .mcp.json is asked about by the same mechanism', () =
     writeJson(userSettingsPath(tree), { disabledMcpjsonServers: ['docs', 'wiki'] });
     writeJson(mcpFile(tree), { mcpServers: { docs: DOCS, wiki: DOCS } });
     expect((await pendingProjectItems({ ...trusted(tree), askedServer: 'docs' })).items).toEqual([{ kind: 'mcp', name: 'docs', config: DOCS, digest: approvalDigestOf(DOCS), source: mcpFile(tree), change: { kind: 'new' } }]);
-    expect((await loadUserSettings({ home: tree.home, signal })).settings.disabledMcpjsonServers).toEqual(['docs', 'wiki']);
+    expect((await loadUserSettings({ env: process.env, home: tree.home, signal })).settings.disabledMcpjsonServers).toEqual(['docs', 'wiki']);
   });
 });
 
@@ -144,7 +144,7 @@ describe('a project agent, which runs with tools, is asked about by the same mec
   const TEXT = '---\nname: reviewer\ndescription: Reviews\ntools: Read, Bash\n---\nReview the change.\n';
   const CHANGED = '---\nname: reviewer\ndescription: Reviews\ntools: Read, Bash, Write\n---\nReview the change.\n';
   const sourceOf = (tree: Tree): string => path.join(tree.project, '.momonga', 'agents', 'reviewer.md');
-  const listing = (tree: Tree, text: string) => ({ home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async (): Promise<ProjectAgentFile[]> => [{ name: 'reviewer', text, source: sourceOf(tree) }], signal });
+  const listing = (tree: Tree, text: string) => ({ env: {}, home: tree.home, projectDir: tree.project, trust: trusting(tree), agents: async (): Promise<ProjectAgentFile[]> => [{ name: 'reviewer', text, source: sourceOf(tree) }], signal });
 
   it('lists a project agent never approved as new with its whole file, and stores the file on approval so it is no longer listed', async () => {
     const tree = makeTree();

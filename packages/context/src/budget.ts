@@ -1,5 +1,6 @@
 import { COMPACTION_MIN_GAIN, ITEM_CAP, LOWEST_REASONING_EFFORT, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, outputTokensFor, sizingFractionFor, summaryItemTokensFor, tokensForText } from '@momonga/protocol';
 import type { Ratio } from '@momonga/protocol';
+import { largestSummaryCapFor, summaryRequestInputLimitFor } from '@momonga/protocol';
 import type { ChainCapabilities, Capabilities } from '@momonga/protocol';
 import { omittedMarker } from './tool-output.ts';
 import type { Calibration, ContextBudget } from './types.ts';
@@ -49,9 +50,16 @@ export const capacityFor = (capabilities: Capabilities, underAt: (tokens: number
   return low;
 };
 
-export const summaryInputCeilingFor = (capabilities: Capabilities): number => {
+export const summaryInputCeilingFor = (capabilities: Capabilities, summaryCap: number): number => {
   const { W, R } = budgetFor(capabilities, 0);
-  return Math.max(0, Math.min(discountedFloor(sizingFractionFor(capabilities), W - marginFloorFor(W)), W - R));
+  return Math.max(
+    0,
+    Math.min(
+      discountedFloor(sizingFractionFor(capabilities), W - marginFloorFor(W)),
+      W - R,
+      summaryRequestInputLimitFor(capabilities, summaryCap) + summaryCap,
+    ),
+  );
 };
 
 export const itemCapFor = (capabilities: Capabilities, room?: number): number => {
@@ -71,7 +79,7 @@ export const inheritanceWindowFor = (targets: readonly Capabilities[]): Inherita
   if (targets.length === 0) throw new RangeError('an inheritance window needs at least one target');
   const markerTokens = tokensForText(omittedMarker(0, '', undefined));
   return {
-    windowTokens: Math.max(...targets.map((capabilities) => inputCeilingFor(capabilities) + summaryInputCeilingFor(capabilities))),
+    windowTokens: Math.max(...targets.map((capabilities) => inputCeilingFor(capabilities) + summaryInputCeilingFor(capabilities, largestSummaryCapFor(capabilities)))),
     floorTokens: Math.min(...targets.map((capabilities) => Math.max(1, discountedFloor(sizingFractionFor(capabilities), markerTokens)))),
   };
 };

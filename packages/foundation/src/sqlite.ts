@@ -9,12 +9,11 @@ export const BUSY_WAIT_LIMIT_MS = 5000;
 
 export const busyTimeoutMs = (heartbeatMs: number): number => Math.min(BUSY_WAIT_LIMIT_MS, Math.floor(heartbeatMs));
 
-const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
-export type OpenDatabaseOptions = { busyTimeoutMs: number; createDirectory?: boolean };
+export type OpenDatabaseOptions = { busyTimeoutMs: number };
 
-type DatabaseFiles = Pick<FileSystemSync, 'statSync' | 'openDescriptorSync' | 'closeSync' | 'mkdirSync'>;
+type DatabaseFiles = Pick<FileSystemSync, 'statSync' | 'openDescriptorSync' | 'closeSync'>;
 
 const files: DatabaseFiles = nodeFileSystemSync;
 
@@ -74,7 +73,6 @@ export const openDatabaseWithIdentity = (file: string, options: OpenDatabaseOpti
   if (!Number.isInteger(busyWaitMs) || busyWaitMs < 0) {
     throw new RangeError(`openDatabase: busyTimeoutMs must be a non-negative integer, got ${busyWaitMs}`);
   }
-  if (options.createDirectory === true) files.mkdirSync(path.dirname(file), PRIVATE_DIRECTORY_MODE);
   assertPrivateDirectory(path.dirname(file));
   const identity = ensurePrivateFile(file);
   const db = new DatabaseSync(file, { timeout: busyWaitMs, enableForeignKeyConstraints: true });

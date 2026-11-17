@@ -56,7 +56,7 @@ describe('every settings file reports a kept copy the same way: one notice to th
     await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     writeProjectSettings(f.temp.project, {});
     const warnings: string[] = [];
-    const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: noKeptRecords });
+    const cache = createUserSettingsCache({ env: process.env, home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: noKeptRecords });
     const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: process.platform, cache, store: f.store });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
     await composition.settings.rules(session, new AbortController().signal);

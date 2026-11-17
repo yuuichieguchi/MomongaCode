@@ -6,7 +6,7 @@ const signal = new AbortController().signal;
 
 const GROUP = { matcher: 'Bash', hooks: [{ type: 'command', command: './scripts/check.sh' }] };
 
-const loadFor = (tree: ReturnType<typeof makeTree>, trust = trusting(tree)) => loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
+const loadFor = (tree: ReturnType<typeof makeTree>, trust = trusting(tree)) => loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
 
 describe('a hook group of the project settings runs only as approved', () => {
   it('holds back a group never approved, with its digest, and says it does not run', async () => {

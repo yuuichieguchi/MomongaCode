@@ -23,7 +23,7 @@ const statValuesOf = (file: string): string => {
   return `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
 };
 
-const cacheOf = (home: string) => createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords });
+const cacheOf = (home: string) => createUserSettingsCache({ env: process.env, home, onWarning: () => undefined, keptRecords: noKeptRecords });
 
 afterEach(() => {
   vi.restoreAllMocks();

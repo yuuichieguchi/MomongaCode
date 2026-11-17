@@ -17,7 +17,6 @@ import {
   SYSTEM_ROLES,
   TARGET_BILLINGS,
   TOOL_PLACEMENTS,
-  applyCapabilityOverride,
 } from '../src/index.ts';
 import type { Capabilities, PlanSignOutResponse } from '../src/index.ts';
 
@@ -78,16 +77,6 @@ describe('route carriage vocabularies', () => {
       'mcp',
       'tool_search',
     ]);
-  });
-
-  it('lets a declared override carry the new capabilities over a base', () => {
-    const merged = applyCapabilityOverride(BASE, {
-      outputBoundField: 'none',
-      systemRole: 'developer',
-      toolPlacement: 'additional_tools',
-      inputKinds: { content: ['file'], tools: ['function'] },
-    });
-    expect(merged).toMatchObject({ outputBoundField: 'none', systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['file'], tools: ['function'] } });
   });
 });
 

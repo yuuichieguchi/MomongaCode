@@ -25,7 +25,7 @@ const setup = async () => {
     const run = (): ReturnType<ArgvRunner> => counting.run(argv, options);
     return injection.current === undefined ? run() : injection.current(argv, run);
   };
-  const toolSet = await toolSetOf(...createOperationTools({ runArgv, forge: NO_FORGE, settings: {} }));
+  const toolSet = await toolSetOf(...createOperationTools({ runArgv, forge: NO_FORGE, settings: {}, platform: process.platform, shell: async () => '/bin/sh', }));
   const layout: Layout = { ...makeLayout(), root: world.base, home: world.home, project: world.work, outside: path.join(world.base, 'outside') };
   const rules = [ruleFor(layout)('allow', 'GitCommit')];
   const reconciled: Array<ResultOutcome['reconciled']> = [];

@@ -42,7 +42,7 @@ describe('the report request of the journal thread', () => {
     const thread = await startJournalThread({ busyTimeoutMs: BUSY_WAIT_LIMIT_MS, lock: testKernelLock(), databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
 
     try {
-      expect(await thread.report({ runId: run.id })).toEqual({ lastSeq: env.run(run.id).lastSeq, report: expected });
+      expect(await thread.report({ runId: run.id })).toEqual({ lastSeq: env.run(run.id).lastSeq, report: expected, run: env.run(run.id) });
     } finally {
       await thread.close();
     }

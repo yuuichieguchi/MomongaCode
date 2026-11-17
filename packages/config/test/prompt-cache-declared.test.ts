@@ -15,7 +15,7 @@ const target = (adapter: 'chat-completions' | 'open-responses', capabilities: Re
 const load = (targets: Record<string, Record<string, unknown>>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: connectionsOf(targets) } });
-  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const promptCacheOf = async (targets: Record<string, Record<string, unknown>>, name: string): Promise<unknown> => {

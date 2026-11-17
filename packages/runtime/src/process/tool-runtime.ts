@@ -50,7 +50,6 @@ import type { EnforcedPolicyFor } from './tool-policy.ts';
 
 export const observerStoreRoot = (paths: { state: string }): string => path.join(paths.state, 'observer');
 
-export const sandboxNetworkOf = (session: Pick<Session, 'sandboxNetwork'>, setting: SandboxNetworkSetting): SandboxNetworkSetting => session.sandboxNetwork ?? setting;
 
 export type ToolRuntimeOptions = {
   mcpLaunch: StdioLaunch;
@@ -77,7 +76,7 @@ export type ToolRuntimeOptions = {
   forgeFetch?: ForgeFetch;
   helperSelf: HelperSelf;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'referenceEnvFor' | 'takeUserSnapshot' | 'userSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle' | 'sandboxNetwork'>;
   reapTiming: Timing;
   leaseMs: number;
   heartbeatMs: number;
@@ -201,8 +200,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const policyFor: ToolRuntimePort['policyFor'] = async (session, request) => {
     const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement });
     policyBuilders.set(request.ruleEnforcement, builder);
-    const { sandboxNetwork, sandboxUnixSockets } = settings.takeUserSnapshot().settings;
-    return { ...(await builder(session, { ...request, unixSocketAllow: sandboxUnixSockets.allow })), sandboxNetwork: sandboxNetworkOf(session, sandboxNetwork) };
+    const { sandboxUnixSockets } = settings.takeUserSnapshot().settings;
+    return { ...(await builder(session, { ...request, unixSocketAllow: sandboxUnixSockets.allow })), sandboxNetwork: await settings.sandboxNetwork(session, request.signal) };
   };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
   const operationTools = createOperationToolSource({
@@ -224,7 +223,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     const held = await holdSandbox(sandboxes, signal);
     const kind = held.sandbox.kind;
     held.done();
-    return { sandbox: kind, sandboxNetwork: sandboxNetworkOf(session, settings.takeUserSnapshot().settings.sandboxNetwork), bash: await offeredBashOf(options.shellHost, env) };
+    return { sandbox: kind, sandboxNetwork: await settings.sandboxNetwork(session, signal), bash: await offeredBashOf(options.shellHost, env) };
   };
 
   const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools, only }) => {

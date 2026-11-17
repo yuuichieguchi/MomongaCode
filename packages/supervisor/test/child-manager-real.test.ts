@@ -20,7 +20,7 @@ describe('child manager with the real SpawnPort', () => {
       process.off('uncaughtException', onUncaught);
     });
     const port = trackedSpawnPort(context);
-    const harness = createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE, '--p2-watch-lifeline'] }) });
+    const harness = await createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE, '--p2-watch-lifeline'] }) });
     await harness.spawnInitial();
     await pollUntil(() => harness.events('child.stdout').some((line) => String(line['raw']).includes('started')), 5000, 'fixture started');
     const handle = port.spawned[0];

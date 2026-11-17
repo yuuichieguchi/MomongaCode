@@ -59,7 +59,7 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
       const lockMechanism = context.locks.mechanism;
       const inspector = layoutProcessInspector(context.locks.capability);
       const stopValuesAtStart = stopValuesOf(context.logger);
-      stopValuesAtStart.remember(await readUserStopValuesOrDefault({ home: context.home, signal: context.signal, onNotice: (message) => context.logger.warn(message) }));
+      stopValuesAtStart.remember(await readUserStopValuesOrDefault({ env: process.env, home: context.home, signal: context.signal, onNotice: (message) => context.logger.warn(message) }));
       const supervisor = await startSupervisor({
         ...deps,
         reaperPass: deps.reaperPass ?? entryReaperPass({ ...deps, lockMechanism, inspector }, { home: context.home, env: context.env, clock, timers, logger, stopValues: stopValuesAtStart }),

@@ -5,16 +5,16 @@ import { distrusting, makeTree, projectSettingsPath, trusting, userSettingsPath,
 type Standing = { conditions?: unknown; required?: unknown; commands?: unknown };
 
 const verificationOf = async (tree: ReturnType<typeof makeTree>, trust = trusting(tree)): Promise<Standing> => {
-  const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
+  const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
   return result.settings.verification as unknown as Standing;
 };
 
 describe('standing completion conditions from verification.commands', () => {
-  it('declares no standing condition when no layer sets verification.commands, even though the memory gate has default commands', async () => {
+  it('declares no standing condition when no layer sets verification.commands, and no default commands', async () => {
     const tree = makeTree();
     const verification = await verificationOf(tree);
     expect(verification.conditions).toEqual([]);
-    expect(verification.commands).toEqual(expect.arrayContaining(['npm test']));
+    expect(verification.commands).toBeUndefined();
   });
 
   it('declares the commands a trusted project sets as standing conditions, in order', async () => {
@@ -73,7 +73,7 @@ describe('verification.required', () => {
   it('is accepted and resolved when a layer sets it', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { verification: { required: true } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.warnings).toEqual([]);
     expect((result.settings.verification as unknown as Standing).required).toBe(true);
   });

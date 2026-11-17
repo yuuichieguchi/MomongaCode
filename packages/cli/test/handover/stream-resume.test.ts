@@ -1,4 +1,4 @@
-import { momongaPaths } from '@momonga/foundation';
+import { EXIT_WAITING_FOR_APPROVAL, momongaPaths } from '@momonga/foundation';
 import { withTempDir, waitFor } from '@momonga/testkit';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
@@ -98,5 +98,22 @@ describe('the quiet point and the record of a stream client (16.5, 16.7, O4)', (
     expect(s.stderr.at(-1)).toBe('momonga: Restarting into momonga v1.2.4. Your session and unsent input are kept.\n');
     gate.resolve();
     expect(await watching).toBe(0);
+  });
+});
+
+describe('a resumed headless stream knows the run was already quiescent', () => {
+  it('leaves at once when the old process saw run.quiescent before it moved, because the new stream starts after that event', async (context) => {
+    const s = setup(context, [...FRAMES.slice(0, 2)]);
+    const client = {
+      ...s.client,
+      streamEvents: async function* (_runId: string, options: { signal?: AbortSignal }) {
+        for (const each of FRAMES.slice(0, 2)) yield each;
+        await new Promise<void>((_resolve, reject) => {
+          if (options.signal?.aborted === true) reject(options.signal.reason);
+          else options.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+        });
+      },
+    } as unknown as RuntimeClient;
+    expect(await watchRun(s.ports, s.paths, { client, runId: 'run-1', format: 'text', verbose: false, after: 5, interrupt: new AbortController().signal, onInterrupt: 'cancel', leaveWhenQuiescent: true, quiescence: { onQuiescent: 'report' } })).toBe(EXIT_WAITING_FOR_APPROVAL);
   });
 });

@@ -34,7 +34,7 @@ describe('context constants', () => {
 
   it('charges a reflection inside the run it follows and lists the charges without a run separately', () => {
     expect(USAGE_CHARGE_PURPOSES).toEqual(['compaction', 'permission_classifier', 'rejected_answer', 'reflection']);
-    expect(CONTEXT_CHARGE_PURPOSES).toEqual(['reflection', 'guideline']);
+    expect(CONTEXT_CHARGE_PURPOSES).toEqual(['guideline']);
   });
 
   it('registers the three new event types as public events', () => {

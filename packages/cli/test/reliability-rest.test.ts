@@ -28,7 +28,7 @@ type ReviewCommand = {
   reviewSampleText(client: Pick<ReviewClient, 'reportReviews'>, options: { size: number; seed: string }): Promise<string>;
   storeReviewText(client: Pick<ReviewClient, 'storeReview'>, request: { runId: string; callId: string; label: string }): Promise<string>;
 };
-type Body = { id: number; spanId: string; kind: string; content: string; createdAtMs: number; expiresAtMs: number };
+type Body = { id: number; spanId: string; kind: string; content: string; createdAtMs: number };
 type ContentSource = { name: string; page(runId: string, after: number, limit: number): Promise<{ bodies: Body[]; next: number | null }> };
 type TraceCommand = { writeTraceContent(sources: readonly ContentSource[], runId: string, options: { json: boolean; pageSize: number }, write: (text: string) => void): Promise<void> };
 type Probe = {
@@ -153,7 +153,7 @@ describe('momonga permissions review <run> --call --label', () => {
 });
 
 describe('momonga trace --content', () => {
-  const body = (id: number, content: string): Body => ({ id, spanId: `span-${id}`, kind: 'gen_ai.input.messages', content, createdAtMs: 0, expiresAtMs: Date.UTC(2026, 11, 1) });
+  const body = (id: number, content: string): Body => ({ id, spanId: `span-${id}`, kind: 'gen_ai.input.messages', content, createdAtMs: 0 });
   const source = (name: string, bodies: readonly Body[]) => {
     const asked: number[] = [];
     const limits: number[] = [];
@@ -179,8 +179,8 @@ describe('momonga trace --content', () => {
     const text = out.join('');
     expect(runtime.asked).toEqual([0, 2]);
     expect(gateway.asked).toEqual([0]);
-    expect(text).toContain('runtime body 1  span span-1  gen_ai.input.messages  expires 2026-12-01T00:00:00.000Z\ntool arguments\n');
-    expect(text).toContain('gateway body 7  span span-7  gen_ai.input.messages  expires 2026-12-01T00:00:00.000Z\nthe messages\n');
+    expect(text).toContain('runtime body 1  span span-1  gen_ai.input.messages\ntool arguments\n');
+    expect(text).toContain('gateway body 7  span span-7  gen_ai.input.messages\nthe messages\n');
     expect(text.indexOf('more')).toBeLessThan(text.indexOf('the messages'));
   });
 

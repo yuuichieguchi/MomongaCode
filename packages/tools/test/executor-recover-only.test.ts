@@ -149,6 +149,17 @@ describe('executor recoverOnly batches skip policy validation', () => {
 });
 
 describe('executor recoverOnly treats UNKNOWN as already abandoned', () => {
+  it('an abandoned call reports the command and files recorded for it', async () => {
+    const harness = makeHarness();
+    const files = [{ path: 'notes.txt', access: 'write' as const }];
+    harness.idempotency.seed(KEY, 'UNKNOWN', { tool: 'Mark', facts: { command: 'git push origin main', files } });
+    const { tool } = reconcilingTool('already_applied');
+
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+
+    expect(outcome).toMatchObject({ callId: 'c1', reconciled: 'unknown', command: 'git push origin main', files });
+  });
+
   it('reports unknown for an UNKNOWN record without reconciling or completing it', async () => {
     const harness = makeHarness();
     harness.idempotency.seed(KEY, 'UNKNOWN', { tool: 'Mark' });

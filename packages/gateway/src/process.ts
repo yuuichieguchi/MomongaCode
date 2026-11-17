@@ -1019,7 +1019,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   try {
     signal?.throwIfAborted();
     const planProfiles = options.planProfiles ?? PLAN_PROFILES;
-    const cache = createUserSettingsCache({
+    const cache = createUserSettingsCache({ env: process.env,
       home: options.home,
       onWarning: (message) => logger.warn(message),
       keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(options.home), kernelLock),
@@ -1563,7 +1563,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       retentionPurge: async (runIds, cutoffMs, requestSignal) => {
         await flushTelemetry(requestSignal);
         traceStore.purgeRuns(runIds, cutoffMs);
-        traceStore.moveLegacyContent({ retentionMs: clock.now() - cutoffMs });
+        traceStore.moveLegacyContent();
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),

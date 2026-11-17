@@ -70,7 +70,7 @@ const HOST_STORES: readonly HostStore[] = [
 
 const callsPerRead = (store: HostStore): number => store.readinessCalls.length + 1;
 
-const fakeHostPath = (context: CleanupContext, store: HostStore): SecretHost => fakeSecretHost(withTempDir(context), store);
+const fakeHostPath = async (context: CleanupContext, store: HostStore): Promise<SecretHost> => await fakeSecretHost(withTempDir(context), store);
 
 type Stack = {
   home: string;
@@ -114,11 +114,11 @@ const startStack = async (
       { ...(options.fallbackTo === undefined ? {} : { fallbackTo: options.fallbackTo }), ...(options.headersTimeoutMs === undefined ? {} : { headersTimeoutMs: options.headersTimeoutMs }) },
     ),
   });
-  const host = fakeHostPath(context, store);
+  const host = await fakeHostPath(context, store);
   const control: FakeControl = { ...READY_CONTROL, ...options.control };
   const security = portOnSecretHost(createFakeSecurityPort(() => options.secrets, undefined, { control: () => control }), store, host);
   const lines: string[] = [];
-  const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
+  const handle = await registerOwned(context, async () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal, platform: process.platform,
     locks: testLocks(),
     generation: FIRST_GENERATION,
     home,
@@ -260,11 +260,11 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
         }),
     });
     let portCalls = 0;
-    const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
+    const handle = await registerOwned(context, async () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal, platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home,
-      env: baseEnv(home, fakeHostPath(context, store).env),
+      env: baseEnv(home, (await fakeHostPath(context, store)).env),
       version: PROCESS_VERSION,
       execWithStdin: async () => {
         portCalls += 1;
@@ -297,7 +297,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
       models: modelsOf({ local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } }),
     });
     const security = createFakeSecurityPort(() => ({}));
-    const handle = await registerOwned(context, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } }));
+    const handle = await registerOwned(context, async () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal, platform: process.platform, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home, (await fakeHostPath(context, store)).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } }));
     registerCleanup(context, async () => {
       await handle.close();
     });

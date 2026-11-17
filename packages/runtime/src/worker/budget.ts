@@ -47,17 +47,6 @@ export const requestBudgetOf = (admitted: AdmittedStep, quote: ModelQuote | unde
 
 const DIMENSION_WORDS: Record<BudgetExhausted['dimension'], string> = { steps: 'step', tokens: 'token', cost: 'money', time: 'time', retries: 'retry' };
 
-export const exhaustedText = (exhausted: BudgetExhausted, format: (dimension: BudgetExhausted['dimension'], value: number) => string): string => {
-  const what = DIMENSION_WORDS[exhausted.dimension];
-  const figures = `${format(exhausted.dimension, exhausted.spent)} of ${format(exhausted.dimension, exhausted.limit)} used or reserved`;
-  if (exhausted.cause === 'unpriced') return `The run stopped at its ${what} limit: a model call has no price, so its cost cannot be counted (${figures}).`;
-  if (exhausted.cause === 'cap_too_small') {
-    const admits = exhausted.admitsAt === undefined ? '' : ` A budget of ${format(exhausted.dimension, exhausted.admitsAt)} admits the next model request.`;
-    return `The run stopped at its ${what} limit: what is left does not pay for another model request (${figures}).${admits}`;
-  }
-  return `The run stopped at its ${what} limit (${figures}).`;
-};
-
 export const unpaidText = (exhausted: BudgetExhausted, format: (dimension: BudgetExhausted['dimension'], value: number) => string): string => {
   const what = DIMENSION_WORDS[exhausted.dimension];
   if (exhausted.cause === 'unpriced') return `its model has no price, so its cost cannot be counted under the ${what} limit of the run`;

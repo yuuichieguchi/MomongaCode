@@ -155,6 +155,7 @@ export const PLAN_SIGN_IN_FAILURE = {
   jwksUnavailable: 'jwks_unavailable',
   identityMismatch: 'identity_mismatch',
   identityNotExchanged: 'identity_not_exchanged',
+  identityLate: 'identity_late',
 } as const;
 
 export const PLAN_SIGN_IN_FAILURE_RULES = {
@@ -181,6 +182,7 @@ export const PLAN_SIGN_IN_FAILURE_RULES = {
   [PLAN_SIGN_IN_FAILURE.jwksUnavailable]: { status: 502, type: 'server_error', template: 'The keys needed to verify the identity returned by {identityLabel} could not be fetched.' },
   [PLAN_SIGN_IN_FAILURE.identityMismatch]: { status: 400, type: 'invalid_request', template: 'The account that signed in is not the account saved under this label. Nothing was changed.' },
   [PLAN_SIGN_IN_FAILURE.identityNotExchanged]: { status: 409, type: 'invalid_request', template: 'This sign-in attempt has no account identity to confirm yet: the browser has not returned.' },
+  [PLAN_SIGN_IN_FAILURE.identityLate]: { status: 409, type: 'invalid_request', template: 'The identity returned by {identityLabel} arrived after this sign-in attempt had ended. Nothing was saved.' },
 } as const satisfies Readonly<Record<string, PlanSignInFailureRule>>;
 
 export type PlanSignInFailure = keyof typeof PLAN_SIGN_IN_FAILURE_RULES;

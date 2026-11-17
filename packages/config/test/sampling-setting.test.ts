@@ -23,7 +23,7 @@ const targetOf = (adapter: SamplingAdapter, sampling: unknown): Record<string, u
 const settingsWith = (target: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', target)] } });
-  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const DECLARATIONS = [

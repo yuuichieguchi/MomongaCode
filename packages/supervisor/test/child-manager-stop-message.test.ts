@@ -32,7 +32,7 @@ const holdLifelineWrites = (child: FakeChild): HeldWrite => {
 };
 
 const gatewayHarness = async (context: Parameters<typeof createManagerHarness>[0], options: ManagerHarnessOptions = {}): Promise<{ harness: ManagerHarness; child: FakeChild; write: HeldWrite }> => {
-  const harness = createManagerHarness(context, { role: 'gateway', ...options });
+  const harness = await createManagerHarness(context, { role: 'gateway', ...options });
   await harness.spawnInitial();
   const child = harness.port.last();
   return { harness, child, write: holdLifelineWrites(child) };

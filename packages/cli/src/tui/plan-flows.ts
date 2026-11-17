@@ -172,6 +172,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
           signal: cancel.signal,
           timers: backend.signInTimers,
           delivered: () => ports.delivered(),
+          warn: (text) => ports.info(text),
         },
         { profile: profile.id, account, reconsent },
       );

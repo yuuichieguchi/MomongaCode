@@ -71,6 +71,20 @@ describe('a command the person typed (design 5.9)', () => {
     expect((await env.http('GET', `/v1/sessions/${session.id}/user-shell`)).json.pending).toEqual([]);
   });
 
+  it('keeps the stored record in the session event stream after a run has carried it', async () => {
+    const env = await startService({ userInput: { attach: unusedAttach, shell: echoShell } });
+    const kit = attachWorkerKit(env);
+    const session = await env.createSession();
+    await shellOf(env, session.id, 'ls', true);
+    kit.gateway.script.push(textStep('Seen.'));
+    await env.createRun(session.id, { input: 'what is there' });
+    expect(await kit.runOnce(kit.worker())).toBe('yielded');
+
+    const stream = env.store.readSessionEventStream(session.id, 0, 100).filter((event) => event.type === 'user_shell');
+
+    expect(stream).toMatchObject([{ type: 'user_shell', command: 'ls', exitCode: 0, output: 'ran ls', include: true }]);
+  });
+
   it('carries a record into one run only', async () => {
     const env = await startService({ userInput: { attach: unusedAttach, shell: echoShell } });
     const kit = attachWorkerKit(env);

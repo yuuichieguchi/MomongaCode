@@ -41,6 +41,7 @@ import type { KernelLockMechanism } from '@momonga/foundation';
 import { meteredPrecondition, requireMeasurementConsent } from './consent.ts';
 import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import { meteredGateOf } from './probe-endpoint.ts';
+import { DeclaredWindowAboveReportedError } from './declared-window.ts';
 
 export type ProbeOllamaTargetOptions = {
   ports: ProbePorts;
@@ -256,9 +257,7 @@ export const measureOllama =
     const serverVersion = versionOf(version);
     if (serverVersion === undefined) throw new Error(`the server at ${key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
     const { trained, capabilities } = show;
-    if (options.contextWindow > trained) {
-      throw new Error(`the context window ${options.contextWindow} is above the trained context length ${trained} of model ${model}`);
-    }
+    if (options.contextWindow > trained) throw new DeclaredWindowAboveReportedError(model, options.contextWindow, trained, key.endpoint);
     const identity = digestIn(tags, model);
     if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
     const imageInputAccepted = capabilities.includes('vision');

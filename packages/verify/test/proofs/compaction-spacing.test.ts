@@ -10,7 +10,7 @@ import {
   MIN_SUMMARY_TOKENS,
   SUMMARY_ACCEPT,
   SUMMARY_ITEM_OVERHEAD,
-  applyCapabilityOverride,
+  imageCapability,
   summaryItemTokensFor,
 } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
@@ -21,8 +21,7 @@ import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 import { anyCeiling, b2FitGoal, b2StepGoal, ceilOf, floorOf, hypothesesSatisfiable, marksOf, named, windowOf } from './budget-model.ts';
 
 const smallWindowCapabilities = (): Capabilities =>
-  applyCapabilityOverride(
-    {
+  ({ ...{
       contextWindow: 8192,
       maxOutputTokens: 1024,
       toolCalling: 'native',
@@ -36,9 +35,7 @@ const smallWindowCapabilities = (): Capabilities =>
       usageReported: true,
       maxConcurrency: 1,
       source: 'declared',
-    },
-    {},
-  );
+    }, ...imageCapability(false, undefined) })
 
 describe('B2: an input at or below H fits with its bound, and K(g) steps of growth g >= 1 stay at or below H', () => {
   const z3 = useZ3();

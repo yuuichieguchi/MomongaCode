@@ -59,7 +59,7 @@ export const leasedUpdateHttp = (lease: NetworkLease, options: OutboundOptions, 
 
 const cliUpdateHttp = (ports: CliPorts): UpdateHttp => ({
   get: async (url, options) => {
-    const { stallTimeoutMs } = (await loadUserSettings({ home: ports.home, signal: options.signal })).settings.update;
+    const { stallTimeoutMs } = (await loadUserSettings({ env: process.env, home: ports.home, signal: options.signal })).settings.update;
     return leasedUpdateHttp((signal, use) => withOutboundNetwork(ports, signal, use), transferOptionsOf(stallTimeoutMs), (error) => {
       ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
     }).get(url, options);
@@ -177,7 +177,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: Kern
   lock: nodeUpdateLock(paths, lock),
   state: nodeUpdateState(paths, lock),
   daemon: nodeDaemonProbe(paths, ports, lock),
-  autoUpdates: async () => (await loadUserSettings({ home: ports.home, signal: ports.interrupt })).settings.autoUpdates,
+  autoUpdates: async () => (await loadUserSettings({ env: process.env, home: ports.home, signal: ports.interrupt })).settings.autoUpdates,
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,
 });
