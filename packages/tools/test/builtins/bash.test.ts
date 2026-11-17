@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { findHolders, holderGroups } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
@@ -16,27 +17,6 @@ const bash = async (tools: Builtins, command: string, extra: Parameters<Builtins
 
 const attachedGroups = (tools: Builtins): number[] =>
   tools.idempotency.log.flatMap((entry) => (entry.op === 'attachProcess' ? [entry.pgid] : []));
-
-const holdersOf = (file: string): number[] => {
-  try {
-    return execFileSync(LSOF_PATH, ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
-      .split('\n')
-      .filter((line) => line !== '')
-      .map(Number);
-  } catch {
-    return [];
-  }
-};
-
-const groupsOf = (pids: readonly number[]): number[] => {
-  const listing = new Map(
-    execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
-      .split('\n')
-      .filter((line) => line.trim() !== '')
-      .map((line) => line.trim().split(/\s+/).map(Number) as [number, number]),
-  );
-  return pids.flatMap((pid) => (listing.has(pid) ? [listing.get(pid) as number] : []));
-};
 
 const processesWithArgument = (argument: string): number[] =>
   execFileSync('/bin/ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8' })
@@ -237,11 +217,14 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     const groups = attachedGroups(tools);
     groups.forEach(trackGroup);
     expect(groups).toHaveLength(1);
-    const holders = holdersOf(marker);
+    const reaperHandle = fs.openSync(marker, 'r');
+    const probe = { signal: new AbortController().signal, inspector: testProcessInspector() };
+    const holders = await findHolders(marker, probe);
+    fs.closeSync(reaperHandle);
     if (process.platform === 'darwin') {
       expect(holders).toContain(groups[0]);
     } else {
-      const heldGroups = groupsOf(holders);
+      const heldGroups = await holderGroups(holders, [], probe);
       expect(heldGroups.length).toBeGreaterThan(0);
       expect(new Set(heldGroups)).toEqual(new Set([groups[0]]));
     }
