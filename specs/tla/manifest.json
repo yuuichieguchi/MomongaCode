@@ -9190,12 +9190,13 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 895680,
-      "measuredSeconds": 1397.05,
+      "distinctStates": 49036,
+      "measuredSeconds": 25.91,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1426.91,
-      "budgetCpuSeconds": 2857,
-      "identity": "66880301a0215216ea21145ce7d736b6d10009cde2b3acccb89960d1a35a315c"
+      "measuredCpuSeconds": 94.56,
+      "budgetCpuSeconds": 193,
+      "identity": "66d91d794fe9635370608a5014460775ee48f33b1a1a853da163844a2afaacf2",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.69 at start)"
     },
     {
       "config": "UpdateSwitch.gatewayJobs",
