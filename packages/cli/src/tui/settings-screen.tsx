@@ -1,5 +1,5 @@
 import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
-import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
+import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsShadow, SettingsSnapshot } from '@momonga/config';
 import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
@@ -26,6 +26,7 @@ export const LIST_ACTIONS = ['Move up', 'Move down', 'Remove'] as const;
 export const ENTRY_ACTIONS = ['Edit', 'Remove'] as const;
 export const CONFIRM_ROWS = ['No', 'Yes'] as const;
 export const STRUCTURED_LINES = ['The value as JSON. Nothing is written until the settings loader accepts it.'] as const;
+export const shadowedText = (layer: SettingsLayer, shadow: SettingsShadow, value: string): string => `Saved to ${layer}. ${shadow.layer} sets it in ${shadow.file}, so the value in effect is still ${value}.`;
 
 export const SETTING_SECTIONS = ['Display', 'Permissions', 'Context', 'Tools', 'Memory', 'Verification', 'MCP', 'Hooks', 'Models', 'Environment variables', 'Credentials', 'Network', 'Sandbox', 'Telemetry', 'Pricing', 'Budget and delegation', 'Git and pull requests', 'Updates', 'Shutdown'] as const;
 
@@ -308,6 +309,26 @@ const openSettingsFile = async (context: SlashContext, snapshot: SettingsSnapsho
 
 export type Refusal = { readonly refused: string };
 
+export type Saved = { readonly shadowed: string };
+
+export type SettingWrite = Refusal | Saved | undefined;
+
+const messageOf = (write: SettingWrite | 'left'): string | undefined => (write === undefined || write === 'left' ? undefined : 'refused' in write ? write.refused : write.shadowed);
+
+const wroteOf = (write: SettingWrite | 'left'): boolean => write === undefined || (write !== 'left' && 'shadowed' in write);
+
+export const settingWrite = async (context: SlashContext, layer: SettingsLayer, operation: SettingsOperation): Promise<SettingWrite> => {
+  try {
+    const { shadowedBy } = await context.background(SAVING_SETTING, (signal) => context.backend.editSettings(layer, operation, signal));
+    if (shadowedBy === undefined || !('path' in operation)) return undefined;
+    const snapshot = await context.backend.settings();
+    return { shadowed: shadowedText(layer, shadowedBy, shownValue(currentOf(snapshot, operation.path).value)) };
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    return { refused: error.message };
+  }
+};
+
 export const writeSetting = (context: SlashContext, layer: SettingsLayer, operation: SettingsOperation): Promise<Refusal | undefined> =>
   savedOrRefused(context, (signal) => context.backend.editSettings(layer, operation, signal));
 
@@ -338,11 +359,21 @@ export const confirmed = async (context: SlashContext, question: string): Promis
   return choice?.index === CONFIRM_ROWS.indexOf('Yes');
 };
 
-type Outcome = { readonly kind: 'left' } | { readonly kind: 'written' } | { readonly kind: 'refused'; readonly sentence: string };
+type Outcome = { readonly kind: 'left' } | { readonly kind: 'written'; readonly note?: string } | { readonly kind: 'refused'; readonly sentence: string };
 
 const LEFT: Outcome = { kind: 'left' };
 
-const outcomeOf = (refusal: Refusal | undefined): Outcome => (refusal === undefined ? { kind: 'written' } : { kind: 'refused', sentence: refusal.refused });
+const outcomeOf = (write: SettingWrite): Outcome => {
+  if (write === undefined) return { kind: 'written' };
+  return 'refused' in write ? { kind: 'refused', sentence: write.refused } : { kind: 'written', note: write.shadowed };
+};
+
+const sentenceOf = (outcome: Outcome): string | undefined => (outcome.kind === 'refused' ? outcome.sentence : outcome.kind === 'written' ? outcome.note : undefined);
+
+const sentenceLines = (outcome: Outcome): string[] => {
+  const sentence = sentenceOf(outcome);
+  return sentence === undefined ? [] : [sentence];
+};
 
 const boundsOf = (schema: Readonly<Record<string, unknown>>): { minimum: number | undefined; maximum: number | undefined; whole: boolean } => ({
   minimum: typeof schema['minimum'] === 'number' ? schema['minimum'] : undefined,
@@ -398,7 +429,7 @@ const editScalar = async (context: SlashContext, snapshot: SettingsSnapshot, lea
   }
   const layer = await saveTargetOf(context, snapshot, source);
   if (layer === undefined) return LEFT;
-  return outcomeOf(await writeSetting(context, layer, chosen.value === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: chosen.value }));
+  return outcomeOf(await settingWrite(context, layer, chosen.value === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: chosen.value }));
 };
 
 const moved = <T,>(items: readonly T[], from: number, to: number): T[] => {
@@ -419,12 +450,12 @@ type Collection = {
   readonly lines?: readonly string[];
   readonly applied?: string;
   entries(snapshot: SettingsSnapshot): readonly string[];
-  add?(context: SlashContext, snapshot: SettingsSnapshot): Promise<Refusal | 'left' | undefined>;
-  act(context: SlashContext, snapshot: SettingsSnapshot, index: number): Promise<Refusal | 'left' | 'remove' | undefined>;
+  add?(context: SlashContext, snapshot: SettingsSnapshot): Promise<SettingWrite | 'left'>;
+  act(context: SlashContext, snapshot: SettingsSnapshot, index: number): Promise<SettingWrite | 'left' | 'remove'>;
   removal(snapshot: SettingsSnapshot, index: number): Removal | undefined;
 };
 
-export type Removal = { readonly question: string; remove(context: SlashContext): Promise<Refusal | undefined> };
+export type Removal = { readonly question: string; remove(context: SlashContext): Promise<SettingWrite> };
 
 export const removeQuestion = (what: string): string => `Remove ${what}?`;
 
@@ -433,7 +464,7 @@ export const chosenAction = async <Action extends string>(context: SlashContext,
   return choice === undefined ? undefined : actions[choice.index];
 };
 
-const removeAfterAsking = async (context: SlashContext, removal: Removal | undefined): Promise<Refusal | 'left' | undefined> => {
+const removeAfterAsking = async (context: SlashContext, removal: Removal | undefined): Promise<SettingWrite | 'left'> => {
   if (removal === undefined || !(await confirmed(context, removal.question))) return 'left';
   return removal.remove(context);
 };
@@ -465,8 +496,8 @@ export const runCollection = async (context: SlashContext, collection: Collectio
     }
     const asked = isAdd && collection.add !== undefined ? await collection.add(context, snapshot) : choice.alt ? 'remove' : await collection.act(context, snapshot, choice.index);
     const result = asked === 'remove' ? await removeAfterAsking(context, collection.removal(snapshot, choice.index)) : asked;
-    sentence = result === undefined || result === 'left' ? undefined : result.refused;
-    changedNow = result === undefined;
+    sentence = messageOf(result);
+    changedNow = wroteOf(result);
     changed = changed || changedNow;
   }
 };
@@ -476,7 +507,7 @@ const listCollection = (leaf: SettingLeaf, presentation: SettingPresentation, la
     const value = inLayer(snapshot, layer, leaf.path);
     return Array.isArray(value) ? (value as string[]) : [];
   };
-  const store = (context: SlashContext, next: readonly string[] | undefined): Promise<Refusal | undefined> => writeSetting(context, layer, next === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: next });
+  const store = (context: SlashContext, next: readonly string[] | undefined): Promise<SettingWrite> => settingWrite(context, layer, next === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: next });
   return {
     title: `${presentation.label} (${layer})`,
     entries: own,
@@ -529,7 +560,7 @@ const approvalsCollection = (leaf: SettingLeaf, presentation: SettingPresentatio
       const rest = entries.filter((_, position) => position !== index);
       return {
         question: `Withdraw the approvals of ${entry[0]}?`,
-        remove: (context) => writeSetting(context, 'user', rest.length === 0 ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: Object.fromEntries(rest) }),
+        remove: (context) => settingWrite(context, 'user', rest.length === 0 ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: Object.fromEntries(rest) }),
       };
     },
   };
@@ -540,8 +571,8 @@ const mapCollection = (leaf: SettingLeaf, presentation: SettingPresentation, lay
     const value = inLayer(snapshot, layer, leaf.path);
     return isRecord(value) ? value : {};
   };
-  const store = (context: SlashContext, next: Readonly<Record<string, unknown>>): Promise<Refusal | undefined> =>
-    writeSetting(context, layer, Object.keys(next).length === 0 ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: next });
+  const store = (context: SlashContext, next: Readonly<Record<string, unknown>>): Promise<SettingWrite> =>
+    settingWrite(context, layer, Object.keys(next).length === 0 ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: next });
   return {
     title: `${presentation.label} (${layer})`,
     lines: ['NAME=value'],
@@ -619,7 +650,7 @@ const formCollection = (leaf: SettingLeaf, presentation: SettingPresentation, fo
     const value = inLayer(snapshot, layer, leaf.path);
     return Array.isArray(value) ? (value as unknown[]) : [];
   };
-  const store = (context: SlashContext, next: readonly unknown[] | undefined): Promise<Refusal | undefined> => writeSetting(context, layer, next === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: next });
+  const store = (context: SlashContext, next: readonly unknown[] | undefined): Promise<SettingWrite> => settingWrite(context, layer, next === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: next });
   return {
     title: `${presentation.label} (${layer})`,
     entries: (snapshot) => own(snapshot).map((entry) => entryLine(presentation, entry)),
@@ -653,7 +684,7 @@ const editChoices = async (context: SlashContext, leaf: SettingLeaf, presentatio
     const chosen = Array.isArray(stored) ? (stored as unknown[]).map(String) : (currentOf(snapshot, leaf.path).value as readonly string[] | undefined) ?? [];
     const choice = await context.overlays.choose({
       title: `${presentation.label} (${layer})`,
-      lines: outcome.kind === 'refused' ? [outcome.sentence] : [],
+      lines: sentenceLines(outcome),
       rows: values.map((value) => ({ label: `[${chosen.includes(value) ? 'x' : ' '}] ${value}` })),
       initial: at,
       decideOn: 'enter',
@@ -664,7 +695,7 @@ const editChoices = async (context: SlashContext, leaf: SettingLeaf, presentatio
     at = choice.index;
     const value = values[choice.index] as string;
     const next = values.filter((candidate) => (candidate === value ? !chosen.includes(candidate) : chosen.includes(candidate)));
-    outcome = outcomeOf(await writeSetting(context, layer, { kind: 'set', path: leaf.path, value: next }));
+    outcome = outcomeOf(await settingWrite(context, layer, { kind: 'set', path: leaf.path, value: next }));
   }
 };
 
@@ -687,9 +718,9 @@ const editStructured = async (context: SlashContext, snapshot: SettingsSnapshot,
     draft = text;
     const value: unknown = parseOutsideJson(text);
     const empty = isRecord(value) && Object.keys(value).length === 0;
-    const refusal = await writeSetting(context, layer, empty ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value });
-    if (refusal === undefined) return { kind: 'written' };
-    sentence = refusal.refused;
+    const outcome = outcomeOf(await settingWrite(context, layer, empty ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value }));
+    if (outcome.kind !== 'refused') return outcome;
+    sentence = outcome.sentence;
   }
 };
 
@@ -795,7 +826,7 @@ export const runSettingsScreen = async (context: SlashContext, live: readonly Li
       continue;
     }
     const outcome = await editSetting(context, snapshot, chosen.leaf, chosen.presentation, live);
-    written = outcome.kind === 'written' ? chosen.leaf.key : undefined;
-    sentence = outcome.kind === 'refused' ? outcome.sentence : undefined;
+    written = outcome.kind === 'written' && outcome.note === undefined ? chosen.leaf.key : undefined;
+    sentence = sentenceOf(outcome);
   }
 };

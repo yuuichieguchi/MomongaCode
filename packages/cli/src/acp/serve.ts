@@ -102,7 +102,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     },
     terminal: () => undefined,
     suspend: async () => carried.hold('handover'),
-    release: () => undefined,
+    release: () => stdio.input.release(),
     resume: () => carried.release('handover'),
     say: (text) => ports.stderr.write(acpDiagnosticText(text)),
   });

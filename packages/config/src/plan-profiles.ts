@@ -7,7 +7,6 @@ import {
   ERROR_TYPES,
   INPUT_CONTENT_KINDS,
   REQUEST_TOOL_KINDS,
-  SIGN_IN_COMMAND,
   SYSTEM_ROLES,
   TOOL_PLACEMENTS,
 } from '@momonga/protocol';
@@ -336,7 +335,7 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'failure',
       fallback: 'stop',
       credential: 'rejected',
-      message: `The sign-in of this account has expired. Run ${SIGN_IN_COMMAND} to sign in again`,
+      message: 'The sign-in of this account has expired',
       cause: 'The upstream refused the credential after a forced refresh',
     },
     {
@@ -358,7 +357,7 @@ const CHATGPT_PROFILE_DATA = {
       verdict: 'failure',
       fallback: 'stop',
       credential: 'rejected',
-      message: `The sign-in of this account has expired. Run ${SIGN_IN_COMMAND} to sign in again`,
+      message: 'The sign-in of this account has expired',
       cause: 'The upstream refused the credential after a forced refresh',
     },
     {

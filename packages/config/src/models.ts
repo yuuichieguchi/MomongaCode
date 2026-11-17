@@ -228,6 +228,7 @@ const resolveRemote = (
     ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
     billing: target.billing ?? serving.billing,
     capabilities,
+    writtenCapabilities: target.capabilities,
     maxConcurrency,
     admissionTimeoutMs: target.admissionTimeoutMs ?? DEFAULT_ADMISSION_TIMEOUT_MS,
   };

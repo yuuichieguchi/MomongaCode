@@ -16,7 +16,7 @@ const capabilities = {
   maxConcurrency: 4,
 } as const;
 
-const remote = { billing: 'metered', capabilities, maxConcurrency: 4, admissionTimeoutMs: 30000 } as const;
+const remote = { billing: 'metered', capabilities, writtenCapabilities: { contextWindow: 8192, maxOutputTokens: 1024 }, maxConcurrency: 4, admissionTimeoutMs: 30000 } as const;
 
 const configurations: ReadonlyArray<readonly [string, ResolvedModelTarget, ReturnType<typeof probeRecordKeyOf>]> = [
   ['chat-completions auto over tcp', { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1/', toolCalling: 'auto' }, { kind: 'endpoint', key: { endpoint: 'https://upstream.invalid/v1', model: 'm' } }],

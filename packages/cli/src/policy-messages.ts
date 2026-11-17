@@ -1,4 +1,4 @@
-import { HOOK_STOPPED_CODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_COMMAND, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, TUI_SIGN_IN_COMMAND, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, PLAN_CREDENTIAL_REJECTED_CODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_COMMAND, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, TUI_SIGN_IN_COMMAND, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
 import type { PlanAccountRef, Surface } from '@momonga/protocol';
 import type { PermissionDenial, PermissionDenialSource, PublicRunEvent, ResidualRiskCode, RunReport } from '@momonga/protocol';
 
@@ -140,6 +140,7 @@ export const describeRunError = (error: { code: string; message: string; plan?: 
   if (planLines !== undefined) return planLines;
   switch (error.code) {
     case SIGN_IN_REQUIRED_CODE:
+    case PLAN_CREDENTIAL_REJECTED_CODE:
       return [`${error.message} · Run ${signInCommandOf(surface, error.plan)} to sign in again`, `cause: ${error.code}`];
     case USER_PROMPT_BLOCKED_CODE:
       return [`a UserPromptSubmit hook blocked the prompt: ${error.message}`];

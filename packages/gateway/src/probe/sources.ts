@@ -2,8 +2,8 @@ import { LOWEST_REASONING_EFFORT, WORDS, imageCapability } from '@momonga/protoc
 import type { Capabilities, DetectedModel, ToolCallingMode } from '@momonga/protocol';
 import { readModelDetails } from '../detect-local-servers.ts';
 import type { DetailsAsk, ModelDetails } from '../detect-local-servers.ts';
-import { layerOf, withImageDefault } from './decide.ts';
-import type { CapabilityLayer, DeclaredCapabilities } from './decide.ts';
+import { withImageDefault, writtenLayerOf } from './decide.ts';
+import type { CapabilityLayer, DeclaredCapabilities, WrittenCapabilities } from './decide.ts';
 import type { MeasuringAsk } from './auto-probe.ts';
 
 export type SourceField = 'toolCalling' | 'contextWindow';
@@ -21,8 +21,8 @@ export const reportedLayerOf = (reported: ReportedFields): CapabilityLayer => ({
   ...(reported.vision === false ? { image: imageCapability(false, undefined) } : {}),
 });
 
-export const declaredLayerOf = (declared: DeclaredCapabilities, toolCalling: ToolCallingDeclaration): CapabilityLayer => {
-  const { toolCalling: _placeholder, ...layer } = layerOf(declared).layer;
+export const writtenLayerFor = (written: WrittenCapabilities, toolCalling: ToolCallingDeclaration): CapabilityLayer => {
+  const layer = writtenLayerOf(written);
   return toolCalling === 'auto' ? layer : { ...layer, toolCalling };
 };
 
@@ -44,11 +44,13 @@ export const declarationOf = (targetName: string, fields: readonly SourceField[]
 
 export const measuringAskOf = (targetName: string, fields: readonly SourceField[]): MeasuringAsk => ({ fields, declaration: declarationOf(targetName, fields) });
 
-export const sourcedCapabilities = (declared: DeclaredCapabilities, toolCalling: ToolCallingDeclaration, reported: ReportedFields): Capabilities | undefined => {
+export const sourcedCapabilities = (defaults: DeclaredCapabilities, written: WrittenCapabilities, toolCalling: ToolCallingDeclaration, reported: ReportedFields): Capabilities | undefined => {
   if (unknownFieldsOf({ toolCalling }, reported).length > 0) return undefined;
   const mode = toolCalling === 'auto' ? reported.toolCalling : toolCalling;
   if (mode === undefined) return undefined;
-  return { ...reportedLayerOf(reported), ...withImageDefault(declared), toolCalling: mode, source: toolCalling === 'auto' ? 'reported' : 'declared' };
+  const { image, ...layers } = { ...reportedLayerOf(reported), ...writtenLayerFor(written, toolCalling) };
+  const { imageInput: _input, imageTokens: _tokens, ...base } = withImageDefault(defaults);
+  return { ...base, ...layers, ...(image ?? imageCapability(false, undefined)), toolCalling: mode, source: toolCalling === 'auto' ? 'reported' : 'declared' };
 };
 
 export const reportedWindowOf = (model: DetectedModel): number | undefined => model.contextWindow ?? model.ceiling;

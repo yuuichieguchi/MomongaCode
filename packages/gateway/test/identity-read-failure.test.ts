@@ -43,7 +43,7 @@ const chatTarget = (reads: Read[]) => {
   const probes = probeCounter();
   const record = { identity: 'recorded', identityFields: ['id'], report: makeReport(1, 1) };
   const read = scripted(reads);
-  const target = createProbedEndpointTarget({
+  const target = createProbedEndpointTarget({ written: {},
     toolCalling: 'auto', readReported: async () => ({}), targetName: 'remote',
     endpoint: 'tcp:http://203.0.113.9:8080',
     model: 'm',
@@ -64,7 +64,7 @@ const chatTarget = (reads: Read[]) => {
 const ollamaTarget = (reads: Read[]) => {
   const probes = probeCounter();
   const record = { identity: 'recorded', identityFields: [], report: OLLAMA_REPORT };
-  const target = createProbedOllamaTarget({
+  const target = createProbedOllamaTarget({ written: {},
     toolCalling: 'auto', readReported: async () => ({}), targetName: 'local',
     endpoint: 'tcp:http://203.0.113.9:11434',
     model: 'devstral-small-2',

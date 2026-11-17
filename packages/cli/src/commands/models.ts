@@ -1,5 +1,5 @@
 import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
-import { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
+import { ConfigError, ModelsEditRefused, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
@@ -157,8 +157,9 @@ const printDocument = (shell: ModelsShell, document: ModelsDocument, json: boole
 
 export const listModels = async (shell: ModelsShell, options: { json: boolean }): Promise<number> => {
   const listing = await shell.listing();
-  const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
+  const { resolved, unloaded } = await loadedModelsOf(shell);
   announcePlainHttp(shell, resolved.plainHttp);
+  if (unloaded !== undefined) print(shell.stderr, [unloaded]);
   printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), new Set(), configuredWindowsOf(resolved)), options.json);
   return 0;
 };
@@ -182,8 +183,9 @@ export const notListedOf = async (shell: ModelsHost, resolved: ResolvedModels): 
 
 export const checkModels = async (shell: ModelsShell, options: { json: boolean }): Promise<number> => {
   const listing = await shell.listing();
-  const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
+  const { resolved, unloaded } = await loadedModelsOf(shell);
   announcePlainHttp(shell, resolved.plainHttp);
+  if (unloaded !== undefined) print(shell.stderr, [unloaded]);
   printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), await notListedOf(shell, resolved), configuredWindowsOf(resolved)), options.json);
   return 0;
 };
@@ -285,18 +287,28 @@ export class ShellRefusal extends Error {}
 
 type Json = Record<string, unknown>;
 
-export type ModelsEdit = { document: Json; resolved: ResolvedModels; displays: ReadonlyMap<string, string>; ports: ModelsEditPorts };
+export type ModelsEdit = { document: Json; resolved: ResolvedModels; unloaded?: string; displays: ReadonlyMap<string, string>; ports: ModelsEditPorts };
 
 export type AcceptedPlan = Exclude<ModelsEditPlan, { refused: unknown }>;
 
 export type ModelsProposal = { operations: ModelsOperations; confirm(plan: AcceptedPlan): string };
 
+const loadedModelsOf = async (shell: ModelsHost): Promise<{ resolved: ResolvedModels; unloaded?: string }> => {
+  try {
+    const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
+    return { resolved };
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    return { resolved: emptyUserModels().resolved, unloaded: error.message };
+  }
+};
+
 export const modelsEditOf = async (shell: ModelsHost): Promise<ModelsEdit> => {
   const text = await shell.files.readTextIfPresent(shell.settingsFile);
   const document: unknown = text === undefined ? {} : parseOutsideJson(text);
   if (!isRecord(document)) throw new ShellRefusal(`${shell.settingsFile}: settings must be a JSON object`);
-  const { resolved } = await loadUserModels({ home: shell.home, signal: shell.interrupt });
-  return { document, resolved, displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS } };
+  const { resolved, unloaded } = await loadedModelsOf(shell);
+  return { document, resolved, ...(unloaded === undefined ? {} : { unloaded }), displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS } };
 };
 
 export const displayIn = (edit: ModelsEdit, canon: string): string => edit.displays.get(canon) ?? canon;
@@ -853,6 +865,7 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
   try {
     const edit = await modelsEditOf(shell);
     announcePlainHttp(shell, edit.resolved.plainHttp);
+    if (edit.unloaded !== undefined) print(shell.stderr, [edit.unloaded]);
     if ('print' in spec) {
       print(shell.stdout, spec.print(edit));
       return 0;

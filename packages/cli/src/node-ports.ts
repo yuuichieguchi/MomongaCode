@@ -296,20 +296,23 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
       else arrival.resolve(queued.length > 0 ? 'bytes' : 'end');
     }
   };
-  stdin.on('data', (chunk: unknown) => {
+  const onData = (chunk: unknown): void => {
     if (!(chunk instanceof Uint8Array)) {
       failure = { error: new Error('standard input gave text where the Agent Client Protocol reads bytes') };
     } else queued.push(chunk);
     settle();
-  });
-  stdin.on('end', () => {
+  };
+  const onEnd = (): void => {
     ended = true;
     settle();
-  });
-  stdin.on('error', (error) => {
+  };
+  const onError = (error: unknown): void => {
     failure = { error };
     settle();
-  });
+  };
+  stdin.on('data', onData);
+  stdin.on('end', onEnd);
+  stdin.on('error', onError);
   return {
     take: () => {
       if (queued.length === 0) return undefined;
@@ -324,6 +327,12 @@ export const acpInputOf = (stdin: Readable): AcpInput => {
       }),
     pause: () => void stdin.pause(),
     resume: () => void stdin.resume(),
+    release: () => {
+      stdin.off('data', onData);
+      stdin.off('end', onEnd);
+      stdin.off('error', onError);
+      stdin.pause();
+    },
   };
 };
 

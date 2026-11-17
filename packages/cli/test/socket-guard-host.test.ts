@@ -1,13 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_MANIFEST_ASSET, LinuxSocketGuardDistributionError, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, sha256Hex } from '@momonga/foundation';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LINUX_SOCKET_GUARD_BINARY_ASSET, LINUX_SOCKET_GUARD_MANIFEST_ASSET, LinuxSocketGuardDistributionError, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, hasSocketGuard, sha256Hex } from '@momonga/foundation';
 import { testKernelLock, testLocks } from '@momonga/testkit';
 import { hostExtractedLinuxSocketGuard, nodeSourceKeeperFiles } from '../src/node-ports.ts';
 import { prebuiltLinuxSocketGuard } from '../src/keeper/source.ts';
 import type { PrebuiltPorts } from '../src/keeper/source.ts';
 import { socketGuardSourceOf } from '../src/socket-guard/host.ts';
 import { createTempDir } from '@momonga/testkit';
+
+vi.mock('@momonga/foundation', async (original) => {
+  const real = await original<typeof import('@momonga/foundation')>();
+  return { ...real, hasSocketGuard: vi.fn(real.hasSocketGuard) };
+});
 
 const dirs: string[] = [];
 
@@ -72,6 +77,15 @@ describe('where the runtime gets its socket guard', () => {
     throw new Error('no build is expected');
   };
   const extracted = hostExtractedLinuxSocketGuard;
+
+  it('asks the platform adapter which hosts have a guard', () => {
+    vi.mocked(hasSocketGuard).mockImplementationOnce((platform) => platform === 'freebsd');
+
+    const source = socketGuardSourceOf({ platform: 'freebsd', embedded: undefined, prebuilt: neverBuilt, extracted });
+
+    expect(hasSocketGuard).toHaveBeenCalledWith('freebsd');
+    expect(source).toBeDefined();
+  });
 
   it('is nowhere on a host that is not Linux, and nowhere in a single executable that carries none', () => {
     expect(socketGuardSourceOf({ platform: 'darwin', embedded: undefined, prebuilt: neverBuilt, extracted })).toBeUndefined();

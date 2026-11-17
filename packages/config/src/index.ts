@@ -66,7 +66,7 @@ export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProf
 export type { PlanProfiles, ResolveModelsOptions, ResolvedConnection, ResolvedModel, ResolvedModels } from './models.ts';
 export { firstOfferedEndpointForm, registeredIds, registeredServer, registeredServers, requireOfferedEndpointForm, serverRegistryOf } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';
-export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, readUserStopValuesOrDefault, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
+export { ConfigError, createStopValuesReader, createUserSettingsCache, emptyUserModels, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, readUserStopValuesOrDefault, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
 export type { AppliedRecordPorts, LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot, UserStopValuesOptions } from './user-settings.ts';
 export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, PendingHookGroup, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers, projectMcpServersFile, serverKeyOfLabel } from './mcp-servers.ts';

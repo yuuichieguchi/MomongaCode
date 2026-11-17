@@ -7,12 +7,15 @@ import {
   WindowsKeeperDistributionError,
   checkedLinuxSocketGuard,
   checkedWindowsKeeper,
+  claimPathOf,
   ensureBundledLinuxSocketGuard,
   ensureBundledWindowsKeeper,
+  lockFormOf,
   nodeFileSystem,
   parseLinuxSocketGuardManifest,
   parseWindowsKeeperManifest,
   sha256Hex,
+  sweepLeftovers,
 } from '@momonga/foundation';
 import type { BundledExecutableManifest, KernelLockMechanism, Random } from '@momonga/foundation';
 
@@ -107,14 +110,18 @@ const buildChecked = async (helper: SourceBuiltHelper, ports: SourceKeeperPorts,
 };
 
 const builtHelper = async (helper: SourceBuiltHelper, ports: SourceKeeperPorts): Promise<() => string> => {
-  const { script, executablesRoot, files, random } = ports;
+  const { script, executablesRoot, files, random, lock } = ports;
   if (!files.exists(script)) throw helper.failure(`the ${helper.executable} could not be built for this from-source run: ${script} is missing`);
   await nodeFileSystem.mkdirPrivate(executablesRoot);
+  await sweepLeftovers({ directories: [{ directory: executablesRoot, isLeftover: (entry) => entry.startsWith(`${helper.folder}-source-`) }], lock });
   const workDir = path.join(executablesRoot, `${helper.folder}-source-${random.hex(WORK_NAME_BYTES)}`);
+  const claim = await lock.claim(claimPathOf(lock, workDir, lockFormOf(lock, 'directory')));
+  if (claim.kind !== 'claimed') throw helper.failure(`the work directory of the ${helper.executable} build is claimed by another process`);
   try {
     return await buildChecked(helper, ports, workDir);
   } finally {
     await nodeFileSystem.rm(workDir, { recursive: true });
+    claim.lock.dispose();
   }
 };
 

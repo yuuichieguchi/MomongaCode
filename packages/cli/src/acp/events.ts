@@ -1,6 +1,6 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
-import { isRecord } from '@momonga/foundation';
-import { approvalShownLines, heldEndOf, isOpaqueEvent, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import { isRecord, jsonValueOrText } from '@momonga/foundation';
+import { approvalShownLines, callInputTracker, heldEndOf, isOpaqueEvent, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import type { ElicitationRequestView, PublicRunEvent, PublicStreamEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, describeVerification, hookLevel, verificationLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
@@ -36,11 +36,12 @@ export type MapperState = {
   readonly held: Map<string, { approvalId: string; reason: string }>;
   readonly opaqueTypes: Set<string>;
   readonly answers: Map<string, { readonly runId: string; readonly sessionUpdate: 'agent_message_chunk' | 'agent_thought_chunk'; text: string }>;
+  readonly inputs: ReturnType<typeof callInputTracker>;
   contextTokens: number | undefined;
   lastFailure: Extract<PublicRunEvent, { type: 'attempt.failed' }> | undefined;
 };
 
-export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), held: new Map(), opaqueTypes: new Set(), answers: new Map(), contextTokens: undefined, lastFailure: undefined });
+export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), held: new Map(), opaqueTypes: new Set(), answers: new Map(), inputs: callInputTracker(jsonValueOrText), contextTokens: undefined, lastFailure: undefined });
 
 export class UnsupportedToolContent extends Error {
   constructor(detail: string) {
@@ -130,6 +131,7 @@ export const mapChildEvent = (event: PublicStreamEvent, agent: string, state: Ma
 
 export const mapRunEvent = (event: PublicStreamEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
   if (isOpaqueEvent(event)) return opaqueNotice(event, state, features);
+  state.inputs.observe(event);
   return mapKnownEvent(event, phase, state, features);
 };
 
@@ -173,7 +175,7 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
         name: event.name,
         kind: event.kind,
         status: 'pending',
-        rawInput: event.rawInput,
+        rawInput: state.inputs.inputOf(event),
         ...(locations === undefined ? {} : { locations }),
       };
       state.calls.set(toolCallId, call);

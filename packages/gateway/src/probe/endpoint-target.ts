@@ -12,12 +12,12 @@ import { ProbeTimeoutError, createProbeClient, fixedStepBound } from './client.t
 import type { ProbeHostPorts } from './client.ts';
 import { PERSON_TRAFFIC } from './request-gate.ts';
 import type { MeasuringAsk } from './auto-probe.ts';
-import { declaredLayerOf, measuringAskOf, reportedLayerOf, sourcedCapabilities, unknownFieldsOf } from './sources.ts';
+import { measuringAskOf, reportedLayerOf, sourcedCapabilities, unknownFieldsOf, writtenLayerFor } from './sources.ts';
 import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { ProbeOutputPolicy } from './decide.ts';
-import type { DeclaredCapabilities } from './decide.ts';
+import type { DeclaredCapabilities, WrittenCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
 import { recordForIdentity } from './record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
@@ -104,6 +104,7 @@ export type ProbedEndpointTargetOptions = {
   endpoint: string;
   model: string;
   declared: DeclaredCapabilities;
+  written: WrittenCapabilities;
   toolCalling: ToolCallingDeclaration;
   record: EndpointRecord | null;
   readRecord: () => Promise<EndpointRecord | null>;
@@ -144,7 +145,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
 
   const fromSources = async (): Promise<Capabilities> => {
     const reported = await options.readReported();
-    const served = sourcedCapabilities(declared, options.toolCalling, reported);
+    const served = sourcedCapabilities(declared, options.written, options.toolCalling, reported);
     if (served !== undefined) return served;
     throw targetProbingError(await options.startProbe(measuringAskOf(targetName, unknownFieldsOf({ toolCalling: options.toolCalling }, reported))));
   };
@@ -197,7 +198,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
       );
       return mergeCapabilities({
         defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, record.report) },
-        declared: declaredLayerOf(declared, options.toolCalling),
+        declared: writtenLayerFor(options.written, options.toolCalling),
         reported: reportedLayerOf(await options.readReported()),
         probed: {
           toolCalling: refusal ?? toolCalling,

@@ -40,11 +40,11 @@ describe('the end of a run that a budget stopped', () => {
       code: RUN_STOPPED_CODE,
       data: { runId: 'run-9', status: 'STOPPED', stopReason: 'budget', code: BUDGET_EXHAUSTED_CODE, budget: { dimension, cause: 'limit', spent: 500_000_000, limit: 500_000_000 } },
     });
-    expect((failure as Error).message).toContain(`run run-9 stopped by the ${word}`);
+    expect((failure as Error).message).toContain(`run run-9 The run stopped at its ${word} limit`);
   });
 
   it('says in the failure why the money ran out and how much was used', () => {
-    expect((failureOf(stoppedBy('cost', 'unpriced')) as Error).message).toBe('run run-9 stopped by the money limit: a model call has no price, so its cost cannot be counted (0.5 USD of 0.5 USD used or reserved)');
+    expect((failureOf(stoppedBy('cost', 'unpriced')) as Error).message).toBe('run run-9 The run stopped at its money limit: a model call has no price, so its cost cannot be counted (0.5 USD of 0.5 USD used or reserved).');
   });
 });
 

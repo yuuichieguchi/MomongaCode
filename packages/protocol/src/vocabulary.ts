@@ -242,6 +242,15 @@ const billingChangeRemedy = (surface: Surface, from: string, to: string): string
 
 export const withBillingRemedy = (notice: string, surface: Surface, from: string, to: string): string => `${notice} Run ${billingChangeRemedy(surface, from, to)}.`;
 
+const SIGN_IN_AGAIN_COMMAND: Readonly<Record<Surface, string>> = {
+  cli: SIGN_IN_COMMAND,
+  tui: TUI_SIGN_IN_COMMAND,
+  acp: SIGN_IN_COMMAND,
+  gateway: SIGN_IN_COMMAND,
+};
+
+export const withSignInRemedy = (notice: string, surface: Surface): string => `${notice} Run ${SIGN_IN_AGAIN_COMMAND[surface]} to sign in again.`;
+
 const COUNT_WORDS: Readonly<Record<number, string>> = { 2: 'two', 3: 'three' };
 
 export const serverCountText = (count: number): string => COUNT_WORDS[count] ?? String(count);

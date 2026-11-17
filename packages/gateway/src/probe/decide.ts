@@ -1,7 +1,7 @@
 import { MAX_BUDGET_COUNT, imageCapability, maxOutputTokensFor } from '@momonga/protocol';
 
 export { maxOutputTokensFor };
-import type { Capabilities, CapabilitiesCore, DialectId, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import type { Capabilities, CapabilitiesCore, DialectId, ImageCapability, ImageTokenModel, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { jsonModeCapabilityOf } from './json-mode.ts';
 
@@ -112,6 +112,13 @@ export const withImageDefault = (declared: DeclaredCapabilities, record: Pick<Pr
   const { core, layer } = layerOf(declared);
   return { ...core, schemaDialect: resolveDialectId(core.schemaDialect, record), ...(layer.image ?? imageCapability(false, undefined)) };
 };
+
+export type WrittenCapabilities = Partial<DeclaredCore> & { imageInput?: boolean | undefined; imageTokens?: ImageTokenModel | undefined };
+
+export const writtenLayerOf = ({ imageInput, imageTokens, ...core }: WrittenCapabilities): CapabilityLayer => ({
+  ...core,
+  ...(imageInput === undefined ? {} : { image: imageCapability(imageInput, imageTokens) }),
+});
 
 export type CapabilityMerge = {
   defaults: CapabilitiesCore;

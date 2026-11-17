@@ -25,7 +25,7 @@ const byCode = (code: string, options: { status?: number; param?: string } = {})
 
 const byStatus = (status: number) => (headers: Record<string, string>) => withHeaders(planAdmissionReply(status, 'denied by policy'), headers);
 
-const CREDENTIAL_SENTENCE = 'The sign-in of this account has expired. Run momonga auth login to sign in again';
+const CREDENTIAL_SENTENCE = 'The sign-in of this account has expired';
 
 const ROWS: Row[] = [
   { name: '1 usage limit', reply: byCode('subscription_sharing_usage_limit_exceeded'), status: 429, type: 'too_many_requests', code: 'plan_usage_limit', param: null, sentence: 'This account has reached the usage its plan allows for now. Wait for the usage to reset, or manage the usage in the ChatGPT settings' },

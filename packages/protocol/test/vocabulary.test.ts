@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONCEPTS, MESSAGE_KEYS, NOT_RUN_REASONS, SURFACES, STOP_REASONS, VOCABULARY, WORDS, attachRunCommand, bannedVariantsIn, budgetSentence, messageOf, notRunWord, reopenSessionCommand, shellQuote, stopWord, withBillingRemedy } from '../src/index.ts';
+import { CONCEPTS, MESSAGE_KEYS, NOT_RUN_REASONS, SURFACES, STOP_REASONS, VOCABULARY, WORDS, attachRunCommand, bannedVariantsIn, budgetSentence, messageOf, notRunWord, reopenSessionCommand, shellQuote, stopWord, withBillingRemedy, withSignInRemedy } from '../src/index.ts';
 import type { BudgetExhausted, VocabularyRow } from '../src/index.ts';
 
 const rowOf = (concept: (typeof CONCEPTS)[number]): VocabularyRow => VOCABULARY[concept];
@@ -137,5 +137,11 @@ describe('the words of a stop, a not-run reason, the budget, the shell quoting a
     expect(notice).not.toContain('models billing allow');
     expect(withBillingRemedy(notice, 'tui', 'a', 'b')).toBe(`${notice} Run /models billing.`);
     expect(withBillingRemedy(notice, 'cli', 'a', 'b')).toBe(`${notice} Run ${WORDS.command} models billing allow a b.`);
+  });
+
+  it('stores the expired sign-in with no command, and the surface names its own sign-in command where the notice is shown', () => {
+    const notice = 'The sign-in of this account has expired';
+    expect(withSignInRemedy(notice, 'tui')).toBe(`${notice} Run /login to sign in again.`);
+    expect(withSignInRemedy(notice, 'cli')).toBe(`${notice} Run ${WORDS.command} auth login to sign in again.`);
   });
 });
