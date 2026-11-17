@@ -44,11 +44,11 @@ const namedBy = (sessions: readonly SessionView[], wanted: string): SessionView 
   return matching[0];
 };
 
-export const resolveSession = async (client: StoredSessions, cwd: string, wanted: string): Promise<SessionView> => {
+export const resolveSession = async (client: StoredSessions, cwd: string, wanted: string, platform: NodeJS.Platform): Promise<SessionView> => {
   const here = namedBy(await client.listSessions(cwd), wanted);
   if (here !== undefined) return here;
   const elsewhere = namedBy(await client.listSessions(), wanted);
-  if (elsewhere !== undefined) throw new SessionRefused(messageOf('sessionInOtherFolder', 'cli', { id: elsewhere.id, folder: elsewhere.cwd, platform: process.platform }));
+  if (elsewhere !== undefined) throw new SessionRefused(messageOf('sessionInOtherFolder', 'cli', { id: elsewhere.id, folder: elsewhere.cwd, platform }));
   throw new SessionRefused(messageOf(wanted.length < SESSION_PREFIX_MIN ? 'sessionIdTooShort' : 'sessionNotFound', 'cli', { id: wanted, minimum: SESSION_PREFIX_MIN }));
 };
 
@@ -58,4 +58,5 @@ export const continuedSession = async (client: StoredSessions, cwd: string): Pro
   return workedInLast.session;
 };
 
-export const reopenedSession = (client: StoredSessions, cwd: string, reopen: HeadlessReopen): Promise<SessionView> => (reopen.kind === 'id' ? resolveSession(client, cwd, reopen.id) : continuedSession(client, cwd));
+export const reopenedSession = (client: StoredSessions, cwd: string, platform: NodeJS.Platform, reopen: HeadlessReopen): Promise<SessionView> =>
+  reopen.kind === 'id' ? resolveSession(client, cwd, reopen.id, platform) : continuedSession(client, cwd);

@@ -27,7 +27,6 @@ const BURN_DOWN: readonly BurnDown[] = [
   { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', sites: 1, owner: 'HB10c' },
   { file: 'foundation/src/socket-path.ts', rows: 'B15', sites: 1, owner: 'config: endpointFormsOfPlatform reads process.platform by default and config/src/models.ts:122 calls it with no platform from its ports' },
   { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', sites: 6, owner: 'not classified by the HB10 table' },
-  { file: 'cli/src/run/resolve-session.ts', rows: 'not classified by the HB10 table', sites: 1, owner: 'cli-commands: the session-in-other-folder message takes the host platform from the cli ports, as the rest of the cli does' },
 ];
 
 const EXCLUDED_PACKAGES = new Set(['testkit']);
