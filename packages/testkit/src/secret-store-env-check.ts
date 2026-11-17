@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findProgramOnPathSync } from '@momonga/foundation/program-search';
 import { SECRET_PROGRAM_ENV, SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation/secret-store';
-import { nodeFileSystemSync } from '../../foundation/src/node-file-system.ts';
+import { nodeFileSystemSync } from '@momonga/foundation/node-file-system';
 
 export const TEST_SECRET_PROGRAMS_ENV = 'MOMONGA_TEST_SECRET_PROGRAMS';
 
