@@ -94,7 +94,7 @@ export type {
   ProcessLockInspection,
 } from './process-lock.ts';
 export { bsdFileLock, createFileLock, kernelLockNamed, nodeFileLockOps } from './platform/kernel-lock.ts';
-export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, claimNewEntrySync, claimPathOf, lockFormOf, sidecarNameSuffixesOf, sidecarOf } from './platform/lock-form.ts';
+export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf } from './platform/lock-form.ts';
 export type { LockForm } from './platform/lock-form.ts';
 export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordFields, handoverRecordOwner } from './handover-leftovers.ts';
 export type { HandoverRecordParties } from './handover-leftovers.ts';
@@ -418,7 +418,6 @@ export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
-export { BUNDLED_EXECUTABLE_STAGED_INFIX, BUNDLED_EXECUTABLE_STAGED_NAME_BYTES } from './platform/bundled-executable.ts';
 export { replaceExecutable } from './platform/replace-executable.ts';
 export type { BundledExecutableManifest } from './platform/bundled-executable.ts';
 export {

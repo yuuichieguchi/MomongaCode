@@ -3,7 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
-import { LOCK_DATABASE_SUFFIX, ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarNameSuffixesOf, systemTiming } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import { registerCleanup, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
@@ -295,8 +295,7 @@ describe('publishing over a running executable', () => {
     const { directory, target, staged } = await setup(context);
     await nodeUpdateFs(testKernelLock(), runningImageRename(target)).publish(staged, target);
     expect(fs.readFileSync(target, 'utf8')).toBe('new');
-    const { sidecar, companions } = sidecarNameSuffixesOf(testKernelLock());
-    const isSideFile = (name: string): boolean => [sidecar, ...companions].some((suffix) => name.endsWith(suffix));
+    const isSideFile = (name: string): boolean => name.includes(sidecarOf(testKernelLock(), ''));
     const asides = fs.readdirSync(directory).filter((name) => name !== 'momonga.exe' && !isSideFile(name));
     expect(asides).toHaveLength(1);
     expect(asides[0]?.startsWith(STAGING_PREFIX)).toBe(true);
