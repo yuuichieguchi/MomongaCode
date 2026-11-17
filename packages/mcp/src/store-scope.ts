@@ -94,5 +94,5 @@ export const storeUnderCallSignals = (store: CredentialStore): CredentialStore =
   write: (key, value, signal) => underItsSignal(signal, () => store.write(key, value, signal)),
   update: (key, change, signal) => underItsSignal(signal, () => store.update(key, change, signal)),
   remove: (key, signal) => underItsSignal(signal, () => store.remove(key, signal)),
-  withKey: (key, action, signal) => underItsSignal(signal, () => store.withKey(key, action, signal)),
+  withKey: (key, action, signal, holdsAfter) => underItsSignal(signal, () => store.withKey(key, action, signal, holdsAfter)),
 });

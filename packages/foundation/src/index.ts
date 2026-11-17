@@ -35,7 +35,7 @@ export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockPorts } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
-export type { CredentialEntry, CredentialStore, ListableCredentialStore } from './credential-store.ts';
+export type { CredentialEntry, CredentialStore, HoldsAfter, ListableCredentialStore } from './credential-store.ts';
 export {
   CREDENTIAL_KEY_CREATION_STEPS,
   CREDENTIAL_KEY_LOCK_NAME,

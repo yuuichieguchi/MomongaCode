@@ -25,8 +25,12 @@ ASSUME \A c \in {MaxResend, MaxDetFail, MaxUnreadable} : c \in Nat
 ASSUME \A c \in {RefreshWhenUnwritable, UnreadableAsSignIn} : c \in BOOLEAN
 ASSUME LegacyCause \in BOOLEAN
 ASSUME TransientSignsOut \in BOOLEAN
-ASSUME TwoGens \in {"off", "reread", "stale"} /\ MaxMove \in Nat
+ASSUME TwoGens \in {"off", "reread", "rereadNoHold", "stale"} /\ MaxMove \in Nat
 ASSUME TwoGens # "off" => SecondAcct = FALSE
+
+Reread == TwoGens \in {"reread", "rereadNoHold"}
+
+HoldWhileDirty == TwoGens = "reread"
 ASSUME MaxNoAdopt \in Nat
 ASSUME WeakForms \subseteq {"short", "noRtRotated", "noRtKept"}
 ASSUME NoAdoptRule \in {"transient", "reject", "unanswered", "adopt", "signIn"}
@@ -193,7 +197,7 @@ Start(r) ==
 
 NextRefreshPhase == IF Intent THEN "pend" ELSE "send"
 
-GrantPhase == IF TwoGens = "reread" THEN "reread" ELSE NextRefreshPhase
+GrantPhase == IF Reread THEN "reread" ELSE NextRefreshPhase
 
 ReqReRead(r) ==
     LET a == ReqAcct[r] IN
@@ -528,7 +532,7 @@ SoGrant(a) ==
         THEN /\ IF SignOutWaits THEN CanTake(a, "out") /\ Pop(a) ELSE UNCHANGED lockVars
              /\ outPh' = Set(outPh, a, "none")
              /\ UNCHANGED <<diskVars, memVars>>
-        ELSE LET reread == TwoGens = "reread" /\ ~mDirty[a]
+        ELSE LET reread == Reread /\ ~mDirty[a]
                  rt == IF reread THEN dRt[a] ELSE mRt[a]
              IN
              /\ IF SignOutWaits THEN CanTake(a, "out") /\ Take(a, "out") ELSE UNCHANGED lockVars
@@ -681,7 +685,15 @@ Crash ==
 
 -----------------------------------------------------------------------------
 
-OgLocks == TwoGens = "reread"
+OgLocks == Reread
+
+HeldWhileDirty == HoldWhileDirty /\ mDirty["a1"]
+
+OgGiveUp ==
+    /\ gPh = "want" /\ OgLocks /\ HeldWhileDirty
+    /\ gPh' = "done"
+    /\ waitq' = [waitq EXCEPT !["a1"] = SelectSeq(@, LAMBDA x : x # "og")]
+    /\ UNCHANGED <<gGen, gRt, gState, gTok, gPkt, staleOut, pointerVars, holder>>
 
 OgStart ==
     /\ gPh = "idle"
@@ -693,6 +705,7 @@ OgGrant ==
     /\ gPh = "want"
     /\ IF OgLocks
         THEN /\ CanTake("a1", "og")
+             /\ ~HeldWhileDirty
              /\ gGen' = dGen["a1"] /\ gRt' = dRt["a1"] /\ gState' = dState["a1"]
              /\ IF dState["a1"] = "active" /\ dRt["a1"] # 0
                  THEN Take("a1", "og") /\ gPh' = "send"
@@ -734,7 +747,7 @@ OgRecv ==
         /\ UNCHANGED <<dSub, dClient, dFam, gTok, gPkt, pointerVars, pktN>>
 
 MoveActive(x, k) ==
-    LET base == IF TwoGens = "reread" THEN dAct ELSE IF x = "g1" THEN mAct ELSE gAct
+    LET base == IF Reread THEN dAct ELSE IF x = "g1" THEN mAct ELSE gAct
         moved == [base EXCEPT ![k] = 1 - base[k]]
     IN
     /\ TwoGens # "off" /\ moves < MaxMove
@@ -748,6 +761,7 @@ MoveActive(x, k) ==
 OldGen ==
     /\ \/ OgStart /\ UNCHANGED <<diskVars, netVars>>
        \/ OgGrant /\ UNCHANGED <<diskVars, netVars>>
+       \/ OgGiveUp /\ UNCHANGED <<diskVars, netVars>>
        \/ OgSend /\ UNCHANGED diskVars
        \/ OgRecv
        \/ \E x \in {"g1", "og"}, k \in PointerKeys : MoveActive(x, k) /\ UNCHANGED <<diskVars, netVars, lockVars>>

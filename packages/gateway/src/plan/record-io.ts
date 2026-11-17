@@ -1,5 +1,5 @@
 import { LockWaitTimeoutError, isTransientErrno, limitEndOf } from '@momonga/foundation';
-import type { CredentialEntry, CredentialStore } from '@momonga/foundation';
+import type { CredentialEntry, CredentialStore, HoldsAfter } from '@momonga/foundation';
 import { PLAN_STORE_UNREADABLE_CODE, PLAN_STORE_UNWRITABLE_CODE } from '@momonga/protocol';
 import { describeError } from '../core/describe-error.ts';
 import { PlanCredentialError } from './auth-source.ts';
@@ -36,6 +36,7 @@ export const withRecord = async <T>(
   what: string,
   action: (entry: CredentialEntry, refusal: RecordLockRefusal) => Promise<T>,
   signal: AbortSignal,
+  holdsAfter: HoldsAfter,
 ): Promise<T> => {
   let started = false;
   try {
@@ -46,6 +47,7 @@ export const withRecord = async <T>(
         return action(entry, undefined);
       },
       signal,
+      holdsAfter,
     );
   } catch (error) {
     if (started || endedByOperation(error, signal)) throw error;

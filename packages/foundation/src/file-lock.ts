@@ -32,7 +32,7 @@ const NEVER_ABORTED = new AbortController().signal;
 
 const waitBoundOf = (options: FileLockOptions): number => options.timeoutMs ?? (options.signal === undefined ? DEFAULT_LOCK_TIMEOUT_MS : Number.POSITIVE_INFINITY);
 
-const acquireWithinTimeout = async (lockPath: string, options: FileLockOptions): Promise<HeldKernelLock> => {
+export const acquireFileLock = async (lockPath: string, options: FileLockOptions): Promise<HeldKernelLock> => {
   const timeoutMs = waitBoundOf(options);
   const signal = options.signal ?? NEVER_ABORTED;
   const outcome = await claimWithin({
@@ -49,7 +49,7 @@ const acquireWithinTimeout = async (lockPath: string, options: FileLockOptions):
 };
 
 export const withFileLock = async <T>(lockPath: string, task: () => Promise<T>, options: FileLockOptions): Promise<T> => {
-  const lock = await acquireWithinTimeout(lockPath, options);
+  const lock = await acquireFileLock(lockPath, options);
   try {
     return await task();
   } finally {

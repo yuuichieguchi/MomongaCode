@@ -541,7 +541,7 @@ export const failingWrites = (inner: ListableCredentialStore, fails: (value: str
     const error = fails(value);
     return error === undefined ? inner.write(key, value, signal) : Promise.reject(error);
   },
-  withKey: (key, action, signal) =>
+  withKey: (key, action, signal, holdsAfter) =>
     inner.withKey(
       key,
       (entry) =>
@@ -554,6 +554,7 @@ export const failingWrites = (inner: ListableCredentialStore, fails: (value: str
           },
         }),
       signal,
+      holdsAfter,
     ),
   update: (key, change, signal) =>
     inner.update(
@@ -574,9 +575,9 @@ export const refusingLocks = (inner: ListableCredentialStore, refuses: () => Err
   remove: (key, signal) => inner.remove(key, signal),
   write: (key, value, signal) => inner.write(key, value, signal),
   update: (key, change, signal) => inner.update(key, change, signal),
-  withKey: (key, action, signal) => {
+  withKey: (key, action, signal, holdsAfter) => {
     const error = refuses();
-    return error === undefined ? inner.withKey(key, action, signal) : Promise.reject(error);
+    return error === undefined ? inner.withKey(key, action, signal, holdsAfter) : Promise.reject(error);
   },
   listKeys: (signal) => inner.listKeys(signal),
 });
@@ -599,7 +600,7 @@ export const holdingOneWrite = (inner: ListableCredentialStore, matches: (value:
     remove: (key, signal) => inner.remove(key, signal),
     write: (key, value, signal) => inner.write(key, value, signal),
     update: (key, change, signal) => inner.update(key, change, signal),
-    withKey: (key, action, signal) => {
+    withKey: (key, action, signal, holdsAfter) => {
       requests += 1;
       return inner.withKey(
         key,
@@ -615,6 +616,7 @@ export const holdingOneWrite = (inner: ListableCredentialStore, matches: (value:
             },
           }),
         signal,
+        holdsAfter,
       );
     },
     listKeys: (signal) => inner.listKeys(signal),
@@ -664,7 +666,7 @@ export const watchedStore = (inner: ListableCredentialStore): WatchedStore => {
       remove: (key, signal) => inner.remove(key, signal),
       write: (key, value, signal) => inner.write(key, value, signal),
       update: (key, change, signal) => inner.update(key, change, signal),
-      withKey: (key, action, signal) => {
+      withKey: (key, action, signal, holdsAfter) => {
         watched.calls.push({ operation: 'withKey', key, signal });
         if (watched.hang.lock) return hanging(leftWith(signal));
         return inner.withKey(
@@ -682,6 +684,7 @@ export const watchedStore = (inner: ListableCredentialStore): WatchedStore => {
             return action(guarded);
           },
           signal,
+          holdsAfter,
         );
       },
       listKeys: (signal) => {

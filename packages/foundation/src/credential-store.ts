@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import { nodeFileSystem } from './node-file-system.ts';
-import { createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+import { acquireFileLock, createKeyedSerializer, systemFileLockPorts } from './file-lock.ts';
 import type { FileLockPorts } from './file-lock.ts';
-import type { KernelLockMechanism } from './platform/kernel-lock.ts';
+import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 
 export interface CredentialEntry {
   read(): Promise<string | undefined>;
@@ -17,8 +17,10 @@ export interface CredentialStore {
   write(key: string, value: string, signal: AbortSignal): Promise<void>;
   update(key: string, change: (current: string | undefined) => string, signal: AbortSignal): Promise<void>;
   remove(key: string, signal: AbortSignal): Promise<void>;
-  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal: AbortSignal): Promise<T>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal: AbortSignal, holdsAfter?: HoldsAfter): Promise<T>;
 }
+
+export type HoldsAfter = () => boolean;
 
 export type CredentialKeyListing = { keys: { key: string; file: string }[]; problems: { file: string; cause: string }[] };
 
@@ -30,7 +32,7 @@ export const AUTH_DOCUMENT_MAX_BYTES = 256 * 1024;
 
 export type ScopedOperations = {
   read(key: string, signal: AbortSignal): Promise<string | undefined>;
-  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal: AbortSignal): Promise<T>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal: AbortSignal, holdsAfter?: HoldsAfter): Promise<T>;
 };
 
 export const storeThroughScope = ({ read, withKey }: ScopedOperations): CredentialStore => ({
@@ -84,14 +86,32 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
     await writeFileAtomically(nodeFileSystem, ports.random, credentialFileFor(directory, key), value, { mode: FILE_MODE, lock: options.lock });
   };
 
-  const locked = <T>(key: string, action: () => Promise<T>, signal: AbortSignal): Promise<T> =>
+  const held = new Map<string, HeldKernelLock>();
+
+  const crossProcessLock = async (key: string, signal: AbortSignal): Promise<HeldKernelLock> => {
+    const kept = held.get(key);
+    if (kept !== undefined) return kept;
+    const lockDirectory = `${directory}.locks`;
+    await nodeFileSystem.mkdirPrivate(lockDirectory);
+    const lockPath = path.join(lockDirectory, `${path.basename(credentialFileFor(directory, key))}.lock`);
+    return acquireFileLock(lockPath, { ports, mechanism: options.lock, signal, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
+  };
+
+  const locked = <T>(key: string, action: () => Promise<T>, signal: AbortSignal, holdsAfter: HoldsAfter | undefined): Promise<T> =>
     serialized(
       key,
       async () => {
-        const lockDirectory = `${directory}.locks`;
-        await nodeFileSystem.mkdirPrivate(lockDirectory);
-        const lockPath = path.join(lockDirectory, `${path.basename(credentialFileFor(directory, key))}.lock`);
-        return withFileLock(lockPath, action, { ports, mechanism: options.lock, signal, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
+        const lock = await crossProcessLock(key, signal);
+        try {
+          return await action();
+        } finally {
+          if (holdsAfter?.() === true) {
+            held.set(key, lock);
+          } else {
+            held.delete(key);
+            lock.release();
+          }
+        }
       },
       signal,
     );
@@ -104,6 +124,6 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
 
   return storeThroughScope({
     read: (key) => readOwnerOnly(credentialFileFor(directory, key)),
-    withKey: (key, action, signal) => locked(key, () => action(entryOf(key)), signal),
+    withKey: (key, action, signal, holdsAfter) => locked(key, () => action(entryOf(key)), signal, holdsAfter),
   });
 };
