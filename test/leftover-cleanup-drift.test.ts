@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ATOMIC_WRITE_STEP_ACTIONS, GENERATION_REAPER_STEPS, GENERATION_REAPER_STEP_ACTIONS, LEFTOVER_LOCK_FORMS, atomicWriteSteps, lockFormOf } from '@momonga/foundation';
+import { ATOMIC_WRITE_STEP_ACTIONS, GENERATION_REAPER_STEPS, GENERATION_REAPER_STEP_ACTIONS, LEFTOVER_LOCK_FORMS, atomicWriteSteps, kernelLockNamed, lockFormOf } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
-import { expectedKernelLockOn } from '@momonga/testkit';
 
 const root = path.resolve(import.meta.dirname, '..');
 const specDirectory = path.join(root, 'specs', 'tla');
@@ -28,13 +28,11 @@ const leftoverConfigs = (): string[] =>
     .entries.map((entry) => entry.config)
     .filter((config) => config === 'LeftoverCleanup' || config.startsWith('LeftoverCleanup.'));
 
-const PLATFORM_FORMS: ReadonlyArray<{ platform: NodeJS.Platform; kind: 'file' | 'directory'; config: string }> = [
-  { platform: 'darwin', kind: 'file', config: 'LeftoverCleanup' },
-  { platform: 'darwin', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
-  { platform: 'linux', kind: 'file', config: 'LeftoverCleanup.sidecar' },
-  { platform: 'linux', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
-  { platform: 'win32', kind: 'file', config: 'LeftoverCleanup.sidecar' },
-  { platform: 'win32', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
+const MECHANISM_FORMS: ReadonlyArray<{ mechanism: KernelLockMechanism['name']; kind: 'file' | 'directory'; config: string }> = [
+  { mechanism: 'file-lock', kind: 'file', config: 'LeftoverCleanup' },
+  { mechanism: 'file-lock', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
+  { mechanism: 'sqlite-lock', kind: 'file', config: 'LeftoverCleanup.sidecar' },
+  { mechanism: 'sqlite-lock', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
 ];
 
 const WRITER_ACTION_ORDER = ['CreateLocked', 'Publish', 'Dispose'];
@@ -65,9 +63,9 @@ describe('T7: LeftoverCleanup.tla and the code name the same lock forms', () => 
     expect([...LEFTOVER_LOCK_FORMS].sort()).toEqual(assumedSet('LockForm'));
   });
 
-  for (const { platform, kind, config } of PLATFORM_FORMS) {
-    it(`${platform}, a ${kind} entry, uses the lock form that ${config}.cfg checks`, () => {
-      expect(lockFormOf(expectedKernelLockOn(platform), kind)).toBe(configValue(config, 'LockForm'));
+  for (const { mechanism, kind, config } of MECHANISM_FORMS) {
+    it(`${mechanism}, a ${kind} entry, uses the lock form that ${config}.cfg checks`, () => {
+      expect(lockFormOf(kernelLockNamed(mechanism), kind)).toBe(configValue(config, 'LockForm'));
     });
   }
 
@@ -85,7 +83,7 @@ describe('T7: LeftoverCleanup.tla and the code name the same lock forms', () => 
   it('the good configurations are the decided variant in each lock form', () => {
     expect(configValue('LeftoverCleanup', 'Variant')).toBe('decided');
     expect(configValue('LeftoverCleanup.sidecar', 'Variant')).toBe('decided');
-    expect(new Set(PLATFORM_FORMS.map(({ config }) => configValue(config, 'LockForm')))).toEqual(new Set(LEFTOVER_LOCK_FORMS));
+    expect(new Set(MECHANISM_FORMS.map(({ config }) => configValue(config, 'LockForm')))).toEqual(new Set(LEFTOVER_LOCK_FORMS));
   });
 });
 
