@@ -206,7 +206,7 @@ describe('startControlServer', () => {
     await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
     raw.write('POST /v1/shutdown HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n');
     raw.destroy();
-    await waitFor(() => server.shutdowns() > 0, { description: 'drain requested after the client vanished', maxTurns: 20_000 });
+    await waitFor(() => server.shutdowns() > 0, { description: 'drain requested after the client vanished' });
     await quiesce(server.realWork);
     expect(server.shutdowns()).toBe(1);
   });

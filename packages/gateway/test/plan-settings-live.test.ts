@@ -31,7 +31,7 @@ const API_HOST = 'api.example.test';
 const REMOTE_RESOURCE = `https://${API_HOST}/v1`;
 const FAR_EXPIRY_MS = 4_102_444_800_000;
 const PAST_EXPIRY_MS = 1;
-const CHANGE_WAIT = { maxTurns: 20_000 } as const;
+const CHANGE_WAIT = {} as const;
 
 let settingsWrites = 0;
 

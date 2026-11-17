@@ -210,6 +210,6 @@ describe('waitFor', () => {
   });
 
   it('rejects with the description when the predicate never holds', async () => {
-    await expect(waitFor(() => false, { maxTurns: 5, description: 'never' })).rejects.toThrow(/5 event-loop turns: never/);
+    await expect(waitFor(() => false, { boundMs: 5, description: 'never' })).rejects.toThrow(/not met within 5 ms: never/);
   });
 });

@@ -36,8 +36,8 @@ describe('one registry counts every request in flight (gateway-core-C26)', () =>
     await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'the first frames of the keyed response' });
     expect(gateway.activeRequests()).toBe(1);
     raw.socket.destroy();
-    await waitFor(() => timers.pending().some((timer) => timer.delayMs === DETACHED_MAX_MS), { description: 'the keyed response detached from its client', maxTurns: 20_000 });
-    await waitFor(() => gateway.activeRequests() === 1, { description: 'the request of the gone client ended', maxTurns: 20_000 });
+    await waitFor(() => timers.pending().some((timer) => timer.delayMs === DETACHED_MAX_MS), { description: 'the keyed response detached from its client' });
+    await waitFor(() => gateway.activeRequests() === 1, { description: 'the request of the gone client ended' });
 
     const counted = postJson(client, '/v1/momonga/count_tokens', { model: MODEL, input: userInput('hi') });
     await waitFor(() => counting.asked.count === 1, { description: 'the count-tokens request reached its adapter' });
@@ -48,7 +48,7 @@ describe('one registry counts every request in flight (gateway-core-C26)', () =>
     expect((await readJson(await counted)).status).toBe(200);
     await waitFor(() => gateway.activeRequests() === 1, { description: 'the count-tokens request ended' });
     primary.release('g');
-    await waitFor(() => gateway.activeRequests() === 0, { description: 'the detached response ended', maxTurns: 20_000 });
+    await waitFor(() => gateway.activeRequests() === 0, { description: 'the detached response ended' });
   });
 
   it('reports an idle gateway as holding nothing through its own health read', async () => {

@@ -110,9 +110,8 @@ export const settlementOf = (attempt: Promise<unknown>): Settlement => {
 
 export const rejectionsReported = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-const OBSERVATION_TURNS = 1000;
 
-export const until = (predicate: () => boolean, description: string): Promise<void> => waitFor(predicate, { maxTurns: OBSERVATION_TURNS, description });
+export const until = (predicate: () => boolean, description: string): Promise<void> => waitFor(predicate, { description });
 
 export type FakeLimit = { limit: OperationLimit; signal: AbortSignal; timers: FakeTimers; pass(): void };
 

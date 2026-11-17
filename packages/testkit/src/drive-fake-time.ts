@@ -1,12 +1,10 @@
 import type { FakeTimers, PendingTimer } from './fake-timers.ts';
-
-export const DEFAULT_DRIVE_MAX_STEPS = 1_000_000;
+import { HARNESS_WAIT_MS } from './wait-for.ts';
 
 export type DriveFakeTimeOptions = {
   done: () => boolean;
   horizonAt: number;
   description: string;
-  maxSteps?: number;
   deadlineMs?: number;
   settle?: () => Promise<void>;
   ready?: () => boolean;
@@ -20,8 +18,7 @@ const macrotask = (): Promise<void> => new Promise<void>((resolve) => setImmedia
 
 export const driveFakeTime = async (timers: FakeTimers, options: DriveFakeTimeOptions): Promise<void> => {
   const { done, horizonAt, description } = options;
-  const maxSteps = options.maxSteps ?? DEFAULT_DRIVE_MAX_STEPS;
-  const { deadlineMs } = options;
+  const deadlineMs = options.deadlineMs ?? HARNESS_WAIT_MS;
   const settle = options.settle ?? macrotask;
   const ready = options.ready ?? (() => true);
   const considered = options.considered ?? (() => true);
@@ -31,11 +28,10 @@ export const driveFakeTime = async (timers: FakeTimers, options: DriveFakeTimeOp
     const detail = options.detail === undefined ? '' : `; ${options.detail()}`;
     return new Error(`driveFakeTime: ${description} not met within ${horizonMs} fake ms: ${reason}; pending timers ${JSON.stringify(timers.pending())}${detail}`);
   };
-  for (let step = 0; ; step += 1) {
+  for (;;) {
     await settle();
     if (done()) return;
-    if (deadlineMs !== undefined && performance.now() - startedAt > deadlineMs) throw fail(`the real-time deadline of ${deadlineMs} ms passed`);
-    if (step + 1 >= maxSteps) throw fail(`${maxSteps} steps used`);
+    if (performance.now() - startedAt > deadlineMs) throw fail(`the real-time deadline of ${deadlineMs} ms passed`);
     if (!ready()) continue;
     const watched = timers.pending().filter(considered);
     const candidates = watched.filter((timer) => timer.dueAt <= horizonAt);

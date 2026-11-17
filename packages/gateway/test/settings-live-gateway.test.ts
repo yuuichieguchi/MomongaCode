@@ -169,7 +169,7 @@ describe('S1 gateway: breaker and gate are carried over by the identity of the t
     const first = await heldRequest(stack.client, a);
     replaceSettings(stack.home, { models: modelsOf({ a: gated(a, { capabilities: CHANGED_CAPABILITIES }) }) });
     const second = post(stack.client, ask()).catch((error: unknown) => ({ status: -1, text: String(error) }));
-    await waitFor(() => a.requests.length === 2, { maxTurns: 20_000, description: 'the request of the changed definition to reach the upstream while the old one is in flight' });
+    await waitFor(() => a.requests.length === 2, { description: 'the request of the changed definition to reach the upstream while the old one is in flight' });
     expect((await second).status).toBe(200);
     first.hold.release();
     await first.settled;
@@ -264,7 +264,7 @@ describe('S1 gateway: a changed network applies from the next connection (design
     await waitFor(() => before.connects().length === 1, { description: 'the first request to reach the first proxy' });
     replaceSettings(stack.home, { models, network: { httpsProxy: `http://127.0.0.1:${after.port}` } });
     void post(stack.client, ask('remote/model-a', { stream: false })).catch(() => undefined);
-    await waitFor(() => after.connects().length > 0 || before.connects().length > 1, { maxTurns: 20_000, description: 'the second request to reach a proxy' });
+    await waitFor(() => after.connects().length > 0 || before.connects().length > 1, { description: 'the second request to reach a proxy' });
     expect(after.connects()).toEqual(['CONNECT model.example.test:443 HTTP/1.1']);
     expect(before.connects()).toHaveLength(1);
     expect(before.openSockets()).toBe(1);
