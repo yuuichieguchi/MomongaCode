@@ -163,6 +163,7 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string,
         const task = phase === 'own' && !taskSeen;
         if (task) taskSeen = true;
         offer(event.text, 'stated', phase, event.seq, task);
+        for (const record of event.shell ?? []) if (record.include) executed(record.output);
         return;
       }
       case 'plan.updated':

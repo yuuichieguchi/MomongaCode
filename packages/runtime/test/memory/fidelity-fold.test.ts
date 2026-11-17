@@ -24,6 +24,11 @@ describe('the fidelity fold decides sources by event type', () => {
     expect(await attested([], 'executed', input)).toEqual([]);
   });
 
+  it('attests a token in the output of a user shell command for an executed claim, as a tool output is', async () => {
+    const shell = [{ command: 'cat log', exitCode: 0, output: `log: ${TOKEN} done`, include: true }];
+    expect(await attested([{ type: 'user.message', text: 'see the log', shell }], 'executed')).toEqual([TOKEN]);
+  });
+
   it('attests a token in the arguments of a call that started', async () => {
     expect(await attested(startedCall('c1', { command: TOKEN }), 'executed')).toEqual([TOKEN]);
   });

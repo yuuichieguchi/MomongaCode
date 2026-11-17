@@ -39,6 +39,9 @@ export const imageDataUrl = (image: ImageAttachment): string => `data:${image.me
 export const userShellText = (record: Pick<UserShellRecord, 'command' | 'exitCode' | 'output'>, sessionBoundary: string): string =>
   fenceUntrusted(USER_SHELL_TAG, { command: record.command, exit_code: record.exitCode === null ? '' : String(record.exitCode) }, record.output, sessionBoundary);
 
+export const isUserShellText = (text: string, sessionBoundary: string): boolean =>
+  text.startsWith(`<${USER_SHELL_TAG} `) && text.endsWith(fenceTailOf(USER_SHELL_TAG, sessionBoundary)) && text.includes(`boundary="${sessionBoundary}">\n`);
+
 export const attachedFileText = (part: AttachedFilePart, sessionBoundary: string): string => fenceUntrusted(ATTACHED_FILE_TAG, { path: part.path }, part.content, sessionBoundary);
 
 export const attachmentText = (part: MessageAttachment, sessionBoundary: string): string => {

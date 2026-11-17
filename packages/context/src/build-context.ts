@@ -5,12 +5,13 @@ import {
   findDanglingOutput,
   findUnpairedCalls,
   floorRatio,
+  isUserShellText,
   largestSummaryCapFor,
   summaryItemTokensFor,
   summaryPromptTokensFor,
   summaryTokenCapFor,
 } from '@momonga/protocol';
-import type { Capabilities, FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
+import type { Capabilities, ContentPart, FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, proactiveGainFor, summaryInputCeilingFor, pinnedFloorAt, withCalibration } from './budget.ts';
 import { anatomyOf, historyLayerOf } from './anatomy.ts';
 import type { TaggedItem } from './anatomy.ts';
@@ -533,6 +534,9 @@ const historyItemsOf = (sources: BuildContextInput['sources']) =>
     };
   });
 
+const holdsShellText = (item: InputItem, boundary: string): boolean =>
+  item.type === 'message' && typeof item.content !== 'string' && item.content.some((part) => part.type === 'input_text' && isUserShellText(part.text, boundary));
+
 type FrozenSlot = { item: InputItem; output?: { callId: string; text: string; full: boolean; original: FunctionCallOutputInputItem } };
 
 const harnessToolsOf = (input: BuildContextInput): ReadonlySet<string> => new Set(input.harnessOutputTools ?? []);
@@ -553,6 +557,10 @@ const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, 
   for (const entry of entries) {
     const original = entry.item;
     if (original.type !== 'function_call_output') {
+      if (holdsShellText(original, input.fence)) {
+        complete = false;
+        break;
+      }
       slots.push({ item: original });
       continue;
     }
@@ -657,14 +665,21 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     return { callNames: name === undefined ? {} : { [callId]: name }, withTools: input.tools !== 'none' };
   };
   const shellMessage = (text: string): InputItem => ({ type: 'message', role: 'user', content: [{ type: 'input_text', text }] });
-  const shellItems: InputItem[] = [];
-  for (const text of sources.taskShell ?? []) {
+  const fitShell = async (text: string): Promise<string> => {
     const count = (candidate: string): Promise<number> => meter.countItem(shellMessage(candidate), countContextFor(''));
-    const handle = blobs.handleFor(text);
-    const fitted = await fitToTokens({ text, cap: itemCap, handle, reader, count });
+    const fitted = await fitToTokens({ text, cap: itemCap, handle: blobs.handleFor(text), reader, count });
     if (fitted !== text) await blobs.put(text, { mediaType: BLOB_MEDIA_TYPE });
-    shellItems.push(shellMessage(fitted));
-  }
+    return fitted;
+  };
+  const shellItems: InputItem[] = [];
+  for (const text of sources.taskShell ?? []) shellItems.push(shellMessage(await fitShell(text)));
+  const cutShellItem = async (item: MessageInputItem): Promise<MessageInputItem> => {
+    const content: ContentPart[] = [];
+    for (const part of item.content as ContentPart[]) {
+      content.push(part.type === 'input_text' && isUserShellText(part.text, input.fence) ? { ...part, text: await fitShell(part.text) } : part);
+    }
+    return { ...item, content };
+  };
   const taskItems = [...shellItems, task];
   const reports = new Map<string, { eviction: ContextEviction; state: OutputState }>();
   const referenceReports: ContextEviction[] = [];
@@ -827,6 +842,8 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       } else if (tokens > itemCap) {
         await truncateSlot(slot, state);
       }
+    } else if (holdsShellText(entry.item, input.fence)) {
+      slot.item = await cutShellItem(entry.item as MessageInputItem);
     }
     slots.push(slot);
   }
