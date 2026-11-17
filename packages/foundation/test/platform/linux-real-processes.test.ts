@@ -81,7 +81,7 @@ describe.runIf(ON_LINUX)('the Linux inspector against real processes', () => {
       const holder = await startHolder(marker);
       const found: UninspectableProcess[] = [];
       expect(await inspector().holdersOf(marker, { signal: new AbortController().signal }, (process) => void found.push(process))).toEqual({ kind: 'value', value: [holder.pid] });
-      expect(found).toEqual([{ pid: agent.pid, command: 'ssh-agent', startedAt: expect.any(Number) }]);
+      expect(found).toEqual([{ pid: agent.pid, command: 'ssh-agent', startedAt: expect.any(BigInt) }]);
     });
   });
 
