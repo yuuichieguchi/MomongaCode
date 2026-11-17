@@ -160,6 +160,7 @@ export type Harness = {
 
 export type HarnessOptions = {
   adapters: Record<string, ProviderAdapter>;
+  onReaderBehind?: () => void;
   config?: ConfigOverrides;
   clock?: FakeClock;
   timers?: FakeTimers;
@@ -204,6 +205,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     pid: process.pid,
     version: TEST_VERSION,
     ...(options.onError === undefined ? {} : { onError: options.onError }),
+    ...(options.onReaderBehind === undefined ? {} : { onReaderBehind: options.onReaderBehind }),
     ...(options.billedCalls === undefined ? {} : { billedCalls: options.billedCalls }),
     ...(options.retentionPurge === undefined ? {} : { retentionPurge: options.retentionPurge }),
     ...(options.traceSpans === undefined ? {} : { traceSpans: options.traceSpans }),
