@@ -1,11 +1,10 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm } from '@momonga/testkit';
 import type { ProbeReport } from '@momonga/protocol';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
-import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 import { saveFakeFmRecord } from '../fm-record-support.ts';
 import { makeReport } from '../report-fixture.ts';
 
@@ -31,7 +30,7 @@ const setup = async (appleReport: ProbeReport, bananaReport: ProbeReport) => {
   });
   await saveFakeFmRecord(home, appleFm.binaryPath, appleReport);
   await saveFakeFmRecord(home, bananaFm.binaryPath, bananaReport);
-  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec } as GatewayProcessOptions);
+  const handle = await launchGateway({ ...FM_HOST, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
   return clientFor(handle.socketPath);
 };
 
