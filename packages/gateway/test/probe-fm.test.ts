@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { loadProbeRecord, managedRecordPath, probeManagedFm } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
-import { FAKE_OS_BUILD, FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { FAKE_OS_BUILD, FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 import { FAKE_FM_LISTED_MODEL, FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
 import { systemTiming } from '@momonga/foundation';
@@ -16,14 +16,13 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const setup = async () => {
   const dir = makeHome();
   const fm = await createFakeFm({ dir });
-  const paths = momongaPaths(dir, FM_HOST_PLATFORM, {});
+  const paths = momongaPaths(dir, FM_HOST.platform, {});
   const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'apple' });
   return { dir, binary: fm.binaryPath, paths, instance };
 };
 
 const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] = []) => ({
-  platform: FM_HOST_PLATFORM,
-  paths: context.paths,
+  ...FM_HOST, paths: context.paths,
   instance: context.instance,
   description: FM_SERVER,
   target: 'apple',
@@ -33,11 +32,9 @@ const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] 
   env: { PATH: '/usr/bin:/bin', HOME: context.dir },
   samples: 2,
   signal: AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS),
-  exec: fakeExec,
   hashes: createBinaryHashCache(),
   lock: testKernelLock(),
   inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
-  launch: TEST_UNPROTECTED_LAUNCH,
   isUsableBinary: async (binary: string) => fs.existsSync(binary),
   readStopGraceMs: () => 1_000,
   timers: systemTiming,

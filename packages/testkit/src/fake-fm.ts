@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { FakeChatCompletionsOptions } from './fake-chat-completions.ts';
+import { TEST_UNPROTECTED_LAUNCH } from './test-launch.ts';
+import type { ChildLaunch } from '@momonga/foundation';
 
 export const FAKE_OS_BUILD = '25A354';
-
-export const FM_HOST_PLATFORM: NodeJS.Platform = 'darwin';
 
 export interface FakeFmConfig {
   serve?: Partial<Omit<FakeChatCompletionsOptions, 'socketPath'>>;
@@ -75,4 +75,10 @@ export const fakeExec = (file: string, args: readonly string[]): Promise<FakeExe
       else reject(error);
     });
   });
+};
+
+export const FM_HOST: { readonly platform: NodeJS.Platform; readonly launch: ChildLaunch; readonly exec: typeof fakeExec } = {
+  platform: 'darwin',
+  launch: TEST_UNPROTECTED_LAUNCH,
+  exec: fakeExec,
 };

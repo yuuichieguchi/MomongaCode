@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, momongaPaths, setSocketBind } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
-import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
@@ -14,9 +14,9 @@ const DECLARED = { toolCalling: 'native', capabilities: { contextWindow: 4096, m
 const TARGET = 'fm';
 const FIRST_INCARNATION_SUFFIX = '-1';
 
-const instanceSockets = (home: string): string => path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).run, `g${FIRST_GENERATION}`, 'targets');
+const instanceSockets = (home: string): string => path.join(momongaPaths(home, FM_HOST.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
 
-const instanceMarkers = (home: string, target: string): string => path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', target);
+const instanceMarkers = (home: string, target: string): string => path.join(momongaPaths(home, FM_HOST.platform, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', target);
 
 const realBind = (socketPath: string): Promise<void> =>
   new Promise<void>((resolve, reject) => {
@@ -43,7 +43,7 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that coul
       path.dirname(candidate) === directory ? Promise.reject(Object.assign(new Error(`bind EACCES ${candidate}`), { code: 'EACCES' })) : realBind(candidate),
     );
 
-    const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const handle = await launchGateway({ ...FM_HOST, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
 
     const refused = await readJson(await postJson(client, '/v1/responses', { model: `${TARGET}/system`, input: userInput('hello') }));

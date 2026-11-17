@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, registerOwned, testLocks } from '@momonga/testkit';
+import { FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, registerOwned, testLocks } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, makeHome, modelsOf } from '../gateway-process-helpers.ts';
 
@@ -50,7 +50,7 @@ describe('the name of a managed model over the epochs of the settings (gateway-a
     replaceSettings(home, { models: modelsOf({ apple }) });
     const handle = await registerOwned(
       registerCleanup,
-      () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: FM_HOST_PLATFORM, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }),
+      () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  ...FM_HOST, locks: testLocks(), generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }),
       (started) => started.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 }),
     );
     const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `apple/${OWN_NAME}`, input: userInput('hello') }));
@@ -62,6 +62,6 @@ describe('the name of a managed model over the epochs of the settings (gateway-a
     expect(alone.status).toBe(412);
     expect(alone.body.error.message).toBe(CHANGED_ID_TEXT);
     expect(besideTheSecond.body.error.message).toBe(CHANGED_ID_TEXT);
-    expect(serves(dumpFile).map(socketOf)).toEqual([path.join(momongaPaths(home, FM_HOST_PLATFORM, {}).run, `g${FIRST_GENERATION}`, 'targets', 'apple-1.sock')]);
+    expect(serves(dumpFile).map(socketOf)).toEqual([path.join(momongaPaths(home, FM_HOST.platform, {}).run, `g${FIRST_GENERATION}`, 'targets', 'apple-1.sock')]);
   });
 });

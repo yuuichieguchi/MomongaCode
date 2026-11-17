@@ -6,6 +6,8 @@ import { startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 import { expectedKernelLockOn, testKernelLock } from '@momonga/testkit';
 
+const REFUSED_CODE_OF: Record<KernelLockMechanism['name'], string> = { 'file-lock': 'EACCES', 'sqlite-lock': 'ERR_SQLITE_ERROR' };
+
 const harnesses: Harness[] = [];
 const held: HeldKernelLock[] = [];
 
@@ -59,15 +61,16 @@ describe('S7: a host condition on one leftover never stops the gateway start', (
     harnesses.push(h);
     fs.mkdirSync(h.paths.sessions, { recursive: true });
     const stuck = path.join(h.paths.sessions, '.work.json.0a1b2c3d4e5f.tmp');
-    await makeLeftover(testKernelLock(), stuck);
+    const lock = testKernelLock();
+    await makeLeftover(lock, stuck);
     const warningsBefore = h.warnings.length;
     fs.chmodSync(h.paths.sessions, 0o500);
     try {
-      await expect(h.reopen()).resolves.toBeDefined();
+      await expect(h.reopen({ lock })).resolves.toBeDefined();
     } finally {
       fs.chmodSync(h.paths.sessions, 0o700);
     }
     expect(fs.existsSync(stuck)).toBe(true);
-    expect(h.warnings.slice(warningsBefore).filter((message) => message.includes(stuck))).toEqual([`leftover cleanup kept ${stuck}: EACCES`]);
+    expect(h.warnings.slice(warningsBefore).filter((message) => message.includes(stuck))).toEqual([`leftover cleanup kept ${stuck}: ${REFUSED_CODE_OF[lock.name]}`]);
   });
 });

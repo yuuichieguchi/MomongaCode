@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FM_HOST_PLATFORM, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FM_HOST, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
@@ -28,7 +28,7 @@ const runThroughFakeFm = async (settings: unknown, model: string) => {
   const home = makeHome();
   writeSettings(home, settings);
   await placeFakeFm(home, fm.binaryPath);
-  const handle = await launchGateway({ platform: FM_HOST_PLATFORM, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+  const handle = await launchGateway({ ...FM_HOST, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
   return readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model, input: userInput('hello fm') }));
 };
 

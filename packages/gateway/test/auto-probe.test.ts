@@ -9,7 +9,7 @@ import type { Probing } from '@momonga/protocol';
 import type { KnownProbeKey } from '@momonga/config';
 import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, FM_HOST_PLATFORM, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector, waitFor, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, FM_HOST, fakeExec, createFakeClock, createFakeFm, killGroupsForCleanup, testKernelLock, testProcessInspector, waitFor } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
@@ -86,12 +86,12 @@ const setup = async (options: SetupOptions = {}) => {
   const probes = (): DumpRecord[] => launched().filter((record) => path.basename(record.argv[record.argv.indexOf('--socket') + 1] ?? '').startsWith('_probe-'));
   const servings = (): DumpRecord[] => launched().filter((record) => !path.basename(record.argv[record.argv.indexOf('--socket') + 1] ?? '').startsWith('_probe-'));
   const handle = await launchGateway({
+    ...FM_HOST,
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,
     exec,
-    platform: FM_HOST_PLATFORM,
     logger: createJsonLogger({ service: 'gateway', clock: options.clock ?? { now: () => Date.now() }, stream: { write: (line: string) => logLines.push(line) > 0 } }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
@@ -198,16 +198,14 @@ describe('the automatic probe of an fm target with no probe record', () => {
       const gateway = await setup();
       expectProbing(await gateway.send(true));
       await probeStarted(gateway);
-      const paths = momongaPaths(gateway.home, FM_HOST_PLATFORM, {});
+      const paths = momongaPaths(gateway.home, FM_HOST.platform, {});
       const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'fm' });
 
       const outcome = await probeManagedFm({
         timers: systemTiming,
         inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
-        launch: TEST_UNPROTECTED_LAUNCH,
         lock: testKernelLock(),
-        platform: FM_HOST_PLATFORM,
-        paths,
+        ...FM_HOST, paths,
         instance,
         description: FM_SERVER,
         target: 'fm/system',

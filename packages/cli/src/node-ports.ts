@@ -367,6 +367,10 @@ export const nodePorts = (version: string, interrupt: AbortSignal, home: string,
     terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout, colourOff: () => Reflect.set(process.env, 'FORCE_COLOR', '0') } : undefined,
     files: nodeFilesLockedBy(lock),
     exec: createHostExec(minimalChildEnv(process.env)),
+    hostLaunch: async ({ home: launchHome, platform, env }, signal) => {
+      const { noneSandboxLaunchOf, systemProcessFiles } = await import('@momonga/gateway');
+      return noneSandboxLaunchOf({ home: launchHome, platform, env, paths: systemProcessFiles.paths(signal), isUsableBinary: systemProcessFiles.isUsableBinary });
+    },
     probe: nodeWorkspaceProbeOf(nodeWorkspaceSandbox(settingsWorkspaceSandbox(home, process.cwd(), interrupt, (text) => streams.stderr.write(`${text}\n`))), hostProcessGroupPort()),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram, files: nodeFileSystem }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) }),

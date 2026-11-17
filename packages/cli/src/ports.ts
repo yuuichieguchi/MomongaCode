@@ -1,5 +1,5 @@
 import type { WorkspaceFiles, WorkspaceProbe } from '@momonga/eval';
-import type { FileSystem, HostExec, OpenUrl, ProcessPort, SecretStore, Timing, EndpointScope, MomongaPaths } from '@momonga/foundation';
+import type { ChildLaunch, FileSystem, HostExec, OpenUrl, ProcessPort, SecretStore, Timing, EndpointScope, MomongaPaths } from '@momonga/foundation';
 import type { HandoverHost } from './handover/host.ts';
 
 export type CliClock = {
@@ -48,6 +48,8 @@ export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'stat' | '
   writeTextAtomically(file: string, text: string, mode: number): Promise<void>;
 };
 
+export type HostLaunch = (input: { home: string; platform: NodeJS.Platform; env: Readonly<Record<string, string | undefined>> }, signal: AbortSignal) => Promise<ChildLaunch>;
+
 export type CliPorts = {
   version: string;
   platform: NodeJS.Platform;
@@ -69,6 +71,7 @@ export type CliPorts = {
   terminal: Terminal | undefined;
   files: CliFiles;
   exec: HostExec;
+  hostLaunch: HostLaunch;
   probe(env: Readonly<Record<string, string>>): WorkspaceProbe;
   openUrl: OpenUrl;
   secretStore(): SecretStore;
