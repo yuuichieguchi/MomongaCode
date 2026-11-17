@@ -35,7 +35,7 @@ describe('the report text shows the budget of the run', () => {
       '  tokens  1200 of 1000000 (500 reserved)',
       '  money  0.0039 USD of 0.004 USD (0.00002 USD reserved)',
       '  deadline  2026-11-11T06:00:00.000Z',
-      'stopped by the money limit: what is left does not pay for another model request (0.0039 USD of 0.004 USD used or reserved)',
+      'The run stopped at its money limit: what is left does not pay for another model request (0.0039 USD of 0.004 USD used or reserved).',
     ]);
   });
 
@@ -53,9 +53,9 @@ describe('the report text shows the budget of the run', () => {
   });
 
   it.each([
-    [{ dimension: 'tokens', cause: 'limit', spent: 100, limit: 100 } as const, 'stopped by the token limit: the limit was reached (100 of 100 used or reserved)'],
-    [{ dimension: 'steps', cause: 'limit', spent: 5, limit: 5 } as const, 'stopped by the step limit: the limit was reached (5 of 5 used or reserved)'],
-    [{ dimension: 'cost', cause: 'unpriced', spent: 0, limit: 1_000_000_000 } as const, 'stopped by the money limit: a model call has no price, so its cost cannot be counted (0 USD of 1 USD used or reserved)'],
+    [{ dimension: 'tokens', cause: 'limit', spent: 100, limit: 100 } as const, 'The run stopped at its token limit (100 of 100 used or reserved).'],
+    [{ dimension: 'steps', cause: 'limit', spent: 5, limit: 5 } as const, 'The run stopped at its step limit (5 of 5 used or reserved).'],
+    [{ dimension: 'cost', cause: 'unpriced', spent: 0, limit: 1_000_000_000 } as const, 'The run stopped at its money limit: a model call has no price, so its cost cannot be counted (0 USD of 1 USD used or reserved).'],
   ])('names the limit and the cause of %j', (stoppedBy, line) => {
     expect(renderReport({ ...BASE, stoppedBy }).split('\n').at(-1)).toBe(line);
   });
