@@ -13,14 +13,18 @@ export type DriveFakeTimeOptions = {
   beforeAdvance?: (candidates: readonly PendingTimer[]) => void;
   quiet?: () => boolean;
   detail?: () => string;
+  idle?: () => Promise<void>;
 };
 
 const macrotask = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+
+const realPoll = (): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
 export const driveFakeTime = async (timers: FakeTimers, options: DriveFakeTimeOptions): Promise<void> => {
   const { done, horizonAt, description } = options;
   const deadlineMs = options.deadlineMs ?? HARNESS_WAIT_MS;
   const settle = options.settle ?? macrotask;
+  const idle = options.idle ?? realPoll;
   const ready = options.ready ?? (() => true);
   const considered = options.considered ?? (() => true);
   const horizonMs = horizonAt - timers.monotonicMs();
@@ -34,13 +38,14 @@ export const driveFakeTime = async (timers: FakeTimers, options: DriveFakeTimeOp
     if (done()) return;
     if (performance.now() - startedAt > deadlineMs) throw fail(`the real-time deadline of ${deadlineMs} ms passed`);
     if (!ready()) {
-      await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      await idle();
       continue;
     }
     const watched = timers.pending().filter(considered);
     const candidates = watched.filter((timer) => timer.dueAt <= horizonAt);
     if (candidates.length === 0) {
       if (watched.length > 0 && options.quiet?.() === true) throw fail('the next timer is due beyond the horizon');
+      await idle();
       continue;
     }
     options.beforeAdvance?.(candidates);

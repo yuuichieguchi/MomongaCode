@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers, driveFakeTime } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -133,5 +134,56 @@ describe('driveFakeTime', () => {
       }),
     ).rejects.toThrow(/the real-time deadline of 200 ms passed/);
     expect(performance.now() - startedAt).toBeLessThan(2000);
+  });
+  it('crosses an hour of fake timers at once, with no real wait', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    let ticks = 0;
+    armPeriodic(timers, 1000, () => {
+      ticks += 1;
+    });
+    let idleSteps = 0;
+
+    await driveFakeTime(timers, {
+      done: () => ticks === 3600,
+      horizonAt: 3_600_000,
+      description: 'an hour of ticks',
+      idle: () => {
+        idleSteps += 1;
+        return Promise.resolve();
+      },
+    });
+
+    expect(clock.now()).toBe(3_600_000);
+    expect(idleSteps).toBe(0);
+  });
+
+  it('waits one idle step for each step that cannot advance while its condition needs real I/O', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    timers.setTimeout(() => undefined, 600_000);
+    const file = new URL(import.meta.url);
+    let reads = 0;
+    const readInTurns = async (remaining: number): Promise<void> => {
+      if (remaining === 0) return;
+      await fs.promises.stat(file);
+      reads += 1;
+      await readInTurns(remaining - 1);
+    };
+    void readInTurns(5);
+    let idleSteps = 0;
+
+    await driveFakeTime(timers, {
+      done: () => reads === 5,
+      horizonAt: 1000,
+      description: 'the real reads',
+      idle: () => {
+        idleSteps += 1;
+        return Promise.resolve();
+      },
+    });
+
+    expect(timers.now()).toBe(0);
+    expect(idleSteps).toBeGreaterThanOrEqual(4);
   });
 });
