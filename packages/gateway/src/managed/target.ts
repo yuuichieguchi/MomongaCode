@@ -349,7 +349,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     roomFacts: async () => {
       const { report } = await readRecorded();
       return {
-        outputBounded: (options.declaredOutputBoundField ?? report?.outputBoundField) !== 'none',
+        outputBounded: (options.declaredOutputBoundField ?? report?.outputBoundField ?? 'none') !== 'none',
         contextWindow: declaredBounds?.contextWindow ?? report?.contextWindow.value,
         maxOutputTokens: declaredBounds?.maxOutputTokens,
       };
