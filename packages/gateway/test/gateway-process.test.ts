@@ -62,7 +62,7 @@ describe('startGatewayProcess', () => {
     await expect(launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(String(holder));
     expect(fs.existsSync(paths.db)).toBe(false);
     expect(fs.existsSync(paths.key)).toBe(false);
-    expect(fs.readFileSync(paths.lock, 'utf8').trim()).toBe(String(holder));
+    expect(await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: holder });
   });
 
   it('refuses a second live instance on the same home', async () => {
@@ -118,8 +118,7 @@ describe('startGatewayProcess', () => {
     const { home } = await ccHome();
     const paths = homePaths(home);
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
-    expect(fs.existsSync(paths.lock)).toBe(true);
-    expect(fs.readFileSync(paths.lock, 'utf8').trim()).toBe(String(process.pid));
+    expect(await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).toEqual({ state: 'held', pid: process.pid });
     await handle.close();
     expect((await inspectProcessLock(paths.lock, { mechanism: testKernelLock() })).state).toBe('free');
     expect(fs.existsSync(paths.socket)).toBe(false);
