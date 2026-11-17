@@ -13,9 +13,9 @@
       "mandate": {
         "scope": {
           "allow": [
-            "Read",
-            "Glob",
-            "Grep",
+            "Read(./**)",
+            "Glob(./**)",
+            "Grep(./**)",
             "Bash(npm test)"
           ]
         },
@@ -46,9 +46,9 @@
       "mandate": {
         "scope": {
           "allow": [
-            "Read",
-            "Glob",
-            "Grep",
+            "Read(./**)",
+            "Glob(./**)",
+            "Grep(./**)",
             "Bash(npm test)"
           ]
         },
@@ -92,9 +92,9 @@
       "mandate": {
         "scope": {
           "allow": [
-            "Read",
-            "Glob",
-            "Grep",
+            "Read(./**)",
+            "Glob(./**)",
+            "Grep(./**)",
             "Bash(npm test)"
           ]
         },
@@ -125,9 +125,9 @@
       "mandate": {
         "scope": {
           "allow": [
-            "Read",
-            "Glob",
-            "Grep",
+            "Read(./**)",
+            "Glob(./**)",
+            "Grep(./**)",
             "Bash(npm test)"
           ]
         },
@@ -160,9 +160,9 @@
       "mandate": {
         "scope": {
           "allow": [
-            "Read",
-            "Glob",
-            "Grep",
+            "Read(./**)",
+            "Glob(./**)",
+            "Grep(./**)",
             "Bash(npm test)"
           ]
         },
@@ -198,9 +198,9 @@
       "mandate": {
         "scope": {
           "allow": [
-            "Read",
-            "Glob",
-            "Grep",
+            "Read(./**)",
+            "Glob(./**)",
+            "Grep(./**)",
             "Bash(npm test)"
           ]
         },
