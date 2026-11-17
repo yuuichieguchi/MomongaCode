@@ -130,7 +130,7 @@ export type RunAppDeps = {
   beginDraining(): void;
   role(): GenerationRole;
   work: { runs(): readonly string[]; jobs(): readonly { id: string; command: string }[] };
-  health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind>; retention?: () => RetentionStatusView };
+  health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind>; retention: () => RetentionStatusView };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
   notifier: RunNotifier;
@@ -313,7 +313,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     jobs: deps.work.jobs().length,
     interrupts: interruptedWorkOf(deps.work.runs(), deps.work.jobs()),
     sandbox: await deps.health.sandbox(context.req.raw.signal),
-    ...(deps.health.retention === undefined ? {} : { retention: deps.health.retention() }),
+    retention: deps.health.retention(),
   });
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');

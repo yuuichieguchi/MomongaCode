@@ -12,14 +12,14 @@ import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 const retentionText = (retention: RetentionStatusView): string =>
-  retention.lastSweep === undefined
+  retention.lastSweep === null
     ? `  retention: ${retention.days} days, no sweep yet`
     : `  retention: ${retention.days} days, last sweep at ${retention.lastSweep.at}: ${retention.lastSweep.sessionsDeleted} sessions deleted, ${retention.lastSweep.runsPurged} runs purged, ${retention.lastSweep.blobsCollected} blobs collected`;
 
 export const daemonStatusText = (health: SupervisorHealth): string =>
   escapedLines([
     `momonga daemon running: pid ${health.pid}, version ${health.version}, phase ${health.phase}, started ${health.startedAt}`,
-    ...(health.retention === undefined ? [] : [retentionText(health.retention)]),
+    ...(health.retention === null ? [] : [retentionText(health.retention)]),
     ...health.children.map(
       (child) => `  ${child.role}: ${child.state}${child.pid === undefined ? '' : ` (pid ${child.pid})`}${child.heldReason === undefined ? '' : ` - ${child.heldReason}`}`,
     ),

@@ -27,6 +27,7 @@ const SAMPLE_HEALTH: SupervisorHealth = {
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'running',
   env: 'frozen at supervisor start',
+  retention: null,
   children: [
     { role: 'gateway', state: 'ready', pid: 11, startedAt: '2026-01-01T00:00:01.000Z', readyAt: '2026-01-01T00:00:02.000Z', restarts: 0, consecutiveFailures: 0 },
     { role: 'runtime', state: 'backoff', restarts: 1, consecutiveFailures: 1, nextAttemptAt: '2026-01-01T00:00:03.000Z' },
@@ -312,7 +313,7 @@ describe('control API through the supervisor', () => {
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as Record<string, unknown> & SupervisorHealth;
     expect(body).not.toHaveProperty('state');
-    expect(Object.keys(body).sort()).toEqual(['children', 'env', 'generation', 'logs', 'phase', 'pid', 'role', 'startedAt', 'status', 'version']);
+    expect(Object.keys(body).sort()).toEqual(['children', 'env', 'generation', 'logs', 'phase', 'pid', 'retention', 'role', 'startedAt', 'status', 'version']);
     expect(body).toMatchObject({ status: 'ok', version: '9.9.9-test', pid: process.pid, phase: 'running', env: 'frozen at supervisor start', logs: { droppedLines: 0 }, generation: 1 });
     expect(body.startedAt).toMatch(ISO);
     expect(body.children.map((child) => child.role)).toEqual(['gateway', 'runtime']);

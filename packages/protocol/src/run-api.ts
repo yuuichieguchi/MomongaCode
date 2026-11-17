@@ -1436,7 +1436,7 @@ export type AdoptGuidelineRequest = { text: string; parent: number | null; repor
 export type CostReportView = GatewayCostReportView & { contextCharges: ContextChargesView };
 
 export type RunHealth = {
-  retention?: RetentionStatusView;
+  retention: RetentionStatusView;
   status: 'ok';
   version: string;
   apiVersion: 1;
@@ -1657,12 +1657,12 @@ export const RUN_API_SCHEMAS = {
           },
         },
         retention: closed(
-          { days: integer, lastSweep: closed({ at: string, sessionsDeleted: integer, runsPurged: integer, blobsCollected: integer }, ['at', 'sessionsDeleted', 'runsPurged', 'blobsCollected']) },
-          ['days'],
+          { days: integer, lastSweep: nullable(closed({ at: string, sessionsDeleted: integer, runsPurged: integer, blobsCollected: integer }, ['at', 'sessionsDeleted', 'runsPurged', 'blobsCollected'])) },
+          ['days', 'lastSweep'],
         ),
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
-      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'interrupts', 'sandbox'],
+      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'role', 'steps', 'jobs', 'interrupts', 'retention', 'sandbox'],
     ),
   ),
   SessionView: root(

@@ -130,7 +130,7 @@ describe('run api types', () => {
       steps: number;
       jobs: number;
       interrupts: ({ kind: 'run'; id: string } | { kind: 'job'; id: string; command: string })[];
-      retention?: { days: number; lastSweep?: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number } };
+      retention: { days: number; lastSweep: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number } | null };
       sandbox: 'seatbelt' | 'bubblewrap' | 'none';
     }>();
   });

@@ -23,7 +23,7 @@ export type FakeSupervisorOptions = {
   holdsKernelLock?: boolean;
   publishes?: boolean;
   startRecordVersion?: string;
-  reports?: Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role' | 'interrupts' | 'retention'>;
+  reports?: Partial<Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role' | 'interrupts' | 'retention'>>;
 };
 
 export type FakeWork = {
@@ -90,6 +90,7 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
         startedAt: '2026-01-01T00:00:00.000Z',
         phase,
         env: 'frozen at supervisor start',
+        retention: null,
         children,
         logs: { droppedLines: 0 },
         ...(options.stopBoundMs === undefined ? {} : { stopBoundMs: options.stopBoundMs }),

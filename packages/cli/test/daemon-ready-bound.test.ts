@@ -34,7 +34,7 @@ describe('the first-start bound of the supervisor', () => {
 });
 
 describe('the start progress the client sees', () => {
-  const health = (children: SupervisorHealth['children']): SupervisorHealth => ({ status: 'ok', version: '1', pid: 1, startedAt: 't', phase: 'running', env: 'frozen at supervisor start', children, logs: { droppedLines: 0 } });
+  const health = (children: SupervisorHealth['children']): SupervisorHealth => ({ status: 'ok', version: '1', pid: 1, startedAt: 't', phase: 'running', env: 'frozen at supervisor start', retention: null, children, logs: { droppedLines: 0 } });
   const runtime = (progressAt: string | undefined): SupervisorHealth['children'][number] => ({ role: 'runtime', state: 'starting', restarts: 0, consecutiveFailures: 0, ...(progressAt === undefined ? {} : { progressAt }) });
 
   it('changes when a child reports start-up progress and stays when nothing moves', () => {

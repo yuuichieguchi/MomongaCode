@@ -45,7 +45,7 @@ export type SupervisorChildHealth = {
 
 export type RetentionStatusView = {
   days: number;
-  lastSweep?: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number };
+  lastSweep: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number } | null;
 };
 
 const countField = (value: unknown): number | undefined => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined);
@@ -55,8 +55,8 @@ export const parseRetentionStatus = (value: unknown): RetentionStatusView | unde
   const { days, lastSweep } = value as Readonly<Record<string, unknown>>;
   const period = countField(days);
   if (period === undefined) return undefined;
-  if (lastSweep === undefined) return { days: period };
-  if (typeof lastSweep !== 'object' || lastSweep === null) return undefined;
+  if (lastSweep === null) return { days: period, lastSweep: null };
+  if (typeof lastSweep !== 'object') return undefined;
   const sweep = lastSweep as Readonly<Record<string, unknown>>;
   const at = sweep['at'];
   const sessionsDeleted = countField(sweep['sessionsDeleted']);
@@ -82,7 +82,7 @@ export type SupervisorHealth = {
   jobs?: number;
   calls?: number;
   interrupts?: InterruptedWorkItem[];
-  retention?: RetentionStatusView;
+  retention: RetentionStatusView | null;
 };
 
 export type SupervisorShutdownResponse = { phase: 'draining' };

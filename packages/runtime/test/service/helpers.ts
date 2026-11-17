@@ -586,7 +586,7 @@ export const serviceOptions = (
   pid: SERVICE_PID,
   startedAt: STARTED_AT,
   sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
-  ...(overrides.retention === undefined ? {} : { retention: overrides.retention }),
+  retention: overrides.retention ?? (() => ({ days: 30, lastSweep: null })),
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelListing: overrides.modelListing ?? base.ports.modelListing,
   modelCapabilities: async (model: string) => {

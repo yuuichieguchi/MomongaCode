@@ -154,6 +154,7 @@ const abandonedStart = (options: SupervisorOptions, own: { sockets: { supervisor
       startedAt,
       phase: 'draining',
       env: 'frozen at supervisor start',
+      retention: null,
       children: [],
       logs: { droppedLines: options.droppedLogLines?.() ?? 0 },
       generation: options.generation,
@@ -502,6 +503,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       generation: own.generation,
       role,
       ...counts,
+      retention: counts.retention ?? null,
     });
 
     let recordFailedKey: string | undefined;

@@ -11,9 +11,9 @@ describe('the health of the runtime shows the retention status', () => {
     expect((await env.http('GET', '/v1/health')).json.retention).toEqual(STATUS);
   });
 
-  it('shows no retention status when the service has none to give', async () => {
+  it('shows the period and no sweep yet when no sweep has reported', async () => {
     const env = await startService();
 
-    expect((await env.http('GET', '/v1/health')).json).not.toHaveProperty('retention');
+    expect((await env.http('GET', '/v1/health')).json.retention).toEqual({ days: 30, lastSweep: null });
   });
 });

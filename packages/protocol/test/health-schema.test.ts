@@ -16,6 +16,7 @@ const PRODUCED: RunHealth = {
   steps: 0,
   jobs: 0,
   interrupts: [],
+  retention: { days: 30, lastSweep: null },
   sandbox: 'seatbelt',
 };
 
@@ -29,9 +30,9 @@ describe('the health reply: every field the producer always sends is required', 
     expect(validate(missing)).toBe(false);
   });
 
-  it('requires every property the schema declares, except the retention status the runtime gives only when its service has one', () => {
+  it('requires every property the schema declares', () => {
     const schema = RUN_API_SCHEMAS.Health as { properties: Record<string, unknown>; required: string[] };
-    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).filter((name) => name !== 'retention').sort());
+    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).sort());
   });
 
   it('types role, steps and jobs as always present', () => {

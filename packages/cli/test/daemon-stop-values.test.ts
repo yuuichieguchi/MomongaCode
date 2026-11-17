@@ -114,6 +114,7 @@ const healthReporting = (stopBoundMs: number | undefined): SupervisorHealth => (
   startedAt: '2026-01-01T00:00:00.000Z',
   phase: 'draining',
   env: 'frozen at supervisor start',
+  retention: null,
   children: [],
   logs: { droppedLines: 0 },
   ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
