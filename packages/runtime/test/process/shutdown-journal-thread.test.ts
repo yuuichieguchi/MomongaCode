@@ -20,6 +20,16 @@ const WRITES = new Set(['append', 'transition', 'release', 'releaseLease', 'appe
 
 vi.mock('../../src/memory/journal-thread-client.ts', async () => {
   const { JournalThreadError } = await import('@momonga/store');
+  const withJournalReader = async <T>(databasePath: string, read: (reader: ReturnType<typeof import('@momonga/store').createJournalReader>) => T | Promise<T>): Promise<T> => {
+    const { openDatabase, BUSY_WAIT_LIMIT_MS } = await import('@momonga/foundation');
+    const { createJournalReader } = await import('@momonga/store');
+    const db = openDatabase(databasePath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
+    try {
+      return await read(createJournalReader(db));
+    } finally {
+      db.close();
+    }
+  };
   return {
     JournalThreadError,
     startJournalThread: async (options: { databasePath: string; identity: { dev: number; ino: number }; silenceLimitMs: number }) => {
@@ -32,20 +42,17 @@ vi.mock('../../src/memory/journal-thread-client.ts', async () => {
         inheritedWindow: async () => {
           throw new JournalThreadError('a first run of a fresh session has no inherited window');
         },
-        runState: async (request: { runId: string }) => {
-          const { openDatabase, BUSY_WAIT_LIMIT_MS } = await import('@momonga/foundation');
-          const { createJournalReader } = await import('@momonga/store');
-          const db = openDatabase(options.databasePath, { busyTimeoutMs: BUSY_WAIT_LIMIT_MS });
-          try {
-            return await createJournalReader(db).runState(request.runId, { pageEvents: 200, pause: async () => undefined });
-          } finally {
-            db.close();
-          }
-        },
-        report: async (request: { runId: string }) => ({
-          lastSeq: 0,
-          report: { runId: request.runId, status: 'QUEUED', durationMs: 0, declaration: null, changes: { files: [], mutatingCalls: 0 }, conditions: [], notRun: [], residualRisk: [], modelChecks: [] },
-        }),
+        runState: async (request: { runId: string }) =>
+          withJournalReader(options.databasePath, (reader) => reader.runState(request.runId, { pageEvents: 200, pause: async () => undefined })),
+        report: async (request: { runId: string }) =>
+          withJournalReader(options.databasePath, (reader) => {
+            const run = reader.visitRun(request.runId, [], () => undefined);
+            return {
+              lastSeq: run.lastSeq,
+              report: { runId: request.runId, status: 'QUEUED', durationMs: 0, declaration: null, changes: { files: [], mutatingCalls: 0 }, conditions: [], notRun: [], residualRisk: [], modelChecks: [] },
+              run,
+            };
+          }),
         measure: (request: { runId: string }) =>
           new Promise((_resolve, reject) => {
             control.held.push({

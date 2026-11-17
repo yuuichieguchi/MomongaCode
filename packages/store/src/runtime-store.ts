@@ -1,9 +1,9 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
+import { canonicalJson, immediateTx, isTransientErrno, jsonValueOrText, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import type { DatabaseFileIdentity } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, isApprovalShown, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
-import type { Admission, ApprovalShown, CallTiming, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
+import type { Admission, ApprovalShown, CallTiming, InputItem, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
@@ -1031,6 +1031,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     });
   };
 
+  const callArgumentsOf = (runId: string, callId: string): unknown => {
+    for (const event of journalReader.eventsOfTypes(runId, ['model.responded'])) {
+      if (event.type !== 'model.responded') continue;
+      const call = (event.response.output as InputItem[]).find((item) => item.type === 'function_call' && item.call_id === callId);
+      if (call?.type === 'function_call') return jsonValueOrText(call.arguments);
+    }
+    return undefined;
+  };
+
   const toolCallOf = (approval: Approval): ApprovalView['toolCall'] => {
     const row = derivedView.toolCallEventOf(approval.runId, approval.callId);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.call event for call ${approval.callId}`);
@@ -1039,12 +1048,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (typeof name !== 'string' || typeof title !== 'string' || typeof kind !== 'string') {
       throw corrupt('events', approval.id, 'tool.call payload must hold string name, title and kind');
     }
+    const rawInput = payload['rawInput'] ?? callArgumentsOf(approval.runId, approval.callId) ?? (approval.kind === 'permission' ? requestOf(approval).shown?.input : undefined);
+    if (rawInput === undefined) throw corrupt('events', approval.id, `run ${approval.runId} has no function call for call ${approval.callId}`);
     return {
       callId: approval.callId,
       name,
       title,
       kind: expectOneOf('events', approval.id, 'kind', TOOL_KINDS, kind),
-      rawInput: payload['rawInput'] ?? (approval.kind === 'permission' ? requestOf(approval).shown?.input : undefined),
+      rawInput,
       ...(locations === undefined ? {} : { locations: decodeLocations(approval.id, locations) }),
     };
   };
