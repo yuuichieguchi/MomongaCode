@@ -92,15 +92,7 @@ const destinationsOf = (network: RenderedNetwork): readonly string[] => (network
 
 const TRUST_FILE_NAME = 'ca.pem';
 
-export const PATH_VALUED_HTTP_KEYS: readonly string[] = [
-  'http.sslCert',
-  'http.sslKey',
-  'http.sslCAPath',
-  'http.pinnedPubkey',
-  'http.proxySSLCert',
-  'http.proxySSLKey',
-  'http.proxySSLCAInfo',
-];
+export const PATH_VALUED_HTTP_KEYS: readonly string[] = ['http.sslKey', 'http.proxySSLCert', 'http.proxySSLKey', 'http.proxySSLCAInfo'];
 
 export const trustConfigOf = (bundle: string): ConfigEntry[] => [
   ...PATH_VALUED_HTTP_KEYS.map((key): ConfigEntry => [key, '']),
