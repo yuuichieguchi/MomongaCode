@@ -1,5 +1,5 @@
 import { UNKNOWN_EFFECT_REASON, escapeTerminalLine } from '@momonga/protocol';
-import type { ApprovalShown, PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
+import type { ApprovalShown, PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, RunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
 import { attachedRow } from './attach.ts';
 import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
@@ -271,7 +271,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       closeThought(store, event.createdAt);
       appendEntry(
         store,
-        { kind: 'tool', callId: event.callId, name: event.name, title: event.title, toolKind: event.kind, rawInput: event.rawInput, status: 'requested', calledAt: event.createdAt, shownAt: event.createdAt },
+        { kind: 'tool', callId: event.callId, name: event.name, title: event.title, toolKind: event.kind, rawInput: state.callInputs.inputOf(event), status: 'requested', calledAt: event.createdAt, shownAt: event.createdAt },
         callKey(event.callId),
       );
       return;
@@ -377,6 +377,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       store.update({ usage: { inputTokens: event.inputTokens, outputTokens: event.outputTokens, totalTokens: event.totalTokens } });
       return;
     case 'model.responded':
+      state.callInputs.observe(event as RunEvent);
       store.update({ contextTokens: event.response.usage.total_tokens, ...(event.target === undefined ? {} : { answeringTarget: event.target }) });
       if (event.target !== undefined && state.answeringTarget !== undefined && state.answeringTarget !== event.target)
         appendEntry(store, { kind: 'info', text: `model changed: ${state.shownModels.get(state.answeringTarget) ?? state.answeringTarget} -> ${state.shownModels.get(event.target) ?? event.target}` });
