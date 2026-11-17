@@ -13,7 +13,7 @@ import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, registerOwned, removeTempDir, testLocks, testKernelLock, pollUntil } from '@momonga/testkit';
+import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration, createTempDir, prepareGenerationForTest, registerOwned, removeTempDir, testLocks, testKernelLock, pollUntil, hostBuiltSocketGuard } from '@momonga/testkit';
 import type { ModelSpec } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
@@ -67,7 +67,13 @@ export type RuntimeProcess = {
   fatal: Promise<Error>;
 };
 
+type SocketGuardSource = NonNullable<Parameters<typeof runtime.startRuntimeProcess>[0]['socketGuard']>;
+
+const hostGuard = hostBuiltSocketGuard();
+const hostSocketGuard: SocketGuardSource = () => async () => hostGuard();
+
 export type StartRuntimeProcessOptions = {
+  socketGuard?: SocketGuardSource;
   ruleSolver?: RuleSolverSource;
   locks?: LayoutLocks;
   home: string;
@@ -282,7 +288,7 @@ export const fireDuringTeardownStep = async (logger: RecordingLogger, timers: Fa
 };
 
 export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}): Promise<Launched> => {
-  const { fakeTimers, logger: givenLogger, stdout: givenStdout, drainTimeoutMs, mcpCloseGraceMs, generation = FIRST_GENERATION, ...rest } = options;
+  const { fakeTimers, logger: givenLogger, stdout: givenStdout, drainTimeoutMs, mcpCloseGraceMs, generation = FIRST_GENERATION, socketGuard = hostSocketGuard, ...rest } = options;
   const logger = givenLogger ?? makeLogger();
   const stdout = givenStdout ?? captureStream();
   const values = stopValuesOf(drainTimeoutMs, mcpCloseGraceMs);
@@ -301,6 +307,7 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
         logger,
         stdout,
         ...(fakeTimers === undefined ? {} : { timers: fakeTimers }),
+        socketGuard,
         ...rest,
       }),
     abortAtCleanup,
