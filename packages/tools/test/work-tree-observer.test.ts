@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
-import { OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, createGitWorkTreeObserver, observedToolFiles } from '@momonga/tools';
+import { OBSERVED_IGNORED_MANIFEST_LIMIT, OBSERVED_UNTRACKED_FILE_MAX_BYTES, WorkTreeObservationError, createGitWorkTreeObserver, observedToolFiles } from '@momonga/tools';
 import type { ObservedFile, WorkTreeObserver } from '@momonga/tools';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -68,7 +68,7 @@ beforeEach(() => {
   storeRoot = path.join(root, 'state', 'observer');
   fs.mkdirSync(project);
   gitOk(project, 'init', '-q');
-  put('.gitignore', 'build/\n');
+  put('.gitignore', 'build/\nnode_modules/\n');
   put('src/a.ts', 'one\n');
   put('src/keep.ts', 'keep\n');
   put('src/old.ts', 'old\n');
@@ -223,19 +223,53 @@ describe('the git work-tree observer on a real temporary repository', () => {
     expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(true);
   });
 
-  it('marks a window incomplete when an ignored file with a manifest name exists at its close, so a manifest the observer cannot see may have changed', async () => {
+  it('reports an ignored manifest that appears in the window as a write, and the view stays complete', async () => {
     const opening = await observerFor(project).mark(signal());
     put('build/package.json', '{}\n');
     const closed = await observerFor(project).changedSince(opening!, signal());
-    expect(closed.complete).toBe(false);
-    expect(sorted(closed.files)).toEqual([]);
+    expect(closed.complete).toBe(true);
+    expect(sorted(closed.files)).toEqual([{ path: path.join(project, 'build/package.json'), change: 'write' }]);
   });
 
-  it('marks a window incomplete when an ignored manifest existed at its open and was removed in the window', async () => {
+  it('reports an ignored manifest removed in the window as a remove, and the view stays complete', async () => {
     put('build/Makefile', 'all:\n');
     const opening = await observerFor(project).mark(signal());
     fs.rmSync(path.join(project, 'build/Makefile'));
-    expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(false);
+    const closed = await observerFor(project).changedSince(opening!, signal());
+    expect(closed.complete).toBe(true);
+    expect(sorted(closed.files)).toEqual([{ path: path.join(project, 'build/Makefile'), change: 'remove' }]);
+  });
+
+  describe('an ignored node_modules that holds package.json files', () => {
+    const NODE_PACKAGE = 'node_modules/x/package.json';
+
+    beforeEach(() => {
+      put(NODE_PACKAGE, '{"name":"x"}\n');
+      put('node_modules/x/index.js', 'module.exports = 1;\n');
+    });
+
+    it('stays complete with no manifest when a script writes an ordinary file and leaves the ignored manifests alone', async () => {
+      const opening = await observerFor(project).mark(signal());
+      put('src/a.ts', 'two\n');
+      const closed = await observerFor(project).changedSince(opening!, signal());
+      expect(closed.complete).toBe(true);
+      expect(sorted(closed.files)).toEqual([{ path: path.join(project, 'src/a.ts'), change: 'write' }]);
+    });
+
+    it('names a rewritten ignored manifest in the observed files, so a verdict latches on it', async () => {
+      const opening = await observerFor(project).mark(signal());
+      put(NODE_PACKAGE, '{"name":"x","scripts":{"test":"echo hacked"}}\n');
+      const closed = await observerFor(project).changedSince(opening!, signal());
+      expect(closed.complete).toBe(true);
+      expect(sorted(closed.files)).toEqual([{ path: path.join(project, NODE_PACKAGE), change: 'write' }]);
+    });
+
+    it('marks the view incomplete when the ignored manifests exceed the listing bound', async () => {
+      for (let index = 0; index <= OBSERVED_IGNORED_MANIFEST_LIMIT; index += 1) put(`node_modules/pkg${index}/package.json`, '{}\n');
+      const opening = await observerFor(project).mark(signal());
+      put('src/a.ts', 'two\n');
+      expect((await observerFor(project).changedSince(opening!, signal())).complete).toBe(false);
+    });
   });
 
   it('marks a window incomplete when a manifest over the size bound is rewritten in it, which the file list does not show', async () => {

@@ -5,7 +5,9 @@ import type { FileSystem, ReadHandle } from '@momonga/foundation';
 import type { ToolFile } from '@momonga/protocol';
 import type { ChildLaunch, ChildPorts } from './ports.ts';
 
-export type WorkTreeMark = { readonly tree: string; readonly oversized: readonly string[]; readonly unseen: boolean };
+export type IgnoredManifests = { readonly identities: ReadonlyMap<string, string>; readonly overLimit: boolean };
+
+export type WorkTreeMark = { readonly tree: string; readonly oversized: readonly string[]; readonly unseen: boolean; readonly ignored: IgnoredManifests };
 
 export type ObservedFile = { path: string; change: 'write' | 'remove' };
 
@@ -36,6 +38,8 @@ export type WorkTreeObserverPorts = {
 export const OBSERVED_FILE_HASH_PAGE_BYTES = 1024 * 1024;
 
 export const OBSERVED_UNTRACKED_FILE_MAX_BYTES = 2 * OBSERVED_FILE_HASH_PAGE_BYTES;
+
+export const OBSERVED_IGNORED_MANIFEST_LIMIT = 5000;
 
 export const observerStoreOf = (storeRoot: string, repositoryRoot: string): string => path.join(storeRoot, sha256Hex(repositoryRoot));
 
@@ -140,9 +144,38 @@ export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cw
     return oversized;
   };
 
-  const hiddenManifestsOf = async (store: Store, signal: AbortSignal): Promise<string[]> => {
-    if (manifests.length === 0) return [];
-    return fieldsOf(await store.runGit(['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', ...manifestPathspecs(manifests)], signal));
+  const identityOf = async (file: string): Promise<string | undefined> => {
+    try {
+      const stat = await ports.files.lstat(file);
+      return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    } catch (error) {
+      if (ABSENT_CODES.includes(String((error as NodeJS.ErrnoException).code))) return undefined;
+      throw new WorkTreeObservationError(`${file} could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const ignoredManifestsOf = async (store: Store, signal: AbortSignal): Promise<IgnoredManifests> => {
+    const identities = new Map<string, string>();
+    if (manifests.length === 0) return { identities, overLimit: false };
+    const listed = fieldsOf(await store.runGit(['ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', ...manifestPathspecs(manifests)], signal));
+    if (listed.length > OBSERVED_IGNORED_MANIFEST_LIMIT) return { identities, overLimit: true };
+    for (const relative of listed) {
+      const file = path.join(store.workTree, relative);
+      const identity = await identityOf(file);
+      if (identity !== undefined) identities.set(file, identity);
+    }
+    return { identities, overLimit: false };
+  };
+
+  const ignoredChangesOf = (before: IgnoredManifests, after: IgnoredManifests): ObservedFile[] => {
+    if (before.overLimit || after.overLimit) return [];
+    const changes: ObservedFile[] = [];
+    for (const [file, identity] of before.identities) {
+      if (!after.identities.has(file)) changes.push({ path: file, change: 'remove' });
+      else if (after.identities.get(file) !== identity) changes.push({ path: file, change: 'write' });
+    }
+    for (const file of after.identities.keys()) if (!before.identities.has(file)) changes.push({ path: file, change: 'write' });
+    return changes;
   };
 
   const nestedRepositoriesOf = async (store: Store, signal: AbortSignal): Promise<string[]> =>
@@ -153,11 +186,11 @@ export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cw
     await store.runGit(['add', '-A', '--', '.', ...oversized.map((relative) => `:(exclude,literal)${relative}`)], signal);
     const tree = (await store.runGit(['write-tree'], signal)).toString('utf8').trim();
     if (!TREE_ID.test(tree)) throw new WorkTreeObservationError(`git write-tree answered ${JSON.stringify(tree)}, which is not a tree id`);
-    const hidden = await hiddenManifestsOf(store, signal);
+    const ignored = await ignoredManifestsOf(store, signal);
     const nested = await nestedRepositoriesOf(store, signal);
     const oversizedManifests = oversized.filter((relative) => manifests.includes(path.basename(relative)));
-    const unseen = hidden.length > 0 || nested.length > 0 || oversizedManifests.length > 0;
-    return { tree, oversized: oversized.map((relative) => path.join(store.workTree, relative)), unseen };
+    const unseen = ignored.overLimit || nested.length > 0 || oversizedManifests.length > 0;
+    return { tree, oversized: oversized.map((relative) => path.join(store.workTree, relative)), unseen, ignored };
   };
 
   const storeOf = (signal: AbortSignal): Promise<Store | undefined> => {
@@ -179,7 +212,8 @@ export const workTreeObserverOn = (ports: WorkTreeObserverPorts, { storeRoot, cw
       const closing = await snapshot(store, signal);
       const diff = await store.runGit(['diff-tree', '-r', '--name-status', '-z', '--no-renames', mark.tree, closing.tree], signal);
       const before = new Set(mark.oversized);
-      return { files: changesOf(store.workTree, diff.toString('utf8')), mark: closing, oversized: closing.oversized.filter((file) => !before.has(file)), complete: !mark.unseen && !closing.unseen };
+      const files = [...changesOf(store.workTree, diff.toString('utf8')), ...ignoredChangesOf(mark.ignored, closing.ignored)];
+      return { files, mark: closing, oversized: closing.oversized.filter((file) => !before.has(file)), complete: !mark.unseen && !closing.unseen };
     },
   };
 };
