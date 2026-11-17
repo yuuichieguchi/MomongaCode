@@ -26,6 +26,7 @@ const namesOf = (body: unknown): string[] => ((body as { tools?: FunctionTool[] 
 describe('the tools a model declared with an 8192-token window is offered (tools-C32 establish)', () => {
   it('offers the essential tools with their companions and names the dropped ones in one notice', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(DECLARED_WINDOW) });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.gateway.script.push(textStep('Done.'));
     const run = await env.enqueue('Fix the bug', { history: 'fresh' });
     await env.runOnce(env.worker('worker-1', { toolList: productTools }));

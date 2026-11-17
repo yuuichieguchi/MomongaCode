@@ -45,6 +45,7 @@ type Case = { seed: number; window: number; autoCompact: boolean; heavyRuns: num
 
 const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Shape) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(window) });
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
   env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact };
   const random = seeded(seed);
   const h = harnessOf(env);
@@ -129,6 +130,7 @@ describe('the window request carries W = C + S over the claim targets and the ma
   it('the claim asks the thread with the numbers derived from its own capabilities', async () => {
     const capabilities = capabilitiesFor(30_000);
     const env = await makeEnv({ capabilities });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const b = builderOf(env);
     const first = await b.createRun('Say hello', { history: 'fresh' });
     env.gateway.script.push(textStep('Hello.'));
@@ -144,6 +146,7 @@ describe('the window request carries W = C + S over the claim targets and the ma
 describe('known differences of 13.7, pinned as stated', () => {
   it('(a) the stop notice says its numbers are lower bounds when older inherited items were not read', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(5_000) });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: false };
     const b = builderOf(env);
     const first = await b.createRun('Big history', { history: 'fresh' });
@@ -161,6 +164,7 @@ describe('known differences of 13.7, pinned as stated', () => {
 
   it('(b) a dangling output beyond the window is not reported at inheritance', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(5_000) });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: false };
     const b = builderOf(env);
     const first = await b.createRun('Corrupt early', { history: 'fresh' });
@@ -185,6 +189,7 @@ describe('known differences of 13.7, pinned as stated', () => {
   it('(c) and (d) a call id evicted and then compacted away is not known: today it fails as call_id_reused, the reference does not', async () => {
     const outcomeFor = async (shape: Shape) => {
       const env = await makeEnv();
+      env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
       env.gateway.rewriteCallIds = false;
       const b = builderOf(env);
       const first = await b.createRun('Write it', { history: 'fresh' });
@@ -211,6 +216,7 @@ describe('known differences of 13.7, pinned as stated', () => {
 describe('D2: context.truncated records the output token count', () => {
   it('an eviction written by the worker carries tokens, a positive integer of the evicted output size', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: false };
     const run = await env.enqueue('question one');
     const usage = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };

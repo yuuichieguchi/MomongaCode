@@ -9,6 +9,7 @@ import { FAKE_ADAPTER } from './fake-gateway.ts';
 describe('worker final answer', () => {
   it('returns idle when nothing is queued', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     expect(await env.runOnce(env.worker())).toBe('idle');
     expect(env.gateway.streams).toEqual([]);
@@ -16,6 +17,7 @@ describe('worker final answer', () => {
 
   it('completes a run with a single answer and records events in order', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('Hello there, friend.', { chunks: ['Hello ', 'there, ', 'friend.'], usage: usageOf(120, 7), itemId: 'msg_final' }));
     const run = await env.enqueue('Say hello');
@@ -59,6 +61,7 @@ describe('worker final answer', () => {
 
   it('sends the documented request body under the step idempotency key', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('done'));
     const run = await env.enqueue('Say hello');
@@ -94,6 +97,7 @@ describe('worker final answer', () => {
 
   it('passes the capability parallelToolCalls flag and the model to the gateway', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.capabilitiesValue = { ...env.gateway.capabilitiesValue, parallelToolCalls: true };
     env.gateway.script.push(textStep('done'));
@@ -105,6 +109,7 @@ describe('worker final answer', () => {
 
   it('pins the model, prompt digest, tool set digest and capabilities on the first attempt', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF };
     env.gateway.script.push(textStep('done'));
     const run = await env.enqueue();

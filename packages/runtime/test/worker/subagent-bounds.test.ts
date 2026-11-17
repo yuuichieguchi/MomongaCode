@@ -87,6 +87,7 @@ const untilAsked = async (env: Env, worker: ReturnType<Env['worker']>, runId: st
 describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G3)', () => {
   it('test 1: a child whose model only sends keep-alives ends by the real gateway idle stop, and the parent wait ends with that failure', async () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     writeAgent(env);
     const real = await startRealGateway({ clock: env.clock, idleTimeoutMs: MODEL_IDLE_MS, script: Array.from({ length: CHILD_IDLE_STOPS }, () => keepAliveOnly) });
     const parentWorker = env.worker('w1', { agents: agentsPortOf(env) });
@@ -112,6 +113,7 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
 
   it('test 2: a child whose MCP call never answers ends that call at the G2 idle window, the unknown effect asks the person on the child run, and the parent wait ends when the child ends', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.stored.push({ effect: 'allow', rule: 'mcp__jobs__long_job' });
     writeAgent(env);
     const mcpTool = await silentMcpTool();
@@ -139,6 +141,7 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
 
   it('test 3: depth 1 by behaviour: a child that calls Agent is refused, so no grandchild run exists', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     writeAgent(env);
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
     const parent = await env.enqueue('Delegate');

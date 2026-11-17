@@ -138,6 +138,7 @@ const loopDecodeDuringInheritance = async (steps: number) => {
       decoded.bytes += bytes;
     },
   });
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
   const b = builderOf(env);
   const source = await b.createRun('base task', { history: 'fresh' });
   const claim = b.claimNext(source.id);
@@ -205,6 +206,7 @@ const inlineWindowOnLoop = (env: Env, runId: string): number => {
 
 const childSnapshotBytes = async (steps: number): Promise<number> => {
   const env = await makeEnv();
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
   const b = builderOf(env);
   const source = await b.createRun('base task', { history: 'fresh' });
   const claim = b.claimNext(source.id);
@@ -236,6 +238,7 @@ const windowed = (journal: Journal): WindowedJournal => {
 describe('R14: no history is read before the window is installed', () => {
   const committedChild = async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     const h: ReferenceHarness = harnessOf(env);
     const b = builderOf(env);
     await answeredRun(h, b, 'Say hello', (claim) => b.text(claim), { fresh: true });

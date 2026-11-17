@@ -19,6 +19,7 @@ const runOnce = async (env: Env, input: string): Promise<string> => {
 describe('the notice of tools left out for a small window, across the runs of a session', () => {
   it('is written once per model and declared window, and again when the window changes', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(SMALL_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: 0.5 }) });
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
 
     const first = await runOnce(env, 'one');
     const second = await runOnce(env, 'two');

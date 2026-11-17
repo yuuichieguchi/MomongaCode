@@ -92,6 +92,7 @@ describe('reading pins.token', () => {
 describe('the token pin recorded at run start', () => {
   it('records an all-off pin on run.started with every token setting off', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = TOKEN_SETTINGS_OFF;
     env.gateway.script.push(textStep('Done.'));
     const run = await env.enqueue('say done');
@@ -102,6 +103,7 @@ describe('the token pin recorded at run start', () => {
 
   it('records the settings that are on when the root run starts', async () => {
     const env = await makeEnv();
+    env.settings.toolsValue = { ...env.settings.toolsValue, deferral: false, conciseDescriptions: false };
     env.settings.contextValue = { ...TOKEN_SETTINGS_OFF, cachePrefix: true, outputFormatters: ['log'], observedCapacity: true };
     env.gateway.script.push(textStep('Done.'));
     const run = await env.enqueue('say done');
