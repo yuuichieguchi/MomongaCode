@@ -15,6 +15,7 @@ export const holdsEntry: ManifestEntry = {
   measuredSeconds: 1,
   measuredCpuSeconds: 1,
   budgetCpuSeconds: 5,
+  identity: '0'.repeat(64),
 };
 
 export const invariantEntry: ManifestEntry = {

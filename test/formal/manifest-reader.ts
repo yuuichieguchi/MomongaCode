@@ -21,6 +21,7 @@ export type ManifestEntry = {
   readonly measuredSeconds: number;
   readonly measuredCpuSeconds: number;
   readonly budgetCpuSeconds: number;
+  readonly identity: string;
 };
 
 export type ModuleLimits = {
@@ -72,6 +73,10 @@ const textOf = (value: unknown, where: string): string => (typeof value === 'str
 
 const CONFIG_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+const identityOf = (value: unknown, where: string): string => (typeof value === 'string' && SHA256_HEX.test(value) ? value : fail(where, 'a sha256 hex digest'));
+
 const configNameOf = (value: unknown, where: string): string => {
   const name = textOf(value, where);
   return CONFIG_NAME.test(name) ? name : fail(where, 'a name made of letters, digits, ".", "_" and "-" that starts with a letter or a digit');
@@ -110,6 +115,7 @@ const entryOf = (value: unknown, index: number, startupCpuSeconds: number): Mani
     measuredSeconds: positiveNumber(value['measuredSeconds'], `${where}.measuredSeconds`),
     measuredCpuSeconds,
     budgetCpuSeconds,
+    identity: identityOf(value['identity'], `${where}.identity`),
   };
 };
 

@@ -581,6 +581,7 @@ describe('the rows of a tier run at once', () => {
       measuredSeconds: 1,
       measuredCpuSeconds: 1,
       budgetCpuSeconds: 5,
+      identity: '0'.repeat(64),
     }));
 
   const sleepingScript = (name: string, log: string): string => {

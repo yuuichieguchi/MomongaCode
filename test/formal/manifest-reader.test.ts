@@ -19,6 +19,7 @@ const validEntry = {
   measuredSeconds: 1,
   measuredCpuSeconds: 1,
   budgetCpuSeconds: 5,
+  identity: '0'.repeat(64),
 };
 
 const validModule = { module: 'Tiny', abstractions: ['time is a counter'], notProved: ['liveness'] };
