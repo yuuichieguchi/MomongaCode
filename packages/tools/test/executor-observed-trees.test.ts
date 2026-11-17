@@ -10,7 +10,7 @@ const countingObserver = (): WorkTreeObserver => {
   let made = 0;
   const nextMark = (): WorkTreeMark => {
     made += 1;
-    return { tree: treeOf(made), oversized: [], unseen: false };
+    return { tree: treeOf(made), oversized: [], unseen: false, ignored: { identities: new Map(), overLimit: false } };
   };
   return {
     mark: async () => nextMark(),
