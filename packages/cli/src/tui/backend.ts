@@ -153,6 +153,7 @@ export const createTuiBackend = (
 ): TuiBackend => {
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
+  let booting: Promise<TrustView> | undefined;
   const closing = new AbortController();
   const stopNotices: string[] = [];
   const onNotice = (message: string): void => void stopNotices.push(message);
@@ -232,10 +233,13 @@ export const createTuiBackend = (
     folderMcpServers: async () => runtime().folderMcpServers({ cwd: ports.cwd, env: await environmentSnapshot(ports, closing.signal) }),
     pendingProjectServer: (name) => pendingProjectServerOf({ home: paths.home, projectDir: ports.cwd, trust: trustOracle, signal: closing.signal }, name),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
-    boot: async () => {
-      await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });
-      client = connectSessionRuntime(ports, paths, onNewer, () => restoreDaemon(ports, paths, onNewer)(closing.signal));
-      return client.trust(ports.cwd);
+    boot: () => {
+      booting ??= (async () => {
+        await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });
+        client = connectSessionRuntime(ports, paths, onNewer, () => restoreDaemon(ports, paths, onNewer)(closing.signal));
+        return client.trust(ports.cwd);
+      })();
+      return booting;
     },
     decideTrust: async (decision) => {
       await runtime().setTrust(ports.cwd, decision);
