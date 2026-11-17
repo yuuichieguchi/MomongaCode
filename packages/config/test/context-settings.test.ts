@@ -10,7 +10,7 @@ const TOKEN_ON = { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 
 const resolvedWith = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings;
+  return (await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).settings;
 };
 
 describe('context settings defaults', () => {
@@ -36,7 +36,7 @@ describe('context.autoCompact', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { context: { autoCompact: false, adaptiveBudget: true } });
     writeJson(projectSettingsPath(tree), { context: { autoCompact: true } });
-    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_ON });
   });
 
@@ -44,7 +44,7 @@ describe('context.autoCompact', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { context: { autoCompact: false } });
     writeJson(projectSettingsPath(tree), { context: { adaptiveBudget: true } });
-    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: false, ...TOKEN_ON });
   });
 });
@@ -75,7 +75,7 @@ describe('context settings values', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { memory: { forgetAfterDays: 30 }, verification: { commands: ['just check'], manifests: ['justfile'] } });
     writeJson(projectSettingsPath(tree), { memory: { reflection: { enabled: true } }, verification: { commands: ['make verify'] } });
-    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 30, repositoryFacts: true });
     expect(settings.verification).toEqual({ commands: ['make verify'], manifests: ['justfile'], conditions: ['make verify'], required: false });
   });
@@ -83,7 +83,7 @@ describe('context settings values', () => {
   it('ignores project verification settings in an untrusted folder', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { verification: { commands: ['make verify'], manifests: [] } });
-    const { settings } = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(settings.verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
   });
 });
@@ -110,7 +110,7 @@ describe('context settings rejection', () => {
   ])('rejects %j at its pointer', async (settings, pointer) => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), settings);
-    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const failure = loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow(`invalid settings at ${pointer}:`);
   });

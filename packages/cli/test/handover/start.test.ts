@@ -29,7 +29,7 @@ describe('the start of a process that was handed a session (16.6, red test 27)',
     const env: Record<string, string | undefined> = { PATH: '/usr/bin', [HANDOVER_TERMINAL_ENV]: VALUE };
     const taken = takeHandoverStart(['attach', 'run-1', HANDOVER_FLAG, FILE, '--verbose'], env, reading({ [FILE]: textOf(RECORD) }));
     expect(taken.args).toEqual(['attach', 'run-1', '--verbose']);
-    expect(taken.started).toEqual({ file: FILE, session: 'session-1', parsed: { kind: 'record', record: RECORD }, terminal: { screen: 'fullscreen', modes: [...TERMINAL.modes] } });
+    expect(taken.started).toEqual({ file: FILE, parsed: { kind: 'record', record: RECORD }, terminal: { screen: 'fullscreen', modes: [...TERMINAL.modes] } });
     expect(HANDOVER_TERMINAL_ENV in env).toBe(false);
   });
 
@@ -51,7 +51,7 @@ describe('the start of a process that was handed a session (16.6, red test 27)',
 
   it('refuses a record it cannot read, naming the session from the file', () => {
     const taken = takeHandoverStart([HANDOVER_FLAG, FILE], {}, reading({}));
-    expect(taken.started).toEqual({ file: FILE, session: 'session-1', parsed: { kind: 'refused', reason: `the record could not be read: ENOENT: no such file or directory, open '${FILE}'` }, terminal: undefined });
+    expect(taken.started).toEqual({ file: FILE, parsed: { kind: 'refused', reason: `the record could not be read: ENOENT: no such file or directory, open '${FILE}'` }, terminal: undefined });
   });
 
   it('gives a surface only a record of its own kind', () => {

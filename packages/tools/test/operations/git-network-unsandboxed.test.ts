@@ -87,6 +87,7 @@ describe('the permission of GitPush to a remote reached over the network under t
       runArgv: createSandboxedArgvRunner({ inspector: testProcessInspector(), reconcileSandbox: async () => ({ sandbox, sandboxPolicy: await policyFor({ layout, tmpDir: sessionTmpDirOf(layout) }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: unconfiguredNetworkOf, markerDir: world.base, drainIdleMs: () => 1000, credentialRoot: world.base }),
       forge: NO_FORGE,
       settings: {},
+      platform: process.platform, shell: async () => '/bin/sh',
     });
     const harness = makeHarness();
     const tmpDir = sessionTmpDirOf(layout);

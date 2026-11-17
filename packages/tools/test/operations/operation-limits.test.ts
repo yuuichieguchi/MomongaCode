@@ -26,7 +26,7 @@ describe('the time limit of an operation is the setting tools.operations.timeout
   });
 
   it('every operation tool takes its limit from the setting', () => {
-    for (const tool of createOperationTools({ runArgv: countingRunner().run, forge: NO_FORGE, settings: {} })) {
+    for (const tool of createOperationTools({ runArgv: countingRunner().run, forge: NO_FORGE, settings: {}, platform: process.platform, shell: async () => '/bin/sh', })) {
       expect(typeof tool.timeoutMs === 'function' ? tool.timeoutMs({}, LIMITS) : tool.timeoutMs).toBe(LIMITS.operations.timeoutMs);
     }
   });

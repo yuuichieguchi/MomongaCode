@@ -94,7 +94,7 @@ const removeDirectoryTree = (dir: string): void => {
   if (fs.existsSync(dir)) throw new Error(`test temp dir ${dir} still exists after cleanup`);
 };
 
-export type TempDirOptions = { asHome?: boolean; parent?: string };
+export type TempDirOptions = { asHome?: boolean; parent?: string; prefix?: string };
 
 export const systemTempRoot = (): string => fs.realpathSync(os.tmpdir());
 
@@ -108,7 +108,7 @@ const createdHomes = new Set<string>();
 
 export const createTempDir = (options: TempDirOptions = {}): string => {
   const asHome = options.asHome === true;
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(options.parent ?? tempDirBase(asHome), tempDirPrefixFor(testRunToken()))));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(options.parent ?? tempDirBase(asHome), options.prefix ?? tempDirPrefixFor(testRunToken()))));
   fs.chmodSync(dir, 0o700);
   if (!asHome) return dir;
   createdHomes.add(dir);

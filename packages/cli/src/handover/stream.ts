@@ -2,6 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import type { OutputFormat } from '../run/output-format.ts';
+import type { StreamQuiescence } from './record.ts';
 import type { Mover, MoveSurface } from './mover.ts';
 import { HANDOVER_FORMAT, recordFileOf } from './record.ts';
 import { SURFACE_OF_KIND } from './texts.ts';
@@ -27,6 +28,7 @@ export type StreamFacts = {
   session(): string | undefined;
   cursor(): number;
   pending(): number;
+  quiescence(): StreamQuiescence | undefined;
   say(text: string): void;
 };
 
@@ -41,6 +43,7 @@ export const streamSurface = (facts: StreamFacts): MoveSurface => ({
   snapshot: (toVersion) => {
     const session = facts.session();
     if (session === undefined) throw new Error('the stream has delivered no event that names its session');
+    const quiescent = facts.quiescence();
     return {
       format: HANDOVER_FORMAT,
       fromVersion: facts.version,
@@ -51,6 +54,7 @@ export const streamSurface = (facts: StreamFacts): MoveSurface => ({
       runId: facts.runId,
       output: facts.format,
       verbose: facts.verbose,
+      ...(quiescent === undefined ? {} : { quiescent }),
     };
   },
   terminal: () => undefined,

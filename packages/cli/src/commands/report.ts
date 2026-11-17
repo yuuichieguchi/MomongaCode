@@ -1,6 +1,6 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, RunBudgetReport, RunDelegationReport, RunFailedCallReport, RunOperationReport, RunReport, RunReportAnomaly } from '@momonga/protocol';
+import { STOP_REASONS, budgetSentence, notRunWord, stopWord, usdOfNano } from '@momonga/protocol';
+import type { BudgetExhausted, RunBudgetReport, StopReason, RunDelegationReport, RunFailedCallReport, RunOperationReport, RunReport, RunReportAnomaly } from '@momonga/protocol';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { CONDITION_STATE_WORDS, HOW_TO_DECLARE_CHECK, RESIDUAL_RISK_WORDS } from '../policy-messages.ts';
 import type { CliPorts } from '../ports.ts';
@@ -31,18 +31,9 @@ const budgetLines = (budget: RunBudgetReport): string[] => {
   ];
 };
 
-const LIMIT_WORDS: Record<BudgetExhausted['dimension'], string> = { steps: 'step', tokens: 'token', cost: 'money', time: 'time', retries: 'retry' };
-
-const CAUSE_TEXT: Record<BudgetExhausted['cause'], string> = {
-  limit: 'the limit was reached',
-  unpriced: 'a model call has no price, so its cost cannot be counted',
-  cap_too_small: 'what is left does not pay for another model request',
-};
-
 const figureOf = (dimension: BudgetExhausted['dimension'], value: number): string => (dimension === 'cost' ? usd(value) : dimension === 'time' ? `${value} ms` : String(value));
 
-export const stoppedByLine = (stopped: BudgetExhausted): string =>
-  `stopped by the ${LIMIT_WORDS[stopped.dimension]} limit: ${CAUSE_TEXT[stopped.cause]} (${figureOf(stopped.dimension, stopped.spent)} of ${figureOf(stopped.dimension, stopped.limit)} used or reserved)`;
+export const stoppedByLine = (stopped: BudgetExhausted): string => budgetSentence(stopped, figureOf);
 
 const HELD_OUTCOME_TEXT = { executed: 'approved and run', rejected: 'rejected', withdrawn: 'withdrawn' } as const;
 
@@ -78,13 +69,15 @@ const anomalyLines = (anomalies: readonly RunReportAnomaly[]): string[] => [
   ...anomalies.map((anomaly) => `  ${anomaly.type} at seq ${anomaly.seq} ${ANOMALY_TEXT[anomaly.cause]}: ${anomaly.callId}`),
 ];
 
+const isStopReason = (reason: string): reason is StopReason => (STOP_REASONS as readonly string[]).includes(reason);
+
 export const renderReport = (report: RunReport): string => {
-  const outcome = report.stopReason === undefined ? report.status : `${report.status} (${report.stopReason})`;
+  const outcome = report.stopReason === undefined ? report.status : `${report.status} (${isStopReason(report.stopReason) ? stopWord(report.stopReason) : report.stopReason})`;
   return escapedLines([
     `run ${report.runId}: ${outcome}, ${report.durationMs} ms`,
     ...(report.declaration === null ? [`no completion condition declared (${HOW_TO_DECLARE_CHECK})`] : []),
     ...(report.conditions.length === 0 ? [] : ['conditions:', ...report.conditions.map(conditionLine)]),
-    ...(report.notRun.length === 0 ? [] : ['not run:', ...report.notRun.map((entry) => `  ${entry.what}  (${entry.reason})`)]),
+    ...(report.notRun.length === 0 ? [] : ['not run:', ...report.notRun.map((entry) => `  ${entry.what}  (${notRunWord(entry.reason)})`)]),
     `changes: ${report.changes.mutatingCalls} mutating ${report.changes.mutatingCalls === 1 ? 'call' : 'calls'}`,
     ...report.changes.files.map((file) => `  ${file.path}${file.sha256 === undefined ? '' : `  ${file.sha256}`}`),
     ...(report.residualRisk.length === 0 ? [] : ['residual risk:', ...report.residualRisk.map((risk) => `  ${RESIDUAL_RISK_WORDS[risk.code]}  ${risk.count}`)]),

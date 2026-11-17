@@ -4,7 +4,7 @@ import { cfgNames } from '../../../../test/formal/cfg-names.ts';
 import * as runtime from '@momonga/runtime';
 import { FACTS_SWEEP_BATCH_RUNS, INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
 import type { RunCallView, RunFactsView } from '@momonga/protocol';
-import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import { enqueue, harness, harnessFrom, migratedDatabase, mustClaim, newSession, rawDb } from '../../../store/test/helpers.ts';
 import * as storeModule from '@momonga/store';
@@ -288,7 +288,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
         }
       }
       expect(problems).toEqual([]);
-    });
+    }, REAL_PROCESS_TEST_TIMEOUT_MS);
 
     it('a closed session that the retention sweep deletes while its run is in a batch leaves no row behind, and the batch commits with the other runs covered', async () => {
       const periodMs = 100_000;

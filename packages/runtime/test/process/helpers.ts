@@ -87,7 +87,7 @@ export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> =
 export type CountingCache = UserSettingsCache & { snapshots: number };
 
 export const makeCache = (home: string): CountingCache => {
-  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(home), testKernelLock()) });
+  const inner = createUserSettingsCache({ env: process.env, home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystem, systemRandom, keptSettingsDirectory(home), testKernelLock()) });
   const cache: CountingCache = {
     snapshots: 0,
     get: () => inner.get(),

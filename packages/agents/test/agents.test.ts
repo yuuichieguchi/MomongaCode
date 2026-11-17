@@ -22,13 +22,13 @@ const fileSystemOf = (files: Readonly<Record<string, string>>): SkillFileSystem 
 
 const agentFile = (name: string, description: string, extra = '', body = 'Do the work.') => `---\nname: ${name}\ndescription: ${description}\n${extra}---\n${body}\n`;
 
-const load = (files: Record<string, string>, trusted = true) => createAgentLoader({ home: HOME, fileSystem: fileSystemOf(files) }).load({ projectRoot: PROJECT, trusted, projectAgentApproved: () => true });
+const load = (files: Record<string, string>, trusted = true) => createAgentLoader({ home: HOME, fileSystem: fileSystemOf(files) }).load({ projectRoot: PROJECT, trusted, projectAgentApproved: () => true, signal: new AbortController().signal });
 
 describe('a project agent runs only as the person approved it', () => {
   const TEXT = agentFile('reviewer', 'Reviews', 'tools: Read, Bash\n');
   const CHANGED = agentFile('reviewer', 'Reviews', 'tools: Read, Bash, Write\n');
   const loadApproved = (text: string, approved: readonly { name: string; text: string }[]) =>
-    createAgentLoader({ home: HOME, fileSystem: fileSystemOf({ [`${PROJECT}/.momonga/agents/reviewer.md`]: text, [`${HOME}/.momonga/agents/writer.md`]: agentFile('writer', 'Writes') }) }).load({ projectRoot: PROJECT, trusted: true, projectAgentApproved: (agent) => approved.some((entry) => entry.name === agent.name && entry.text === agent.text) });
+    createAgentLoader({ home: HOME, fileSystem: fileSystemOf({ [`${PROJECT}/.momonga/agents/reviewer.md`]: text, [`${HOME}/.momonga/agents/writer.md`]: agentFile('writer', 'Writes') }) }).load({ projectRoot: PROJECT, trusted: true, projectAgentApproved: (agent) => approved.some((entry) => entry.name === agent.name && entry.text === agent.text), signal: new AbortController().signal });
 
   it('does not offer or spawn a changed project agent with tools until its current file is approved, and lists it for the question', async () => {
     const set = await loadApproved(CHANGED, [{ name: 'reviewer', text: TEXT }]);
@@ -41,7 +41,7 @@ describe('a project agent runs only as the person approved it', () => {
   });
 
   it('does not let a user agent of the same name stand in for a project agent that waits for its approval', async () => {
-    const set = await createAgentLoader({ home: HOME, fileSystem: fileSystemOf({ [`${PROJECT}/.momonga/agents/a.md`]: agentFile('a', 'project one'), [`${HOME}/.momonga/agents/a.md`]: agentFile('a', 'user one') }) }).load({ projectRoot: PROJECT, trusted: true, projectAgentApproved: () => false });
+    const set = await createAgentLoader({ home: HOME, fileSystem: fileSystemOf({ [`${PROJECT}/.momonga/agents/a.md`]: agentFile('a', 'project one'), [`${HOME}/.momonga/agents/a.md`]: agentFile('a', 'user one') }) }).load({ projectRoot: PROJECT, trusted: true, projectAgentApproved: () => false, signal: new AbortController().signal });
     expect(set.agents).toEqual([]);
   });
 });

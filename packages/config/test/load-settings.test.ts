@@ -54,7 +54,7 @@ describe('SETTINGS_SCHEMA', () => {
 describe('loadSettings merge', () => {
   it('returns defaults when no files exist', async () => {
     const tree = makeTree();
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.autoUpdates).toBe(true);
     expect(result.rules).toEqual([]);
     expect(result.warnings).toEqual([]);
@@ -76,7 +76,7 @@ describe('loadSettings merge', () => {
       env: { CI: 'local' },
       permissions: { ask: ['Bash(npm run test:*)'] },
     });
-    const result = await loadSettings({
+    const result = await loadSettings({ env: process.env,
       signal: new AbortController().signal,
       home: tree.home,
       projectDir: tree.project,
@@ -101,7 +101,7 @@ describe('loadSettings merge', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'plan' } });
     writeJson(localSettingsPath(tree), { permissions: { defaultMode: 'acceptEdits' } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions?.defaultMode).toBe('acceptEdits');
   });
 
@@ -115,7 +115,7 @@ describe('loadSettings merge', () => {
     fs.symlinkSync(realA, link);
     writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: [link] } });
     writeJson(projectSettingsPath(tree), { permissions: { additionalDirectories: ['./extra-b'] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions?.additionalDirectories).toEqual([realA, realB]);
   });
 });
@@ -126,7 +126,7 @@ describe('loadSettings trust gate', () => {
     writeJson(userSettingsPath(tree), { permissions: { allow: ['Read(./docs/**)'] } });
     const project = writeJson(projectSettingsPath(tree), { permissions: { allow: ['Bash(curl:*)'] } });
     const local = writeJson(localSettingsPath(tree), { permissions: { allow: ['Bash(wget:*)'] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(result.rules.map((r) => r.text)).toEqual(['Read(./docs/**)', 'Bash(wget:*)']);
     expect(result.files).toEqual([userSettingsPath(tree), local]);
     const warning = result.warnings.find((w) => /not trusted/i.test(w));
@@ -137,7 +137,7 @@ describe('loadSettings trust gate', () => {
 
   it('does not skip anything and warns nothing when the untrusted project has no settings files', async () => {
     const tree = makeTree();
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(result.warnings).toEqual([]);
   });
 });
@@ -147,7 +147,7 @@ describe('loadSettings security restrictions', () => {
     const load = async (endpoint: string) => {
       const tree = makeTree();
       writeJson(userSettingsPath(tree), { telemetry: { otlp: { endpoint, headers: { authorization: 'Bearer t' } } } });
-      return loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+      return loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     };
 
     it.each(['http://127.0.0.1:4318', 'http://localhost:4318', 'http://[::1]:4318', 'https://collector.example'])('accepts %s', async (endpoint) => {
@@ -171,13 +171,13 @@ describe('loadSettings security restrictions', () => {
     it('takes the price entries of the user settings', async () => {
       const tree = makeTree();
       writeJson(userSettingsPath(tree), { pricing: [entry, { ...entry, effectiveFrom: '2026-06-01', inputPerMTok: 1, cachedInputPerMTok: 0.5 }] });
-      const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+      const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
       expect(result.settings.pricing).toEqual([entry, { ...entry, effectiveFrom: '2026-06-01', inputPerMTok: 1, cachedInputPerMTok: 0.5 }]);
     });
 
     it('leaves pricing absent when no settings file declares it', async () => {
       const tree = makeTree();
-      const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+      const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
       expect(result.settings.pricing).toBeUndefined();
     });
 
@@ -185,7 +185,7 @@ describe('loadSettings security restrictions', () => {
       const tree = makeTree();
       const projectFile = writeJson(projectSettingsPath(tree), { pricing: [entry] });
       writeJson(localSettingsPath(tree), { pricing: [entry] });
-      const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+      const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
       expect(result.settings.pricing).toBeUndefined();
       expect(result.warnings.some((warning) => warning.includes('pricing is only honored in user settings') && warning.includes(projectFile))).toBe(true);
     });
@@ -198,7 +198,7 @@ describe('loadSettings security restrictions', () => {
     ])('rejects %s', async (_name, bad) => {
       const tree = makeTree();
       writeJson(userSettingsPath(tree), { pricing: [bad] });
-      await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/pricing/);
+      await expect(loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/pricing/);
     });
   });
 
@@ -219,7 +219,7 @@ describe('loadSettings security restrictions', () => {
     writeJson(localSettingsPath(tree), {
       models: { connections: [connectionOf('local-small', target('hijacked'))] },
     });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(canonsOf(result.settings)).toEqual(['local-small/m1']);
     expect(modelOf(result.settings, 'local-small')).toMatchObject({ model: 'm1', baseUrl: 'https://api.example.com/v1' });
     expect((result.settings.models as unknown as { fallback: readonly string[]; start: string | undefined }).fallback).toEqual(['local-small/m1']);
@@ -233,7 +233,7 @@ describe('loadSettings security restrictions', () => {
     writeJson(userSettingsPath(tree), { env: { OPENAI_API_KEY: 'user-value' } });
     writeJson(projectSettingsPath(tree), { env: { OPENAI_API_KEY: 'p', GITHUB_TOKEN: 'p', NODE_ENV: 'test' } });
     writeJson(localSettingsPath(tree), { env: { DB_PASSWORD: 'l', CLIENT_SECRET: 'l' } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.env).toEqual({ OPENAI_API_KEY: 'user-value', NODE_ENV: 'test' });
     for (const key of ['OPENAI_API_KEY', 'GITHUB_TOKEN', 'DB_PASSWORD', 'CLIENT_SECRET']) {
       expect(result.warnings.some((w) => w.includes(key))).toBe(true);
@@ -247,7 +247,7 @@ describe('loadSettings security restrictions', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { autoUpdates: true });
     const file = writeJson(locate(tree), { autoUpdates: false });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.autoUpdates).toBe(true);
     expect(result.warnings).toContain(`${file}: autoUpdates is only honored in user settings; discarded`);
   });
@@ -259,7 +259,7 @@ describe('loadSettings security restrictions', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'acceptEdits' } });
     const file = writeJson(locate(tree), { permissions: { defaultMode: 'bypassPermissions' } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions?.defaultMode).toBe('acceptEdits');
     expect(result.warnings.some((w) => w.includes('bypassPermissions') && w.includes(file))).toBe(true);
   });
@@ -267,10 +267,10 @@ describe('loadSettings security restrictions', () => {
   it('accepts bypassPermissions from user settings and from cli', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'bypassPermissions' } });
-    const fromUser = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const fromUser = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(fromUser.settings.permissions?.defaultMode).toBe('bypassPermissions');
     const other = makeTree();
-    const fromCli = await loadSettings({
+    const fromCli = await loadSettings({ env: process.env,
       signal: new AbortController().signal,
       home: other.home,
       projectDir: other.project,
@@ -287,12 +287,12 @@ describe('loadSettings security restrictions', () => {
       autoMode: { classifier: 'guard/guard-model' },
       models: { connections: [connectionOf('guard', { adapter: 'chat-completions', model: 'guard-model', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } })] },
     });
-    const fromUser = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const fromUser = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(fromUser.settings.permissions.defaultMode).toBe('auto');
     expect(fromUser.settings.permissions.defaultModeOrigin).toBe('user');
     expect(fromUser.settings.autoMode).toEqual({ classifier: 'guard/guard-model' });
     const other = makeTree();
-    const fromCli = await loadSettings({ signal: new AbortController().signal, home: other.home, projectDir: other.project, cli: { permissions: { defaultMode: 'auto' } }, trust: trusting(other) });
+    const fromCli = await loadSettings({ env: process.env, signal: new AbortController().signal, home: other.home, projectDir: other.project, cli: { permissions: { defaultMode: 'auto' } }, trust: trusting(other) });
     expect(fromCli.settings.permissions.defaultMode).toBe('auto');
   });
 
@@ -307,7 +307,7 @@ describe('loadSettings security restrictions', () => {
       models: { connections: [connectionOf('guard', { adapter: 'chat-completions', model: 'guard-model', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } })] },
     });
     const file = writeJson(locate(tree), { permissions: { defaultMode: 'auto' }, autoMode: { classifier: 'attacker' } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions.defaultMode).toBe('acceptEdits');
     expect(result.settings.autoMode).toEqual({ classifier: 'guard/guard-model' });
     expect(result.warnings.some((w) => w.includes('permissions.defaultMode auto') && w.includes(file))).toBe(true);
@@ -329,7 +329,7 @@ describe('loadSettings hooks', () => {
     });
     writeJson(projectSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('project')], Stop: [hookGroup('stop')] } });
     writeJson(localSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('local')] } });
-    const result = await loadSettings({
+    const result = await loadSettings({ env: process.env,
       signal: new AbortController().signal,
       home: tree.home,
       projectDir: tree.project,
@@ -343,7 +343,7 @@ describe('loadSettings hooks', () => {
   it('loads project hooks only when the folder is trusted', async () => {
     const tree = makeTree();
     const file = writeJson(projectSettingsPath(tree), { hooks: { Stop: [hookGroup('project-stop')] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(result.settings.hooks).toEqual({});
     expect(result.warnings.some((w) => w.includes('not trusted') && w.includes(file))).toBe(true);
   });
@@ -351,7 +351,7 @@ describe('loadSettings hooks', () => {
   it('drops an unsupported hook event with a warning', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { hooks: { Notification: [hookGroup('n')], Stop: [hookGroup('s')] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(Object.keys(result.settings.hooks)).toEqual(['Stop']);
     expect(result.warnings.some((w) => w.includes('Notification') && w.includes(file))).toBe(true);
   });
@@ -364,13 +364,13 @@ describe('loadSettings hooks', () => {
   ])('rejects %s', async (_label, hook) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { hooks: { Stop: [{ hooks: [hook] }] } });
-    await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/invalid settings/);
+    await expect(loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/invalid settings/);
   });
 
   it('rejects a matcher that is not a valid regular expression', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('x', '(')] } });
-    await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/matcher/);
+    await expect(loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/matcher/);
   });
 });
 
@@ -378,11 +378,11 @@ describe('loadSettings validation', () => {
   it('accepts permissions.defaultMode manual and refuses the old word default with the enum message, naming the file', async () => {
     const accepted = makeTree();
     writeJson(userSettingsPath(accepted), { permissions: { defaultMode: 'manual' } });
-    expect((await loadSettings({ signal: new AbortController().signal, home: accepted.home, projectDir: accepted.project, cli: {}, trust: trusting(accepted) })).settings.permissions.defaultMode).toBe('manual');
+    expect((await loadSettings({ env: process.env, signal: new AbortController().signal, home: accepted.home, projectDir: accepted.project, cli: {}, trust: trusting(accepted) })).settings.permissions.defaultMode).toBe('manual');
 
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'default' } });
-    const failure = loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const failure = loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow('invalid settings at /permissions/defaultMode: must be equal to one of the allowed values');
   });
@@ -390,7 +390,7 @@ describe('loadSettings validation', () => {
   it('reports malformed JSON with the file and line/column', async () => {
     const tree = makeTree();
     const file = writeText(projectSettingsPath(tree), '{\n  "env": {\n    "A": 1,,\n  }\n}\n');
-    const failure = loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const failure = loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow(/line 3/);
     await expect(failure).rejects.toThrow(/column \d+/);
@@ -399,7 +399,7 @@ describe('loadSettings validation', () => {
   it('reports schema violations with the file and JSON pointer', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { permissions: { allow: 'Bash(ls)' } });
-    const failure = loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const failure = loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow('/permissions/allow');
   });
@@ -407,14 +407,14 @@ describe('loadSettings validation', () => {
   it('reports an invalid deny rule naming the rule text, the key and the file', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { permissions: { deny: ['Bash(unclosed'] } });
-    const failure = loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const failure = loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     await expect(failure).rejects.toThrow(`${file}: invalid settings at /permissions/deny/0: invalid permission rule "Bash(unclosed": missing closing parenthesis`);
   });
 
   it('warns about unknown top-level keys instead of failing', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { futureFeature: { x: 1 }, autoUpdates: false });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.warnings.some((w) => w.includes('futureFeature') && w.includes(file))).toBe(true);
   });

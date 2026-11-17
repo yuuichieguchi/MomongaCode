@@ -18,7 +18,7 @@ describe('a failed write of the kept copy never fails the read that triggered it
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { defaultMode: 'plan' } });
     const warnings: string[] = [];
-    const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: failingRecords() });
+    const cache = createUserSettingsCache({ env: process.env, home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: failingRecords() });
 
     const snapshot = await cache.load(new AbortController().signal);
     expect('error' in snapshot ? snapshot.error.message : snapshot.settings.permissions.defaultMode).toBe('plan');
@@ -37,7 +37,7 @@ describe('a failed write of the kept copy never fails the read that triggered it
     await f.store.trust.setAsked(f.temp.project, 'trusted', NEVER_CANCELLED);
     writeProjectSettings(f.temp.project, { permissions: { allow: ['Bash(ls)'] } });
     const warnings: string[] = [];
-    const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: failingRecords() });
+    const cache = createUserSettingsCache({ env: process.env, home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: failingRecords() });
     const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: process.platform, cache, store: f.store });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
 

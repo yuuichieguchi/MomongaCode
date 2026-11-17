@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { fixedRolePort } from '@momonga/foundation';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { EventEmitter } from 'node:events';
@@ -71,7 +72,7 @@ const managedFm = async () => {
   const children: Child[] = [];
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
-    inspector: testProcessInspector(),
+    inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: FM_SERVER,

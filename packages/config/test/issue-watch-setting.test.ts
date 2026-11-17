@@ -8,7 +8,7 @@ const MANDATES = { mandates: { triage: { ask: ['Bash'], steps: 20 } }, ...FORGES
 
 const at = (tree: ReturnType<typeof makeTree>) => ({ folder: tree.project, forge: 'hub' });
 
-const userLoad = (tree: ReturnType<typeof makeTree>) => loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+const userLoad = (tree: ReturnType<typeof makeTree>) => loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
 
 describe('issues.watch: the issues the watch takes, declared in the user settings (tools DECISION-1)', () => {
   it('a valid entry loads with its filter and its mandate', async () => {
@@ -44,7 +44,7 @@ describe('issues.watch: the issues the watch takes, declared in the user setting
     const tree = makeTree();
     writeJson(userSettingsPath(tree), MANDATES);
     writeJson(projectSettingsPath(tree), { issues: { watch: [{ repository: 'acme/widgets', ...at(tree), labels: ['momonga'], mandate: 'triage' }] } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.issues).toBeUndefined();
     expect(result.warnings).toContain(`${projectSettingsPath(tree)}: issues is only honored in user settings; discarded`);
   });

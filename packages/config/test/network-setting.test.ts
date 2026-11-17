@@ -19,13 +19,13 @@ afterEach(() => {
 describe('network setting', () => {
   it('is absent by default', async () => {
     const tree = makeTree();
-    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.network).toBeUndefined();
+    expect((await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).settings.network).toBeUndefined();
   });
 
   it('is read from user settings', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network: NETWORK });
-    const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const result = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     expect(result.settings.network).toEqual(NETWORK);
     expect(result.warnings).toEqual([]);
   });
@@ -33,13 +33,13 @@ describe('network setting', () => {
   it('accepts an unsupported proxy scheme at load, so that it is reported only on the requests that would use it', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network: { httpsProxy: 'socks5://proxy.corp:1080' } });
-    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.network).toEqual({ httpsProxy: 'socks5://proxy.corp:1080' });
+    expect((await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).settings.network).toEqual({ httpsProxy: 'socks5://proxy.corp:1080' });
   });
 
   it('rejects an unknown network property, naming the pointer', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network: { proxy: 'http://proxy.corp:3128' } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/network');
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/network');
   });
 
   it.each([
@@ -50,13 +50,13 @@ describe('network setting', () => {
   ])('rejects %j, naming %s', async (network, pointer) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(pointer);
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(pointer);
   });
 
   it('rejects an extra CA file that is not an absolute path, naming the entry', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { network: { extraCaFiles: ['/etc/a.pem', 'certs/root.pem'] } });
-    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const failure = loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow('/network/extraCaFiles/1: not an absolute path');
   });
@@ -68,7 +68,7 @@ describe('network setting', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network: { noProxy: 'user.example' } });
     const file = writeJson(locate(tree), { network: NETWORK });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.network).toEqual({ noProxy: 'user.example' });
     expect(result.warnings.filter((warning) => warning.includes(file) && warning.includes('network is only honored in user settings; discarded'))).toHaveLength(1);
   });
@@ -78,13 +78,13 @@ describe('network setting: empty and relative values', () => {
   it('refuses an empty noProxy at load, like an empty proxy URL', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network: { noProxy: '' } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/network/noProxy');
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/network/noProxy');
   });
 
   it.each(['root.pem', './certs/root.pem', '../root.pem', '~/root.pem'])('refuses the relative extra CA file %s at load, naming the entry', async (file) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { network: { extraCaFiles: [file] } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/network/extraCaFiles/0: not an absolute path');
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow('/network/extraCaFiles/0: not an absolute path');
   });
 });
 

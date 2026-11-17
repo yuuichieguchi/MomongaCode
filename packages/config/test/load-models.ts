@@ -20,7 +20,7 @@ export type Loaded = { tree: Tree; file: string; models: LoadedModels; warnings:
 export const loadFile = async (document: unknown): Promise<Loaded> => {
   const tree = makeTree();
   const file = writeJson(userSettingsPath(tree), document);
-  const result = await loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+  const result = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
   return { tree, file, models: result.settings.models as unknown as LoadedModels, warnings: result.warnings };
 };
 
@@ -29,7 +29,7 @@ export const loadModelsSection = (models: unknown): Promise<Loaded> => loadFile(
 export const refusalOf = async (document: unknown): Promise<{ file: string; message: string }> => {
   const tree = makeTree();
   const file = writeJson(userSettingsPath(tree), document);
-  const error = await loadUserSettings({ home: tree.home, signal: new AbortController().signal }).then(
+  const error = await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }).then(
     () => undefined,
     (caught: unknown) => caught,
   );
@@ -46,6 +46,6 @@ export const loadWithProject = async (user: unknown, project: unknown) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), user);
   const projectFile = writeJson(projectSettingsPath(tree), project);
-  const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
   return { tree, projectFile, models: result.settings.models as unknown as LoadedModels, warnings: result.warnings };
 };

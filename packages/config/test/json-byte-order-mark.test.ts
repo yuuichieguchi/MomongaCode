@@ -16,7 +16,7 @@ describe('a JSON file that begins with a byte order mark', () => {
   it('loads as a settings file with its values', async () => {
     const tree = makeTree();
     writeText(userSettingsPath(tree), marked({ autoUpdates: false, permissions: { deny: ['Read(.env)'] } }));
-    const result = await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.rules.map((rule) => rule.text)).toEqual(['Read(.env)']);
     expect(result.warnings).toEqual([]);
@@ -59,13 +59,13 @@ describe('a JSON file that begins with a byte order mark', () => {
   it('keeps a byte order mark inside a string, and removes only the one at the start', async () => {
     const tree = makeTree();
     writeText(userSettingsPath(tree), marked({ env: { GREETING: `${BYTE_ORDER_MARK}hello${BYTE_ORDER_MARK}` } }));
-    const result = await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.env).toEqual({ GREETING: `${BYTE_ORDER_MARK}hello${BYTE_ORDER_MARK}` });
   });
 
   it('refuses a second byte order mark as invalid JSON at line 1 column 1', async () => {
     const tree = makeTree();
     const file = writeText(userSettingsPath(tree), `${BYTE_ORDER_MARK}${marked({ autoUpdates: false })}`);
-    await expect(loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(`${file}: invalid JSON at line 1 column 1`);
+    await expect(loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(`${file}: invalid JSON at line 1 column 1`);
   });
 });

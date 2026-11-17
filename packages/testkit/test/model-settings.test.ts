@@ -20,7 +20,7 @@ const loaded = async (settings: unknown): Promise<LoadedModels> => {
   const file = momongaLayout(home, process.platform, process.env).settingsFile;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify(settings), { mode: 0o600 });
-  return (await loadUserSettings({ home, signal: new AbortController().signal })).settings.models as unknown as LoadedModels;
+  return (await loadUserSettings({ env: process.env, home, signal: new AbortController().signal })).settings.models as unknown as LoadedModels;
 };
 
 describe('modelSettings builds settings in the shape the product loader accepts', () => {

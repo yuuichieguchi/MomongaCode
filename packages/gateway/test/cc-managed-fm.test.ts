@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { TEST_FENCE, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { contextOf } from './own-reasoning.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -120,7 +121,7 @@ const setup = async (config: Setup = {}) => {
       : { exitCode: 0, stdout: '', stderr: '' };
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
-    inspector: testProcessInspector(),
+    inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: FM_SERVER,

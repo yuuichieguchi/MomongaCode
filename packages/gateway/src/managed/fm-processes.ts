@@ -1,8 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { createHostExec, groupRecordOutcome, hostProcessGroupPort, launchGroupLeader, recordMarkerGroup, reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
-import type { GroupLaunch, GroupLaunchHost, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
+import type { FileSystemSync, GroupLaunch, GroupLaunchHost, ProcessGroupPort, ProcessInspector, Random } from '@momonga/foundation';
 import type { ExecFn } from './preconditions.ts';
 import type { ManagedChild, SpawnFn } from './server.ts';
 
@@ -20,8 +18,8 @@ const MARKER_FD_INDEX = 3;
 
 export type WarningSink = (message: string) => void;
 
-const groupChildOf = ({ child, pgid, onExit }: GroupLaunch, marker: string, onWarning: WarningSink, inspector: ProcessInspector, port: ProcessGroupPort): ManagedChild => {
-  const removeMarker = (): void => fs.rmSync(marker, { force: true });
+const groupChildOf = ({ child, pgid, onExit }: GroupLaunch, marker: string, onWarning: WarningSink, inspector: ProcessInspector, port: ProcessGroupPort, fileSystem: FileSystemSync): ManagedChild => {
+  const removeMarker = (): void => fileSystem.rmSync(marker);
   child.once('error', removeMarker);
   const recorded =
     pgid === undefined
@@ -52,22 +50,22 @@ const groupChildOf = ({ child, pgid, onExit }: GroupLaunch, marker: string, onWa
   };
 };
 
-export type GroupSpawnOptions = GroupLaunchHost & { env: ChildEnv | undefined; markerDirectory: string; onWarning: WarningSink; inspector: ProcessInspector };
+export type GroupSpawnOptions = GroupLaunchHost & { env: ChildEnv | undefined; markerDirectory: string; onWarning: WarningSink; inspector: ProcessInspector; random: Random; fileSystem: FileSystemSync };
 
 export const createGroupSpawn =
-  ({ env, markerDirectory, onWarning, inspector, port: given, spawnProcess }: GroupSpawnOptions): SpawnFn =>
+  ({ env, markerDirectory, onWarning, inspector, port: given, spawnProcess, random, fileSystem }: GroupSpawnOptions): SpawnFn =>
   async (file, args, protection) => {
     const port = given ?? hostProcessGroupPort();
-    const marker = path.join(markerDirectory, randomUUID());
-    fs.closeSync(fs.openSync(marker, 'w', 0o600));
+    const marker = path.join(markerDirectory, random.uuid());
+    fileSystem.closeSync(fileSystem.openSync(marker, 'w', 0o600));
     let launched: GroupLaunch;
     try {
       launched = await launchGroupLeader({ file, args, ...envOption(env), stdio: ['ignore', 'ignore', 'ignore'], protection, marker: { slot: MARKER_FD_INDEX, file: marker }, port, ...(spawnProcess === undefined ? {} : { spawnProcess }) });
     } catch (error) {
-      fs.rmSync(marker, { force: true });
+      fileSystem.rmSync(marker);
       throw error;
     }
-    return groupChildOf(launched, marker, onWarning, inspector, port);
+    return groupChildOf(launched, marker, onWarning, inspector, port, fileSystem);
   };
 
 export type ReapStaleGroupsOptions = Pick<GroupLaunchHost, 'port'> & { markerDirectory: string; graceMs: number; onWarning: WarningSink; signal: AbortSignal; inspector: ProcessInspector };

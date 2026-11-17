@@ -60,7 +60,7 @@ describe('node skill file system', () => {
     const home = path.join(root, 'home');
     fs.mkdirSync(path.join(home, '.agents', 'skills'), { recursive: true });
     fs.symlinkSync(path.join(home, '.agents', 'skills', 'loop'), path.join(home, '.agents', 'skills', 'loop'));
-    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true });
+    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true, signal: new AbortController().signal });
     expect(set.skills).toEqual([]);
     expect(set.warnings.join('\n')).toContain(`${path.join(home, '.agents', 'skills', 'loop')} cannot be read (ELOOP)`);
   });
@@ -72,7 +72,7 @@ describe('node skill file system', () => {
     fs.mkdirSync(skill, { recursive: true });
     fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: pdf\ndescription: "Use when: PDFs"\n---\nBody\n');
     fs.symlinkSync(path.join(skill, 'loop'), path.join(skill, 'loop'));
-    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true });
+    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true, signal: new AbortController().signal });
     const { content } = await set.activate('pdf');
     expect(content).toContain('<skill_resources complete="false">');
   });
@@ -102,7 +102,7 @@ describe('node skill file system', () => {
     fs.writeFileSync(path.join(store, 'scripts', 'run.sh'), 'echo');
     fs.mkdirSync(path.join(home, '.agents', 'skills'), { recursive: true });
     fs.symlinkSync(store, path.join(home, '.agents', 'skills', 'pdf'));
-    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true });
+    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true, signal: new AbortController().signal });
     expect(set.skills).toEqual([expect.objectContaining({ name: 'pdf', directory: path.join(home, '.agents', 'skills', 'pdf'), realDirectory: store })]);
     const { content } = await set.activate('pdf');
     expect(content).toContain('Body');

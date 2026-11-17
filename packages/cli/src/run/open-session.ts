@@ -58,13 +58,13 @@ export type CliSession = {
 };
 
 export const environmentSnapshot = async (ports: Pick<CliPorts, 'env' | 'home'>, signal: AbortSignal): Promise<Record<string, string>> => {
-  const { settings } = await loadUserSettings({ home: ports.home, signal });
+  const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal });
   const defined = Object.fromEntries(Object.entries(ports.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   return stripCredentialEnv(defined, credentialEnvNames(settings.models), settings.credentials).env;
 };
 
 export const autoModeConfigured = async (ports: Pick<CliPorts, 'home'>, signal: AbortSignal): Promise<boolean> => {
-  const { settings } = await loadUserSettings({ home: ports.home, signal });
+  const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal });
   return settings.autoMode?.classifier !== undefined;
 };
 

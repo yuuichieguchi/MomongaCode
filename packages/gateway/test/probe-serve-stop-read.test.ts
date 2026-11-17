@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { PERSON_TRAFFIC } from '../src/probe/request-gate.ts';
 import { NO_PROGRESS_LISTENER } from '../src/probe/auto-probe.ts';
 import fs from 'node:fs';
@@ -19,7 +20,7 @@ describe('the probe server stop reads the stop grace at its begin (design 3.2)',
     const probe = measureManagedServer({
       timers: systemTiming,
       gate: PERSON_TRAFFIC,
-      inspector: testProcessInspector(),
+      inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
       launch: TEST_UNPROTECTED_LAUNCH,
       lock: testKernelLock(),
       description: FM_SERVER,

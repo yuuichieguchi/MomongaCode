@@ -1,5 +1,6 @@
 import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, defaultContextSettings, defaultToolsSettings, parseRule } from '@momonga/config';
 import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
+import { DEFAULT_SANDBOX_NETWORK } from '@momonga/foundation';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -51,6 +52,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     memory: async () => settings.memoryValue,
     context: async () => settings.contextValue,
     tools: async () => settings.toolsValue,
+    sandboxNetwork: async (session) => session.sandboxNetwork ?? DEFAULT_SANDBOX_NETWORK,
     autoModeClassifier: () => settings.classifierModel,
     rules: async (session) => {
       settings.ruleReads += 1;

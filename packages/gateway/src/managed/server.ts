@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, settledOrAborted, startSharedCall } from '@momonga/foundation';
-import type { ChildLaunch, ChildProtection, GenerationRole, ProcessLock, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
+import type { ChildLaunch, ChildProtection, FileSystemSync, GenerationRole, ProcessLock, Random, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
@@ -36,6 +36,8 @@ export type ManagedServerOptions = {
   lockPath: string;
   lock: KernelLockMechanism;
   inspector: ProcessInspector;
+  random: Random;
+  fileSystem: FileSystemSync;
   markerDirectory?: string;
   readyTimeoutMs: number;
   env?: ChildEnv;
@@ -133,7 +135,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       ? async (): Promise<ManagedChild> => {
           throw new Error(aboutModel(target, 'the server has no marker directory, so it cannot be launched'));
         }
-      : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning, inspector: options.inspector }));
+      : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning, inspector: options.inspector, random: options.random, fileSystem: options.fileSystem }));
   const timers = options.timers;
   const argv = argvOf(description, options.socketPath);
   const said = (text: string): string => aboutModel(target, text);
@@ -249,7 +251,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     const lock = await acquireInstanceLock(signal);
     try {
       if (options.markerDirectory !== undefined) {
-        await fs.promises.mkdir(options.markerDirectory, { recursive: true, mode: LOCK_DIRECTORY_MODE });
+        options.fileSystem.mkdirSync(options.markerDirectory, LOCK_DIRECTORY_MODE);
         await reapStaleGroups({ markerDirectory: options.markerDirectory, graceMs: options.readStopGraceMs(), onWarning: options.onWarning, signal, inspector: options.inspector });
       }
       await waitForFreeSocket(signal);

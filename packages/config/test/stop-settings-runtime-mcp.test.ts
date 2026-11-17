@@ -5,7 +5,7 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 const stopValuesOf = (settings: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  return readUserStopValues(tree.home, new AbortController().signal);
+  return readUserStopValues(tree.home, process.env, new AbortController().signal);
 };
 
 describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as stop values', () => {
@@ -47,7 +47,7 @@ describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as 
   ])('refuses %s.%s up to %d given %o with the English message', async (object, key, max, value) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { [object]: { [key]: value } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(
       `${userSettingsPath(tree)}: invalid settings at /${object}/${key}: must be an integer from 0 to ${max} milliseconds; got ${JSON.stringify(value)}`,
     );
   });
@@ -55,7 +55,7 @@ describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as 
   it('refuses a key under runtime that is not drainTimeoutMs', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { runtime: { drainTimeoutMs: 1, workerCount: 2 } });
-    await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(userSettingsPath(tree));
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(userSettingsPath(tree));
   });
 
   it.each([
@@ -65,10 +65,10 @@ describe('runtime.drainTimeoutMs and mcp.closeGraceMs are user settings read as 
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { runtime: { drainTimeoutMs: 4000 }, mcp: { closeGraceMs: 200 } });
     const file = writeJson(locate(tree), { runtime: { drainTimeoutMs: 0 }, mcp: { closeGraceMs: 0 } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.warnings).toContain(`${file}: runtime is only honored in user settings; discarded`);
     expect(result.warnings).toContain(`${file}: mcp.closeGraceMs is only honored in user settings; discarded`);
     expect((result.settings as unknown as { runtime: unknown }).runtime).toEqual({ drainTimeoutMs: 4000 });
-    expect(await readUserStopValues(tree.home, new AbortController().signal)).toEqual({ closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: 4000, mcpCloseGraceMs: 200 });
+    expect(await readUserStopValues(tree.home, process.env, new AbortController().signal)).toEqual({ closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: 4000, mcpCloseGraceMs: 200 });
   });
 });

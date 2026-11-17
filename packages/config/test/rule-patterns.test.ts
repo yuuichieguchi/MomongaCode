@@ -5,7 +5,7 @@ import type { PermissionRule } from '@momonga/config';
 import { distrusting, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
-const load = (tree: Tree, trust = trusting(tree)) => loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
+const load = (tree: Tree, trust = trusting(tree)) => loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> =>
   promise.then(

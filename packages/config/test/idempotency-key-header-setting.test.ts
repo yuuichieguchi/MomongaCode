@@ -15,7 +15,7 @@ const CONNECTIONS: ReadonlyArray<Record<string, unknown>> = [
 const settingsWith = (connection: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', connection)] } });
-  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 const expectRefused = async (connection: Record<string, unknown>, ...fragments: (string | RegExp)[]): Promise<void> => {
@@ -48,6 +48,6 @@ describe('models.connections[].idempotencyKeyHeader names the header a server re
     writeJson(userSettingsPath(tree), {
       models: { connections: [{ adapter: 'chat-completions', provider: 'remote', baseUrl: 'https://api.example.com/v1', models: [{ id: 'model-a', capabilities: CAPABILITIES, idempotencyKeyHeader: 'Idempotency-Key' }] }] },
     });
-    await expect(loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow('idempotencyKeyHeader');
+    await expect(loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow('idempotencyKeyHeader');
   });
 });

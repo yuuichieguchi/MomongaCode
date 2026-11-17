@@ -1,7 +1,7 @@
 import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch } from '@momonga/foundation';
 import type { HelperSelf, MomongaPaths, ProcessInspector, SecretStore } from '@momonga/foundation';
 import type { PolicyHostPorts } from '@momonga/policy';
-import { createForgeAccess, createOperationTools, createSandboxedArgvRunner, loadForgeDescriptors } from '@momonga/tools';
+import { createForgeAccess, createOperationTools, createSandboxedArgvRunner, loadForgeDescriptors, resolveBashPath } from '@momonga/tools';
 import type { AnyTool, ForgeAccess, ForgeCredentialReference, ForgeFetch, MarkerOwners, ProbeContext, ReconcileSandbox, ShellHost } from '@momonga/tools';
 import type { SandboxBindings } from '../ports.ts';
 import type { NetworkOf } from './network-derivation.ts';
@@ -116,6 +116,13 @@ export const createOperationToolSource = (options: OperationToolsOptions): Opera
 
   return {
     forge,
-    tools: (snapshot) => createOperationTools({ runArgv, forge: forge(snapshot), settings: snapshot.settings.operations ?? {} }),
+    tools: (snapshot) =>
+      createOperationTools({
+        runArgv,
+        forge: forge(snapshot),
+        settings: snapshot.settings.operations ?? {},
+        platform: options.shellHost.platform,
+        shell: () => resolveBashPath(options.shellHost.platform, { isExecutable: options.shellHost.isExecutable, env: minimalChildEnv(process.env) }),
+      }),
   };
 };

@@ -107,7 +107,7 @@ const STOP_VALUES_READ = 'the read of the stop values from the user settings';
 const readStopValues = async (ports: Pick<DaemonPorts, 'home'>, onNotice: StopNotice): Promise<StopValues> => {
   const limit = operationLimit(new AbortController().signal, HOST_READ_BOUND_MS, STOP_VALUES_READ);
   try {
-    return await readUserStopValuesOrDefault({ home: ports.home, signal: limit.signal, onNotice });
+    return await readUserStopValuesOrDefault({ env: process.env, home: ports.home, signal: limit.signal, onNotice });
   } finally {
     limit.dispose();
   }

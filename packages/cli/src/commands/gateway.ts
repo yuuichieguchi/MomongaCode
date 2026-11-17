@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { isProbeable, isProbedBy, loadUserSettings, recordKeyOf, registeredServer, requireOfferedEndpointForm, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey, Probeable, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
 import { createBinaryHashCache, endpointHostOf, managedInstanceIn, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
@@ -73,7 +74,7 @@ export const restartDaemon = async (ports: Pick<CliPorts, 'stdout'> & DaemonPort
 };
 
 export const probeModel = async (ports: CliPorts, paths: MomongaPaths, text: string, options: ProbeOptions): Promise<number> => {
-  const { settings } = await loadUserSettings({ home: ports.home, signal: options.interrupt });
+  const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal: options.interrupt });
   announcePlainHttp(ports, settings.models.plainHttp);
   const subject = probeSubjectOf(settings.models, text);
   const { model } = subject;
@@ -243,7 +244,7 @@ const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: Probe
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,
     lock: locks.mechanism,
-    inspector: layoutProcessInspector(locks.capability),
+    inspector: layoutProcessInspector(locks.capability), random: systemRandom, fileSystem: nodeFileSystemSync,
     platform: ports.platform,
     instance: await cliProbeInstance(ports, paths, description, configured.provider),
     description,

@@ -6,13 +6,13 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 const userResolved = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  return (await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings;
+  return (await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).settings;
 };
 
 const userRejected = async (settings: Record<string, unknown>, fragment: string | RegExp): Promise<void> => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), settings);
-  await expect(loadUserSettings({ home: tree.home, signal: new AbortController().signal })).rejects.toThrow(fragment);
+  await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(fragment);
 };
 
 const ABSOLUTE = path.join(path.sep, 'opt', 'tools', 'rg');
@@ -46,7 +46,7 @@ describe('tools.ripgrep', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tools: { ripgrep: 'system' } });
     const file = writeJson(locate(tree), { tools: { ripgrep: ABSOLUTE, deferral: true } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.tools.ripgrep).toBe('system');
     expect(result.settings.tools.deferral).toBe(true);
     expect(result.warnings).toContain(`${file}: tools.ripgrep is only honored in user settings; discarded`);
@@ -55,7 +55,7 @@ describe('tools.ripgrep', () => {
   it('keeps the default when only a project file sets it', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { tools: { ripgrep: ABSOLUTE } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.tools.ripgrep).toBe('bundled');
   });
 });

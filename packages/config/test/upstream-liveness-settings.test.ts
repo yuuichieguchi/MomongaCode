@@ -7,7 +7,7 @@ const FIVE_MINUTES_MS = 300_000;
 const load = (models: Record<string, unknown> | undefined) => {
   const tree = makeTree();
   if (models !== undefined) writeJson(userSettingsPath(tree), { models });
-  return { tree, loaded: loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
+  return { tree, loaded: loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 describe('the upstream liveness settings', () => {
@@ -41,7 +41,7 @@ describe('the upstream liveness settings', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { models: { [key]: 1234 } });
     const file = writeJson(locate(tree), { models: { [key]: 9 } });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.models).toMatchObject({ [key]: 1234 });
     expect(result.warnings.some((w) => w.includes(`models.${key} is only honored in user settings`) && w.includes(file))).toBe(true);
   });

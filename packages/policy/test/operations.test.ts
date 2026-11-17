@@ -1,5 +1,5 @@
-import { testSecretLocations } from '@momonga/testkit';
-import { describe, expect, it } from 'vitest';
+import { PROPERTY_TIMEOUT_MS, testSecretLocations } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { decide } from '@momonga/policy';
 import type { DecideInput, PermissionRule, PermissionSubject, PolicyTool } from '@momonga/policy';
@@ -7,6 +7,8 @@ import type { PermissionMode } from '@momonga/protocol';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn } from './helpers.ts';
 import type { Layout } from './helpers.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const MERGE_TOOL: PolicyTool = { name: 'PullRequestMerge', kind: 'other', sideEffect: 'write', subjectKind: 'forge' };
 const CREATE_TOOL: PolicyTool = { name: 'PullRequestCreate', kind: 'other', sideEffect: 'write', subjectKind: 'forge' };
