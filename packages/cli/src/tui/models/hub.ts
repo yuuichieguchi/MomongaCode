@@ -19,6 +19,8 @@ import {
   NO_PROGRAMS,
   PROGRAMS_TITLE,
   PROGRAM_ARGUMENTS_PROMPT,
+  MODEL_FILE_PROMPT,
+  NOT_SET,
   PROGRAM_FIELD_ROWS,
   PROGRAM_PATH_PROMPT,
   READY_PATH_PROBLEM,
@@ -118,8 +120,11 @@ export const programCommandProblem = (command: string): string | undefined => {
   return problem === undefined ? undefined : `The command ${problem}`;
 };
 
+const programShownValue = (value: unknown): string => (value === undefined ? NOT_SET : Array.isArray(value) ? value.join(' ') : String(value));
+
 const programValue = async (context: ModelsFlowContext, field: (typeof PROGRAM_FIELD_ROWS)[number]['field']): Promise<string | undefined> => {
   if (field === 'command') return context.overlays.promptText({ title: PROGRAM_PATH_PROMPT, validate: (text) => programCommandProblem(text.trim()) });
+  if (field === 'modelFile') return context.overlays.promptText({ title: MODEL_FILE_PROMPT, validate: () => undefined });
   if (field === 'args') {
     const text = await context.overlays.promptText({ title: PROGRAM_ARGUMENTS_PROMPT, validate: () => undefined });
     return text === undefined ? undefined : JSON.stringify(text.split(/\s+/).filter((part) => part !== ''));
@@ -133,7 +138,7 @@ const programMenu = async (context: ModelsFlowContext, id: string): Promise<void
     const program = declaredOf(opened.edit)[id];
     if (typeof program !== 'object' || program === null) return;
     const shown = program as Record<string, unknown>;
-    const rows = [...PROGRAM_FIELD_ROWS.map((row) => ({ label: `${row.label}  ${Array.isArray(shown[row.field]) ? (shown[row.field] as unknown[]).join(' ') : String(shown[row.field])}` })), { label: FORGET_PROGRAM_ROW }];
+    const rows = [...PROGRAM_FIELD_ROWS.map((row) => ({ label: `${row.label}  ${programShownValue(shown[row.field])}` })), { label: FORGET_PROGRAM_ROW }];
     const index = await chosenOf(context, { title: id, rows });
     if (index === undefined) return;
     const row = PROGRAM_FIELD_ROWS[index];

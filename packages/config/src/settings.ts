@@ -295,7 +295,7 @@ export type ModelRoles = Partial<Record<ModelRole, string>>;
 
 export type BillingChange = { from: TargetBilling; to: TargetBilling; model?: string };
 
-export type DeclaredServer = { command: string; args: string[]; readyPath: string; endpoint?: { forms: ManagedEndpointForm[] } };
+export type DeclaredServer = { command: string; args: string[]; readyPath: string; modelFile?: string; endpoint?: { forms: ManagedEndpointForm[] } };
 
 export type ModelsSettings = {
   connections?: ModelConnection[];

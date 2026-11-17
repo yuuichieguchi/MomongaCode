@@ -122,7 +122,7 @@ momonga [options] [prompt]
 | `momonga models unset-server [server] [field]` | clear a field of a server |
 | `momonga models name [server] [name]` | name a server |
 | `momonga models add-program` | declare a program that MomongaCode starts as a model server, and add the model it serves |
-| `momonga models set-program [id] [field] [value]` | change the command, args or readyPath of a declared program |
+| `momonga models set-program [id] [field] [value]` | change the command, args, readyPath or modelFile of a declared program |
 | `momonga models forget-program [id]` | forget a declared program that no server uses |
 | `momonga models timeouts` | how long a request waits for the first reply and without any data, in whole minutes, 1 or more |
 | `momonga models dialects` | the declared schema dialects |
@@ -679,6 +679,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `models.servers.<name>.command` | string (not empty) |  |  | user |
 | `models.servers.<name>.args` | array of string |  |  | user |
 | `models.servers.<name>.readyPath` | string |  |  | user |
+| `models.servers.<name>.modelFile` | string (an argument of `args`, exactly as written, that is an absolute path; it names the model file) |  |  | user |
 | `models.servers.<name>.endpoint` | object |  |  | user |
 | `models.servers.<name>.endpoint.forms` | array of `"unix"` or `"pipe"` (at least 1 entry) |  |  | user |
 | `models.dialects` | map of object |  |  | user |

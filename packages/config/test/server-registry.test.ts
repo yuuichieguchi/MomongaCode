@@ -57,7 +57,7 @@ describe('config-C12: a server no form of which the platform offers is refused w
   });
 });
 
-describe('config-C13: the record key of a declared server covers the file each path argument names', () => {
+describe('config-C13 and B-206: the record key of a declared server covers the model file its declaration marks', () => {
   const directories: string[] = [];
   afterEach(() => {
     for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
@@ -74,8 +74,8 @@ describe('config-C13: the record key of a declared server covers the file each p
     return file;
   };
   const osBuild: HostExec = async () => ({ exitCode: 0, stdout: '25A100\n', stderr: '' });
-  const declaredWith = (args: readonly string[], command = '/opt/loom/bin/loom'): ManagedServerDescription =>
-    serverRegistryOf({ loom: { command, args: [...args], readyPath: '/ready' } }, 'settings.json')['loom'] as ManagedServerDescription;
+  const declaredWith = (args: readonly string[], modelFile?: string, command = '/opt/loom/bin/loom'): ManagedServerDescription =>
+    serverRegistryOf({ loom: { command, args: [...args], readyPath: '/ready', ...(modelFile === undefined ? {} : { modelFile }) } }, 'settings.json')['loom'] as ManagedServerDescription;
   const keyOf = async (description: ManagedServerDescription, binary: string): Promise<ProbeKey> =>
     probeKeyOf({
       subject: description.id,
@@ -84,24 +84,36 @@ describe('config-C13: the record key of a declared server covers the file each p
       model: 'loom-1',
     });
 
-  it('lists the binary digest and one file identity per path argument, whole or after the equals sign of an option, never the OS build', () => {
-    expect(declaredWith(['serve', '--model', '/models/weights.gguf', '--adapter=/models/adapter.bin', '--threads', '4', '--socket', '{socket}']).identity).toEqual([
+  it('lists the binary digest and the file identity of the marked model file, whole or after the equals sign of an option, never the OS build', () => {
+    expect(declaredWith(['serve', '--model', '/models/weights.gguf', '--threads', '4', '--socket', '{socket}'], '/models/weights.gguf').identity).toEqual([
       'binarySha256',
       fileIdentityComponentOf('/models/weights.gguf'),
-      fileIdentityComponentOf('/models/adapter.bin'),
+    ]);
+    expect(declaredWith(['--weights=/models/weights.gguf', '{socket}'], '--weights=/models/weights.gguf').identity).toEqual([
+      'binarySha256',
+      fileIdentityComponentOf('/models/weights.gguf'),
     ]);
   });
 
-  it('lists a path once when two arguments name it, and none for a server without path arguments', () => {
-    expect(declaredWith(['--model', '/models/weights.gguf', '--draft=/models/weights.gguf', '{socket}']).identity).toEqual(['binarySha256', fileIdentityComponentOf('/models/weights.gguf')]);
-    expect(declaredWith(['serve', 'relative/weights.gguf', '--socket', '{socket}']).identity).toEqual(['binarySha256']);
+  it('lists no path component for a declaration that marks no model file, whatever paths its arguments name', () => {
+    expect(declaredWith(['--model', '/models/weights.gguf', '--log=/var/log/loom.log', '{socket}']).identity).toEqual(['binarySha256']);
   });
 
-  it('changes the key when the file of a path argument is replaced at the same path, and keeps it while the file stays', async () => {
+  it('keeps the key when a path argument that is not the model file changes', async () => {
+    const directory = makeDirectory();
+    const binary = placed(path.join(directory, 'loom'), '#!/bin/sh\n');
+    const weights = placed(path.join(directory, 'weights.gguf'), 'the model');
+    const first = declaredWith(['--model', weights, '--log', path.join(directory, 'first.log'), '{socket}'], weights, binary);
+    const second = declaredWith(['--model', weights, '--log', path.join(directory, 'second.log'), '{socket}'], weights, binary);
+
+    expect(await keyOf(second, binary)).toEqual(await keyOf(first, binary));
+  });
+
+  it('changes the key when the marked model file is replaced at the same path, and keeps it while the file stays', async () => {
     const directory = makeDirectory();
     const binary = placed(path.join(directory, 'loom'), '#!/bin/sh\n');
     const weights = placed(path.join(directory, 'weights.gguf'), 'the first model');
-    const description = declaredWith(['--model', weights, '{socket}'], binary);
+    const description = declaredWith(['--model', weights, '{socket}'], weights, binary);
 
     const first = await keyOf(description, binary);
     const again = await keyOf(description, binary);
@@ -115,11 +127,11 @@ describe('config-C13: the record key of a declared server covers the file each p
     expect(Object.keys((first as { fields: Record<string, unknown> }).fields)).toContain(fileIdentityComponentOf(weights));
   });
 
-  it('gives a path that names no file an identity of its own, which changes when a file appears there', async () => {
+  it('gives the marked path an identity of its own, which changes when a file appears there', async () => {
     const directory = makeDirectory();
     const binary = placed(path.join(directory, 'loom'), '#!/bin/sh\n');
     const weights = path.join(directory, 'weights.gguf');
-    const description = declaredWith(['--model', weights, '{socket}'], binary);
+    const description = declaredWith(['--model', weights, '{socket}'], weights, binary);
 
     const absent = await keyOf(description, binary);
     placed(weights, 'a model');
@@ -130,15 +142,29 @@ describe('config-C13: the record key of a declared server covers the file each p
     expect((present as { digest: string }).digest).not.toBe((absent as { digest: string }).digest);
   });
 
-  it('leaves the key unknown, naming the file, when a path argument cannot be read', async () => {
+  it('leaves the key unknown, naming the file, when the marked model file cannot be read', async () => {
     const directory = makeDirectory();
     const binary = placed(path.join(directory, 'loom'), '#!/bin/sh\n');
     const weights = path.join(placed(path.join(directory, 'plain-file'), 'x'), 'weights.gguf');
-    const description = declaredWith(['--model', weights, '{socket}'], binary);
+    const description = declaredWith(['--model', weights, '{socket}'], weights, binary);
 
     const key = await keyOf(description, binary);
 
     expect(key).toMatchObject({ kind: 'unknown', component: fileIdentityComponentOf(weights) });
     expect((key as { reason: string }).reason).toContain(weights);
+  });
+
+  it('refuses a model file mark that names no argument of the command, with the file, the pointer and the reason', () => {
+    expect(() => declaredWith(['--model', '/models/weights.gguf', '{socket}'], '/models/other.gguf')).toThrow(
+      new config.ConfigError(
+        'settings.json: models.servers.loom.modelFile names no argument of args: "/models/other.gguf" is not one of ["--model","/models/weights.gguf","{socket}"]',
+      ),
+    );
+  });
+
+  it('refuses a model file mark whose argument is not an absolute path', () => {
+    expect(() => declaredWith(['serve', 'relative/weights.gguf', '{socket}'], 'relative/weights.gguf')).toThrow(
+      new config.ConfigError('settings.json: models.servers.loom.modelFile must name an argument that is an absolute path; got "relative/weights.gguf"'),
+    );
   });
 });

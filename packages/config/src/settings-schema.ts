@@ -160,6 +160,7 @@ const DECLARED_SERVER_SCHEMA = {
     command: { type: 'string', minLength: 1 },
     args: { type: 'array', items: { type: 'string' } },
     readyPath: { type: 'string', pattern: '^/' },
+    modelFile: { type: 'string', minLength: 1 },
     endpoint: {
       type: 'object',
       properties: { forms: { type: 'array', items: { type: 'string', enum: MANAGED_ENDPOINT_FORMS }, minItems: 1, uniqueItems: true } },
