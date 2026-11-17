@@ -493,6 +493,15 @@ type PayloadSchema<Type> = {
   exclusive?: readonly PublicPayloadKeys<Type>[];
 };
 
+const fallbackCauseBase = { target: string, name: string, code: nullable(string), message: string };
+
+const fallbackCauseSchema: JsonSchema = {
+  oneOf: [
+    closed({ ...fallbackCauseBase, fromBilling: enumOf(TARGET_BILLINGS), toBilling: enumOf(TARGET_BILLINGS), reason: enumOf(BILLING_CHANGE_REASONS) }, ['target', 'code', 'message', 'fromBilling', 'toBilling', 'reason']),
+    closed(fallbackCauseBase, ['target', 'code', 'message']),
+  ],
+};
+
 const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']]: PayloadSchema<Type> } = {
   'user.message': {
     properties: { text: string, images: { type: 'array', items: imageSummary }, source: enumOf(INBOX_DELIVERIES), attachments: { type: 'array', items: attachmentSummary }, shell: { type: 'array', items: userShellRecord } },
@@ -860,6 +869,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       toolKey: string,
       key: string,
       reduction: closed({ turn: nonNegativeInteger, from: nonNegativeInteger, to: nonNegativeInteger }, ['turn', 'from', 'to']),
+      fallback: closed({ target: string, causes: { type: 'array', items: fallbackCauseSchema } }, ['target', 'causes']),
     },
     required: ['level', 'message'],
   },
@@ -954,15 +964,6 @@ const runTracePrefix = closed(
   { preservedItems: nonNegativeInteger, toolsChanged: boolean, causes: { type: 'array', items: enumOf(PREFIX_EVENTS) } },
   ['preservedItems', 'toolsChanged', 'causes'],
 );
-
-const fallbackCauseBase = { target: string, name: string, code: nullable(string), message: string };
-
-const fallbackCauseSchema: JsonSchema = {
-  oneOf: [
-    closed({ ...fallbackCauseBase, fromBilling: enumOf(TARGET_BILLINGS), toBilling: enumOf(TARGET_BILLINGS), reason: enumOf(BILLING_CHANGE_REASONS) }, ['target', 'code', 'message', 'fromBilling', 'toBilling', 'reason']),
-    closed(fallbackCauseBase, ['target', 'code', 'message']),
-  ],
-};
 
 const costFallbackProperties: Record<string, JsonSchema> = {
   fallbackCalls: nonNegativeInteger,

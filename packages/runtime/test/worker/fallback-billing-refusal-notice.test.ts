@@ -34,6 +34,10 @@ describe('a refused billing change in the fallback notice', () => {
     expect(notice?.message).toBe(
       'The model call was answered by the fallback model secondary because primary failed (provider_unavailable: the upstream is unreachable). Did not fall back to metered: billing from plan to metered is not allowed.',
     );
+    expect(notice?.fallback).toMatchObject({
+      target: 'secondary',
+      causes: [expect.objectContaining({ target: 'primary', code: 'provider_unavailable' }), expect.objectContaining({ target: 'metered', reason: 'billing_change_refused', fromBilling: 'plan', toBilling: 'metered' })],
+    });
   });
 
   it('names no command for a rejected plan credential either: each surface adds its own', async () => {

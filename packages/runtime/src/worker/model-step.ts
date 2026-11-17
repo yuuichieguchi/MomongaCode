@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { BuiltContext, TokenMeter } from '@momonga/context';
-import { BILLING_CHANGE_REFUSED, BUDGET_EXCEEDED_CODE, LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, wireUsageOf } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, LOWEST_REASONING_EFFORT, fallbackNoticeText, marginFloorFor, wireUsageOf } from '@momonga/protocol';
+import type { FallbackNotice } from '@momonga/protocol';
 import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
 import type { BudgetExhausted, ModelQuote, Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
@@ -252,14 +253,8 @@ const handleResult = async (
     },
   ];
   if (fallbackDecision.fallback && fallback?.fallbackCauses !== undefined) {
-    const failed = fallback.fallbackCauses.filter((cause) => cause.reason !== BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause));
-    const refused = fallback.fallbackCauses.filter((cause) => cause.reason === BILLING_CHANGE_REFUSED).map((cause) => describeFallbackCause(cause));
-    recorded.push({
-      type: 'notice',
-      level: 'warning',
-      message: [`The model call was answered by the fallback model ${fallback.target}${failed.length === 0 ? '' : ` because ${failed.join(' and ')}`}.`, ...refused].join(' '),
-      code: 'fallback_target',
-    });
+    const notice: FallbackNotice = { target: fallback.target, causes: fallback.fallbackCauses };
+    recorded.push({ type: 'notice', level: 'warning', message: fallbackNoticeText(notice), code: 'fallback_target', fallback: notice });
   }
   for (const narrowing of response.momonga?.schemaNarrowings ?? []) {
     const key = JSON.stringify([answeredBy, narrowing.tool, narrowing.path]);
