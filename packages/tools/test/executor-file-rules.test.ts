@@ -183,10 +183,11 @@ describe('executor guards read the user file rules', () => {
     return { tools, visible, run: async () => tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, await options) };
   };
 
-  it.runIf(HAS_RG && process.platform === 'linux')('refuses a Grep whose deny set needs more mask arguments than bubblewrap can take, with the typed policy error and no spawn, under the real sandbox', async () => {
+  it.runIf(HAS_RG && process.platform === 'linux')('refuses a Grep whose deny set needs more mask arguments than bubblewrap can take, before any spawn, with the typed policy error named in the failed result, under the real sandbox', async () => {
     const { run } = await crowdedGrep();
-    const error = await rejectionOf(run());
-    expect(error).toMatchObject({ name: 'SandboxPolicyError', code: 'deny_set_exceeds_argument_ceiling' });
+    const outcome = (await run()) as CallOutcome;
+    expect(resultOf(outcome).status).toBe('failed');
+    expect(resultOf(outcome).output).toContain(`at most ${MASK_ARGUMENT_CEILING} arguments`);
   });
 
   it.runIf(HAS_RG && process.platform === 'darwin')('runs a Grep whose deny set is above the bubblewrap ceiling under seatbelt, which names no file per denied path, and keeps the denied files out', async () => {
