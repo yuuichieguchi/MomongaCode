@@ -10,7 +10,7 @@ export { CircuitBreaker } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export { isRecord, parseBoundedJson, parseShippedManifest, spanValueOfJsonText } from './json.ts';
+export { isRecord, jsonValueOrText, parseBoundedJson, parseShippedManifest, spanValueOfJsonText } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput } from './json-reply.ts';
@@ -32,7 +32,7 @@ export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './ud
 export type { SocketResolver, UdsClient, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
 export { CALL_ID_PREFIX, newCallId } from './call-id.ts';
-export { LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+export { DEFAULT_LOCK_TIMEOUT_MS, LockWaitTimeoutError, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockPorts } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
 export type { CredentialEntry, CredentialStore, ListableCredentialStore } from './credential-store.ts';
@@ -188,6 +188,7 @@ export {
 export type { GenerationMarkerReap, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult } from './generation-reaper.ts';
 export { compareVersions, orderVersions, tryParseVersion } from './version-order.ts';
 export type { Version } from './version-order.ts';
+export { hasSocketGuard } from './platform/socket-guard-platform.ts';
 export { createBinaryHashCache, createHeldHostReadings, createHostExec, fileIdentityComponentOf, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading } from './host-identity.ts';
 export { NoCurrentGenerationError, currentSocketResolver, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
@@ -242,6 +243,7 @@ export {
   EXIT_USAGE,
   EXIT_WAITING_FOR_APPROVAL,
   SIGNATURE_REJECTED_EXIT_CODE,
+  LINUX_SOCKET_GUARD_COMPILER_MISSING_EXIT,
   WINDOWS_KEEPER_COMPILER_MISSING_EXIT,
   withLogData,
   GENERATION_POLL_INTERVAL_MS,
@@ -359,7 +361,7 @@ export { programKeysOfConfig } from './git-config-programs.ts';
 export type { ConfigPrograms } from './git-config-programs.ts';
 export { EMPTY_PROTECTED_SET, GIT_DIRECTORY_ENTRIES, MAX_POINTER_FILE_BYTES, WORKSPACE_CONTROL_NAMES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
 export type { EntryRead, PlaceholderForm, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
-export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseFilePattern, testFileMatcher } from './file-pattern.ts';
+export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, componentCountOf, fileMatcherOf, matchDepthOf, parseFilePattern, testFileMatcher } from './file-pattern.ts';
 export type { Expression, FileMatcher, FilePatternContext } from './file-pattern.ts';
 export { HOST_FLAVOUR, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 export type { PathFlavour } from './path-flavour.ts';

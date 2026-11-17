@@ -56,6 +56,7 @@ export type SignInPorts = {
   signal: AbortSignal;
   timers: SignInWaitTimers;
   delivered?(): void;
+  warn(text: string): void;
 };
 
 export const PASTE_LABEL = 'On a remote machine? Paste the redirect URL here';
@@ -136,7 +137,10 @@ const completed = async (plan: PlanGatewayClient, request: PlanSignInCompleteReq
   }
 };
 
-const abandoned = (plan: PlanGatewayClient, attemptId: string): Promise<void> => plan.signInCancel({ attemptId }).catch(() => undefined);
+const abandoned = (ports: SignInPorts, attemptId: string): Promise<void> =>
+  ports.plan.signInCancel({ attemptId }).then(undefined, (error: unknown) => {
+    ports.warn(`The sign-in could not be cancelled on the gateway: ${error instanceof Error ? error.message : String(error)}`);
+  });
 
 const afterConfirmation = async (ports: SignInPorts, waitingAnswer: PlanSignInIdentityUnconfirmed): Promise<PlanSignInCompleteResponse> => {
   const expiry = new AbortController();
@@ -147,7 +151,7 @@ const afterConfirmation = async (ports: SignInPorts, waitingAnswer: PlanSignInId
     accepted = await ports.confirmIdentity(waitingAnswer.identity, waiting);
     waiting.throwIfAborted();
   } catch (error) {
-    await abandoned(ports.plan, waitingAnswer.attemptId);
+    await abandoned(ports, waitingAnswer.attemptId);
     throw error;
   } finally {
     ports.timers.clearTimeout(timer);
@@ -179,7 +183,7 @@ export const signIn = async (ports: SignInPorts, request: SignInRequest): Promis
       value = await firstValue([async (signal) => (await listener.callback({ state: begun.state, signal })).href, (signal) => ports.pasted(begun.state, signal)], waiting);
       ports.delivered?.();
     } catch (error) {
-      await abandoned(ports.plan, begun.attemptId);
+      await abandoned(ports, begun.attemptId);
       throw error;
     } finally {
       ports.timers.clearTimeout(timer);

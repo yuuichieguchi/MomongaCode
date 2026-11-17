@@ -24,12 +24,12 @@ describe('the environment of a product process started by a test', () => {
   it.each([
     ['standInEnv', () => standInEnv(SESSION_PATH)],
     ['productTestEnv', () => productTestEnv({ PATH: SESSION_PATH })],
-  ])('%s names a D-Bus session bus, so the Linux secret store chooser takes the fake secret-tool', (_name, build) => {
+  ])('%s names a D-Bus session bus, so the Linux secret store chooser takes the fake secret-tool', async (_name, build) => {
     const env = build();
     const bin = fakeSecretProgramsBin();
     expect(env['DBUS_SESSION_BUS_ADDRESS']).toBeTruthy();
     const linux = { platform: 'linux' as const, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) };
-    const chosen = secretStoreEnvFor(env, linux);
+    const chosen = await secretStoreEnvFor(env, linux);
     expect(chosen[SECRET_BACKEND_ENV]).toBe('secret-service');
     expect(chosen[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'secret-tool'));
   });

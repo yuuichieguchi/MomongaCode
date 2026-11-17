@@ -13,8 +13,8 @@ const settingsNaming = (forgeName: string, modelName: string): CredentialSetting
   }) as unknown as CredentialSettings;
 
 describe('the runtime environment and the forge credential', () => {
-  it('passes the variable a forge names for its token, and keeps every other credential stripped', () => {
-    const { env, removed } = runtimeEnv({ PATH: '/usr/bin', GITHUB_TOKEN: 'forge-value', OTHER_TOKEN: 'other-value', MODEL_KEY: 'model-value' }, settingsNaming('GITHUB_TOKEN', 'MODEL_KEY'), secretStoreEnvFor({ PATH: '/usr/bin', GITHUB_TOKEN: 'forge-value', OTHER_TOKEN: 'other-value', MODEL_KEY: 'model-value' }, HOST));
+  it('passes the variable a forge names for its token, and keeps every other credential stripped', async () => {
+    const { env, removed } = runtimeEnv({ PATH: '/usr/bin', GITHUB_TOKEN: 'forge-value', OTHER_TOKEN: 'other-value', MODEL_KEY: 'model-value' }, settingsNaming('GITHUB_TOKEN', 'MODEL_KEY'), await secretStoreEnvFor({ PATH: '/usr/bin', GITHUB_TOKEN: 'forge-value', OTHER_TOKEN: 'other-value', MODEL_KEY: 'model-value' }, HOST));
 
     expect(env['GITHUB_TOKEN']).toBe('forge-value');
     expect(env).not.toHaveProperty('OTHER_TOKEN');
@@ -22,8 +22,8 @@ describe('the runtime environment and the forge credential', () => {
     expect(removed).toEqual(['MODEL_KEY', 'OTHER_TOKEN']);
   });
 
-  it('passes the forge variable even when a stripped variable holds the same value', () => {
-    const { env } = runtimeEnv({ PATH: '/usr/bin', GITHUB_TOKEN: 'shared-value', COPY_TOKEN: 'shared-value' }, settingsNaming('GITHUB_TOKEN', 'MODEL_KEY'), secretStoreEnvFor({ PATH: '/usr/bin', GITHUB_TOKEN: 'shared-value', COPY_TOKEN: 'shared-value' }, HOST));
+  it('passes the forge variable even when a stripped variable holds the same value', async () => {
+    const { env } = runtimeEnv({ PATH: '/usr/bin', GITHUB_TOKEN: 'shared-value', COPY_TOKEN: 'shared-value' }, settingsNaming('GITHUB_TOKEN', 'MODEL_KEY'), await secretStoreEnvFor({ PATH: '/usr/bin', GITHUB_TOKEN: 'shared-value', COPY_TOKEN: 'shared-value' }, HOST));
 
     expect(env['GITHUB_TOKEN']).toBe('shared-value');
     expect(env).not.toHaveProperty('COPY_TOKEN');

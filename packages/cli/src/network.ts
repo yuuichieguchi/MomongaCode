@@ -29,7 +29,7 @@ const networksOf = (ports: NetworkPorts): PinnedDerivation<OutboundNetwork> => {
   const known = networksByHome.get(ports.home);
   if (known !== undefined) return known;
   const created = createPinnedDerivation<OutboundNetwork>({
-    cache: createUserSettingsCache({ home: ports.home, onWarning: (message) => warn(ports, message), keptRecords: noKeptRecords }),
+    cache: createUserSettingsCache({ env: process.env, home: ports.home, onWarning: (message) => warn(ports, message), keptRecords: noKeptRecords }),
     signal: processLifetime.signal,
     inputsOf: derivedInputsOf('D4'),
     derive: (settings, _previous, signal) => resolveAndInstall(ports, settings, signal),

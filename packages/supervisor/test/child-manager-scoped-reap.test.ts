@@ -14,7 +14,7 @@ describe('the reap of a gone gateway takes only the managed servers of its own g
     prepareGenerationForTest(home, 1, '1.2.3');
     prepareGenerationForTest(home, SECOND_GENERATION, '1.2.3');
     const reaped: string[] = [];
-    const harness = createManagerHarness(context, {
+    const harness = await createManagerHarness(context, {
       role: 'gateway',
       overrides: {
         paths: scopeToGeneration(momongaPaths(home, process.platform, {}), SECOND_GENERATION),

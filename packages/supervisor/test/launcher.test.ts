@@ -25,7 +25,7 @@ const startedChildPids = (logText: string): number[] =>
     .filter((started): started is number => typeof started === 'number');
 
 describe('contract flags', () => {
-  it('launcher appends the contract flags in order', () => {
+  it('launcher appends the contract flags in order', async () => {
     expect(contractArgs({ generation: FIRST_GENERATION, role: 'runtime', home: '/h/home' })).toEqual([
       '--home=/h/home',
       `--generation=${FIRST_GENERATION}`,
@@ -45,14 +45,14 @@ describe('contract flags', () => {
     expect(gateway).toEqual(['--home=/h/home', '--generation=1', '--lifeline-fd=3', '--log-target=file', '--fm-binary=/opt/fm']);
   });
 
-  it('never passes the runtime drain at spawn: it travels in the stop message of each stop', () => {
+  it('never passes the runtime drain at spawn: it travels in the stop message of each stop', async () => {
     const runtime = { leaseMs: 100, drainTimeoutMs: 200 } as unknown as NonNullable<Parameters<typeof contractArgs>[0]['runtime']>;
     const args = contractArgs({ generation: FIRST_GENERATION, role: 'runtime', home: '/h/home', runtime });
     expect(args.filter((arg) => arg.startsWith('--drain-timeout-ms'))).toEqual([]);
     expect(args).toContain('--lease-ms=100');
   });
 
-  it('resolveLaunch puts the launcher args before the contract flags', () => {
+  it('resolveLaunch puts the launcher args before the contract flags', async () => {
     const resolved = resolveLaunch({
       generation: FIRST_GENERATION,
       role: 'gateway',
@@ -68,7 +68,7 @@ describe('contract flags', () => {
     });
   });
 
-  it('relative command is rejected', () => {
+  it('relative command is rejected', async () => {
     for (const command of ['node', './bin/node', '']) {
       expect(() =>
         resolveLaunch({ generation: FIRST_GENERATION, role: 'runtime', launcher: () => ({ command, args: [] }), home: '/h', baseEnv: {}, separateEnv: (merged) => merged }),
@@ -76,7 +76,7 @@ describe('contract flags', () => {
     }
   });
 
-  it('the separation filter is applied to the merged env', () => {
+  it('the separation filter is applied to the merged env', async () => {
     const seen: Record<string, string>[] = [];
     const resolved = resolveLaunch({
       generation: FIRST_GENERATION,
@@ -95,7 +95,7 @@ describe('contract flags', () => {
 });
 
 describe('stdio layout', () => {
-  it('stdio indices are LIFELINE_FD and DAEMON_MARKER_FD', () => {
+  it('stdio indices are LIFELINE_FD and DAEMON_MARKER_FD', async () => {
     const stdio = childStdio(17);
     expect(stdio).toEqual(['ignore', 'pipe', 'pipe', 'pipe', 17]);
     expect(stdio[LIFELINE_FD]).toBe('pipe');
@@ -103,7 +103,7 @@ describe('stdio layout', () => {
   });
 
   it('the manager hands spawn the lifeline pipe and the marker fd', async (context) => {
-    const harness = createManagerHarness(context);
+    const harness = await createManagerHarness(context);
     await harness.spawnInitial();
     const options = harness.port.last().options;
     expect(options.stdio[LIFELINE_FD]).toBe('pipe');
@@ -114,7 +114,7 @@ describe('stdio layout', () => {
 
 describe('spawn options', () => {
   it('children are spawned in the home with the contract flags', async (context) => {
-    const harness = createManagerHarness(context);
+    const harness = await createManagerHarness(context);
     await harness.spawnInitial();
     const call = harness.port.calls[0];
     expect(call?.options.cwd).toBe(harness.home);
@@ -124,7 +124,7 @@ describe('spawn options', () => {
 
   it('children are spawned detached: the real child leads its own group', async (context) => {
     const port = trackedSpawnPort(context);
-    const harness = createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE] }) });
+    const harness = await createManagerHarness(context, { port, launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE] }) });
     await harness.spawnInitial();
     const pid = port.spawned[0]?.pid;
     expect(typeof pid).toBe('number');
@@ -134,7 +134,7 @@ describe('spawn options', () => {
   });
 
   it('relative command is rejected and handled as a spawn failure', async (context) => {
-    const harness = createManagerHarness(context, { launcher: () => ({ command: 'node', args: [] }) });
+    const harness = await createManagerHarness(context, { launcher: () => ({ command: 'node', args: [] }) });
     await harness.spawnInitial();
     await waitFor(() => harness.manager.state() === 'backoff');
     expect(harness.spawnCount()).toBe(0);
@@ -143,7 +143,7 @@ describe('spawn options', () => {
   });
 
   it('launcher env cannot re-add a credential', async (context) => {
-    const runtime = createManagerHarness(context, {
+    const runtime = await createManagerHarness(context, {
       role: 'runtime',
       launcher: () => ({ command: process.execPath, args: [], env: { OPENAI_API_KEY: 'x', LAUNCHER_EXTRA: 'kept' } }),
     });
@@ -152,7 +152,7 @@ describe('spawn options', () => {
     expect(runtimeEnv).not.toHaveProperty('OPENAI_API_KEY');
     expect(runtimeEnv['LAUNCHER_EXTRA']).toBe('kept');
     expect(runtimeEnv['FOO']).toBe('foo');
-    const gateway = createManagerHarness(context, {
+    const gateway = await createManagerHarness(context, {
       role: 'gateway',
       launcher: () => ({ command: process.execPath, args: [], env: { UNDECLARED_X: 'y', NODE_OPTIONS: '--inspect' } }),
     });
@@ -219,7 +219,7 @@ describe('signals with real processes', () => {
 
   it('the SIGKILL stage kills the child\'s group', async (context) => {
     const port = trackedSpawnPort(context);
-    const harness = createManagerHarness(context, {
+    const harness = await createManagerHarness(context, {
       port,
       launcher: () => ({ command: process.execPath, args: [CHILD_FIXTURE, '--p2-ignore-term', '--p2-grandchild=group'] }),
     });

@@ -1,3 +1,5 @@
+import { systemProcessPorts } from '../src/process-ports.ts';
+import type { ProcessPorts } from '../src/process-ports.ts';
 import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +16,7 @@ export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 export const notTheRoleTick = (timer: PendingTimer): boolean => timer.delayMs !== SWEEP_INTERVAL_MS;
 
-export type GatewayProcessOptions = Omit<Parameters<typeof startGatewayProcess>[0], 'locks' | 'platform'> & { locks?: LayoutLocks; platform?: NodeJS.Platform };
+export type GatewayProcessOptions = Omit<Parameters<typeof startGatewayProcess>[0], 'locks' | 'platform' | 'signal' | keyof ProcessPorts> & Partial<Pick<Parameters<typeof startGatewayProcess>[0], 'signal' | keyof ProcessPorts>> & { locks?: LayoutLocks; platform?: NodeJS.Platform };
 export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess>>;
 
 export const makeHome = (): string => {
@@ -63,11 +65,11 @@ export type SecretHostProgram = { program: string; canonicalBinary: string; extr
 
 export type SecretHost = { env: Record<string, string>; programPath: string };
 
-export const fakeSecretHost = (bin: string, store: SecretHostProgram): SecretHost => {
+export const fakeSecretHost = async (bin: string, store: SecretHostProgram): Promise<SecretHost> => {
   const programPath = path.join(bin, store.program);
   fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   const platform: NodeJS.Platform = store.program === 'security' ? 'darwin' : 'linux';
-  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }, { platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }), programPath };
+  return { env: await secretStoreEnvFor({ PATH: bin, ...store.extraEnv }, { platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }), programPath };
 };
 
 export type HostPort = SecretProcessPort & {
@@ -120,7 +122,7 @@ export const captureStdout = (): StdoutCapture => {
 };
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {
-  return registerOwned(registerCleanup, () => startGatewayProcess({ locks: testLocks(), platform: process.platform, ...options }));
+  return registerOwned(registerCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  locks: testLocks(), platform: process.platform, ...options }));
 };
 
 export const clientFor = (socketPath: string): UdsClient => {

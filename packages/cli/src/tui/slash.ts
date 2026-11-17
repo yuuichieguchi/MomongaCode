@@ -172,8 +172,9 @@ export const SAVING_START_MODE = 'saving the start mode';
 
 export const modeToastText = (mode: PermissionMode): string => `${mode}: ${PERMISSION_MODE_DESCRIPTIONS[mode]}`;
 
-const writeStartMode = (context: SlashContext, chosen: PermissionMode): Promise<void> =>
-  context.background(SAVING_START_MODE, (signal) => context.backend.editSettings('user', { kind: 'set', path: ['permissions', 'defaultMode'], value: chosen }, signal));
+const writeStartMode = async (context: SlashContext, chosen: PermissionMode): Promise<void> => {
+  await context.background(SAVING_START_MODE, (signal) => context.backend.editSettings('user', { kind: 'set', path: ['permissions', 'defaultMode'], value: chosen }, signal));
+};
 
 const useMode = async (context: SlashContext, chosen: PermissionMode, start: boolean): Promise<void> => {
   await context.setMode(chosen);

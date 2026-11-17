@@ -5,8 +5,8 @@ import path from 'node:path';
 import * as gateway from '@momonga/gateway';
 import * as protocol from '@momonga/protocol';
 import { createTempDir, FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, TEST_UNPROTECTED_LAUNCH, testKernelLock, testProcessInspector } from '@momonga/testkit';
-import { systemTiming } from '@momonga/foundation';
-import type { ChildLaunch, ChildProtection, KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
+import { nodeFileSystemSync, systemRandom, systemTiming } from '@momonga/foundation';
+import type { ChildLaunch, ChildProtection, FileSystemSync, KernelLockMechanism, ProcessInspector, Random } from '@momonga/foundation';
 
 export type ExecAnswer = { exitCode: number; stdout: string; stderr: string };
 export type ExecPort = (file: string, args: readonly string[], options: { signal: AbortSignal }) => Promise<ExecAnswer>;
@@ -33,6 +33,8 @@ export type ManagedServerOptions = {
   lockPath: string;
   lock?: KernelLockMechanism;
   inspector?: ProcessInspector;
+  random?: Random;
+  fileSystem?: FileSystemSync;
   markerDirectory?: string;
   readyTimeoutMs: number;
   exec?: ExecPort;
@@ -50,7 +52,7 @@ export const exportOf = <T>(module: unknown, name: string, from: string): T => {
 };
 
 export const createManagedServer = (options: ManagedServerOptions): ManagedServerHandle =>
-  exportOf<(options: ManagedServerOptions) => ManagedServerHandle>(gateway, 'createManagedServer', '@momonga/gateway')({ lock: testKernelLock(), inspector: testProcessInspector(), timers: systemTiming, launch: TEST_UNPROTECTED_LAUNCH, ...options });
+  exportOf<(options: ManagedServerOptions) => ManagedServerHandle>(gateway, 'createManagedServer', '@momonga/gateway')({ lock: testKernelLock(), inspector: testProcessInspector(), timers: systemTiming, random: systemRandom, fileSystem: nodeFileSystemSync, launch: TEST_UNPROTECTED_LAUNCH, ...options });
 
 export const fmServer = (): Record<string, unknown> & { ready: { path: string }; restart: Record<string, number> } =>
   exportOf(protocol, 'FM_SERVER', '@momonga/protocol');

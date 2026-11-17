@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GroupContainmentError, attachKept, confirmByAttach, createJobGroupPort, createKeptGroupControl, createNodeKeeperHost, launchKept, nodeCommandRunner, stopKeptGroup, systemRandom, systemTiming } from '@momonga/foundation';
 import type { KeeperHost, KeeperRun, KeptCommand, KeptGroup, KeptLaunch } from '@momonga/foundation';
 import { createWindowsInspector } from '../packages/foundation/src/platform/windows-inspector.ts';
+import { systemWaitTiming } from '../packages/foundation/src/system-timing.ts';
 import { launch as launchCommand } from '../packages/sandbox/src/process.ts';
 import type { LaunchOptions } from '../packages/sandbox/src/process.ts';
 import { repoRoot } from './bundle.ts';
@@ -237,7 +238,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     try {
       const listed = await group.members(bounded());
       expect(listed.kind === 'members' && !listed.pids.includes(outsider)).toBe(true);
-      const inspector = createWindowsInspector({ run: nodeCommandRunner, env: process.env, groups: createKeptGroupControl(hostWith()), alive: isAlive });
+      const inspector = createWindowsInspector({ timing: systemWaitTiming, run: nodeCommandRunner, env: process.env, groups: createKeptGroupControl(hostWith()), alive: isAlive });
       const holders = await inspector.holdersOf(marker, { signal: bounded() });
       expect(holders.kind === 'value' && holders.value.includes(outsider)).toBe(true);
       expect(await stop(group)).toBe('terminated');

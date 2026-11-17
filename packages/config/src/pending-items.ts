@@ -1,4 +1,5 @@
 import { isRecord } from '@momonga/foundation';
+import type { LayoutEnvironment } from '@momonga/foundation';
 import { ConfigError } from './config-error.ts';
 import type { TrustOracle } from './layers.ts';
 import { loadSettings } from './load-settings.ts';
@@ -14,7 +15,7 @@ export type ProjectAgentFile = { name: string; text: string; source: string };
 
 export type ProjectAgentsLister = (projectDir: string, signal: AbortSignal) => Promise<readonly ProjectAgentFile[]>;
 
-export type PendingItemsInput = { home: string; projectDir: string; trust: TrustOracle; agents: ProjectAgentsLister; signal: AbortSignal; askedServer?: string };
+export type PendingItemsInput = { env: LayoutEnvironment; home: string; projectDir: string; trust: TrustOracle; agents: ProjectAgentsLister; signal: AbortSignal; askedServer?: string };
 
 export type PendingChange = { kind: 'new' } | { kind: 'changed'; earlier: unknown } | { kind: 'not-recorded' };
 
@@ -60,12 +61,12 @@ const agentChange = (name: string, held: readonly AgentApproval[]): PendingChang
   return earlier === undefined ? { kind: 'new' } : { kind: 'changed', earlier: earlier.text };
 };
 
-export const pendingProjectItems = async ({ home, projectDir, trust, agents, signal, askedServer }: PendingItemsInput): Promise<PendingProjectItems> => {
+export const pendingProjectItems = async ({ env, home, projectDir, trust, agents, signal, askedServer }: PendingItemsInput): Promise<PendingProjectItems> => {
   if (!(await trust.isTrusted(projectDir, signal))) return { items: [], refused: [] };
   const refused: string[] = [];
   const items: PendingProjectItem[] = [];
-  const loaded = await refusalOf(refused, () => loadSettings({ home, projectDir, cli: {}, trust, signal }));
-  const approvals: ProjectApprovalsSettings | undefined = loaded === undefined ? (await loadUserSettings({ home, signal })).settings.projectApprovals : loaded.settings.projectApprovals;
+  const loaded = await refusalOf(refused, () => loadSettings({ env, home, projectDir, cli: {}, trust, signal }));
+  const approvals: ProjectApprovalsSettings | undefined = loaded === undefined ? (await loadUserSettings({ env, home, signal })).settings.projectApprovals : loaded.settings.projectApprovals;
   const folderApprovals = approvals?.[await hostPaths(signal).canonicalPath(projectDir)];
   const held = folderApprovals?.hooks ?? [];
   const pendingHooks = loaded?.settings.pendingHooks ?? [];

@@ -94,7 +94,8 @@ export const foundNotConfigured = (edit: ModelsEdit, servers: readonly DetectedL
   });
 };
 
-export const addFoundModel = async (context: ModelsFlowContext, opened: Opened, server: DetectedLocalServer, model: DetectedModel, display: string): Promise<Added | undefined> => {
+export const addFoundModel = async (context: ModelsFlowContext, opened: Opened, server: DetectedLocalServer, found: DetectedModel, display: string): Promise<Added | undefined> => {
+  const model = await context.wait('reading this model', (signal) => hostOf(context, signal).describe(server, found, signal));
   const window = model.contextWindow ?? (await askWindow(context, display, model.ceiling));
   if (window === undefined) return NOT_ADDED;
   const proposal = await refusedSentence(context, async () => foundProposalOf(opened.edit, { args: [], options: { window: String(window) } }, server, model));

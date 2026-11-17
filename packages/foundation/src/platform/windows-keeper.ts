@@ -1,6 +1,7 @@
 import { KEEPER_JOB_PREFIX, KEEPER_NAME_BYTES, KEEPER_PIPE_PREFIX, keeperExitName } from '../process-contract.ts';
 import type { KeeperExitName } from '../process-contract.ts';
 import type { Random } from '../random.ts';
+import { abandoned } from './abandoned.ts';
 import type { Timing } from '../timing.ts';
 
 export const KEEPER_LINE_LIMIT = 1_048_576;
@@ -436,22 +437,6 @@ export type KeptStopOptions = {
 };
 
 type Phase<T> = { kind: 'value'; value: T } | { kind: 'expired' };
-
-const abandoned = <T>(pending: Promise<T>, signal: AbortSignal): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const leave = (): void => reject(signal.reason);
-    signal.addEventListener('abort', leave, { once: true });
-    pending.then(
-      (value) => {
-        signal.removeEventListener('abort', leave);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener('abort', leave);
-        reject(error);
-      },
-    );
-  });
 
 const withinPhase = async <T>(work: (signal: AbortSignal) => Promise<T>, { graceMs, timing, signal }: KeptStopOptions): Promise<Phase<T>> => {
   if (signal.aborted) return { kind: 'expired' };

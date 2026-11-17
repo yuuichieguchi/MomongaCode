@@ -8,7 +8,7 @@ import { makeDir, makeTree, projectSettingsPath, trusting, userSettingsPath, wri
 const signal = new AbortController().signal;
 
 const loadedFor = async (tree: ReturnType<typeof makeTree>, projectDir = tree.project) =>
-  loadSettings({ signal, home: tree.home, projectDir, cli: {}, trust: trusting(tree) });
+  loadSettings({ env: process.env, signal, home: tree.home, projectDir, cli: {}, trust: trusting(tree) });
 
 describe('declaredChecksOf', () => {
   it('reads scripts.test of package.json as npm test', async () => {

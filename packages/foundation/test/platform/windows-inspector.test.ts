@@ -12,11 +12,14 @@ import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createAsyncSignalSender } from '../../src/platform/group-port.ts';
-import { createWindowsInspector } from '../../src/platform/windows-inspector.ts';
+import { POWERSHELL_CALL_BOUND_MS, createWindowsInspector } from '../../src/platform/windows-inspector.ts';
+import { systemWaitTiming } from '../../src/system-timing.ts';
 import { parsePidList, parseStartTime } from '../../src/platform/windows-parsers.ts';
 import { holdersScript, powershellLiteral, startTimeScript } from '../../src/platform/windows-scripts.ts';
 
 const LIVE = { signal: new AbortController().signal };
+
+const NEVER_SETTLES = (): Promise<CommandResult> => new Promise<CommandResult>(() => {});
 
 const ENV = { SystemRoot: 'C:\\Windows', TEMP: 'C:\\Temp' };
 const POWERSHELL = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
@@ -69,10 +72,10 @@ describe('windows inspector through an injected command runner', () => {
 
   it('asks GetProcessTimes for the creation FILETIME of one pid', async () => {
     calls.length = 0;
-    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '133400000000000001\r\n' }), env: ENV, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({ stdout: '133400000000000001\r\n' }), env: ENV, ...NO_JOBS });
     const read = await inspector.startTimeOf(321, LIVE);
     expect(read.kind).toBe('value');
-    expect(await createWindowsInspector({ run: runnerReturning({ stdout: '133400000000000002\r\n' }), env: ENV, ...NO_JOBS }).startTimeOf(321, LIVE)).not.toEqual(read);
+    expect(await createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({ stdout: '133400000000000002\r\n' }), env: ENV, ...NO_JOBS }).startTimeOf(321, LIVE)).not.toEqual(read);
     expect(calls[0]?.file).toBe(POWERSHELL);
     expect(calls[0]?.args.slice(0, 3)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive']);
     expect(decodeScript(calls[0]?.args ?? [])).toContain('GetProcessTimes');
@@ -81,12 +84,12 @@ describe('windows inspector through an injected command runner', () => {
   });
 
   it('reports a pid without a row as gone', async () => {
-    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '\r\n' }), env: ENV, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({ stdout: '\r\n' }), env: ENV, ...NO_JOBS });
     expect(await inspector.startTimeOf(321, LIVE)).toEqual({ kind: 'gone' });
   });
 
   it('reports a failing powershell as a deterministic failure instead of no process', async () => {
-    const inspector = createWindowsInspector({ run: runnerReturning({ exitCode: 1, stderr: 'boom' }), env: ENV, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({ exitCode: 1, stderr: 'boom' }), env: ENV, ...NO_JOBS });
     expect(await inspector.startTimeOf(321, LIVE)).toEqual({
       kind: 'failed',
       cause: 'deterministic',
@@ -96,23 +99,34 @@ describe('windows inspector through an injected command runner', () => {
 
   it('reports a timed-out powershell as transient', async () => {
     const timedOut = Object.assign(new Error('Command failed: timed out'), { killed: true, signal: 'SIGKILL' });
-    const inspector = createWindowsInspector({ run: async () => Promise.reject(timedOut), env: ENV, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: async () => Promise.reject(timedOut), env: ENV, ...NO_JOBS });
     expect(await inspector.startTimeOf(321, LIVE)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout' } });
   });
 
+  it('ends a powershell call that never settles at the bound as a transient timeout', async () => {
+    const timers: Array<{ callback: () => void; ms: number }> = [];
+    const timing = { now: () => 0, monotonicMs: () => 0, setTimeout: (callback: () => void, ms: number) => (timers.push({ callback, ms }), timers.length), clearTimeout: () => {} };
+    const inspector = createWindowsInspector({ run: NEVER_SETTLES, timing, env: ENV, ...NO_JOBS });
+    const read = inspector.startTimeOf(321, LIVE);
+    for (let turn = 0; turn < 100 && timers.length === 0; turn += 1) await Promise.resolve();
+    expect(timers.map((timer) => timer.ms)).toEqual([POWERSHELL_CALL_BOUND_MS]);
+    timers[0]?.callback();
+    expect(await read).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout' } });
+  });
+
   it('reports output it cannot parse as a deterministic failure', async () => {
-    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: 'Monday' }), env: ENV, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({ stdout: 'Monday' }), env: ENV, ...NO_JOBS });
     expect(await inspector.startTimeOf(321, LIVE)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'unparseable' } });
   });
 
   it('needs SystemRoot to locate powershell', async () => {
-    const inspector = createWindowsInspector({ run: runnerReturning({}), env: {}, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({}), env: {}, ...NO_JOBS });
     expect(await inspector.startTimeOf(321, LIVE)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { detail: expect.stringContaining('SystemRoot') } });
   });
 
   it('lists marker holders through the Restart Manager', async () => {
     calls.length = 0;
-    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '[812,4096]' }), env: ENV, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({ stdout: '[812,4096]' }), env: ENV, ...NO_JOBS });
     expect(await inspector.holdersOf('C:\\Users\\a\\marker', LIVE)).toEqual({ kind: 'value', value: [812, 4096] });
     const script = decodeScript(calls[0]?.args ?? []);
     expect(script).toContain('rstrtmgr.dll');
@@ -122,6 +136,7 @@ describe('windows inspector through an injected command runner', () => {
   it('maps a holder to the candidate job whose keeper lists it, the keeper itself to its own job, any other live pid to itself, and leaves out a pid that is gone', async () => {
     const asked: number[] = [];
     const inspector = createWindowsInspector({
+      timing: systemWaitTiming,
       run: runnerReturning({}),
       env: ENV,
       groups: {
@@ -145,17 +160,17 @@ describe('windows inspector through an injected command runner', () => {
   });
 
   it('does not take a live pid equal to the candidate number as that group when this process does not hold the keeper of that job', async () => {
-    const inspector = createWindowsInspector({ run: runnerReturning({}), env: ENV, groups: { members: async () => listing([200]), leads: () => false }, alive: (pid) => pid === 100 || pid === 200 });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({}), env: ENV, groups: { members: async () => listing([200]), leads: () => false }, alive: (pid) => pid === 100 || pid === 200 });
     expect(await inspector.groupsOf([100, 200], [100], LIVE)).toEqual({ kind: 'value', value: new Map([[200, 100]]) });
   });
 
   it('gives no members for a candidate the keeper control does not know', async () => {
-    const inspector = createWindowsInspector({ run: runnerReturning({}), env: ENV, groups: { members: async () => ({ kind: 'unknown' }), leads: () => false }, alive: () => true });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({}), env: ENV, groups: { members: async () => ({ kind: 'unknown' }), leads: () => false }, alive: () => true });
     expect(await inspector.groupsOf([300], [100], LIVE)).toEqual({ kind: 'value', value: new Map([[300, 300]]) });
   });
 
   it('reports a failed read, not a group, when the keeper cannot answer for a candidate', async () => {
-    const inspector = createWindowsInspector({ run: runnerReturning({}), env: ENV, ...NO_JOBS });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runnerReturning({}), env: ENV, ...NO_JOBS });
     expect(await inspector.groupsOf([300], [100], LIVE)).toMatchObject({ kind: 'failed' });
   });
 });
@@ -184,14 +199,14 @@ describe('a Windows start time read that OpenProcess refuses (design 19.6 point 
   });
 
   it('reports gone when the script finds no row for the pid', async () => {
-    expect(await createWindowsInspector({ run: async () => ({ exitCode: 0, stdout: '\r\n', stderr: '' }), env: ENV, ...NO_JOBS }).startTimeOf(4242, LIVE)).toEqual({ kind: 'gone' });
+    expect(await createWindowsInspector({ timing: systemWaitTiming, run: async () => ({ exitCode: 0, stdout: '\r\n', stderr: '' }), env: ENV, ...NO_JOBS }).startTimeOf(4242, LIVE)).toEqual({ kind: 'gone' });
   });
 
   it.each([
     ['error 87 with a row in the process table', 'Exception calling "Creation" with "1" argument(s): "The parameter is incorrect" (87)'],
     ['error 5', 'Exception calling "Creation" with "1" argument(s): "Access is denied" (5)'],
   ])('reports %s as a failed read', async (_case, stderr) => {
-    expect(await createWindowsInspector({ run: failingWith(stderr), env: ENV, ...NO_JOBS }).startTimeOf(4242, LIVE)).toMatchObject({ kind: 'failed' });
+    expect(await createWindowsInspector({ timing: systemWaitTiming, run: failingWith(stderr), env: ENV, ...NO_JOBS }).startTimeOf(4242, LIVE)).toMatchObject({ kind: 'failed' });
   });
 
   it('gives a holder whose start time read fails with error 5 no signal, and reports it left alone', async () => {
@@ -201,7 +216,7 @@ describe('a Windows start time read that OpenProcess refuses (design 19.6 point 
       if (script.includes('rstrtmgr.dll')) return { exitCode: 0, stdout: '[4242]', stderr: '' };
       throw new Error(`no other script is run: ${script}`);
     };
-    const inspector = createWindowsInspector({ run: runner, env: ENV, groups: { members: async () => listing([]), leads: () => false }, alive: () => true });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runner, env: ENV, groups: { members: async () => listing([]), leads: () => false }, alive: () => true });
     const sent: Array<[number, NodeJS.Signals | 0]> = [];
     const groupPort: ProcessGroupPort = { signal: async (pgid, signal) => (sent.push([-pgid, signal]), 'sent' as const), alive: async () => false };
     let now = 0;
@@ -223,7 +238,7 @@ describe('a marker of a group this process did not launch, with no job name', ()
     const kept = createKeptGroupControl(fake.host);
     const groupPort = createProcessGroupPort('win32', { run: async () => ({ exitCode: 0, stdout: '[]', stderr: '' }), env: ENV, kept });
     const runner: CommandRunner = async () => ({ exitCode: 0, stdout: '[]', stderr: '' });
-    const inspector = createWindowsInspector({ run: runner, env: ENV, groups: kept, alive: () => true });
+    const inspector = createWindowsInspector({ timing: systemWaitTiming, run: runner, env: ENV, groups: kept, alive: () => true });
     const sent: Array<[number, NodeJS.Signals | 0]> = [];
     let now = 0;
     const result = await reconcileProcessGroup(

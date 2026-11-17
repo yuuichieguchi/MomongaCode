@@ -103,8 +103,8 @@ describe('the first sign-in of an account is confirmed before it is saved (found
     const { begun, answer } = await exchanged(gateway);
     clock.set(Date.parse(answer.body.expiresAt));
     const confirmed = await confirm(gateway, begun.body.attemptId);
-    expect(confirmed.status).toBe(400);
-    expect(confirmed.body.error.code).toBe('attempt_expired');
+    expect(confirmed.status).toBe(409);
+    expect(confirmed.body.error.code).toBe('identity_late');
     expect((await confirm(gateway, begun.body.attemptId)).body.error.code).toBe('attempt_not_found');
     expect(await statesOf(gateway)).toEqual(['registered']);
     await gateway.close();

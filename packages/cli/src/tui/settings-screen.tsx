@@ -311,7 +311,7 @@ export type Refusal = { readonly refused: string };
 export const writeSetting = (context: SlashContext, layer: SettingsLayer, operation: SettingsOperation): Promise<Refusal | undefined> =>
   savedOrRefused(context, (signal) => context.backend.editSettings(layer, operation, signal));
 
-export const savedOrRefused = async (context: SlashContext, write: (signal: AbortSignal) => Promise<void>): Promise<Refusal | undefined> => {
+export const savedOrRefused = async (context: SlashContext, write: (signal: AbortSignal) => Promise<unknown>): Promise<Refusal | undefined> => {
   try {
     await context.background(SAVING_SETTING, write);
     return undefined;

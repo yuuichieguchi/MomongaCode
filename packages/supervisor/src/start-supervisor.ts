@@ -180,7 +180,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const { startupTimeoutMs } = resolveStartTiming(options);
   const env = { ...(options.env ?? process.env) };
   const homePaths = momongaPaths(canonicalHome, process.platform, env);
-  const secretStoreEnv = secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) });
+  const secretStoreEnv = await secretStoreEnvFor(env, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file) => syncPaths.canonicalPath(file) });
   const paths = scopeToGeneration(homePaths, options.generation);
   const { lockMechanism, inspector } = options;
   const lockOptions = { mechanism: lockMechanism };
@@ -283,7 +283,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     };
 
     const stopValues = options.stopValues ?? createStopValuesReader({ onNotice: (detail) => log(settingsWarning({ detail })) });
-    const settings = createUserSettingsCache({
+    const settings = createUserSettingsCache({ env: process.env,
       home: canonicalHome,
       onWarning: (detail) => log(settingsWarning({ detail })),
       keptRecords: noKeptRecords,
@@ -508,7 +508,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let lastWrittenSeq: number | undefined;
     const recordApplied = async (key: string | undefined): Promise<void> => {
       try {
-        const written = await writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq, { signal: lifetime.signal, random: systemRandom, lock: lockMechanism });
+        const written = await writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq, { env: process.env, signal: lifetime.signal, random: systemRandom, lock: lockMechanism });
         if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
       } catch (error) {
         if (lifetime.signal.aborted || key === recordFailedKey) return;

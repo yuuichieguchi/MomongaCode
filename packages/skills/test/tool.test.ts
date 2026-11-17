@@ -19,7 +19,7 @@ const toolOf = async (
   fileSystem = fakeSkillFileSystem(files),
   admit: (skill: SkillContent) => Promise<SkillAdmission> = admitAll,
 ): Promise<AnyTool> => {
-  const set = await createSkillLoader({ home: HOME, fileSystem }).load({ projectRoot: '/work/app', trusted: true });
+  const set = await createSkillLoader({ home: HOME, fileSystem }).load({ projectRoot: '/work/app', trusted: true, signal: new AbortController().signal });
   const tool = set.activationTool({ isActive, admit });
   if (tool === undefined) throw new Error('expected an activation tool');
   return tool;
@@ -54,7 +54,7 @@ describe('activate_skill tool', () => {
   });
 
   it('is not offered without skills', async () => {
-    const set = await createSkillLoader({ home: HOME, fileSystem: fakeSkillFileSystem({}) }).load({ projectRoot: '/work/app', trusted: true });
+    const set = await createSkillLoader({ home: HOME, fileSystem: fakeSkillFileSystem({}) }).load({ projectRoot: '/work/app', trusted: true, signal: new AbortController().signal });
     expect(set.activationTool({ isActive: () => false, admit: admitAll })).toBeUndefined();
   });
 
@@ -108,7 +108,7 @@ describe('activate_skill tool', () => {
   });
 
   it('describes the tool for recovery without being able to execute it', async () => {
-    const set = await createSkillLoader({ home: HOME, fileSystem: fakeSkillFileSystem(files) }).load({ projectRoot: '/work/app', trusted: true });
+    const set = await createSkillLoader({ home: HOME, fileSystem: fakeSkillFileSystem(files) }).load({ projectRoot: '/work/app', trusted: true, signal: new AbortController().signal });
     const tool = set.recoveryTool();
     expect(tool).toMatchObject({ name: 'activate_skill', sideEffect: 'read_only' });
     expect(tool?.inputSchema).toMatchObject({ properties: { name: { enum: ['pdf', 'zip'] } } });

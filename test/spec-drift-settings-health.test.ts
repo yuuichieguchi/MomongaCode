@@ -183,7 +183,7 @@ describe('the user settings cache does what SettingsHealth.tla states, on the ed
       const tree = makeTree();
       const file = userSettingsPath(tree);
       const kept = memoryKeptRecords();
-      const cacheOf = () => createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: kept });
+      const cacheOf = () => createUserSettingsCache({ env: process.env, home: tree.home, onWarning: () => undefined, keptRecords: kept });
       writeJson(file, { env: { TZ: 'v1' } });
       let cache = cacheOf();
       await cache.loadOrKeep(signal);

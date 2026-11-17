@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverRecordFields, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { HandoverRecordParties, MomongaPaths } from '@momonga/foundation';
-import type { ImageAttachment } from '@momonga/protocol';
+import { QUIESCENT_BEHAVIOURS } from '@momonga/protocol';
+import type { ImageAttachment, QuiescentBehaviour } from '@momonga/protocol';
 import { OUTPUT_FORMATS } from '../run/output-format.ts';
 import type { OutputFormat } from '../run/output-format.ts';
 import type { TerminalSize } from '../tui/terminal/layer.ts';
@@ -52,7 +53,9 @@ export type TuiRecord = Common & {
 
 export type AcpRecord = Common & { kind: 'acp'; initialize: unknown; sessions: string[]; input: string };
 
-export type StreamRecord = Common & { kind: 'attach' | 'headless'; runId: string; output: OutputFormat; verbose: boolean };
+export type StreamQuiescence = { onQuiescent?: QuiescentBehaviour };
+
+export type StreamRecord = Common & { kind: 'attach' | 'headless'; runId: string; output: OutputFormat; verbose: boolean; quiescent?: StreamQuiescence };
 
 export type HandoverRecord = TuiRecord | AcpRecord | StreamRecord;
 
@@ -198,13 +201,23 @@ const acpOf = (fields: Fields): AcpRecord => {
   return { ...commonOf(fields), kind: 'acp', initialize: fields['initialize'], sessions, input: textOf(fields, 'input') };
 };
 
-const streamOf = (fields: Fields, kind: 'attach' | 'headless'): StreamRecord => ({
-  ...commonOf(fields),
-  kind,
-  runId: textOf(fields, 'runId'),
-  output: oneOf(fields, 'output', OUTPUT_FORMATS),
-  verbose: flagOf(fields, 'verbose'),
-});
+const quiescenceOf = (fields: Fields): StreamQuiescence | undefined => {
+  if (fields['quiescent'] === undefined) return undefined;
+  const value = objectOf(fields, 'quiescent');
+  return value['onQuiescent'] === undefined ? {} : { onQuiescent: oneOf(value, 'onQuiescent', QUIESCENT_BEHAVIOURS) };
+};
+
+const streamOf = (fields: Fields, kind: 'attach' | 'headless'): StreamRecord => {
+  const quiescent = quiescenceOf(fields);
+  return {
+    ...commonOf(fields),
+    kind,
+    runId: textOf(fields, 'runId'),
+    output: oneOf(fields, 'output', OUTPUT_FORMATS),
+    verbose: flagOf(fields, 'verbose'),
+    ...(quiescent === undefined ? {} : { quiescent }),
+  };
+};
 
 const recordOf = (fields: Fields): HandoverRecord => {
   const { format, kind } = fields;

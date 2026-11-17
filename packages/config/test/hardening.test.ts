@@ -13,7 +13,7 @@ const NEVER_ABORTED = new AbortController().signal;
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const load = (tree: ReturnType<typeof makeTree>) =>
-  loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 
 describe('B5 project additionalDirectories confinement', () => {
   it.each(['~', '..', '/'])('discards %j from project settings with a warning naming entry and file', async (entry) => {
@@ -284,7 +284,7 @@ describe('a regular file named .momonga in the project, as a bubblewrap placehol
   it('loads the settings of an untrusted project as if it had no settings files', async () => {
     const tree = makeTree();
     plantPlaceholder(tree);
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(result.files).toEqual([]);
   });
 });

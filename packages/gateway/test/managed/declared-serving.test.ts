@@ -93,7 +93,7 @@ const KINDS: Kind[] = [
 
 const descriptionIn = async (home: string, id: string): Promise<ManagedServerDescription> => {
   if (id === FM_SERVER.id) return FM_SERVER;
-  const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
+  const { settings } = await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
   const found = registryOf(settings.models).find((server) => server.id === id);
   if (found === undefined) throw new Error(`the loaded registry has no server ${JSON.stringify(id)}`);
   return found;
@@ -249,12 +249,12 @@ const declaredFake = async () => {
 };
 
 describe('the probe of a declared server records under the key of 19.4 on the instance places of 18.2.1 (R-S19-20)', () => {
-  it('writes the record named by the digest of {subject, model, binarySha256, hostOsBuild}, probing on run/g<N>/targets/_probe-workbench.sock', async () => {
+  it('writes the record named by the digest of {subject, model, binarySha256}, probing on run/g<N>/targets/_probe-workbench.sock', async () => {
     const { binary, dumpFile, home, description } = await declaredFake();
     const handle = await launch(home);
     expect((await postJson(clientFor(handle.socketPath), '/v1/responses', ask())).status).toBe(503);
     const key = keyOf(description, binary, 'fake-1');
-    expect(JSON.parse(key.canonical)).toEqual({ subject: 'anvil', model: 'fake-1', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
+    expect(JSON.parse(key.canonical)).toEqual({ subject: 'anvil', model: 'fake-1', binarySha256: sha256OfFile(binary) });
     await until(() => recordFiles(home).includes(`${key.digest}.json`), 'the probe record');
     const probeRuns = serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1]);
     expect(probeRuns).toContain(path.join(targetsDir(home), '_probe-workbench.sock'));

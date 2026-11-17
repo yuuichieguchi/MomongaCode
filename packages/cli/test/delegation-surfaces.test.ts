@@ -47,7 +47,7 @@ describe('headless output of a run under a mandate', () => {
 
   it('names the dimension, the cause and the figures of an exhausted budget, money in dollars', () => {
     const { lines } = headless([{ type: 'budget.exhausted', dimension: 'cost', cause: 'cap_too_small', spent: 1_900_000_000, limit: 2_000_000_000 }]);
-    expect(lines).toEqual(['momonga: budget exhausted: cost (what is left does not pay for another request); 1.9 USD of 2 USD used or reserved']);
+    expect(lines).toEqual(['momonga: The run stopped at its money limit: what is left does not pay for another model request (1.9 USD of 2 USD used or reserved).']);
   });
 });
 

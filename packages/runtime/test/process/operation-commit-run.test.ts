@@ -2,7 +2,10 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { SOLVER_THREAD_STOP_BOUND_MS } from '@momonga/foundation';
+import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { RULE_VERIFY_LOAD_ALLOWANCE_MS } from '../../src/process/rule-verifier.ts';
 import { finishApprovingPrompts, launchRuntime, modelSettings, prepareStack, readDb, scriptedToolCall, sessionEnvFor, startGateway, waitForStatus } from './run-helpers.ts';
 import type { Launched, RunHome } from './run-helpers.ts';
 
@@ -38,6 +41,15 @@ const trust = async (launched: Pick<Launched, 'http'>, temp: RunHome): Promise<v
 
 const offeredTools = (temp: RunHome, runId: string): string[] =>
   readDb<{ payload_json: string }>(temp.paths.databases.runtime, "SELECT payload_json FROM events WHERE run_id = ? AND type = 'tool.offered' ORDER BY seq", runId).flatMap((row) => (JSON.parse(row.payload_json) as { names: string[] }).names);
+
+const VERDICT_WAIT_BOUND_MS = RULE_VERIFY_BUDGET_MS + RULE_VERIFY_LOAD_ALLOWANCE_MS + SOLVER_THREAD_STOP_BOUND_MS;
+
+const offeredAfterMs = (temp: RunHome, runId: string): number => {
+  const [created] = readDb<{ created_at: number }>(temp.paths.databases.runtime, 'SELECT created_at FROM runs WHERE id = ?', runId);
+  const [offered] = readDb<{ created_at: number }>(temp.paths.databases.runtime, "SELECT created_at FROM events WHERE run_id = ? AND type = 'tool.offered' ORDER BY seq LIMIT 1", runId);
+  if (created === undefined || offered === undefined) throw new Error('the run has no creation or no offered tools');
+  return offered.created_at - created.created_at;
+};
 
 type Completed = { status: string; output: string; effect?: { operation: string; outcome: string } };
 
@@ -83,6 +95,7 @@ describe('GitCommit through the runtime process, composed as the product compose
     const session = await launched.createSession();
     const run = await launched.createRun(session.id, { input: 'write, stage and commit notes.txt', mandate: { profile: 'stage-commit' } });
     await waitForStatus(stack.temp, run.id, FINAL, undefined, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
+    expect(offeredAfterMs(stack.temp, run.id)).toBeLessThanOrEqual(VERDICT_WAIT_BOUND_MS);
     expect(completedCalls(stack.temp, run.id)).toMatchObject([
       { status: 'completed' },
       { status: 'completed', effect: { operation: 'GitStage', outcome: 'applied' } },

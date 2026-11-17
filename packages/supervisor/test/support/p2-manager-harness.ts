@@ -49,7 +49,7 @@ export type SettingsDouble = UserSettingsCache & {
 export const settingsOnDisk = (home: string): UserSettingsSnapshot => {
   const file = momongaPaths(home, process.platform, {}).settingsFile;
   try {
-    return answeredNow(userSettingsOfText(home, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined), syncPaths);
+    return answeredNow(userSettingsOfText(home, process.env, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined), syncPaths);
   } catch (error) {
     if (error instanceof ConfigError) return { error };
     throw error;
@@ -121,7 +121,7 @@ export type ManagerHarnessOptions = {
   realReap?: boolean;
 };
 
-export const createManagerHarness = (context: CleanupContext, options: ManagerHarnessOptions = {}): ManagerHarness => {
+export const createManagerHarness = async (context: CleanupContext, options: ManagerHarnessOptions = {}): Promise<ManagerHarness> => {
   const role = options.role ?? 'runtime';
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home, process.platform, {});
@@ -189,7 +189,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     endpoint: roleEndpoint(layout, role),
     launcher,
     env: managerEnv,
-    secretStoreEnv: secretStoreEnvFor(managerEnv, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
+    secretStoreEnv: await secretStoreEnvFor(managerEnv, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
     spawn: options.port ?? port,
     settings,
     signal: new AbortController().signal,

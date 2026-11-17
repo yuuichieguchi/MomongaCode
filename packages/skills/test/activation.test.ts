@@ -9,7 +9,7 @@ const PDF = `${HOME}/.agents/skills/pdf`;
 
 const loadFrom = async (files: Record<string, string>, limits?: SkillLimits) => {
   const fileSystem = fakeSkillFileSystem(files);
-  const set = await createSkillLoader({ home: HOME, fileSystem, ...(limits === undefined ? {} : { limits }) }).load({ projectRoot: PROJECT, trusted: true });
+  const set = await createSkillLoader({ home: HOME, fileSystem, ...(limits === undefined ? {} : { limits }) }).load({ projectRoot: PROJECT, trusted: true, signal: new AbortController().signal });
   return { set, fileSystem };
 };
 

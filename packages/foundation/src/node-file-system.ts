@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
+import { promisify } from 'node:util';
 import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, DescriptorWriter, DescriptorWriterSync, FileContent } from './atomic-file.ts';
 import { PRIVATE_MODE, assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
@@ -208,7 +209,7 @@ export const nodeFileSystem: FileSystem = {
   },
   makeDirectory: async (directory, mode) => void (await fs.promises.mkdir(directory, mode === undefined ? {} : { mode })),
   removeEmptyDirectory: (directory) => fs.promises.rmdir(directory),
-  realpath: (file) => fs.promises.realpath(file),
+  realpath: (file) => promisify(fs.realpath.native)(file),
   openDirectory: async (directory) => {
     const handle = await fs.promises.opendir(directory);
     return { read: async () => (await handle.read())?.name ?? null, close: () => handle.close() };

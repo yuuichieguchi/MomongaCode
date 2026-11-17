@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../src/process-ports.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -95,7 +96,7 @@ const trailIn = (home: string): Trail => {
 
 const launch = async (home: string, trail?: Trail) => {
   const output = trail === undefined ? { stdout: { write: () => true } } : { stdout: trail.stream, logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: trail.stream, level: 'debug' }) };
-  const handle = await registerOwned(registerCleanup, () => startGatewayProcess({ locks: testLocks(), platform: process.platform, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...output }));
+  const handle = await registerOwned(registerCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  locks: testLocks(), platform: process.platform, generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...output }));
   registerCleanup(async () => {
     await handle.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 });
   });

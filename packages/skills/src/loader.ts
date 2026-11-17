@@ -2,6 +2,7 @@ import { activateSkill } from './activation.ts';
 import { DEFAULT_SKILL_LIMITS } from './constants.ts';
 import type { SkillLimits } from './constants.ts';
 import { renderCatalog } from './catalog.ts';
+import { stoppedBy } from './file-system.ts';
 import type { SkillFileSystem } from './file-system.ts';
 import { scanSkills } from './scan.ts';
 import { createActivateSkillTool } from './tool.ts';
@@ -11,8 +12,8 @@ import type { Skill, SkillLoader, SkillSet } from './types.ts';
 export type SkillLoaderOptions = { home: string; fileSystem: SkillFileSystem; limits?: SkillLimits };
 
 export const createSkillLoader = ({ home, fileSystem, limits = DEFAULT_SKILL_LIMITS }: SkillLoaderOptions): SkillLoader => ({
-  load: async ({ projectRoot, trusted }) => {
-    const { skills, warnings } = await scanSkills({ home, projectRoot, trusted }, fileSystem, limits);
+  load: async ({ projectRoot, trusted, signal }) => {
+    const { skills, warnings } = await scanSkills({ home, projectRoot, trusted }, stoppedBy(fileSystem, signal), limits);
     const byName = new Map<string, Skill>(skills.map((skill) => [skill.name, skill]));
     const activate: SkillSet['activate'] = (name) => {
       const skill = byName.get(name);

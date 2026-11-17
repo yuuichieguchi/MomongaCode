@@ -7,6 +7,7 @@ import {
   EXIT_USAGE,
   KEEPER_EXIT_CODES,
   SIGNATURE_REJECTED_EXIT_CODE,
+  LINUX_SOCKET_GUARD_COMPILER_MISSING_EXIT,
   WINDOWS_KEEPER_COMPILER_MISSING_EXIT,
   EXIT_CONFIG,
   EXIT_FAILURE,
@@ -74,6 +75,10 @@ describe('exit codes', () => {
     const codes = Object.values(EXIT_CODES).map((entry) => entry.code);
     expect(new Set(codes).size).toBe(codes.length);
     expect(codes.filter((code) => (Object.values(KEEPER_EXIT_CODES) as number[]).includes(code))).toEqual([]);
+  });
+
+  it('gives the Linux socket guard and the Windows keeper one compiler-missing exit name each, both 3', () => {
+    expect([LINUX_SOCKET_GUARD_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_COMPILER_MISSING_EXIT]).toEqual([3, 3]);
   });
 
   it('names the usage error 2, the interrupt 130 as the signal base plus SIGINT, the keeper compiler 3 and the rejected signature 255', () => {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, settledOrAborted, startSharedCall } from '@momonga/foundation';
-import type { ChildLaunch, ChildProtection, GenerationRole, ProcessLock, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
+import type { ChildLaunch, ChildProtection, FileSystemSync, GenerationRole, ProcessLock, Random, SharedCall, UdsClient, ProcessInspector, KernelLockMechanism } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
@@ -36,6 +36,8 @@ export type ManagedServerOptions = {
   lockPath: string;
   lock: KernelLockMechanism;
   inspector: ProcessInspector;
+  random: Random;
+  fileSystem: FileSystemSync;
   markerDirectory?: string;
   readyTimeoutMs: number;
   env?: ChildEnv;
@@ -86,7 +88,6 @@ export const MANAGED_SERVER_BEHAVIOUR = {
   resetOnReady: false,
   claimBounded: true,
   singleFlight: 'key',
-  instanceWait: true,
 } as const;
 
 const LOCK_DIRECTORY_MODE = 0o700;
@@ -133,7 +134,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       ? async (): Promise<ManagedChild> => {
           throw new Error(aboutModel(target, 'the server has no marker directory, so it cannot be launched'));
         }
-      : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning, inspector: options.inspector }));
+      : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning, inspector: options.inspector, random: options.random, fileSystem: options.fileSystem }));
   const timers = options.timers;
   const argv = argvOf(description, options.socketPath);
   const said = (text: string): string => aboutModel(target, text);
@@ -215,14 +216,16 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
 
   const occupied = (detail: string): ManagedServerError => new ManagedServerError('unhealthy', said('the server socket path is occupied'), detail);
 
-  const acquireInstanceLock = async (signal: AbortSignal): Promise<ProcessLock> => {
+  const acquireInstanceLock = async (signal: AbortSignal): Promise<{ lock: ProcessLock; waitedForHolder: boolean }> => {
     await fs.promises.mkdir(path.dirname(options.lockPath), { recursive: true, mode: LOCK_DIRECTORY_MODE });
+    let waitedForHolder = false;
     for (;;) {
       signal.throwIfAborted();
       try {
-        return await acquireProcessLock(options.lockPath, undefined, { mechanism: options.lock });
+        return { lock: await acquireProcessLock(options.lockPath, undefined, { mechanism: options.lock }), waitedForHolder };
       } catch (error) {
         if (!(error instanceof ProcessLockHeldError)) throw error;
+        waitedForHolder = true;
       }
       await sleep(HEALTH_POLL_INTERVAL_MS, signal);
     }
@@ -245,15 +248,16 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     }
   };
 
-  const claimInstance = async (signal: AbortSignal): Promise<ProcessLock> => {
-    const lock = await acquireInstanceLock(signal);
+  const claimInstance = async (signal: AbortSignal, readyClient: UdsClient): Promise<{ lock: ProcessLock; adopted: boolean }> => {
+    const { lock, waitedForHolder } = await acquireInstanceLock(signal);
     try {
       if (options.markerDirectory !== undefined) {
-        await fs.promises.mkdir(options.markerDirectory, { recursive: true, mode: LOCK_DIRECTORY_MODE });
+        options.fileSystem.mkdirSync(options.markerDirectory, LOCK_DIRECTORY_MODE);
         await reapStaleGroups({ markerDirectory: options.markerDirectory, graceMs: options.readStopGraceMs(), onWarning: options.onWarning, signal, inspector: options.inspector });
       }
+      if (waitedForHolder && (await answersReady(readyClient, signal))) return { lock, adopted: true };
       await waitForFreeSocket(signal);
-      return lock;
+      return { lock, adopted: false };
     } catch (error) {
       lock.release();
       throw error;
@@ -406,8 +410,13 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     }, description.restart.windowMs);
   };
 
-  const launchReady = async (startClient: UdsClient, signal: AbortSignal, isCurrent: () => boolean): Promise<RunningChild | undefined> => {
-    const lock = await claimInstance(signal);
+  const launchReady = async (startClient: UdsClient, signal: AbortSignal, isCurrent: () => boolean): Promise<RunningChild | 'adopted' | undefined> => {
+    const claim = await claimInstance(signal, startClient);
+    if (claim.adopted) {
+      claim.lock.release();
+      return 'adopted';
+    }
+    const { lock } = claim;
     let launched: RunningChild | undefined;
     let childStartBegun = false;
     try {
@@ -449,6 +458,10 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       consecutiveFailures += 1;
       const launched = await launchReady(restartClient, signal, isCurrent);
       if (launched === undefined) return;
+      if (launched === 'adopted') {
+        if (isCurrent()) state = 'idle';
+        return;
+      }
       if (!isCurrent()) {
         await terminate(launched);
         return;
@@ -478,6 +491,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     const startClient = createUdsClient(fixedSocket(options.socketPath), { connectTimeoutMs: 0 });
     client = startClient;
     const isCurrent = (): boolean => generation === startGeneration;
+    let adopted = false;
     try {
       const unfit = await unfitSocketError();
       if (unfit !== undefined) {
@@ -496,6 +510,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       try {
         const launched = await launchReady(startClient, AbortSignal.any([startSignal, deadline.signal]), isCurrent);
         if (launched === undefined || !isCurrent()) throw stoppedDuringStart();
+        adopted = launched === 'adopted';
       } finally {
         deadline.dispose();
       }
@@ -506,7 +521,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       else if (!(error instanceof PreconditionFailedError) && !(error instanceof TargetNotReadyError)) state = 'idle';
       throw error;
     }
-    state = 'running';
+    state = adopted ? 'idle' : 'running';
     return endpoint;
   };
 

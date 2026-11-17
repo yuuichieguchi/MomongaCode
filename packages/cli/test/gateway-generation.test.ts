@@ -93,43 +93,27 @@ const clientAcross = (context: TestContext, sockets: readonly string[]) => {
   return { client, dialed };
 };
 
-describe('every call of the CLI gateway client is sent once more when a retired generation refuses it', () => {
-  it('the health read resolves the socket again and is answered by the serving generation', async (context) => {
+describe('every call of the CLI gateway client is sent once; a retired generation refusal is its answer (the pool drops the connection)', () => {
+  it('the health read is sent once and fails with the refusal, without a second dial', async (context) => {
     const retired = await gatewayAnswering(context, 'old.sock', [RETIRED]);
-    const serving = await gatewayAnswering(context, 'new.sock', [{ status: 200, body: HEALTH }]);
-    const { client, dialed } = clientAcross(context, [retired.socketPath, serving.socketPath]);
-
-    expect(await client.health()).toEqual(HEALTH);
-
-    expect(dialed).toEqual([retired.socketPath, serving.socketPath]);
-    expect(serving.requests).toEqual(['GET /v1/momonga/health']);
-  });
-
-  it('a plan route that reads and a plan route that writes are sent once more with the same body', async (context) => {
-    const retired = await gatewayAnswering(context, 'old.sock', [RETIRED, RETIRED]);
-    const serving = await gatewayAnswering(context, 'new.sock', [
-      { status: 200, body: ACCOUNTS },
-      { status: 200, body: { hostId: 'host-1' } },
-    ]);
-    const reading = clientAcross(context, [retired.socketPath, serving.socketPath]);
-    const writing = clientAcross(context, [retired.socketPath, serving.socketPath]);
-
-    expect(await reading.client.plan.accounts()).toEqual(ACCOUNTS);
-    expect(await writing.client.plan.resetHost()).toEqual({ hostId: 'host-1' });
-
-    expect(retired.requests).toHaveLength(2);
-    expect(serving.requests).toHaveLength(2);
-    expect(serving.requests[1]).toMatch(/^POST /);
-  });
-
-  it('a call refused a second time fails with the refusal and its code, and is not sent a third time', async (context) => {
-    const retired = await gatewayAnswering(context, 'old.sock', [RETIRED, RETIRED, { status: 200, body: HEALTH }]);
-    const { client } = clientAcross(context, [retired.socketPath]);
+    const { client, dialed } = clientAcross(context, [retired.socketPath]);
 
     const failure = await client.health().catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(GatewayAnswerError);
     expect(failure).toMatchObject({ status: 503, answer: { code: GENERATION_RETIRED_CODE, message: RETIRED_MESSAGE } });
+    expect(dialed).toEqual([retired.socketPath]);
+    expect(retired.requests).toEqual(['GET /v1/momonga/health']);
+  });
+
+  it('a plan route that reads and a plan route that writes are each sent once', async (context) => {
+    const retired = await gatewayAnswering(context, 'old.sock', [RETIRED, RETIRED]);
+    const reading = clientAcross(context, [retired.socketPath]);
+    const writing = clientAcross(context, [retired.socketPath]);
+
+    await expect(reading.client.plan.accounts()).rejects.toBeInstanceOf(GatewayAnswerError);
+    await expect(writing.client.plan.resetHost()).rejects.toBeInstanceOf(GatewayAnswerError);
+
     expect(retired.requests).toHaveLength(2);
   });
 });

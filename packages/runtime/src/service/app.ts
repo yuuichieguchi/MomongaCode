@@ -588,8 +588,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const reportedView = async (runId: string, signal: AbortSignal) => {
-    const { report } = await store.journalFacts.report({ runId }, signal);
-    return { ...toRunView(requireRun(runId)), report };
+    const { report, run } = await store.journalFacts.report({ runId }, signal);
+    return { ...toRunView(run), report };
   };
 
   const createRun: Handler = async (context) => {
@@ -736,7 +736,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
+  const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id, context.req.raw.signal) });
 
   const getRun: Handler = async (context) => json({ run: await reportedView(requireRun(context.req.param('id') ?? '').id, context.req.raw.signal) });
 
@@ -905,7 +905,6 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
     home: deps.home,
-    refuseWhileRetiring,
   });
   registerGuidelineRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerRuleRoutes(route, {

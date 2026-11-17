@@ -29,7 +29,7 @@ const configErrorMessage = (home: string): string => {
 };
 
 describe('gatewayEnv', () => {
-  it('gateway env has exactly the minimal names, the secret store location and the declared credentials', () => {
+  it('gateway env has exactly the minimal names, the secret store location and the declared credentials', async () => {
     const source = {
       PATH: '/opt/homebrew/bin:/usr/bin',
       HOME: '/Users/u',
@@ -41,25 +41,25 @@ describe('gatewayEnv', () => {
       FOO: 'foo',
       NODE_OPTIONS: '--require /x.js',
     };
-    const env = gatewayEnv(source, declaring('UPSTREAM_X', 'ABSENT_KEY'), '/canonical/home', secretStoreEnvFor(source, HOST));
+    const env = gatewayEnv(source, declaring('UPSTREAM_X', 'ABSENT_KEY'), '/canonical/home', await secretStoreEnvFor(source, HOST));
     expect(env).toEqual({
-      ...secretStoreEnvFor(source, HOST),
+      ...await secretStoreEnvFor(source, HOST),
       PATH: MINIMAL_CHILD_PATH,
       HOME: '/Users/u',
       LANG: 'en_US.UTF-8',
       TMPDIR: '/var/tmp/u',
       LC_ALL: 'C',
       UPSTREAM_X: 'upstream-value',
-      ...secretStoreEnvFor(source, HOST),
+      ...await secretStoreEnvFor(source, HOST),
     });
     expect(env).not.toHaveProperty('ABSENT_KEY');
   });
 
-  it('gatewayEnv carries NODE_EXTRA_CA_CERTS together with the proxy and SSL_CERT_FILE variables', () => {
+  it('gatewayEnv carries NODE_EXTRA_CA_CERTS together with the proxy and SSL_CERT_FILE variables', async () => {
     const env = gatewayEnv(
       { PATH: '/bin', HOME: '/h', NODE_EXTRA_CA_CERTS: '/etc/corp-ca.pem', HTTPS_PROXY: 'http://proxy:3128', HTTP_PROXY: 'http://proxy:3128', SSL_CERT_FILE: '/etc/ssl.pem' },
       declaring(),
-      '/h', secretStoreEnvFor({ PATH: '/bin', HOME: '/h', NODE_EXTRA_CA_CERTS: '/etc/corp-ca.pem', HTTPS_PROXY: 'http://proxy:3128', HTTP_PROXY: 'http://proxy:3128', SSL_CERT_FILE: '/etc/ssl.pem' }, HOST),
+      '/h', await secretStoreEnvFor({ PATH: '/bin', HOME: '/h', NODE_EXTRA_CA_CERTS: '/etc/corp-ca.pem', HTTPS_PROXY: 'http://proxy:3128', HTTP_PROXY: 'http://proxy:3128', SSL_CERT_FILE: '/etc/ssl.pem' }, HOST),
     );
     expect(env['NODE_EXTRA_CA_CERTS']).toBe('/etc/corp-ca.pem');
     expect(env['HTTPS_PROXY']).toBe('http://proxy:3128');
@@ -67,13 +67,13 @@ describe('gatewayEnv', () => {
     expect(env['SSL_CERT_FILE']).toBe('/etc/ssl.pem');
   });
 
-  it('gatewayEnv hands the gateway every network variable the resolver reads', () => {
+  it('gatewayEnv hands the gateway every network variable the resolver reads', async () => {
     const source = Object.fromEntries(NETWORK_ENV_NAMES.map((name) => [name, `value-of-${name}`]));
-    const env = gatewayEnv({ PATH: '/bin', HOME: '/h', ...source }, declaring(), '/h', secretStoreEnvFor({ PATH: '/bin', HOME: '/h', ...source }, HOST));
+    const env = gatewayEnv({ PATH: '/bin', HOME: '/h', ...source }, declaring(), '/h', await secretStoreEnvFor({ PATH: '/bin', HOME: '/h', ...source }, HOST));
     for (const name of NETWORK_ENV_NAMES) expect(env[name]).toBe(`value-of-${name}`);
   });
 
-  it('gateway env skips colliding declared names', () => {
+  it('gateway env skips colliding declared names', async () => {
     const skipped: string[] = [];
     const source = {
       PATH: 'declared-path-value',
@@ -87,16 +87,16 @@ describe('gatewayEnv', () => {
       source,
       declaring('PATH', 'NODE_OPTIONS', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'HOME', 'LC_ALL'),
       '/canonical/home',
-      secretStoreEnvFor(source, HOST),
+      await secretStoreEnvFor(source, HOST),
       (name) => skipped.push(name),
     );
-    expect(env).toEqual({ ...secretStoreEnvFor(source, HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8' });
+    expect(env).toEqual({ ...await secretStoreEnvFor(source, HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8' });
     for (const value of ['declared-path-value', 'declared-node-options', 'declared-ld-preload', 'declared-dyld']) expect(Object.values(env)).not.toContain(value);
     expect([...skipped].sort()).toEqual(['DYLD_INSERT_LIBRARIES', 'HOME', 'LC_ALL', 'LD_PRELOAD', 'NODE_OPTIONS', 'PATH']);
   });
 
-  it('gateway HOME comes from the canonical home when the env lacks it', () => {
-    expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home', secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }, HOST))).toEqual({ ...secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }, HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
+  it('gateway HOME comes from the canonical home when the env lacks it', async () => {
+    expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home', await secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }, HOST))).toEqual({ ...await secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }, HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
   });
 });
 
@@ -112,11 +112,11 @@ const binWith = (...programs: string[]): string => {
 };
 
 describe('gatewayEnv secret store discovery', () => {
-  it('passes the secret-tool found on the user PATH and the D-Bus address, with the minimal PATH', () => {
+  it('passes the secret-tool found on the user PATH and the D-Bus address, with the minimal PATH', async () => {
     const bin = binWith('secret-tool');
     try {
       const bus = 'unix:path=/nonexistent/momonga-test-bus';
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, referencingSecret(), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, { ...HOST, platform: 'linux' }));
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, referencingSecret(), '/home/u', await secretStoreEnvFor({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, { ...HOST, platform: 'linux' }));
       expect(env[SECRET_BACKEND_ENV]).toBe('secret-service');
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'secret-tool'));
       expect(env['DBUS_SESSION_BUS_ADDRESS']).toBe(bus);
@@ -127,10 +127,10 @@ describe('gatewayEnv secret store discovery', () => {
     }
   });
 
-  it.skipIf(STORE.declaresBus)('passes no D-Bus address when the chosen store does not declare it', () => {
+  it.skipIf(STORE.declaresBus)('passes no D-Bus address when the chosen store does not declare it', async () => {
     const bin = binWith(STORE.program);
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, referencingSecret(), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, HOST));
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, referencingSecret(), '/home/u', await secretStoreEnvFor({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe(STORE.backend);
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, STORE.program));
       expect(env['DBUS_SESSION_BUS_ADDRESS']).toBeUndefined();
@@ -139,10 +139,10 @@ describe('gatewayEnv secret store discovery', () => {
     }
   });
 
-  it('passes the store choice even when no target references a secret, because the credential store needs it (N81)', () => {
+  it('passes the store choice even when no target references a secret, because the credential store needs it (N81)', async () => {
     const bin = binWith(STORE.program);
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', await secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe(STORE.backend);
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, STORE.program));
     } finally {
@@ -150,10 +150,10 @@ describe('gatewayEnv secret store discovery', () => {
     }
   });
 
-  it('passes the reason when the host has no store, with no target referencing a secret (N81)', () => {
+  it('passes the reason when the host has no store, with no target referencing a secret (N81)', async () => {
     const bin = binWith();
     try {
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u', await secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
       expect(env[SECRET_REFUSAL_ENV]).toMatch(STORE.refusal);
     } finally {
@@ -163,10 +163,10 @@ describe('gatewayEnv secret store discovery', () => {
 });
 
 describe('runtimeEnv secret store choice (N81)', () => {
-  it('passes the store choice to the runtime at every start, after the credential names are removed', () => {
+  it('passes the store choice to the runtime at every start, after the credential names are removed', async () => {
     const bin = binWith(STORE.program);
     try {
-      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), await secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe(STORE.backend);
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, STORE.program));
     } finally {
@@ -174,17 +174,17 @@ describe('runtimeEnv secret store choice (N81)', () => {
     }
   });
 
-  it('passes the reason to the runtime when the host has no store', () => {
+  it('passes the reason to the runtime when the host has no store', async () => {
     const bin = binWith();
     try {
-      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), await secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
       expect(env[SECRET_REFUSAL_ENV]).toMatch(STORE.refusal);
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
     }
   });
 
-  it('never hands the store choice to a tool child: the session env strip removes all three names', () => {
+  it('never hands the store choice to a tool child: the session env strip removes all three names', async () => {
     const { env, removed } = stripCredentialEnv({ [SECRET_BACKEND_ENV]: 'keychain', [SECRET_PROGRAM_ENV]: '/usr/bin/security', [SECRET_REFUSAL_ENV]: 'none', FOO: 'foo' }, []);
     expect(env).toEqual({ FOO: 'foo' });
     expect(removed.sort()).toEqual([SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV].sort());
@@ -192,7 +192,7 @@ describe('runtimeEnv secret store choice (N81)', () => {
 });
 
 describe('runtimeEnv', () => {
-  it('runtime env keeps neutral names, including a token-shaped value under a neutral name, and removes declared and credential-looking ones', () => {
+  it('runtime env keeps neutral names, including a token-shaped value under a neutral name, and removes declared and credential-looking ones', async () => {
     const source = {
       FOO: 'foo',
       PATH: '/opt/bin:/usr/bin',
@@ -202,28 +202,28 @@ describe('runtimeEnv', () => {
       NEUTRAL_NAME: TOKEN_LIKE,
       DATABASE_URL: 'postgres://u:p@h/db',
     };
-    const result = runtimeEnv(source, declaring('UPSTREAM_X'), secretStoreEnvFor(source, HOST));
-    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin', NEUTRAL_NAME: TOKEN_LIKE, ...secretStoreEnvFor(source, HOST) });
+    const result = runtimeEnv(source, declaring('UPSTREAM_X'), await secretStoreEnvFor(source, HOST));
+    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin', NEUTRAL_NAME: TOKEN_LIKE, ...await secretStoreEnvFor(source, HOST) });
     expect(result.removed).toEqual(['DATABASE_URL', 'GITHUB_TOKEN', 'MY_API_KEY', 'UPSTREAM_X']);
   });
 });
 
 describe('undefined values', () => {
-  it('undefined env values are dropped', () => {
+  it('undefined env values are dropped', async () => {
     const source = { FOO: 'foo', GONE: undefined, PATH: '/bin', HOME: undefined };
     expect(definedEnv(source)).toEqual({ FOO: 'foo', PATH: '/bin' });
-    const runtime = runtimeEnv(source, declaring(), secretStoreEnvFor(source, HOST));
-    expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin', ...secretStoreEnvFor(definedEnv(source), HOST) });
+    const runtime = runtimeEnv(source, declaring(), await secretStoreEnvFor(source, HOST));
+    expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin', ...await secretStoreEnvFor(definedEnv(source), HOST) });
     expect(Object.keys(runtime.env)).not.toContain('GONE');
-    const gateway = gatewayEnv(source, declaring(), '/h', secretStoreEnvFor(source, HOST));
-    expect(gateway).toEqual({ ...secretStoreEnvFor(definedEnv(source), HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/h' });
+    const gateway = gatewayEnv(source, declaring(), '/h', await secretStoreEnvFor(source, HOST));
+    expect(gateway).toEqual({ ...await secretStoreEnvFor(definedEnv(source), HOST), PATH: MINIMAL_CHILD_PATH, HOME: '/h' });
     expect(Object.values(gateway)).not.toContain(undefined);
   });
 });
 
 describe('settings at every spawn', () => {
   it('snapshot-not-get', async (context) => {
-    const harness = createManagerHarness(context);
+    const harness = await createManagerHarness(context);
     await harness.spawnInitial();
     harness.port.last().exit(1);
     await waitFor(() => harness.manager.state() === 'backoff');
@@ -243,7 +243,7 @@ describe('settings at every spawn', () => {
 
   it('a respawn uses a fresh snapshot', async (context) => {
     for (const role of ['runtime', 'gateway'] as const) {
-      const harness = createManagerHarness(context, { role, env: { PATH: '/bin', HOME: '/h', UPSTREAM_X: 'upstream-value' } });
+      const harness = await createManagerHarness(context, { role, env: { PATH: '/bin', HOME: '/h', UPSTREAM_X: 'upstream-value' } });
       await harness.spawnInitial();
       expect(harness.port.last().options.env['UPSTREAM_X']).toBe(role === 'runtime' ? 'upstream-value' : undefined);
       writeSettings(harness.home, settingsDeclaring('UPSTREAM_X'));
@@ -257,7 +257,7 @@ describe('settings at every spawn', () => {
   });
 
   it('a respawn with an invalid snapshot holds', async (context) => {
-    const harness = createManagerHarness(context);
+    const harness = await createManagerHarness(context);
     await harness.spawnInitial();
     writeInvalidSettings(harness.home);
     const message = configErrorMessage(harness.home);
@@ -272,7 +272,7 @@ describe('settings at every spawn', () => {
   });
 
   it('a respawn with a throwing snapshot backs off', async (context) => {
-    const harness = createManagerHarness(context);
+    const harness = await createManagerHarness(context);
     await harness.spawnInitial();
     harness.port.last().exit(77);
     await waitFor(() => harness.manager.state() === 'waiting-lock');
@@ -298,7 +298,7 @@ describe('settings at every spawn', () => {
   });
 
   it('a declared name that collides is logged as settings.warning once per name', async (context) => {
-    const harness = createManagerHarness(context, {
+    const harness = await createManagerHarness(context, {
       role: 'gateway',
       settings: settingsDeclaring('PATH', 'NODE_OPTIONS', 'UPSTREAM_X'),
       env: { PATH: '/evil', NODE_OPTIONS: '--evil', UPSTREAM_X: 'u', HOME: '/h' },
@@ -353,7 +353,7 @@ describe('settings at the supervisor', () => {
 
 describe('the layout every process derives from its environment (C12)', () => {
   for (const platform of ['linux', 'win32'] as const) {
-    it(`${platform}: the gateway's environment gives the same cache base, executables area and key store as the supervisor's`, () => {
+    it(`${platform}: the gateway's environment gives the same cache base, executables area and key store as the supervisor's`, async () => {
       const home = platform === 'win32' ? 'C:\\Users\\a' : '/home/a';
       const supervisor = { PATH: '/usr/bin', HOME: home, XDG_CACHE_HOME: '/x/cache', XDG_DATA_HOME: '/x/data', LOCALAPPDATA: 'D:\\local', APPDATA: 'D:\\roaming', SystemRoot: 'C:\\Windows' };
       const gateway = gatewayEnv(supervisor, declaring(), home, {});

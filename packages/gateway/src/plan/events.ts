@@ -2,7 +2,7 @@ import type { EventPayload } from '@momonga/foundation';
 import { GatewayError } from '../core/errors.ts';
 import { PlanCredentialError } from './auth-source.ts';
 
-export type PlanEventName = 'plan.sign_in' | 'plan.refresh' | 'plan.rejected' | 'plan.sign_out' | 'plan.pause' | 'plan.catalog';
+export type PlanEventName = 'plan.sign_in' | 'plan.sign_in_revoke' | 'plan.refresh' | 'plan.rejected' | 'plan.sign_out' | 'plan.pause' | 'plan.catalog';
 
 export type PlanEvents = (name: PlanEventName, data: EventPayload) => void;
 

@@ -1,3 +1,4 @@
+import { systemProcessPorts } from '../../../gateway/src/process-ports.ts';
 import type { HelperSelf } from '@momonga/foundation';
 import { TEST_HELPER_SELF } from '../../../tools/test/writer-launch.ts';
 import type { RuleSolverSource } from '../../src/process/rule-verifier.ts';
@@ -178,7 +179,7 @@ export const startGateway = async (temp: RunHome, options: StartGatewayOptions =
   await prepareGeneration(temp);
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    await registerOwned(onCleanup, () => startGatewayProcess({ platform: process.platform,
+    await registerOwned(onCleanup, () => startGatewayProcess({...systemProcessPorts, signal: new AbortController().signal,  platform: process.platform,
       locks: testLocks(),
       generation: FIRST_GENERATION,
       home: temp.home,

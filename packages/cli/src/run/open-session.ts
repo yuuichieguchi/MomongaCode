@@ -42,8 +42,8 @@ export type TypedSessionOptions = Pick<SessionOptions, 'permissionMode' | 'bypas
 
 const BYPASS_MODE: PermissionMode = 'bypassPermissions';
 
-export const reopenedAsTyped = async (client: Pick<RuntimeClient, 'listSessions' | 'updateSession'>, cwd: string, reopen: HeadlessReopen, typed: TypedSessionOptions): Promise<SessionView> => {
-  const stored = await reopenedSession(client, cwd, reopen);
+export const reopenedAsTyped = async (client: Pick<RuntimeClient, 'listSessions' | 'updateSession'>, cwd: string, platform: NodeJS.Platform, reopen: HeadlessReopen, typed: TypedSessionOptions): Promise<SessionView> => {
+  const stored = await reopenedSession(client, cwd, platform, reopen);
   const mode = typed.permissionMode ?? stored.permissionMode;
   if (mode === BYPASS_MODE && typed.bypassAllowed !== true) throw new UsageError(messageOf('storedBypassNeedsOptIn', 'cli', { id: stored.id }));
   if (mode === BYPASS_MODE && !stored.bypassAllowed) throw new UsageError(messageOf('bypassNotStarted', 'cli', { id: stored.id }));
@@ -58,13 +58,13 @@ export type CliSession = {
 };
 
 export const environmentSnapshot = async (ports: Pick<CliPorts, 'env' | 'home'>, signal: AbortSignal): Promise<Record<string, string>> => {
-  const { settings } = await loadUserSettings({ home: ports.home, signal });
+  const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal });
   const defined = Object.fromEntries(Object.entries(ports.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   return stripCredentialEnv(defined, credentialEnvNames(settings.models), settings.credentials).env;
 };
 
 export const autoModeConfigured = async (ports: Pick<CliPorts, 'home'>, signal: AbortSignal): Promise<boolean> => {
-  const { settings } = await loadUserSettings({ home: ports.home, signal });
+  const { settings } = await loadUserSettings({ env: process.env, home: ports.home, signal });
   return settings.autoMode?.classifier !== undefined;
 };
 
@@ -85,7 +85,7 @@ export const connectSessionRuntime = (
     ...(restoreConnection === undefined ? {} : { restoreConnection }),
   });
 
-export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr' | 'interrupt' | 'personCapability'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
+export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'platform' | 'stderr' | 'interrupt' | 'personCapability'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
   const { onNewer } = options;
   await ensureSessionDaemon(ports, paths, { ...(options.signal === undefined ? {} : { signal: options.signal }), ...(onNewer === undefined ? {} : { onNewer }) });
   const client = connectSessionRuntime(ports, paths, onNewer);
@@ -93,7 +93,7 @@ export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 's
     if (options.reopen !== undefined) {
       const listed = await options.modelList();
       if (startModelOf({ count: listed.data.length, start: listed.start }) === undefined) throw new NoModelConnected();
-      const reopened: CreatedSession = { session: await reopenedAsTyped(client, ports.cwd, options.reopen, options), strippedEnvKeys: [] };
+      const reopened: CreatedSession = { session: await reopenedAsTyped(client, ports.cwd, ports.platform, options.reopen, options), strippedEnvKeys: [] };
       return { client, created: reopened, close: () => client.close() };
     }
     const created = await client.createSession({

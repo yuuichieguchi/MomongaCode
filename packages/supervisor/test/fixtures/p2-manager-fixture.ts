@@ -22,7 +22,7 @@ if (home === undefined || child === undefined) throw new Error('p2-manager-fixtu
 const paths = momongaPaths(home, process.platform, {});
 const layout = prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
 const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: process.stderr });
-const settings = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords });
+const settings = createUserSettingsCache({ env: process.env, home, onWarning: () => undefined, keptRecords: noKeptRecords });
 const loaded = await settings.load(new AbortController().signal);
 const manager = createChildManager({
   inspector: testProcessInspector(),
@@ -42,7 +42,7 @@ const manager = createChildManager({
   onProgress: () => undefined,
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
-  secretStoreEnv: secretStoreEnvFor({ PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home }, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
+  secretStoreEnv: await secretStoreEnvFor({ PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home }, { platform: process.platform, uid: process.getuid?.(), realPathOf: (file: string) => fs.realpathSync(file) }),
   spawn: createSpawnPort(),
   settings,
   signal: new AbortController().signal,

@@ -117,3 +117,47 @@ describe('images, strikethrough and raw HTML', () => {
     expect(texts(markdownRows('<details>\n<summary>more</summary>\n</details>', 80))).toEqual(['<details>', '<summary>more</summary>', '</details>']);
   });
 });
+
+describe('markdown blocks inside a quote', () => {
+  const rendered = (text: string): string[] => markdownRows(text, 60).map((row) => row.text);
+
+  it('shows a fenced code block of a quote as code, without its fence marks', () => {
+    const shown = rendered('> ```\n> const x = 1\n> ```');
+    expect(shown.join('\n')).toContain('const x = 1');
+    expect(shown.join('\n')).not.toContain('```');
+  });
+
+  it('shows a setext heading of a quote as a heading, without its underline', () => {
+    const shown = rendered('> Title\n> =====');
+    expect(shown).toEqual(['│ Title']);
+    expect(shown.join('\n')).not.toContain('=====');
+  });
+
+  it('shows a table of a quote as a table', () => {
+    const shown = rendered('> | a | b |\n> | - | - |\n> | 1 | 2 |');
+    expect(shown.some((line) => line.includes('┌'))).toBe(true);
+    expect(shown.join('\n')).not.toContain('| - |');
+  });
+
+  it('hides a link definition of a quote and links its label', () => {
+    const shown = rendered('> [docs]: https://example.com/docs\n> read [docs]');
+    expect(shown.join('\n')).not.toContain('[docs]: https://example.com/docs');
+    expect(shown.join('\n')).toContain('read docs');
+  });
+
+  it('shows indented code of a quote as code, without its indent', () => {
+    const shown = rendered('> lead\n>\n>     indented();');
+    expect(shown.join('\n')).toContain('indented();');
+    expect(shown.join('\n')).not.toContain('    indented();');
+  });
+});
+
+describe('entity references', () => {
+  it('shows the characters that a character reference names', () => {
+    expect(markdownRows('a &amp; b &lt;c&gt; &copy; &#65; &#x42;', 80).map((row) => row.text)).toEqual(['a & b <c> © A B']);
+  });
+
+  it('keeps an entity-like text that names no character as written', () => {
+    expect(markdownRows('&notanentity; &#xZZ;', 80).map((row) => row.text)).toEqual(['&notanentity; &#xZZ;']);
+  });
+});

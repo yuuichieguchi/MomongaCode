@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { createManagedServer } from '@momonga/gateway';
 import { kernelLockNamed, momongaLayout, systemTiming } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -8,7 +9,7 @@ import { cliProbeInstance } from '../src/commands/gateway.ts';
 const [home, binary, mechanism] = process.argv.slice(2) as [string, string, KernelLockMechanism['name']];
 const instance = await cliProbeInstance({ platform: process.platform, endpointScope: testEndpointScope }, momongaLayout(home, process.platform, {}), FM_SERVER, 'apple');
 const server = createManagedServer({
-  inspector: testProcessInspector(),
+  inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
   launch: TEST_UNPROTECTED_LAUNCH,
   lock: kernelLockNamed(mechanism),
   description: { ...FM_SERVER, restart: { ...FM_SERVER.restart, maxRestarts: 0 } },

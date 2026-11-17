@@ -85,6 +85,14 @@ export type GuardedScope = { scope: 'project'; setting: string } | { scope: Excl
 
 export type GuardedFetchOptions = GuardedScope & { network: OutboundNetwork; connectTimeoutMs: number; resolver: HostResolver; send?: Send };
 
+type RoutedResponse = Awaited<ReturnType<ReturnType<typeof outboundFetch>>>;
+
+export const globalResponseOf = (response: RoutedResponse): Response => {
+  const headers = new Headers();
+  response.headers.forEach((value, name) => headers.append(name, value));
+  return new Response(response.body as ReadableStream<Uint8Array> | null, { status: response.status, statusText: response.statusText, headers });
+};
+
 export const createGuardedFetch = (options: GuardedFetchOptions): GuardedFetch => {
   const { scope, network, connectTimeoutMs, resolver, send } = options;
   const dispatcher = createOutboundDispatcher(network, {
@@ -98,7 +106,7 @@ export const createGuardedFetch = (options: GuardedFetchOptions): GuardedFetch =
     send ??
     (async (url, init) => {
       try {
-        return (await routed(url, init as UndiciRequestInit | undefined)) as unknown as Response;
+        return globalResponseOf(await routed(url, init as UndiciRequestInit | undefined));
       } catch (error) {
         throw findOutboundError(error) ?? error;
       }

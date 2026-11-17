@@ -76,7 +76,10 @@ export const createFakeEntryIo = (options: FakeEntryIoOptions): FakeEntryIo => {
 
   return {
     argv: options.argv,
-    locks: () => (options.lockMechanism === undefined ? testLocks() : { capability: testLocks().capability, mechanism: options.lockMechanism }),
+    locks: () => {
+      const mechanism = options.lockMechanism;
+      return mechanism === undefined ? testLocks() : { ...testLocks(), mechanism, mechanismOf: () => mechanism };
+    },
     env: options.env ?? {},
     platform: options.platform ?? process.platform,
     home: options.home,

@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
 import * as sqlite from '../src/sqlite.ts';
 import { BUSY_WAIT_LIMIT_MS, busyTimeoutMs, openDatabase } from '../src/sqlite.ts';
+import type { OpenDatabaseOptions } from '../src/sqlite.ts';
 import { createTempDir } from '@momonga/testkit';
 
 const HEARTBEATS_PER_LEASE = 3;
@@ -57,5 +58,11 @@ describe('the busy wait of a database never exceeds the liveness interval of its
     expect(Object.keys(sqlite).filter((name) => name.startsWith('DEFAULT_'))).toEqual([]);
     // @ts-expect-error an open without its busy wait does not compile
     expect(() => openDatabase(databaseFile())).toThrow(TypeError);
+  });
+});
+
+describe('openDatabase takes no directory option: the caller makes the directory', () => {
+  it('has no createDirectory key in its options', () => {
+    expectTypeOf<keyof OpenDatabaseOptions>().toEqualTypeOf<'busyTimeoutMs'>();
   });
 });

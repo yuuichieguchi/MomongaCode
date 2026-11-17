@@ -218,7 +218,7 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
     approveProjectItems: async (approval) => {
       record(`approve:${JSON.stringify(approval)}`);
     },
-    projectMandate: async () => projectMandateState({ projectDir: settingsPlace().projectDir, approvals: (await loadUserSettings({ home: settingsPlace().home, signal: new AbortController().signal })).settings.projectApprovals, signal: new AbortController().signal }),
+    projectMandate: async () => projectMandateState({ projectDir: settingsPlace().projectDir, approvals: (await loadUserSettings({ env: process.env, home: settingsPlace().home, signal: new AbortController().signal })).settings.projectApprovals, signal: new AbortController().signal }),
     writeProjectMandate: (document, signal) =>
       editProjectMandate(
         settingsPlace().projectDir,
@@ -230,7 +230,7 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
         { home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) },
       ),
     writeProjectMcpServer: (name, server, signal) =>
-      writeProjectMcpServer(settingsPlace().projectDir, name, server, { home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) }),
+      writeProjectMcpServer(settingsPlace().projectDir, name, server, { env: process.env, home: settingsPlace().home, trust: { isTrusted: () => (trust?.decision ?? 'trusted') === 'trusted' }, ...settingsWriterPorts(settingsPlace().home, { lock: testKernelLock(), signal }) }),
   };
 };
 
@@ -378,7 +378,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     resumeSession: async (id) => {
       record(`resume:${id}`);
-      return adopt(await resolveSession(stored, session.cwd, id));
+      return adopt(await resolveSession(stored, session.cwd, id, process.platform));
     },
     continueSession: async () => {
       record('continue');
@@ -625,8 +625,8 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     signInTimers: createFakeTimers(createFakeClock(0)),
     dismissedNotices: async () => ({}),
     dismissNotice: async () => undefined,
-    settings: async () => readSettingsSnapshot({ ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted', signal: new AbortController().signal }),
-    editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { lock: testKernelLock(), signal }),
+    settings: async () => readSettingsSnapshot({ env: process.env, ...settingsPlace(), trusted: (options.trust?.decision ?? 'trusted') === 'trusted', signal: new AbortController().signal }),
+    editSettings: (layer, operation, signal) => editSettings(settingsPlace(), layer, operation, { env: process.env, trusted: (options.trust?.decision ?? 'trusted') === 'trusted', lock: testKernelLock(), signal }),
     mcpServers: async () => {
       record('mcpServers');
       return options.mcpServers ?? [];

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { answeredLater, canonicalJson, isRecord, systemFileLockPorts } from '@momonga/foundation';
-import type { FileLockPorts, KernelLockMechanism } from '@momonga/foundation';
+import type { FileLockPorts, KernelLockMechanism, LayoutEnvironment } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
 import { editUserSettings } from './edit-user-settings.ts';
@@ -28,7 +28,11 @@ export type SettingsOperation =
 
 export type SettingsPlace = { readonly home: string; readonly projectDir: string };
 
-export type EditSettingsOptions = { lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
+export type EditSettingsOptions = { env: LayoutEnvironment; lock: KernelLockMechanism; ports?: FileLockPorts; lockTimeoutMs?: number; trusted: boolean; signal: AbortSignal };
+
+export type SettingsShadow = { readonly layer: SettingsLayer; readonly file: string };
+
+export type EditSettingsResult = { readonly shadowedBy: SettingsShadow | undefined };
 
 export type SettingsLayerView = { readonly layer: SettingsLayer; readonly file: string; readonly document: Readonly<Record<string, unknown>> };
 
@@ -60,15 +64,15 @@ const locate = async (place: SettingsPlace, layer: SettingsLayer, asker: Asker):
   return { file: await localSettingsFile(place.home, place.projectDir, asker), root: await worktreeRootOf(place.home, place.projectDir, asker) };
 };
 
-const loaderWarnings = async (place: SettingsPlace, layer: SettingsLayer, located: Located, document: unknown, asker: Asker): Promise<string[]> => {
-  if (layer === 'user') return userDocumentWarnings(place.home, document, asker);
+const loaderWarnings = async (place: SettingsPlace, env: LayoutEnvironment, layer: SettingsLayer, located: Located, document: unknown, asker: Asker): Promise<string[]> => {
+  if (layer === 'user') return userDocumentWarnings(place.home, env, document, asker);
   try {
     const warnings: string[] = [];
     const built = repositoryLayerFrom(document, located.file, layer, located.root, warnings);
     if (built === undefined) return warnings;
     parseLayerRules(built, place.home, place.projectDir, warnings);
-    const { models } = await defaultUserSettings(place.home, asker);
-    await answeredLater(mergingLayers([built], models, place.home, place.projectDir, warnings), asker.paths, asker.signal);
+    const { models } = await defaultUserSettings(place.home, env, asker);
+    await answeredLater(mergingLayers([built], models, place.home, place.projectDir, warnings, env), asker.paths, asker.signal);
     return warnings;
   } catch (error) {
     if (asker.signal.aborted) throw asker.signal.reason;
@@ -79,9 +83,9 @@ const loaderWarnings = async (place: SettingsPlace, layer: SettingsLayer, locate
 
 type WrittenLoad = { readonly loads: true; readonly warnings: readonly string[] } | { readonly loads: false };
 
-const writtenLoadOf = async (place: SettingsPlace, layer: SettingsLayer, located: Located, document: unknown, asker: Asker): Promise<WrittenLoad> => {
+const writtenLoadOf = async (place: SettingsPlace, env: LayoutEnvironment, layer: SettingsLayer, located: Located, document: unknown, asker: Asker): Promise<WrittenLoad> => {
   try {
-    return { loads: true, warnings: await loaderWarnings(place, layer, located, document, asker) };
+    return { loads: true, warnings: await loaderWarnings(place, env, layer, located, document, asker) };
   } catch (error) {
     if (error instanceof ConfigError) return { loads: false };
     throw error;
@@ -141,7 +145,31 @@ const apply = (document: Record<string, unknown>, file: string, operation: Setti
   }
 };
 
-export const editSettings = async (settingsPlace: SettingsPlace, layer: SettingsLayer, operation: SettingsOperation, options: EditSettingsOptions): Promise<void> => {
+const pathOf = (operation: SettingsOperation): SettingsPath | undefined => (operation.kind === 'addRule' ? undefined : operation.path);
+
+const leafAt = (document: Record<string, unknown>, keys: SettingsPath): unknown =>
+  keys.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), document);
+
+const isLeafValue = (value: unknown): boolean => value !== undefined && !Array.isArray(value) && !isRecord(value);
+
+const layersAbove = (place: SettingsPlace, layer: SettingsLayer, trusted: boolean): readonly SettingsLayer[] => {
+  if (isHome(place)) return [];
+  if (layer === 'user') return trusted ? ['local', 'project'] : ['local'];
+  if (layer === 'project') return ['local'];
+  return [];
+};
+
+const shadowOf = async (place: SettingsPlace, layer: SettingsLayer, trusted: boolean, operation: SettingsOperation, asker: Asker): Promise<SettingsShadow | undefined> => {
+  const keys = pathOf(operation);
+  if (keys === undefined) return undefined;
+  for (const above of layersAbove(place, layer, trusted)) {
+    const { file } = await locate(place, above, asker);
+    if (isLeafValue(leafAt(await documentOf(file, asker), keys))) return { layer: above, file };
+  }
+  return undefined;
+};
+
+export const editSettings = async (settingsPlace: SettingsPlace, layer: SettingsLayer, operation: SettingsOperation, options: EditSettingsOptions): Promise<EditSettingsResult> => {
   const asker = askerOf(options.signal);
   const located = await configError(() => locate(settingsPlace, layer, asker), asker);
   if (layer === 'local' && operation.kind === 'addRule') {
@@ -159,21 +187,22 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
         }),
       asker,
     );
-    return;
+    return { shadowedBy: undefined };
   }
   await editUserSettings(
     located.file,
     async (document) => {
       const before = canonicalJson(document);
-      const written = await writtenLoadOf(settingsPlace, layer, located, document, asker);
+      const written = await writtenLoadOf(settingsPlace, options.env, layer, located, document, asker);
       apply(document, located.file, operation);
       if (canonicalJson(document) === before) return false;
-      const refusal = discardedByLoader(written, await loaderWarnings(settingsPlace, layer, located, document, asker));
+      const refusal = discardedByLoader(written, await loaderWarnings(settingsPlace, options.env, layer, located, document, asker));
       if (refusal !== undefined) throw new ConfigError(refusal);
       return true;
     },
     settingsWriterPorts(settingsPlace.home, options),
   );
+  return { shadowedBy: await configError(() => shadowOf(settingsPlace, layer, options.trusted, operation, asker), asker) };
 };
 
 const documentOf = async (file: string, asker: Asker): Promise<Record<string, unknown>> => {
@@ -183,7 +212,7 @@ const documentOf = async (file: string, asker: Asker): Promise<Record<string, un
   return read.value;
 };
 
-export type SettingsSnapshotRequest = SettingsPlace & { readonly trusted: boolean; readonly signal: AbortSignal };
+export type SettingsSnapshotRequest = SettingsPlace & { readonly env: LayoutEnvironment; readonly trusted: boolean; readonly signal: AbortSignal };
 
 export const readSettingsSnapshot = async (settingsPlace: SettingsSnapshotRequest): Promise<SettingsSnapshot> => {
   const asker = askerOf(settingsPlace.signal);
@@ -198,7 +227,7 @@ export const readSettingsSnapshot = async (settingsPlace: SettingsSnapshotReques
     return {
       layers,
       targets: shown,
-      defaults: await defaultUserSettings(settingsPlace.home, asker),
+      defaults: await defaultUserSettings(settingsPlace.home, settingsPlace.env, asker),
       mcpFile: repository ? projectMcpServersFile(settingsPlace.projectDir) : undefined,
     };
   }, asker);

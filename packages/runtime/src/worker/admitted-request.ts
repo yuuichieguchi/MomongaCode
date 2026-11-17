@@ -1,7 +1,7 @@
-import { tokenPriceOfQuote, usdOfNano } from '@momonga/protocol';
+import { budgetSentence, tokenPriceOfQuote, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, CompactRequest, CompactResource, CreateResponseBody, ModelQuote, RequestBudget, StreamEvent } from '@momonga/protocol';
 import type { GatewayCallOptions, GatewayPort } from '../ports.ts';
-import { admitStep, exhaustedText, requestBudgetOf, unpaidText } from './budget.ts';
+import { admitStep, requestBudgetOf, unpaidText } from './budget.ts';
 import type { AdmittedStep, BudgetLedger, BudgetLimits, StepAdmission, StepSize } from './budget.ts';
 
 export type BudgetAccount = {
@@ -53,7 +53,7 @@ export const overCeiling = (account: BudgetAccount): BudgetExhausted => {
 
 const budgetFigure = (dimension: BudgetExhausted['dimension'], value: number): string => (dimension === 'cost' ? `${usdOfNano(value)} USD` : dimension === 'time' ? `${value} ms` : `${value} ${dimension}`);
 
-export const exhaustedMessage = (exhausted: BudgetExhausted): string => exhaustedText(exhausted, budgetFigure);
+export const exhaustedMessage = (exhausted: BudgetExhausted): string => budgetSentence(exhausted, budgetFigure);
 
 export const unpaidMessage = (purpose: string, exhausted: BudgetExhausted): string => `the budget of the run does not pay for the ${purpose} call: ${unpaidText(exhausted, budgetFigure)}`;
 

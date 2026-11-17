@@ -26,10 +26,9 @@ const SETTINGS_WITHOUT_SECRETS: readonly { label: string; settings: CredentialSe
 
 describe('the gateway spawn environment does not depend on the settings: the secret-store location is always handed (design-settings-live 3.3)', () => {
   for (const { label, settings } of SETTINGS_WITHOUT_SECRETS) {
-    it(`hands the secret-store location when the settings declare no apiKeySecret (${label})`, (context) => {
+    it(`hands the secret-store location when the settings declare no apiKeySecret (${label})`, async (context) => {
       const bin = binWith(withTempDir(context), STORE.program);
-      const source = { PATH: bin, HOME: '/home/u', ...STORE.env };
-      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, settings, '/home/u', secretStoreEnvFor(source, HOST));
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, settings, '/home/u', await secretStoreEnvFor({ PATH: bin, HOME: '/home/u', ...STORE.env }, HOST));
       expect(env[SECRET_BACKEND_ENV]).toBe(STORE.backend);
       expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, STORE.program));
     });

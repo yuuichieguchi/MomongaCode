@@ -193,15 +193,18 @@ type RipgrepRecord = { recordPath: string; payload: string } | { binaryPath: str
 
 const BINARY_MATCH_LINE = /^(.*): binary file matches \(found "\\0" byte around offset \d+\)$/s;
 
-const malformedRecord = (recordPath: string): ToolExecutionError => new ToolExecutionError(`ripgrep produced a malformed record for ${recordPath}`);
+const malformedRecord = (recordPath: string, stderr: string): ToolExecutionError => {
+  const written = stderr.trim();
+  return new ToolExecutionError(`ripgrep produced a malformed record for ${recordPath}${written === '' ? '' : `: ${written}`}`);
+};
 
-const nextRecord = (stdout: string, position: number, mode: OutputMode): { record: RipgrepRecord; next: number } => {
+const nextRecord = (stdout: string, stderr: string, position: number, mode: OutputMode): { record: RipgrepRecord; next: number } => {
   if (mode === 'content' && stdout.startsWith(GROUP_SEPARATOR_LINE, position)) return { record: 'separator', next: position + GROUP_SEPARATOR_LINE.length };
   const nul = stdout.indexOf(NUL, position);
   const newline = stdout.indexOf('\n', position);
   const binary = mode === 'content' && newline !== -1 && (nul === -1 || newline < nul) ? BINARY_MATCH_LINE.exec(stdout.slice(position, newline)) : null;
   if (binary !== null) return { record: { binaryPath: binary[1] as string }, next: newline + 1 };
-  if (nul === -1) throw malformedRecord(stdout.slice(position).split('\n')[0] as string);
+  if (nul === -1) throw malformedRecord(stdout.slice(position).split('\n')[0] as string, stderr);
   const recordPath = stdout.slice(position, nul);
   if (mode === 'files_with_matches') return { record: { recordPath, payload: '' }, next: nul + 1 };
   const lineEnd = stdout.indexOf('\n', nul + 1);
@@ -209,11 +212,11 @@ const nextRecord = (stdout: string, position: number, mode: OutputMode): { recor
   return { record: { recordPath, payload: stdout.slice(nul + 1, end) }, next: end + 1 };
 };
 
-const recordsOf = async (stdout: string, mode: OutputMode, input: GrepInput, visible: (recordPath: string) => Promise<boolean>, show: (recordPath: string) => Promise<string>): Promise<string[]> => {
+const recordsOf = async (stdout: string, stderr: string, mode: OutputMode, input: GrepInput, visible: (recordPath: string) => Promise<boolean>, show: (recordPath: string) => Promise<string>): Promise<string[]> => {
   const groups: string[][] = [[]];
   const entries: string[] = [];
   for (let position = 0; position < stdout.length; ) {
-    const { record, next } = nextRecord(stdout, position, mode);
+    const { record, next } = nextRecord(stdout, stderr, position, mode);
     position = next;
     if (record === 'separator') {
       groups.push([]);
@@ -227,11 +230,11 @@ const recordsOf = async (stdout: string, mode: OutputMode, input: GrepInput, vis
     if (mode === 'files_with_matches') {
       if (await visible(recordPath)) entries.push(recordPath);
     } else if (mode === 'count') {
-      if (!COUNT_PAYLOAD.test(payload)) throw malformedRecord(await show(recordPath));
+      if (!COUNT_PAYLOAD.test(payload)) throw malformedRecord(await show(recordPath), stderr);
       if (await visible(recordPath)) entries.push(`${await show(recordPath)}:${payload}`);
     } else {
       const parsed = CONTENT_PAYLOAD.exec(payload);
-      if (parsed === null) throw malformedRecord(await show(recordPath));
+      if (parsed === null) throw malformedRecord(await show(recordPath), stderr);
       const [, lineNumber, kind, text] = parsed as unknown as [string, string, string, string];
       if (await visible(recordPath)) {
         const shown = await show(recordPath);
@@ -356,13 +359,13 @@ const runSearch = async (
     return shown;
   };
   const { stdout, stderr, exit, ceilingReached } = await runRipgrep(ctx, command, policy, notes, AbortSignal.any([ctx.signal, ctx.expired]));
-  if (ctx.expired.aborted) return { entries: await recordsOf(completeRecordsOf(stdout, mode), mode, input, visible, show), unreadable: false, partial: 'time' };
-  if (ceilingReached) return { entries: await recordsOf(completeRecordsOf(stdout, mode), mode, input, visible, show), unreadable: false, partial: 'ceiling' };
+  if (ctx.expired.aborted) return { entries: await recordsOf(completeRecordsOf(stdout, mode), stderr, mode, input, visible, show), unreadable: false, partial: 'time' };
+  if (ceilingReached) return { entries: await recordsOf(completeRecordsOf(stdout, mode), stderr, mode, input, visible, show), unreadable: false, partial: 'ceiling' };
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
-  if (exit.code === 0) return { entries: await recordsOf(stdout, mode, input, visible, show), unreadable: false };
+  if (exit.code === 0) return { entries: await recordsOf(stdout, stderr, mode, input, visible, show), unreadable: false };
   if (exit.code === 2) {
     const ioErrorsOnly = lineList(stderr).every((line) => line.includes('os error'));
-    if (stdout !== '') return { entries: await recordsOf(stdout, mode, input, visible, show), unreadable: true };
+    if (stdout !== '') return { entries: await recordsOf(stdout, stderr, mode, input, visible, show), unreadable: true };
     if (ioErrorsOnly) return { entries: [], unreadable: true };
   }
   const reason = exit.signal === null ? `exit code ${exit.code}` : `signal ${exit.signal}`;

@@ -15,7 +15,7 @@ const folderLine = async (ports: CheckPorts, shown: string): Promise<void> => {
 };
 
 export const projectCheckShow = async (ports: CheckPorts, paths: MomongaPaths): Promise<number> => {
-  const check = await readProjectCheck(paths.home, ports.cwd, ports.interrupt);
+  const check = await readProjectCheck({ env: process.env, home: paths.home, projectDir: ports.cwd, signal: ports.interrupt });
   await folderLine(ports, check === undefined ? 'no check' : 'declined' in check ? 'declined' : check.commands.join(' && '));
   return 0;
 };
