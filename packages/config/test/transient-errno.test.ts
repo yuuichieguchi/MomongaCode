@@ -25,7 +25,7 @@ const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   throw new Error('expected a rejection');
 };
 
-const load = (tree: Tree) => loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+const load = (tree: Tree) => loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 
 describe('config transient errno propagation', () => {
   for (const code of ['EMFILE', 'EIO']) {
@@ -62,8 +62,8 @@ describe('config transient errno propagation', () => {
       const file = writeJson(userSettingsPath(tree), { permissions: { allow: ['Read'] } });
       const injected = errnoError(code);
       failAsyncRead(file, injected);
-      expect(await rejectionOf(loadUserSettings({ home: tree.home, signal: new AbortController().signal }))).toBe(injected);
-      const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
+      expect(await rejectionOf(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }))).toBe(injected);
+      const cache = createUserSettingsCache({ env: process.env, home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
       expect(await rejectionOf(cache.load(new AbortController().signal))).toBe(injected);
     });
   }
@@ -82,8 +82,8 @@ describe('config transient errno propagation', () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), {});
     failAsyncRead(file, errnoError('EACCES'));
-    expect(await rejectionOf(loadUserSettings({ home: tree.home, signal: new AbortController().signal }))).toBeInstanceOf(ConfigError);
-    const snapshot = await createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords }).load(new AbortController().signal);
+    expect(await rejectionOf(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal }))).toBeInstanceOf(ConfigError);
+    const snapshot = await createUserSettingsCache({ env: process.env, home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords }).load(new AbortController().signal);
     expect('error' in snapshot && snapshot.error).toBeInstanceOf(ConfigError);
   });
 });

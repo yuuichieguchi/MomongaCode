@@ -190,7 +190,7 @@ describe('managed fm under startGatewayProcess', () => {
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const counters = listedCountersOf(models.body, 'fm/system');
-    const { settings } = await loadUserSettings({ home, signal: new AbortController().signal });
+    const { settings } = await loadUserSettings({ env: process.env, home, signal: new AbortController().signal });
     const target = settings.models.models.get('fm/system');
     if (target === undefined) throw new Error('the default settings resolved no fm target');
     expect(counters).toEqual({

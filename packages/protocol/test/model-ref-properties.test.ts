@@ -103,7 +103,7 @@ const loadModels = async (home: string, models: unknown): Promise<LoadedModels> 
   const file = momongaLayout(home, process.platform, process.env).settingsFile;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify({ models }), { mode: 0o600 });
-  return (await loadUserSettings({ home, signal: new AbortController().signal })).settings.models as unknown as LoadedModels;
+  return (await loadUserSettings({ env: process.env, home, signal: new AbortController().signal })).settings.models as unknown as LoadedModels;
 };
 
 const entriesOf = (ids: readonly string[]): unknown[] => ids.map((id) => ({ id, capabilities: CAPABILITIES }));

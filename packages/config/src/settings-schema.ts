@@ -582,7 +582,7 @@ export const SETTINGS_SCHEMA = {
     verification: {
       type: 'object',
       properties: {
-        commands: withDefault(NON_EMPTY_STRING_ARRAY, VERIFICATION_DEFAULTS.commands),
+        commands: NON_EMPTY_STRING_ARRAY,
         manifests: withDefault(NON_EMPTY_STRING_ARRAY, VERIFICATION_DEFAULTS.manifests),
         required: { type: 'boolean', default: VERIFICATION_DEFAULTS.required },
       },

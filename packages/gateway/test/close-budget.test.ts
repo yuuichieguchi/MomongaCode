@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -87,7 +88,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
     const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { closeGraceMs: GATEWAY_CONFIG_DEFAULTS.closeGraceMs }, dir });
     const fmTimers = switchableTimers(harness.timers);
     const serve = createManagedServer({
-      inspector: testProcessInspector(),
+      inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
       launch: TEST_UNPROTECTED_LAUNCH,
       lock: testKernelLock(),
       description: FM_SERVER,

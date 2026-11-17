@@ -1,5 +1,5 @@
 import { declaredChildEnv, minimalChildEnv, probeKeyComponentLabel, readProbeKeyComponents } from '@momonga/foundation';
-import type { BinaryHashCache, ChildLaunch, HeldHostReadings, ManagedInstancePaths, MomongaPaths, KernelLockMechanism, ProcessInspector } from '@momonga/foundation';
+import type { BinaryHashCache, ChildLaunch, FileSystemSync, HeldHostReadings, ManagedInstancePaths, MomongaPaths, KernelLockMechanism, ProcessInspector, Random } from '@momonga/foundation';
 import { knownKeyOf, managedServerDigest, probeKeyOf } from '@momonga/config';
 import type { ProbeKey } from '@momonga/config';
 import { WORDS } from '@momonga/protocol';
@@ -67,6 +67,8 @@ export type MeasureManagedServerOptions = {
   instance: ManagedInstancePaths;
   lock: KernelLockMechanism;
   inspector: ProcessInspector;
+  random: Random;
+  fileSystem: FileSystemSync;
   readyTimeoutMs: number;
   env: Readonly<Record<string, string>>;
   exec: ExecFn;
@@ -87,7 +89,7 @@ export type MeasureManagedServerOptions = {
 
 type ManagedServerRunOptions = Pick<
   MeasureManagedServerOptions,
-  'description' | 'target' | 'binary' | 'instance' | 'lock' | 'inspector' | 'readyTimeoutMs' | 'env' | 'exec' | 'readStopGraceMs' | 'onWarning' | 'launch' | 'spawn' | 'timers' | 'servers'
+  'description' | 'target' | 'binary' | 'instance' | 'lock' | 'inspector' | 'random' | 'fileSystem' | 'readyTimeoutMs' | 'env' | 'exec' | 'readStopGraceMs' | 'onWarning' | 'launch' | 'spawn' | 'timers' | 'servers'
 >;
 
 const onManagedServer = async <T>(options: ManagedServerRunOptions, signal: AbortSignal, use: (socketPath: string) => Promise<T>): Promise<T> => {
@@ -100,6 +102,8 @@ const onManagedServer = async <T>(options: ManagedServerRunOptions, signal: Abor
     lockPath: options.instance.lockPath,
     lock: options.lock,
     inspector: options.inspector,
+    random: options.random,
+    fileSystem: options.fileSystem,
     markerDirectory: options.instance.markerDirectory,
     readyTimeoutMs: options.readyTimeoutMs,
     env: options.env,
@@ -183,6 +187,8 @@ export type ProbeManagedOptions = {
   paths: MomongaPaths;
   lock: KernelLockMechanism;
   inspector: ProcessInspector;
+  random: Random;
+  fileSystem: FileSystemSync;
   platform: NodeJS.Platform;
   instance: ManagedInstancePaths;
   description: ManagedServerDescription;
@@ -256,6 +262,8 @@ export const probeManagedFm = async (options: ProbeManagedOptions): Promise<Prob
       instance: options.instance,
       lock: options.lock,
       inspector: options.inspector,
+      random: options.random,
+      fileSystem: options.fileSystem,
       readyTimeoutMs: options.readyTimeoutMs,
       env: childEnv,
       exec,

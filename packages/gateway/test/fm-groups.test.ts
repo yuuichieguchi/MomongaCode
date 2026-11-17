@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,7 +53,7 @@ const NO_RESTART_FM = { ...FM_SERVER, restart: { ...FM_SERVER.restart, backoffMs
 
 const serveOptions = (context: Setup, onWarning: ServeOptions['onWarning']): ServeOptions => ({
   timers: systemTiming,
-  inspector: testProcessInspector(),
+  inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
   launch: TEST_UNPROTECTED_LAUNCH,
   lock: testKernelLock(),
   description: NO_RESTART_FM,
@@ -71,7 +72,7 @@ const serveOptions = (context: Setup, onWarning: ServeOptions['onWarning']): Ser
 const makeServe = (context: Setup, overrides: Partial<ServeOptions> = {}): ManagedServer => {
   const warnings: string[] = [];
   const serve = createManagedServer({
-    inspector: testProcessInspector(),
+    inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     description: FM_SERVER,
@@ -255,7 +256,7 @@ describe('finalize of a spawned fm group', () => {
       "fs.writeFileSync(process.argv[1], 'ready\\n');",
       SLEEPER,
     ].join(' ');
-    const child = await createGroupSpawn({ inspector: testProcessInspector(), env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile], TEST_UNPROTECTED_LAUNCH.protection);
+    const child = await createGroupSpawn({ inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync, env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile], TEST_UNPROTECTED_LAUNCH.protection);
     const [marker] = fs.readdirSync(markers);
     await until(() => fs.readFileSync(path.join(markers, marker ?? ''), 'utf8').includes('\ng'), 'the group line');
     const pid = (await readMarkerGroup(path.join(markers, marker ?? ''))) ?? 0;

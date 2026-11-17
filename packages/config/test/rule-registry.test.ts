@@ -4,7 +4,7 @@ import { OPERATION_RULE_TOOLS, TOOL_NAMES } from '@momonga/protocol';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
-const load = (tree: Tree) => loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+const load = (tree: Tree) => loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 
 describe('the rule grammar reads its names from the registry of tools', () => {
   it.each([...TOOL_NAMES])('accepts a rule that names %s', (name) => {

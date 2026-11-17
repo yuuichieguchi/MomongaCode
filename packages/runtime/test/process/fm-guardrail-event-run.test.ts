@@ -1,3 +1,4 @@
+import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -40,7 +41,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   writeUserSettings(temp.home, { sandbox: 'none', models: { connections: [{ adapter: 'managed', server: 'fm', provider: 'fm', binary: fm.binaryPath, models: [{ id: 'system', toolCalling: 'native' }] }] } });
   await probeManagedFm({
     timers: systemTiming,
-    inspector: testProcessInspector(),
+    inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
     platform: process.platform,

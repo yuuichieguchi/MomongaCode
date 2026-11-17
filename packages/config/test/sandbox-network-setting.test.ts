@@ -10,14 +10,14 @@ describe('sandboxNetwork setting', () => {
 
   it('defaults to ask', async () => {
     const tree = makeTree();
-    expect((await loadUserSettings({ home: tree.home, signal: new AbortController().signal })).settings.sandboxNetwork).toBe('ask');
-    expect((await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings.sandboxNetwork).toBe('ask');
+    expect((await loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).settings.sandboxNetwork).toBe('ask');
+    expect((await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings.sandboxNetwork).toBe('ask');
   });
 
   it.each(['deny', 'ask', 'allow'] as const)('is honoured from user settings: %s', async (value) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { sandboxNetwork: value });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.sandboxNetwork).toBe(value);
     expect(result.warnings).toEqual([]);
   });
@@ -25,7 +25,7 @@ describe('sandboxNetwork setting', () => {
   it('is honoured from the command line over user settings', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { sandboxNetwork: 'allow' });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: { sandboxNetwork: 'deny' }, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: { sandboxNetwork: 'deny' }, trust: trusting(tree) });
     expect(result.settings.sandboxNetwork).toBe('deny');
   });
 
@@ -35,7 +35,7 @@ describe('sandboxNetwork setting', () => {
   ] as const)('never reaches the effective settings from %s settings (I4.4)', async (_name, fileOf) => {
     const tree = makeTree();
     const file = writeJson(fileOf(tree), { sandboxNetwork: 'allow' });
-    const result = await loadSettings({ signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    const result = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.sandboxNetwork).toBe('ask');
     expect(result.warnings).toEqual([`${file}: sandboxNetwork is only honored in user settings and on the command line; discarded`]);
   });
@@ -43,7 +43,7 @@ describe('sandboxNetwork setting', () => {
   it('refuses an unknown value naming the pointer', async () => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), { sandboxNetwork: 'open' });
-    const failure = loadUserSettings({ home: tree.home, signal: new AbortController().signal });
+    const failure = loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal });
     await expect(failure).rejects.toThrow(file);
     await expect(failure).rejects.toThrow('/sandboxNetwork');
   });

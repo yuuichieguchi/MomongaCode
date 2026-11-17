@@ -50,7 +50,7 @@ describe('S7: an unreadable applied record is no newer copy (design-settings-liv
       fs.writeFileSync(tree.record, `${JSON.stringify({ seq: 1, settings: settingsWithModel('a') })}\n`, { mode: 0o600 });
       tree.write(JSON.stringify(settingsWithModel('a')));
       const warnings: string[] = [];
-      const cache = createUserSettingsCache({ home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords, appliedRecord: tree.record });
+      const cache = createUserSettingsCache({ env: process.env, home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords, appliedRecord: tree.record });
       expect(servedModelOf((await cache.loadOrKeep(NOT_ABORTED)).settings)).toBe('a');
       fs.writeFileSync(tree.record, text, { mode: 0o600 });
       tree.write('{ "models": ');
@@ -64,7 +64,7 @@ describe('S7: an unreadable applied record is no newer copy (design-settings-liv
       const tree = makeTree();
       tree.write(JSON.stringify(settingsWithModel('c')));
       fs.writeFileSync(tree.record, text, { mode: 0o600 });
-      await expect(writeAppliedRecord(tree.home, tree.record, undefined, { signal: NOT_ABORTED, random: systemRandom, lock: testKernelLock() })).resolves.toBeDefined();
+      await expect(writeAppliedRecord(tree.home, tree.record, undefined, { env: process.env, signal: NOT_ABORTED, random: systemRandom, lock: testKernelLock() })).resolves.toBeDefined();
       expect(JSON.parse(fs.readFileSync(tree.record, 'utf8'))).toMatchObject({ seq: expect.any(Number), settings: settingsWithModel('c') });
     });
   }

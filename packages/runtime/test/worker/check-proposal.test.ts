@@ -21,7 +21,7 @@ const trustedFolder = async (f: Fixture): Promise<void> => {
 
 const settingsOf = async (f: Fixture) =>
   (
-    await loadSettings({
+    await loadSettings({ env: process.env,
       home: f.temp.home,
       projectDir: f.temp.project,
       cli: {},

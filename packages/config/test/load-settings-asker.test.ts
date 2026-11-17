@@ -11,7 +11,7 @@ describe('the settings of a project are loaded under the signal of the asker', (
     fs.mkdirSync(extra);
     writeJson(userSettingsPath(tree), { permissions: { additionalDirectories: ['./extra'] } });
     const reason = new Error('the request ended');
-    await expect(loadSettings({ signal: AbortSignal.abort(reason), home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toBe(reason);
+    await expect(loadSettings({ env: process.env, signal: AbortSignal.abort(reason), home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toBe(reason);
   });
 
   it('hands the signal of the asker to the trust decision', async () => {
@@ -24,7 +24,7 @@ describe('the settings of a project are loaded under the signal of the asker', (
         return false;
       },
     };
-    await loadSettings({ signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
+    await loadSettings({ env: process.env, signal, home: tree.home, projectDir: tree.project, cli: {}, trust });
     await loadMcpServers({ signal, home: tree.home, projectDir: tree.project, trust, env: {}, referenceEnv: {} });
     expect(asked).toEqual([signal, signal, signal]);
   });

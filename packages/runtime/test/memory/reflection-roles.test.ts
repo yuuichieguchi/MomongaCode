@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
+import { DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
 import type { RunEventPayload } from '@momonga/protocol';
 import { createFakeTimers, usageOf, NEVER_CANCELLED } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
@@ -10,6 +10,8 @@ import { capabilitiesFor } from '../worker/harness.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, checked, finishClaimed } from './reflection-fixture.ts';
+
+const CHECK_COMMANDS = ['npm test'];
 
 type Job = { state: string; attempts: number; lastError: string | null };
 
@@ -42,7 +44,7 @@ const setup = async () => {
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));
   const settings = {
     trusted: async (target: { cwd: string }) => (await store.trust.decisionAsked(target.cwd, NEVER_CANCELLED)).decision === 'trusted',
-    verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], conditions: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
+    verification: async () => ({ commands: [...CHECK_COMMANDS], conditions: [...CHECK_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90 }),
   };
   const reflector = (): Reflector =>
