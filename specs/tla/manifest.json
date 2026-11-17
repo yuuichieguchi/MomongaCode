@@ -3273,12 +3273,13 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 3290482,
-      "measuredSeconds": 1833.38,
+      "distinctStates": 65567,
+      "measuredSeconds": 8.4,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1869.33,
-      "budgetCpuSeconds": 3742,
-      "identity": "0f94226168ba791d1acfa11a16dea1161022eba8408f9510e53bbccc29d62718"
+      "measuredCpuSeconds": 28.81,
+      "budgetCpuSeconds": 61,
+      "identity": "feed198c257f7f5d5126240feeb47002f50094137be187ccb5a7cfea4d4ac082",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 10.38 at start)"
     },
     {
       "config": "PlanCredential.liveServed",
