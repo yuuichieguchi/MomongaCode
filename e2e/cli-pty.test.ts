@@ -105,7 +105,7 @@ describe('cli: interactive TUI through a pty', () => {
     pty.write(KEYS.enter);
     await pty.waitFor('click on a menu row  complete it');
     pty.write(KEYS.ctrlHome);
-    await pty.waitFor('Commands');
+    await pty.waitFor(/^Commands[^\n]*\n  \/help  list the commands/m);
     for (const command of ['/help', '/clear', '/mode', '/exit']) expect(pty.visible().join('\n')).toContain(command);
     pty.write(KEYS.ctrlEnd);
     await pty.waitFor('click on a menu row  complete it');
