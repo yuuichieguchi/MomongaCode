@@ -136,7 +136,7 @@ describe('withFileLock', () => {
           sleep: async (ms) => {
             now += ms;
             if (now - start > 3 * DEFAULT_LOCK_TIMEOUT_MS) controller.abort(reason);
-            await new Promise<void>((resolve) => setImmediate(resolve));
+            await Promise.resolve();
           },
         }),
       },
