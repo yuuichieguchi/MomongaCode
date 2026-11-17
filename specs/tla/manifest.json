@@ -2903,13 +2903,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 31716688,
-      "measuredSeconds": 705.72,
+      "distinctStates": 1244624,
+      "measuredSeconds": 17.37,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 3639.01,
-      "budgetCpuSeconds": 7282,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.25 at start)",
-      "identity": "e84cb563f6493bde1984bb794335b72a27c545de8cf74de347475786c41b132f"
+      "measuredCpuSeconds": 85.83,
+      "budgetCpuSeconds": 175,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.98 at start)",
+      "identity": "eb6b7cfe475b0012be76fbb74bd13271c24fc6d98de7617e94db9c1b336cc902"
     },
     {
       "config": "RequestPrefix.deepParallel",
