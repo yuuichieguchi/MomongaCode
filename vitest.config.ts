@@ -14,25 +14,25 @@ const RECORDED_SETUP_FILES = ['test/support/reuse-recorder.ts', 'test/support/ch
 const SETUP = {
   unit: {
     setupFiles: RECORDED_SETUP_FILES,
-    globalSetup: ['test/support/run-lock.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts', 'test/support/lock-proof.ts'],
+    globalSetup: ['test/support/run-lock.ts', 'test/support/main-observation.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts', 'test/support/lock-proof.ts'],
   },
   calibration: {
     setupFiles: RECORDED_SETUP_FILES,
-    globalSetup: ['test/support/run-lock.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'test/support/lock-proof.ts'],
+    globalSetup: ['test/support/run-lock.ts', 'test/support/main-observation.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'test/support/lock-proof.ts'],
   },
   packaging: {
     setupFiles: RECORDED_SETUP_FILES,
-    globalSetup: ['test/support/run-lock.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'e2e/support/run-setup.ts', 'test/support/lock-proof.ts'],
+    globalSetup: ['test/support/run-lock.ts', 'test/support/main-observation.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'e2e/support/run-setup.ts', 'test/support/lock-proof.ts'],
   },
   e2e: {
     setupFiles: ['test/support/reuse-recorder.ts', 'test/support/child-process-guard.ts', 'e2e/support/file-programs.ts'],
-    globalSetup: ['test/support/run-lock.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'e2e/global-setup.ts', 'test/support/lock-proof.ts'],
+    globalSetup: ['test/support/run-lock.ts', 'test/support/main-observation.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'e2e/global-setup.ts', 'test/support/lock-proof.ts'],
   },
 };
 
 const REUSE = testReusePlan(import.meta.dirname, {
   shared: [...HARNESS_INPUTS, ...REPORTERS.filter((reporter) => reporter.startsWith('./')).map((reporter) => reporter.slice(2))],
-  projects: Object.fromEntries(Object.entries(SETUP).map(([project, { setupFiles, globalSetup }]) => [project, [...setupFiles, ...globalSetup]])),
+  projects: Object.fromEntries(Object.keys(SETUP).map((project) => [project, []])),
 });
 
 const replayedIn = (project: string): readonly string[] => REUSE.replayed.get(project) ?? [];

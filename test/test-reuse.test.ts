@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createTempDir } from '@momonga/testkit';
+import { spawnSync } from '@momonga/testkit/child-process';
 import { REUSE_RECORD_FORMAT, createRepoDigests, globalsOf, harnessOf, readRecord, fileFiltersOf, projectsOf, replayedSelected, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
 import type { ReuseGlobals } from './support/test-reuse.ts';
 
@@ -226,4 +227,68 @@ describe('a stored record of another format', () => {
   it('leaves the run CPU budget variable out of the key, since it cannot change a green outcome', () => {
     expect(globalsOf({}, digestsOf({}), { MOMONGA_RUN_CPU_BUDGET_SECONDS: '60', MOMONGA_TLC_TIER: 'deep' }).env).toEqual({ MOMONGA_TLC_TIER: 'deep' });
   });
+});
+
+describe('the files the main process loaded for a project', () => {
+  const SUPPORT = path.join(import.meta.dirname, 'support');
+  const VITEST = path.join(import.meta.dirname, '..', 'node_modules', 'vitest', 'vitest.mjs');
+  let root = '';
+
+  afterEach(() => {
+    if (root !== '') fs.rmSync(root, { recursive: true, force: true });
+    root = '';
+  });
+
+  const write = (file: string, text: string): void => {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), text);
+  };
+
+  const fixture = (): void => {
+    root = createTempDir();
+    write(
+      'vitest.config.mjs',
+      [
+        `import { testReusePlan } from ${JSON.stringify(path.join(SUPPORT, 'test-reuse.ts'))};`,
+        "testReusePlan(import.meta.dirname, { shared: ['vitest.config.mjs'], projects: { unit: [] } });",
+        'export default {',
+        `  test: { pool: 'forks', reporters: ['default', ${JSON.stringify(path.join(SUPPORT, 'reuse-reporter.ts'))}], projects: [{ test: { name: 'unit', include: ['t/**/*.test.ts'], setupFiles: [${JSON.stringify(path.join(SUPPORT, 'reuse-recorder.ts'))}], globalSetup: [${JSON.stringify(path.join(SUPPORT, 'main-observation.ts'))}, './setup.ts'] } }] },`,
+        '};',
+        '',
+      ].join('\n'),
+    );
+    write('setup.ts', "import { loaded } from './product/loaded.ts';\nexport default function setup(): void {\n  if (loaded !== 1) throw new Error('not loaded');\n}\n");
+    write('product/loaded.ts', 'export const loaded = 1;\n');
+    write('product/unloaded.ts', 'export const unloaded = 1;\n');
+    write('packages/.keep', '');
+    write('t/a.test.ts', "import { test } from 'vitest';\ntest('a', () => {});\n");
+    expect(spawnSync('git', ['init', '-q'], { cwd: root }).status).toBe(0);
+    expect(spawnSync('git', ['add', '-A'], { cwd: root }).status).toBe(0);
+  };
+
+  const run = (): string => {
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) if (value !== undefined && !key.startsWith('VITEST') && key !== 'MOMONGA_RUN_LOCK') env[key] = value;
+    const result = spawnSync(process.execPath, [VITEST, 'run', '--config', 'vitest.config.mjs'], { cwd: root, encoding: 'utf8', env: { ...env, MOMONGA_TEST_REUSE: '1' } });
+    expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+    return result.stdout;
+  };
+
+  const edit = (file: string): void => {
+    fs.appendFileSync(path.join(root, file), 'export const edited = 1;\n');
+  };
+
+  it(
+    'leaves the records replayable after an edit to a product file the global setup did not load, and clears them after an edit to one it loaded',
+    () => {
+      fixture();
+      run();
+      expect(run()).toContain('Replayed 1 test files');
+      edit('product/unloaded.ts');
+      expect(run()).toContain('Replayed 1 test files');
+      edit('product/loaded.ts');
+      expect(run()).toContain('Replayed 0 test files');
+    },
+    REAL_PROCESS_TEST_TIMEOUT_MS * 4,
+  );
 });
