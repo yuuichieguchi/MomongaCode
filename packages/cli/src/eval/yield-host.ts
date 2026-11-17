@@ -49,6 +49,7 @@ const yieldHostsOf = (effects: YieldHostEffects, homes: Homes<YieldRuntime>, bas
     const home = await homes.open({
       label: `the learn session of family ${family.id}`,
       settings: familySettingsFor(base, family),
+      repository: true,
       ...(family.learn.files === undefined ? {} : { files: family.learn.files }),
     });
     const { cwd, runtime } = home;
