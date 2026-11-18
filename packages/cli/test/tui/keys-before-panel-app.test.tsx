@@ -158,7 +158,6 @@ describe('a list that opens while keys are on their way', () => {
       app.stdin.write('x');
       await untilFrame(app, UNDER_HANDS_PAUSE_LINE);
       expect(signInSteps(backend)).toEqual([]);
-      await new Promise((resolve) => setTimeout(resolve, 20));
       app.stdin.write(KEYS.enter);
       await untilFrame(app, (shown) => !shown.includes('Connect a model to start') && shown.includes('1. Continue with ChatGPT') && shown.includes('enter to choose'));
       app.stdin.write(KEYS.enter);
