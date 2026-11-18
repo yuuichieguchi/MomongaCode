@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { createOutboundDispatcher, findOutboundError, findProgramOnPath, outboundFetch, resolveLayoutLocks, routeOf } from '@momonga/foundation';
+import { createOutboundDispatcher, findOutboundError, findProgramOnPath, hostPaths, outboundFetch, resolveLayoutLocks, routeOf } from '@momonga/foundation';
 import { withOutboundNetwork } from '../network.ts';
 import type { NetworkCheck, NetworkView } from './commands/network.ts';
 import type { FileCandidates } from '@momonga/foundation';
@@ -41,6 +41,8 @@ import { readImageAttachment } from '../images.ts';
 import { pendingProjectServerOf } from './project-items.ts';
 import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
 import type { RunBounds, SessionOptions } from '../run/open-session.ts';
+import { fileLinkRootsOf, openFileLink, resolveFileLinks } from './screen/file-links.ts';
+import type { FileLinkPlace, FileLinkPorts, FileLinks } from './screen/file-links.ts';
 
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
@@ -97,6 +99,8 @@ export type TuiBackend = {
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
   openUrl(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
+  openFile(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
+  fileLinks(candidates: readonly string[], signal: AbortSignal): Promise<FileLinks>;
   copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
   agents(): Promise<AgentsResponse>;
@@ -176,6 +180,13 @@ export const createTuiBackend = (
       await gateway.close();
     }
   };
+
+  const fileLinkPlace = (): FileLinkPlace => {
+    const view = current();
+    return { cwd: view.cwd, home: ports.home, additionalDirectories: view.additionalDirectories };
+  };
+
+  const fileLinkPortsOf = (signal: AbortSignal): FileLinkPorts => ({ paths: hostPaths(signal), files: ports.files });
 
   const clipboardPrograms = cachedProgramSearch((name) => findProgramOnPath(name, ports.env, ports.files));
 
@@ -352,6 +363,15 @@ export const createTuiBackend = (
       await runtime().resolveElicitation(inputId, responses);
     },
     openUrl: (url, watch, onFailure) => ports.openUrl(url, AbortSignal.any([closing.signal, watch]), onFailure),
+    openFile: (url, watch, onFailure) => {
+      const signal = AbortSignal.any([closing.signal, watch]);
+      const filePorts = fileLinkPortsOf(signal);
+      openFileLink(url, () => fileLinkRootsOf(fileLinkPlace(), filePorts), filePorts, ports.openUrl, signal, onFailure);
+    },
+    fileLinks: async (candidates, signal) => {
+      const filePorts = fileLinkPortsOf(AbortSignal.any([closing.signal, signal]));
+      return resolveFileLinks(candidates, await fileLinkRootsOf(fileLinkPlace(), filePorts), filePorts);
+    },
     copyToClipboard: async (text) => {
       const terminal = ports.terminal;
       if (terminal === undefined) throw new Error('the clipboard request needs a terminal');

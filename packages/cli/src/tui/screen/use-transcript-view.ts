@@ -16,9 +16,18 @@ import { toggleThought } from '../transcript.ts';
 import type { TranscriptStore } from './store.ts';
 import { clamped, FOLLOWING, moved, sourceOf, VIEWPORT_CONTEXTS, viewportMoveOf, viewportMoveOfAction, windowOf } from './viewport.ts';
 import type { Position, ViewportMove, ViewSource, ViewWindow } from './viewport.ts';
+import { isFileUrl } from './file-links.ts';
 import { parseWebUrl } from './wrap.ts';
+import type { Link, LinkKind } from './wrap.ts';
 
 export type ViewportKeyFacts = { panelOpen: boolean; menuOpen: boolean; inputEmpty: boolean };
+
+export type OpenedLink = { kind: LinkKind; url: URL };
+
+const openedLinkOf = ([, , written, kind]: Link): OpenedLink | undefined => {
+  const url = kind === 'web' ? parseWebUrl(written) : URL.parse(written);
+  return url === undefined || url === null || (kind === 'file' && !isFileUrl(url)) ? undefined : { kind, url };
+};
 
 export type TranscriptViewHost = {
   store: TranscriptStore;
@@ -30,7 +39,7 @@ export type TranscriptViewHost = {
   copyOnSelect: boolean;
   now(): number;
   copy(text: string): Promise<CopyOutcome>;
-  openLink(url: URL): void;
+  openLink(link: OpenedLink): void;
   reportError(error: unknown): void;
   keyFacts(): ViewportKeyFacts;
   keys: KeyTable;
@@ -96,13 +105,13 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
     return visible === undefined ? undefined : { entryId: visible.entryId, rowIndex: visible.rowIndex, col: event.col - 1 };
   };
 
-  const linkAt = (point: Point): URL | undefined => {
+  const linkAt = (point: Point): OpenedLink | undefined => {
     const index = source.indexOfId(point.entryId);
     const row = index === undefined ? undefined : source.rowsOf(source.at(index))[point.rowIndex];
     const range = row === undefined ? undefined : indexRangeOf(row, point.col, point.col);
     if (row === undefined || range === undefined) return undefined;
-    const written = row.links?.find(([start, end]) => start <= range[0] && range[0] < end)?.[2];
-    return written === undefined ? undefined : parseWebUrl(written);
+    const written = row.links?.find(([start, end]) => start <= range[0] && range[0] < end);
+    return written === undefined ? undefined : openedLinkOf(written);
   };
 
   const press = (event: MouseEvent): void => {

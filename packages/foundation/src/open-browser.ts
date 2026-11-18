@@ -18,6 +18,15 @@ const OPENED_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:']);
 
 const ONLY_WEB_ADDRESSES = 'only http and https addresses can be opened';
 
+const ONLY_LOCAL_FILES = 'only file addresses of this machine can be opened as files';
+
+export type OpenKind = 'web' | 'file';
+
+const refusalOf = (url: URL, kind: OpenKind): string | undefined => {
+  if (kind === 'file') return url.protocol === 'file:' && url.host === '' ? undefined : ONLY_LOCAL_FILES;
+  return OPENED_SCHEMES.has(url.protocol) ? undefined : ONLY_WEB_ADDRESSES;
+};
+
 const browserOf = (env: SearchEnv): string | undefined => {
   const browser = env[BROWSER_ENV];
   return browser === undefined || browser === '' ? undefined : browser;
@@ -47,7 +56,7 @@ export type LaunchProgram = (file: string, args: readonly string[]) => Promise<P
 
 export type BrowserOpenerPorts = { env: SearchEnv; launch: LaunchProgram; files: ProgramSearchFiles };
 
-export type OpenUrl = (url: URL, watch: AbortSignal, onFailure: (message: string) => void) => void;
+export type OpenUrl = (url: URL, watch: AbortSignal, onFailure: (message: string) => void, kind?: OpenKind) => void;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -56,8 +65,9 @@ const unsuccessfulEndOf = (file: string, end: ProgramEnd): string | undefined =>
   return end.exitCode === null ? `${file} was ended by signal ${end.signal}` : `${file} exited with code ${end.exitCode}`;
 };
 
-const launched = async (ports: BrowserOpenerPorts, url: URL, watch: AbortSignal): Promise<string | undefined> => {
-  if (!OPENED_SCHEMES.has(url.protocol)) return ONLY_WEB_ADDRESSES;
+const launched = async (ports: BrowserOpenerPorts, url: URL, watch: AbortSignal, kind: OpenKind): Promise<string | undefined> => {
+  const refusal = refusalOf(url, kind);
+  if (refusal !== undefined) return refusal;
   const { file, args } = await openCommandFor(url, ports.env, ports.files);
   if (watch.aborted) return undefined;
   const end = await ports.launch(file, args).catch((error: unknown) => {
@@ -68,10 +78,10 @@ const launched = async (ports: BrowserOpenerPorts, url: URL, watch: AbortSignal)
 
 export const createBrowserOpener =
   (ports: BrowserOpenerPorts): OpenUrl =>
-  (url, watch, onFailure) => {
+  (url, watch, onFailure, kind = 'web') => {
     if (watch.aborted) return;
     const report = (message: string | undefined): void => {
       if (message !== undefined && !watch.aborted) onFailure(message);
     };
-    void launched(ports, url, watch).then(report, (error: unknown) => report(messageOf(error)));
+    void launched(ports, url, watch, kind).then(report, (error: unknown) => report(messageOf(error)));
   };

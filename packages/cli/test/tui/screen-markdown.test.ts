@@ -10,11 +10,12 @@ import { displayWidth, logicalText } from '../../src/tui/screen/wrap.ts';
 import type { Row } from '../../src/tui/screen/wrap.ts';
 import { foldEvent } from '../../src/tui/transcript.ts';
 import { eventOf, seeded, storeOf, ROW_FACTS, ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
+import { NO_FILE_LINKS } from '../../src/tui/screen/file-links.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
-const assistantTextRows = (text: string, width: number) => assistantTextRowsWith(text, width, ROW_FACTS);
+const assistantTextRows = (text: string, width: number) => assistantTextRowsWith(text, width, ROW_FACTS, NO_FILE_LINKS);
 const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 
 const texts = (rows: readonly Row[]): string[] => rows.map((row) => row.text);
@@ -133,13 +134,13 @@ describe('markdown links', () => {
   it('shows a markdown link as "text (url)" and links both, and links a bare URL without the full stop after it', () => {
     const rows = markdownRows(`see [docs](${url}) and https://b.test.`, 80);
     expect(texts(rows)).toEqual([`see docs (${url}) and https://b.test.`]);
-    expect(rows[0]?.links).toEqual([[4, 8, url], [10, 32, url], [38, 52, 'https://b.test']]);
+    expect(rows[0]?.links).toEqual([[4, 8, url, 'web'], [10, 32, url, 'web'], [38, 52, 'https://b.test', 'web']]);
   });
 
   it('shows the URL once when the text is the URL, and links an autolink', () => {
     const rows = markdownRows(`[${url}](${url}) <${url}>`, 80);
     expect(texts(rows)).toEqual([`${url} ${url}`]);
-    expect(rows[0]?.links).toEqual([[0, 22, url], [23, 45, url]]);
+    expect(rows[0]?.links).toEqual([[0, 22, url, 'web'], [23, 45, url, 'web']]);
   });
 
   it('links nothing that is not http or https', () => {
@@ -164,7 +165,7 @@ describe('markdown links', () => {
   it('carries a link on every row it spans', () => {
     const rows = markdownRows(`[alpha beta gamma](${url})`, 8);
     expect(texts(rows).slice(0, 3)).toEqual(['alpha ', 'beta ', 'gamma ']);
-    expect(rows.slice(0, 3).map((row) => row.links)).toEqual([[[0, 6, url]], [[0, 5, url]], [[0, 5, url]]]);
+    expect(rows.slice(0, 3).map((row) => row.links)).toEqual([[[0, 6, url, 'web']], [[0, 5, url, 'web']], [[0, 5, url, 'web']]]);
   });
 });
 
@@ -265,7 +266,7 @@ describe('hostile answer text', () => {
   it('shows an escape sequence inside a link and a code span as visible text', () => {
     const rows = assistantTextRows('[a\u0007b](http://b.test/\u0007x) `\u001b]0;t\u0007`', 80);
     expect(texts(rows)).toEqual(['a\\u0007b (http://b.test/\\u0007x) \\u001b]0;t\\u0007']);
-    expect(rows[0]?.links).toEqual([[0, 8, 'http://b.test/\\u0007x'], [10, 31, 'http://b.test/\\u0007x']]);
+    expect(rows[0]?.links).toEqual([[0, 8, 'http://b.test/\\u0007x', 'web'], [10, 31, 'http://b.test/\\u0007x', 'web']]);
   });
 
   it('wraps a line longer than one unit as plain text without reading its marks', () => {

@@ -3,6 +3,8 @@ import { FAILURE_DETAIL_LINE, FAILURE_REMEDY_LINE } from '../../failure.ts';
 import { describeDenial } from '../../policy-messages.ts';
 import { bannerRows, textLines } from '../startup.tsx';
 import type { Entry, ToolEntry } from '../transcript.ts';
+import { NO_FILE_LINKS } from './file-links.ts';
+import type { FileLinks } from './file-links.ts';
 import { markdownRowsWith, parseMarkdown } from './markdown.ts';
 import type { Parsed, ParsePoint, References, TableDrawing } from './markdown.ts';
 import type { StyleToken } from './tokens.ts';
@@ -47,7 +49,7 @@ const ENDED: readonly ToolEntry['status'][] = ['completed', 'failed', 'unknown']
 const toolRows = (entry: ToolEntry, width: number, { keys, a11y }: RowFacts): Row[] => {
   if (a11y.screenReader && !ENDED.includes(entry.status)) return [];
   return [
-    ...wrapText(shown(entry.status === 'running' ? runningToolText(entry, a11y) : `${toolMark(entry.status)} ${entry.title}`), width),
+    ...wrapText(shown(entry.status === 'running' ? runningToolText(entry, a11y) : `${toolMark(entry.status)} ${entry.title}`), width, { files: entry.fileLinks ?? NO_FILE_LINKS }),
     ...(entry.status === 'failed' && entry.denial !== undefined ? wrapText(withoutTabs(escapeTerminalLine(describeDenial(entry.denial))), width, { token: 'error' }) : []),
     ...toolBlockRows(entry, width, keys),
   ];
@@ -55,9 +57,9 @@ const toolRows = (entry: ToolEntry, width: number, { keys, a11y }: RowFacts): Ro
 
 const tablesOf = ({ a11y }: RowFacts): TableDrawing => (a11y.screenReader ? 'records' : 'grid');
 
-export const assistantTextRows = (text: string, width: number, facts: RowFacts): Row[] => markdownRowsWith(text, width, { tables: tablesOf(facts) });
+export const assistantTextRows = (text: string, width: number, facts: RowFacts, files: FileLinks): Row[] => markdownRowsWith(text, width, { tables: tablesOf(facts), files });
 
-export type AnswerReading = { references: References; settled: boolean; unit: boolean };
+export type AnswerReading = { references: References; files: FileLinks; settled: boolean; unit: boolean };
 
 export const answerRowsFrom = (text: string, from: ParsePoint, width: number, reading: AnswerReading, facts: RowFacts): Parsed => parseMarkdown(text, from, width, { ...reading, tables: tablesOf(facts) });
 
@@ -77,7 +79,7 @@ export const rowsOfEntry = (entry: Entry, width: number, facts: RowFacts): Row[]
     case 'user':
       return wrapText(shown(entry.text), width, { first: '> ', rest: '  ', token: 'user' });
     case 'assistant':
-      return assistantTextRows(entry.text, width, facts);
+      return assistantTextRows(entry.text, width, facts, entry.fileLinks ?? NO_FILE_LINKS);
     case 'thought':
       return facts.a11y.screenReader && entry.endedAt === undefined ? [] : thoughtRows(entry, width);
     case 'tool':

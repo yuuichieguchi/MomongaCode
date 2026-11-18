@@ -1,6 +1,8 @@
 import type { Entry } from '../transcript.ts';
 import { answerRowsFrom, openThoughtRowsFrom, plainTextRows, rowsOfEntry } from './entry-rows.ts';
 import type { AnswerReading } from './entry-rows.ts';
+import { NO_FILE_LINKS } from './file-links.ts';
+import type { FileLinks } from './file-links.ts';
 import { NOTHING_SCANNED, START_OF_TEXT, referencesOf } from './markdown.ts';
 import type { Parsed, ParsePoint, ReferenceScan } from './markdown.ts';
 import type { ThoughtEntry, ThoughtWrap } from './thought.ts';
@@ -19,7 +21,7 @@ export type ParseSchedule = { defer(run: () => void): void; onRows(): void };
 
 type PlainLine = { start: number; end: number; ended: boolean; rows: Row[] };
 
-type Answer = { text: string; settled: boolean; scan: ReferenceScan; point: ParsePoint; parsedRows: number; plain: PlainLine[]; parsed: boolean };
+type Answer = { text: string; settled: boolean; files: FileLinks; scan: ReferenceScan; point: ParsePoint; parsedRows: number; plain: PlainLine[]; parsed: boolean };
 
 type Cached = { width: number; version: number; rows: Row[]; answer: Answer | undefined; thought: ThoughtWrap | undefined };
 
@@ -77,7 +79,7 @@ export const createRowCache = (renderers: RowRenderers, schedule: ParseSchedule)
   };
 
   const parseUnit = (id: number, cached: Cached, answer: Answer): void => {
-    const unit = renderers.answerRows(answer.text, answer.point, cached.width, { references: answer.scan.references, settled: answer.settled, unit: true });
+    const unit = renderers.answerRows(answer.text, answer.point, cached.width, { references: answer.scan.references, files: answer.files, settled: answer.settled, unit: true });
     cached.rows.length = answer.parsedRows - unit.retract;
     appendTo(cached.rows, unit.rows);
     answer.point = unit.point;
@@ -110,8 +112,9 @@ export const createRowCache = (renderers: RowRenderers, schedule: ParseSchedule)
     const held = before !== undefined && before.width === width ? before.answer : undefined;
     const grown = held !== undefined && entry.text.startsWith(held.text) ? held : undefined;
     const scan = referencesOf(entry.text, grown?.scan ?? NOTHING_SCANNED, !entry.open);
-    const continued = grown !== undefined && !(grown.parsed && grown.settled) && scan.references === grown.scan.references;
-    const answer: Answer = continued ? grown : { text: '', settled: false, scan, point: START_OF_TEXT, parsedRows: 0, plain: [], parsed: true };
+    const files = entry.fileLinks ?? NO_FILE_LINKS;
+    const continued = grown !== undefined && !(grown.parsed && grown.settled) && scan.references === grown.scan.references && files === grown.files;
+    const answer: Answer = continued ? grown : { text: '', settled: false, files, scan, point: START_OF_TEXT, parsedRows: 0, plain: [], parsed: true };
     const cached: Cached = { width, version: 0, rows: continued && before !== undefined ? before.rows : [], answer, thought: undefined };
     const unitWaits = continued && !answer.parsed;
     answer.text = entry.text;

@@ -1,3 +1,5 @@
+import { fileLinksIn, NO_FILE_LINKS } from './file-links.ts';
+import type { FileLinks } from './file-links.ts';
 import { highlightCode } from './highlight.ts';
 import type { CodeSpan } from './highlight.ts';
 import type { StyleToken } from './tokens.ts';
@@ -112,7 +114,7 @@ const styled = (out: Inline, role: Role, write: () => void): void => {
 const linked = (out: Inline, url: string, write: () => void): void => {
   const start = out.text.length;
   write();
-  if (parseWebUrl(url) !== undefined && out.text.length > start) out.links.push([start, out.text.length, url]);
+  if (parseWebUrl(url) !== undefined && out.text.length > start) out.links.push([start, out.text.length, url, 'web']);
 };
 
 const runLength = (source: string, position: number): number => {
@@ -310,10 +312,11 @@ const inlineInto = (out: Inline, source: string, depth: number, references: Refe
   }
 };
 
-const inlineOf = (source: string, references: References, role?: Role): Inline => {
+const inlineOf = (source: string, references: References, files: FileLinks, role?: Role): Inline => {
   const out = emptyInline();
   if (role === undefined) inlineInto(out, source, 0, references);
   else styled(out, role, () => inlineInto(out, source, 0, references));
+  out.links.push(...fileLinksIn(out.text, files, out.spans.filter(([, , token]) => token === MARKDOWN_STYLE.code), out.links));
   return out;
 };
 
@@ -325,7 +328,7 @@ const joined = (parts: readonly (Inline | string)[]): Inline => {
     else {
       out.text += part.text;
       out.spans.push(...part.spans.map(([start, end, token]): Span => [start + shift, end + shift, token]));
-      out.links.push(...part.links.map(([start, end, url]): Link => [start + shift, end + shift, url]));
+      out.links.push(...part.links.map(([start, end, url, kind]): Link => [start + shift, end + shift, url, kind]));
     }
   }
   return out;
@@ -348,7 +351,7 @@ const wrapInline = (inline: Inline, width: number, prefix: Prefix = NO_PREFIX, l
     const spans: Span[] = lead === '' || leadToken === null ? [] : [[0, lead.length, leadToken]];
     for (const [spanStart, spanEnd, token] of inline.spans) if (spanStart < to && spanEnd > start) spans.push([Math.max(spanStart, start) + shift, Math.min(spanEnd, to) + shift, token]);
     const links: Link[] = [];
-    for (const [linkStart, linkEnd, url] of inline.links) if (linkStart < to && linkEnd > start) links.push([Math.max(linkStart, start) + shift, Math.min(linkEnd, to) + shift, url]);
+    for (const [linkStart, linkEnd, url, kind] of inline.links) if (linkStart < to && linkEnd > start) links.push([Math.max(linkStart, start) + shift, Math.min(linkEnd, to) + shift, url, kind]);
     return { text: row.text, spans, wrapped: row.wrapped, prefixCols: row.prefixCols, ...(links.length === 0 ? {} : { links }) };
   });
 };
@@ -393,16 +396,16 @@ const withoutClosingMarks = (heading: string): string => {
   return end < trimmed.length && (end === 0 || trimmed[end - 1] === ' ') ? trimmed.slice(0, end).trimEnd() : trimmed;
 };
 
-const lineRows = (content: string, width: number, references: References): Row[] => {
-  if (RULE.test(content)) return wrapInline(inlineOf('─'.repeat(Math.max(1, width)), NO_REFERENCES, 'rule'), width);
+const lineRows = (content: string, width: number, references: References, files: FileLinks): Row[] => {
+  if (RULE.test(content)) return wrapInline(inlineOf('─'.repeat(Math.max(1, width)), NO_REFERENCES, NO_FILE_LINKS, 'rule'), width);
   const heading = HEADING.exec(content);
-  if (heading !== null) return wrapInline(inlineOf(withoutClosingMarks(content.slice(heading[0].length)), references, 'heading'), width);
+  if (heading !== null) return wrapInline(inlineOf(withoutClosingMarks(content.slice(heading[0].length)), references, files, 'heading'), width);
   const item = LIST_ITEM.exec(content);
   if (item !== null) {
     const marker = `${item[1] ?? ''}${item[2] === '-' || item[2] === '*' || item[2] === '+' ? BULLET : (item[2] ?? '')} `;
-    if (fits(marker, width)) return wrapInline(inlineOf(item[3] ?? '', references), width, { first: marker, rest: ' '.repeat(displayWidth(marker)) });
+    if (fits(marker, width)) return wrapInline(inlineOf(item[3] ?? '', references, files), width, { first: marker, rest: ' '.repeat(displayWidth(marker)) });
   }
-  return wrapInline(inlineOf(content, references), width);
+  return wrapInline(inlineOf(content, references, files), width);
 };
 
 const codePrefix = (width: number): Prefix => (fits(CODE_INDENT, width) ? { first: CODE_INDENT, rest: CODE_INDENT } : NO_PREFIX);
@@ -500,11 +503,11 @@ const gridRows = (cells: readonly Inline[], widths: readonly number[]): Row[] =>
   const wrapped = cells.map((cell, column) => wrapInline(cell, widths[column] ?? 0));
   const height = Math.max(...wrapped.map((rows) => rows.length));
   return Array.from({ length: height }, (_, index): Row => {
-    const parts: (Inline | string)[] = [inlineOf('│', NO_REFERENCES, 'border')];
+    const parts: (Inline | string)[] = [inlineOf('│', NO_REFERENCES, NO_FILE_LINKS, 'border')];
     wrapped.forEach((rows, column) => {
       const row = rows[index];
       const text = row?.text ?? '';
-      parts.push(' ', { text, spans: [...(row?.spans ?? [])], links: [...(row?.links ?? [])] }, ' '.repeat(Math.max(0, (widths[column] ?? 0) - displayWidth(text)) + 1), inlineOf('│', NO_REFERENCES, 'border'));
+      parts.push(' ', { text, spans: [...(row?.spans ?? [])], links: [...(row?.links ?? [])] }, ' '.repeat(Math.max(0, (widths[column] ?? 0) - displayWidth(text)) + 1), inlineOf('│', NO_REFERENCES, NO_FILE_LINKS, 'border'));
     });
     const line = joined(parts);
     return { text: line.text, spans: line.spans, wrapped: false, prefixCols: 0, ...(line.links.length === 0 ? {} : { links: line.links }) };
@@ -526,7 +529,7 @@ const recordRows = (headers: readonly Inline[], body: readonly (readonly Inline[
 
 export type TableDrawing = 'grid' | 'records';
 
-type Page = { readonly width: number; readonly tables: TableDrawing; readonly references: References; readonly levels: number };
+type Page = { readonly width: number; readonly tables: TableDrawing; readonly references: References; readonly files: FileLinks; readonly levels: number };
 
 const quoteLevelsOf = (width: number): number => {
   let levels = 0;
@@ -553,14 +556,14 @@ const prefixedRows = (rows: readonly Row[], gutter: string): Row[] =>
           text: gutter + row.text,
           spans: [[0, shift, MARKDOWN_STYLE.gutter], ...row.spans.map(([start, end, token]): Span => [start + shift, end + shift, token])],
           prefixCols: row.prefixCols + displayWidth(gutter),
-          ...(row.links === undefined ? {} : { links: row.links.map(([start, end, url]): Link => [start + shift, end + shift, url]) }),
+          ...(row.links === undefined ? {} : { links: row.links.map(([start, end, url, kind]): Link => [start + shift, end + shift, url, kind]) }),
         };
       });
 
-const tableRows = (lines: readonly string[], { width, references }: Page, drawing: TableDrawing): Row[] => {
+const tableRows = (lines: readonly string[], { width, references, files }: Page, drawing: TableDrawing): Row[] => {
   const sources = lines.filter((_, index) => index !== 1).map(cellsOf);
   const columns = Math.max(...sources.map((cells) => cells.length));
-  const [headers = [], ...body] = sources.map((cells, row) => Array.from({ length: columns }, (_, column) => inlineOf(cells[column] ?? '', references, row === 0 ? 'tableHeader' : undefined)));
+  const [headers = [], ...body] = sources.map((cells, row) => Array.from({ length: columns }, (_, column) => inlineOf(cells[column] ?? '', references, files, row === 0 ? 'tableHeader' : undefined)));
   const natural = Array.from({ length: columns }, (_, column) => Math.max(...[headers, ...body].map((cells) => displayWidth(cells[column]?.text ?? ''))));
   const widths = columnWidths(headers, natural, width - (3 * columns + 1));
   if (widths === undefined || drawing === 'records') return recordRows(headers, body, width);
@@ -611,11 +614,11 @@ const tableAt = (look: Look, index: number, page: Page): Block => {
   return { rows: tableRows(lines, page, page.tables), next: end, state: OUTSIDE };
 };
 
-const recordAt = (line: string, headers: readonly string[], { width, references }: Page): Row[] => [
+const recordAt = (line: string, headers: readonly string[], { width, references, files }: Page): Row[] => [
   EMPTY_ROW,
   ...recordRows(
-    headers.map((cell) => inlineOf(cell, references, 'tableHeader')),
-    [cellsOf(line).map((cell) => inlineOf(cell, references))],
+    headers.map((cell) => inlineOf(cell, references, files, 'tableHeader')),
+    [cellsOf(line).map((cell) => inlineOf(cell, references, files))],
     width,
   ),
 ];
@@ -633,7 +636,7 @@ const continuesParagraph = (look: Look, index: number, { references, levels }: P
 };
 
 const paragraphAt = (look: Look, index: number, list: number | undefined, page: Page): Block => {
-  const { width, references } = page;
+  const { width, references, files } = page;
   const lines = [look(index) ?? ''];
   let bytes = sourceBytes(lines[0] ?? '');
   let end = index + 1;
@@ -645,8 +648,8 @@ const paragraphAt = (look: Look, index: number, list: number | undefined, page: 
   }
   const under = look(end);
   if (list === undefined && under !== undefined && UNDERLINE.test(under) && bytes + sourceBytes(under) <= MARKDOWN_UNIT_BYTES)
-    return { rows: lines.flatMap((line) => wrapInline(inlineOf(line.trim(), references, 'heading'), width)), next: end + 1, state: OUTSIDE };
-  return { rows: lines.flatMap((line) => lineRows(line, width, references)), next: end, state: { ...OUTSIDE, list, paragraph: list === undefined ? 'top' : 'item' } };
+    return { rows: lines.flatMap((line) => wrapInline(inlineOf(line.trim(), references, files, 'heading'), width)), next: end + 1, state: OUTSIDE };
+  return { rows: lines.flatMap((line) => lineRows(line, width, references, files)), next: end, state: { ...OUTSIDE, list, paragraph: list === undefined ? 'top' : 'item' } };
 };
 
 const quoteBlock = (look: Look, index: number, depth: number, state: BlockState, page: Page): Block => {
@@ -660,7 +663,7 @@ const quoteBlock = (look: Look, index: number, depth: number, state: BlockState,
 };
 
 const blockAt = (look: Look, index: number, state: BlockState, page: Page): Block => {
-  const { width, references } = page;
+  const { width, references, files } = page;
   const line = look(index) ?? '';
   const one = (rows: Row[], next: BlockState): Block => ({ rows, next: index + 1, state: next });
   if (state.fence !== undefined && state.fence.quote > 0) {
@@ -685,8 +688,8 @@ const blockAt = (look: Look, index: number, state: BlockState, page: Page): Bloc
   if (indent >= codeFrom && state.paragraph === 'none' && (item === null || state.list === undefined)) return one(codeRows(line.slice(codeFrom), width, 'code'), { ...OUTSIDE, list });
   if (startsTable(look, index)) return tableAt(look, index, page);
   if (definedBy(line, references)) return one([], { ...OUTSIDE, list });
-  if (HEADING.test(line) || RULE.test(line)) return one(lineRows(line, width, references), { ...OUTSIDE, list });
-  if (item !== null) return one(lineRows(line, width, references), { ...OUTSIDE, paragraph: 'item', list: (item[1] ?? '').length + (item[2] ?? '').length + 1 });
+  if (HEADING.test(line) || RULE.test(line)) return one(lineRows(line, width, references, files), { ...OUTSIDE, list });
+  if (item !== null) return one(lineRows(line, width, references, files), { ...OUTSIDE, paragraph: 'item', list: (item[1] ?? '').length + (item[2] ?? '').length + 1 });
   return paragraphAt(look, index, state.paragraph === 'item' ? state.list : list, page);
 };
 
@@ -714,13 +717,13 @@ const linesOf = (text: string, from: number): Lines => {
   };
 };
 
-export type Reading = { tables: TableDrawing; references: References; settled: boolean; unit: boolean };
+export type Reading = { tables: TableDrawing; references: References; files: FileLinks; settled: boolean; unit: boolean };
 
 export type Parsed = { rows: Row[]; retract: number; point: ParsePoint; tail: Row[] | undefined };
 
 export const parseMarkdown = (text: string, from: ParsePoint, width: number, reading: Reading): Parsed => {
   const lines = linesOf(text, from.characters);
-  const page: Page = { width, tables: reading.tables, references: reading.references, levels: quoteLevelsOf(width) };
+  const page: Page = { width, tables: reading.tables, references: reading.references, files: reading.files, levels: quoteLevelsOf(width) };
   let examined = 0;
   const look: Look = (index) => {
     examined = Math.max(examined, index + 1);
@@ -815,7 +818,7 @@ export const referencesOf = (text: string, before: ReferenceScan, settled: boole
   return { characters: start, fence, references: found ?? before.references };
 };
 
-export const markdownRowsWith = (text: string, width: number, { tables }: { tables: TableDrawing }): Row[] =>
-  parseMarkdown(text, START_OF_TEXT, width, { tables, references: referencesOf(text, NOTHING_SCANNED, true).references, settled: true, unit: false }).rows;
+export const markdownRowsWith = (text: string, width: number, { tables, files }: { tables: TableDrawing; files: FileLinks }): Row[] =>
+  parseMarkdown(text, START_OF_TEXT, width, { tables, references: referencesOf(text, NOTHING_SCANNED, true).references, files, settled: true, unit: false }).rows;
 
-export const markdownRows = (text: string, width: number): Row[] => markdownRowsWith(text, width, { tables: 'grid' });
+export const markdownRows = (text: string, width: number): Row[] => markdownRowsWith(text, width, { tables: 'grid', files: NO_FILE_LINKS });

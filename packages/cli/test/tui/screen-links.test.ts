@@ -14,7 +14,7 @@ describe('the one reading of a web address', () => {
 
 describe('links in wrapped text', () => {
   it('links a bare URL that parses', () => {
-    expect(linksOf('see https://example.com/a now')).toEqual([[4, 25, 'https://example.com/a']]);
+    expect(linksOf('see https://example.com/a now')).toEqual([[4, 25, 'https://example.com/a', 'web']]);
   });
 
   it('leaves text that starts like a URL and does not parse as plain text', () => {
@@ -23,7 +23,7 @@ describe('links in wrapped text', () => {
   });
 
   it('links the URLs that parse beside one that does not', () => {
-    expect(linksOf('http://[ https://example.com/a')).toEqual([[9, 30, 'https://example.com/a']]);
+    expect(linksOf('http://[ https://example.com/a')).toEqual([[9, 30, 'https://example.com/a', 'web']]);
   });
 });
 

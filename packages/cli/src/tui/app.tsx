@@ -63,6 +63,7 @@ import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
 import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
+import { watchFileLinks } from './screen/file-link-watch.ts';
 import { SubagentRows } from './screen/subagents.tsx';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
@@ -1260,6 +1261,16 @@ export function App(props: AppProps) {
     );
   }, [probe, backend, timers]);
 
+  const fileLinksFailed = useEffectEvent((error: unknown): void => reportError(error));
+  useEffect(() => {
+    const watching = new AbortController();
+    const unwatch = watchFileLinks(store, (candidates, signal) => backend.fileLinks(candidates, signal), watching.signal, (error) => fileLinksFailed(error));
+    return () => {
+      watching.abort();
+      unwatch();
+    };
+  }, [store, backend]);
+
   const inboxChanged = useEffectEvent((): void => {
     refreshInbox().catch(reportError);
   });
@@ -1641,7 +1652,11 @@ export function App(props: AppProps) {
     copyOnSelect,
     now,
     copy: (text) => backend.copyToClipboard(text),
-    openLink: (url) => backend.openUrl(url, untilNextKey(terminal.input), (message) => reportError(new Error(message))),
+    openLink: ({ kind, url }) => {
+      const onFailure = (message: string): void => reportError(new Error(message));
+      if (kind === 'file') backend.openFile(url, untilNextKey(terminal.input), onFailure);
+      else backend.openUrl(url, untilNextKey(terminal.input), onFailure);
+    },
     reportError,
     keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: completionOpen, inputEmpty: editorRef.current.text === '' }),
     keys,

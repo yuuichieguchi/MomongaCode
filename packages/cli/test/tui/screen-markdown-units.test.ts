@@ -16,6 +16,7 @@ import { inertText, wrapText } from '../../src/tui/screen/wrap.ts';
 import type { Row } from '../../src/tui/screen/wrap.ts';
 import { appendEntry, foldEvent } from '../../src/tui/transcript.ts';
 import { eventOf, manualSchedule, seeded, storeOf, ROW_RENDERERS } from './screen-fakes.ts';
+import { NO_FILE_LINKS } from '../../src/tui/screen/file-links.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
@@ -98,7 +99,7 @@ describe('a markdown entry larger than one unit', () => {
     const rows: Row[] = [];
     let point = START_OF_TEXT;
     for (;;) {
-      const parsed = parseMarkdown(text.slice(0, 200_000), point, 47, { tables: 'grid', references: NOTHING_SCANNED.references, settled: true, unit: true });
+      const parsed = parseMarkdown(text.slice(0, 200_000), point, 47, { tables: 'grid', references: NOTHING_SCANNED.references, files: NO_FILE_LINKS, settled: true, unit: true });
       rows.length -= parsed.retract;
       rows.push(...parsed.rows);
       point = parsed.point;
@@ -230,7 +231,7 @@ describe('a table larger than one unit', () => {
     expect(rows.some((row) => row.text.includes('│'))).toBe(false);
     let point = START_OF_TEXT;
     for (;;) {
-      const parsed = parseMarkdown(table, point, 60, { tables: 'grid', references: NOTHING_SCANNED.references, settled: true, unit: true });
+      const parsed = parseMarkdown(table, point, 60, { tables: 'grid', references: NOTHING_SCANNED.references, files: NO_FILE_LINKS, settled: true, unit: true });
       expect(bytesOf(table.slice(point.characters, parsed.point.characters))).toBeLessThanOrEqual(MARKDOWN_UNIT_BYTES);
       point = parsed.point;
       if (parsed.tail !== undefined) break;

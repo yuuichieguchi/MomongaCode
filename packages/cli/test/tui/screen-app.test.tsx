@@ -1,5 +1,6 @@
-import { chmodSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { momongaPaths } from '@momonga/foundation';
 import { describe, expect, it, vi } from 'vitest';
 import { nodeFiles } from '../../src/node-ports.ts';
@@ -318,6 +319,62 @@ describe('selection and copy on the screen', () => {
     terminal.emit(mouse('release', 20, 2));
     await vi.waitFor(() => expect(backend.openedUrls).toEqual(['https://example.test/page']));
     app.unmount();
+  });
+});
+
+describe('file links in the full screen', () => {
+  const projectWith = (name: string): string => {
+    const cwd = realpathSync(createTempDir());
+    writeFileSync(path.join(cwd, name), '<html></html>');
+    return cwd;
+  };
+
+  const answered = async (cwd: string, text: string) => {
+    const started = await start({ session: { cwd }, fileLinksIn: { home: cwd } }, {}, { columns: 60, rows: 12 });
+    await untilFrame(started.app, 'mode: manual');
+    await runStarted(started.backend, started.app, 'go');
+    started.backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text }));
+    started.backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
+    started.backend.finish(runView());
+    await untilFrame(started.app, IDLE);
+    return started;
+  };
+
+  it('writes a file the answer names as an OSC 8 file link once the answer is complete, and a click opens it as a file', async () => {
+    const cwd = projectWith('gomoku.html');
+    const url = pathToFileURL(path.join(cwd, 'gomoku.html')).href;
+    const { app, terminal, backend } = await answered(cwd, 'Open `gomoku.html` now');
+    await untilFrame(app, `\u001b]8;;${url}\u0007gomoku.html\u001b]8;;\u0007`);
+    terminal.emit(mouse('press', 8, 2));
+    terminal.emit(mouse('release', 8, 2));
+    await vi.waitFor(() => expect(backend.openUrlCalls.map((call) => ({ url: call.url.href, kind: call.kind }))).toEqual([{ url, kind: 'file' }]));
+    app.unmount();
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('a click on a file link whose file was deleted shows one note, opens nothing and throws nothing', async () => {
+    const cwd = projectWith('gomoku.html');
+    const file = path.join(cwd, 'gomoku.html');
+    const { app, terminal, backend } = await answered(cwd, 'Open `gomoku.html` now');
+    await untilFrame(app, `\u001b]8;;${pathToFileURL(file).href}\u0007`);
+    rmSync(file);
+    expect(() => {
+      terminal.emit(mouse('press', 8, 2));
+      terminal.emit(mouse('release', 8, 2));
+    }).not.toThrow();
+    await untilFrame(app, 'no longer exists');
+    expect(backend.openUrlCalls).toEqual([]);
+    app.unmount();
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('a name that is no file stays plain text', async () => {
+    const cwd = projectWith('gomoku.html');
+    const { app } = await answered(cwd, 'Open `missing.html` now');
+    expect(app.lastFrame()).toContain('Open missing.html now');
+    expect(app.lastFrame()).not.toContain('\u001b]8;;file:');
+    app.unmount();
+    rmSync(cwd, { recursive: true, force: true });
   });
 });
 

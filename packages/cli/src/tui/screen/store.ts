@@ -66,6 +66,7 @@ export type TranscriptStore = {
   byKey(key: string): StoreEntry | undefined;
   append(entry: Entry, key?: string): StoreEntry;
   change(key: string, change: (entry: Entry) => Entry): void;
+  changeId(id: number, change: (entry: Entry) => Entry): void;
   name(key: string, target: string): void;
   forget(key: string): void;
   open(): string | undefined;
@@ -123,6 +124,15 @@ export const createTranscriptStore = (): TranscriptStore => {
     return entry.kind === 'banner' ? index < entries.length - 1 : settled(entry);
   };
 
+  const changeAt = (position: number, change: (entry: Entry) => Entry): void => {
+    const before = at(position);
+    const entry = change(before.entry);
+    if (entry === before.entry) return;
+    const stored: StoreEntry = { id: before.id, version: before.version + 1, entry };
+    entries[position] = stored;
+    tell(stored.id, stored.version);
+  };
+
   return {
     count: () => entries.length,
     at,
@@ -141,13 +151,10 @@ export const createTranscriptStore = (): TranscriptStore => {
     },
     change: (key, change) => {
       const position = positions.get(key);
-      if (position === undefined) return;
-      const before = at(position);
-      const entry = change(before.entry);
-      if (entry === before.entry) return;
-      const stored: StoreEntry = { id: before.id, version: before.version + 1, entry };
-      entries[position] = stored;
-      tell(stored.id, stored.version);
+      if (position !== undefined) changeAt(position, change);
+    },
+    changeId: (id, change) => {
+      if (id >= firstId && id < firstId + entries.length) changeAt(id - firstId, change);
     },
     name: (key, target) => {
       const position = positions.get(target);

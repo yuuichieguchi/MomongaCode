@@ -17,6 +17,7 @@ import { EMPTY_USAGE } from './screen/store.ts';
 import { formatTokens } from '../format-tokens.ts';
 import { OUTPUT_TAIL_MAX_BYTES, startWithinBytes, tailOf } from './screen/output-tail.ts';
 import type { OutputTail } from './screen/output-tail.ts';
+import type { FileLinks } from './screen/file-links.ts';
 import { isPrompt } from '../run/prompt-event.ts';
 import type { PromptEvent } from '../run/prompt-event.ts';
 import type { TranscriptState, TranscriptStore } from './screen/store.ts';
@@ -29,7 +30,7 @@ export type PlanEntry = { content: string; priority: 'high' | 'medium' | 'low'; 
 export type Entry =
   | { kind: 'banner'; banner: StartupBanner }
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; itemId: string; text: string; open: boolean }
+  | { kind: 'assistant'; itemId: string; text: string; open: boolean; fileLinks?: FileLinks }
   | { kind: 'thought'; itemId: string; text: string; startedAt: number; endedAt?: number; expanded: boolean; window: number }
   | {
       kind: 'tool';
@@ -46,6 +47,7 @@ export type Entry =
       tail?: OutputTail;
       diff?: AppliedDiff;
       denial?: PermissionDenial;
+      fileLinks?: FileLinks;
     }
   | { kind: 'plan'; entries: readonly PlanEntry[] }
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string }

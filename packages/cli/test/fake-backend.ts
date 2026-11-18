@@ -13,7 +13,9 @@ import type { UserShellRecord } from '@momonga/protocol';
 import { editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
-import { momongaLayout } from '@momonga/foundation';
+import { hostPaths, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import { fileLinkRootsOf, openFileLink, resolveFileLinks } from '../src/tui/screen/file-links.ts';
+import type { FileLinkPorts } from '../src/tui/screen/file-links.ts';
 import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
 import { listingOf } from './models-shell-harness.ts';
@@ -81,7 +83,7 @@ export type FakeBackend = TuiBackend & {
   readonly followed: string[];
   readonly elicitationAnswers: { inputId: string; responses: Readonly<Record<string, ElicitationAnswerRecord>> }[];
   readonly openedUrls: string[];
-  readonly openUrlCalls: { url: URL; watch: AbortSignal; onFailure(message: string): void }[];
+  readonly openUrlCalls: { url: URL; watch: AbortSignal; onFailure(message: string): void; kind?: 'web' | 'file' }[];
   readonly recorded: string[];
   emit(frame: RunEventFrame): void;
   following(): FollowHandlers;
@@ -110,6 +112,7 @@ export type FakeBackendOptions = {
   memories?: readonly MemoryView[];
   rules?: readonly GoverningFactView[];
   openUrlFailure?: Error;
+  fileLinksIn?: { home: string };
   images?: Readonly<Record<string, ImageAttachment>>;
   chain?: readonly string[];
   detected?: readonly LocalServerDetection[];
@@ -251,6 +254,13 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   let handlers: FollowHandlers | undefined;
   let finishRun: ((run: RunView) => void) | undefined;
   let session: SessionView = { ...SESSION, ...options.session };
+  const fileLinkPortsOf = (signal: AbortSignal): FileLinkPorts => ({ paths: hostPaths(signal), files: nodeFileSystem });
+  const openUrl = (url: URL, watch: AbortSignal, onFailure: (message: string) => void, kind?: 'web' | 'file'): void => {
+    openedUrls.push(url.href);
+    openUrlCalls.push({ url, watch, onFailure, ...(kind === undefined ? {} : { kind }) });
+    const failure = options.openUrlFailure;
+    if (failure !== undefined) queueMicrotask(() => onFailure(failure.message));
+  };
   const opened: FakeBackend['opened'] = [];
   let startedHere = false;
   let startedPrompt: string | undefined;
@@ -525,12 +535,18 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`elicit:${inputId}`);
       elicitationAnswers.push({ inputId, responses });
     },
-    openUrl: (url, watch, onFailure) => {
-      openedUrls.push(url.href);
-      openUrlCalls.push({ url, watch, onFailure });
-      const failure = options.openUrlFailure;
-      if (failure !== undefined) queueMicrotask(() => onFailure(failure.message));
-      return Promise.resolve();
+    openUrl,
+    openFile: (url, watch, onFailure) => {
+      const place = options.fileLinksIn;
+      if (place === undefined) throw new Error('this fake backend was not given a place for file links');
+      const filePorts = fileLinkPortsOf(watch);
+      openFileLink(url, () => fileLinkRootsOf({ cwd: session.cwd, home: place.home, additionalDirectories: session.additionalDirectories }, filePorts), filePorts, openUrl, watch, onFailure);
+    },
+    fileLinks: async (candidates, signal) => {
+      const place = options.fileLinksIn;
+      if (place === undefined) return new Map();
+      const filePorts = fileLinkPortsOf(signal);
+      return resolveFileLinks(candidates, await fileLinkRootsOf({ cwd: session.cwd, home: place.home, additionalDirectories: session.additionalDirectories }, filePorts), filePorts);
     },
     copyToClipboard: async (text) => {
       record(`copy:${text}`);

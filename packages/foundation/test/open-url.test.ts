@@ -149,6 +149,24 @@ describe('P-C7: the opener starts the program, never waits for it, and reports a
     expect(launches).toEqual([]);
   });
 
+  it('opens a local file address when it is asked to open a file, with the program on PATH', async () => {
+    const bin = binDirWith('open');
+    const { launch, launches } = scriptedLaunch(never);
+    const calls: string[] = [];
+    createBrowserOpener({ env: { PATH: bin }, launch, files: nodeFileSystem })(new URL('file:///work/my%20page.html'), new AbortController().signal, (message) => calls.push(message), 'file');
+    await vi.waitFor(() => expect(launches.map(({ file, args }) => ({ file, args }))).toEqual([{ file: path.join(bin, 'open'), args: ['file:///work/my%20page.html'] }]));
+    expect(calls).toEqual([]);
+  });
+
+  it.each(['https://example.com/x', 'file://host.example/share/x', 'javascript:alert(1)'])('refuses %s as a file: only file addresses of this machine are opened as files', async (address) => {
+    const bin = binDirWith('open');
+    const { launch, launches } = scriptedLaunch(never);
+    const calls: string[] = [];
+    createBrowserOpener({ env: { PATH: bin }, launch, files: nodeFileSystem })(new URL(address), new AbortController().signal, (message) => calls.push(message), 'file');
+    await vi.waitFor(() => expect(calls).toEqual(['only file addresses of this machine can be opened as files']));
+    expect(launches).toEqual([]);
+  });
+
   it('opens an http address', async () => {
     const bin = binDirWith('xdg-open');
     const { launch, launches } = scriptedLaunch(never);

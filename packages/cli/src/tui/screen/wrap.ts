@@ -1,10 +1,14 @@
 import { escapeTerminalBlock } from '@momonga/protocol';
 import { TAB_COLUMNS } from './constants.ts';
+import { fileLinksIn } from './file-links.ts';
+import type { FileLinks } from './file-links.ts';
 import type { StyleToken } from './tokens.ts';
 
 export type Span = readonly [start: number, end: number, token: StyleToken];
 
-export type Link = readonly [start: number, end: number, url: string];
+export type LinkKind = 'web' | 'file';
+
+export type Link = readonly [start: number, end: number, url: string, kind: LinkKind];
 
 export type Row = { text: string; spans: readonly Span[]; wrapped: boolean; prefixCols: number; links?: readonly Link[]; kind?: 'label' };
 
@@ -43,15 +47,15 @@ export const parseWebUrl = (text: string): URL | undefined => {
 export const linksOf = (text: string): Link[] =>
   Array.from(text.matchAll(BARE_URL), (match): Link => {
     const url = match[0].replace(TRAILING_PUNCTUATION, '');
-    return [match.index, match.index + url.length, url];
+    return [match.index, match.index + url.length, url, 'web'];
   }).filter(([, , url]) => parseWebUrl(url) !== undefined);
 
-export type WrapOptions = { first?: string; rest?: string; token?: StyleToken; links?: boolean };
+export type WrapOptions = { first?: string; rest?: string; token?: StyleToken; links?: boolean; files?: FileLinks };
 
 const pieceOf = (line: string, from: number, to: number, prefix: string, wrapped: boolean, token: StyleToken | undefined, links: readonly Link[]): Row => {
   const text = `${prefix}${line.slice(from, to)}`;
   const shift = prefix.length - from;
-  const within = links.filter(([start, end]) => start < to && end > from).map(([start, end, url]): Link => [Math.max(start, from) + shift, Math.min(end, to) + shift, url]);
+  const within = links.filter(([start, end]) => start < to && end > from).map(([start, end, url, kind]): Link => [Math.max(start, from) + shift, Math.min(end, to) + shift, url, kind]);
   return {
     text,
     spans: token === undefined ? [] : [[0, text.length, token]],
@@ -64,7 +68,8 @@ const pieceOf = (line: string, from: number, to: number, prefix: string, wrapped
 export const wrapLine = (line: string, width: number, options: WrapOptions = {}): Row[] => {
   const first = options.first ?? '';
   const rest = options.rest ?? '';
-  const links = options.links === false ? [] : linksOf(line);
+  const web = options.links === false ? [] : linksOf(line);
+  const links = options.files === undefined ? web : [...web, ...fileLinksIn(line, options.files, [], web)];
   const rows: Row[] = [];
   let rowStart = 0;
   let used = displayWidth(first);
