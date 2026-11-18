@@ -134,6 +134,7 @@ export {
   REAL_PROCESS_WAIT_MS,
   SOURCE_SCAN_TEST_TIMEOUT_MS,
   SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS,
+  DOCUMENT_VALUE_CHECK_TEST_TIMEOUT_MS,
   SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS,
   SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   TEMP_DIR_PREFIX,
@@ -312,3 +313,6 @@ export { fileSystemWithFault } from './file-system-fault.ts';
 export type { FileSystemFault } from './file-system-fault.ts';
 export { startFakeGitHttps } from './fake-git-https.ts';
 export type { FakeGitHttps, FakeGitHttpsOptions, FakeGitHttpsRequest } from './fake-git-https.ts';
+export { DOCUMENT_FOLDERS, DOCUMENT_VARIABLES, documentEnvironmentOf, documentFolderDigestOf, documentFolderOf, siblingDocumentsOf, unnamedDocumentsMessage } from './document-folders.ts';
+export type { DocumentFolder, DocumentVariable } from './document-folders.ts';
+export { itWithDocuments } from './document-tests.ts';

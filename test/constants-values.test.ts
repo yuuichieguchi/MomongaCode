@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { DOCUMENT_VALUE_CHECK_TEST_TIMEOUT_MS, itWithDocuments } from '@momonga/testkit';
 import { checkRows, constantRowsOf, parseValueCell } from './support/constants-rows.ts';
 
-vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
+vi.setConfig({ testTimeout: DOCUMENT_VALUE_CHECK_TEST_TIMEOUT_MS });
 
 const CONSTANTS_DOCUMENT_VARIABLE = 'MOMONGA_CONSTANTS_DOCUMENT';
 
@@ -21,6 +21,12 @@ const FIXTURE = [
   '| `NO_SUCH_CONSTANT_ANYWHERE` | 1 | gone |',
   '| `OLD_MARGIN_MS` | unchecked: removed | deleted |',
   '| `LOCK_FD` | five | prose |',
+  "| `KILL_WAIT_MS` (`packages/cli/src/daemon/generations.ts`) | 5 s | a module-private constant read from its named file |",
+  '| `KILL_WAIT_MS` | 5000 | the same constant, its file not named |',
+  '| `defaultContextSettings().autoCompact` | true | a property of a call |',
+  '| `stopWaitBoundMs([5000, 9000])` (`packages/foundation/src/process-contract.ts`) | 9000 ms | a call with a JSON argument |',
+  '| `UNREADABLE_CODES` (`packages/skills/src/file-system.ts`) | `EACCES`, `EPERM`, `ELOOP`, `ENAMETOOLONG` | a set read as a list |',
+  '| `DEFAULT_PROBE_STEP_SECONDS` | 120 s | a constant in seconds |',
   '',
   '| Path | Form |',
   '|---|---|',
@@ -38,6 +44,12 @@ describe('the value of every constants row is the value of the code', () => {
       'NO_SUCH_CONSTANT_ANYWHERE',
       'OLD_MARGIN_MS',
       'LOCK_FD',
+      'KILL_WAIT_MS',
+      'KILL_WAIT_MS',
+      'defaultContextSettings().autoCompact',
+      'stopWaitBoundMs([5000, 9000])',
+      'UNREADABLE_CODES',
+      'DEFAULT_PROBE_STEP_SECONDS',
     ]);
   });
 
@@ -61,22 +73,18 @@ describe('the value of every constants row is the value of the code', () => {
 
   it('checks each row against the export of the product, and fails a drifted value, a name that resolves to nothing and an unmarked prose value', async () => {
     const outcome = await checkRows(constantRowsOf('fixture.md', FIXTURE));
-    expect(outcome.checked).toBe(4);
+    expect(outcome.checked).toBe(9);
     expect(outcome.unchecked).toBe(1);
     expect(outcome.failures.map((failure) => [failure.row.name, failure.reason])).toEqual([
       ['POLL_INTERVAL_MS', 'the document says 26, the code says 25'],
-      ['NO_SUCH_CONSTANT_ANYWHERE', 'NO_SUCH_CONSTANT_ANYWHERE is not exported by any product module'],
+      ['NO_SUCH_CONSTANT_ANYWHERE', 'NO_SUCH_CONSTANT_ANYWHERE is declared at the top level of no product module'],
       ['LOCK_FD', 'the value "five" is not a checkable value; write the value, or mark the row `unchecked: <reason>`'],
+      ['KILL_WAIT_MS', 'KILL_WAIT_MS is a constant of packages/cli/src/daemon/generations.ts (not exported) only: name that file in the row'],
     ]);
   });
 
-  const directory = process.env[CONSTANTS_DOCUMENT_VARIABLE];
   const rowsTitle = `finds every row of the constants documents in the folder named by ${CONSTANTS_DOCUMENT_VARIABLE} equal to the code, or marked unchecked`;
-  if (directory === undefined) {
-    it(rowsTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
-    return;
-  }
-  it(rowsTitle, async () => {
+  itWithDocuments(CONSTANTS_DOCUMENT_VARIABLE, import.meta.dirname, rowsTitle, async (directory) => {
     const rows = fs
       .readdirSync(directory)
       .filter((name) => name.endsWith('.md'))
