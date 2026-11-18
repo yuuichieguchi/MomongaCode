@@ -8,7 +8,7 @@ import { createTempDir, stopSupervisorHolders } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
 import type { LedgerSurvivor, ProcessLedger } from './ledger.ts';
 import { readDb } from './db.ts';
-import { groupAlive } from './process.ts';
+import { groupSignalable } from './process.ts';
 import { removeTree } from './remove-tree.ts';
 import { E2E_RUN_ENV, E2E_RUN_PATTERN, KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eEntryPrefix, e2eTmpRoot, harnessFilePath, privateTempRoot } from './run-env.ts';
 import { E2E_DISPOSE_BOUND_MS, E2E_STOP_SETTLED_BOUNDS_MS, UNTIL_DEFAULT_INTERVAL_MS, abortableWait, withinBound } from './wait.ts';
@@ -120,7 +120,7 @@ const LOG_TAIL_BYTES = 16 * 1024;
 const JOURNAL_TAIL_ROWS = 40;
 const JOURNAL_TAIL_SQL = `SELECT run_id, seq, type FROM events ORDER BY id DESC LIMIT ${JOURNAL_TAIL_ROWS}`;
 
-const liveSupervisorsOf = (home: E2eHome): number[] => home.ledger.entries().filter((entry) => entry.source === 'supervisor' && groupAlive(entry.pgid)).map((entry) => entry.pgid);
+const liveSupervisorsOf = (home: E2eHome): number[] => home.ledger.entries().filter((entry) => entry.source === 'supervisor' && groupSignalable(entry.pgid)).map((entry) => entry.pgid);
 
 type StopReading = { readonly survivors: LedgerSurvivor[]; readonly collectFailure: unknown };
 
@@ -194,7 +194,7 @@ const removeHome = async (home: E2eHome): Promise<void> => {
 };
 
 const survivingGroups = (disposing: readonly E2eHome[]): number[] =>
-  disposing.flatMap((home) => home.ledger.entries().map((entry) => entry.pgid).filter((pgid) => groupAlive(pgid)));
+  disposing.flatMap((home) => home.ledger.entries().map((entry) => entry.pgid).filter((pgid) => groupSignalable(pgid)));
 
 export const disposeAll = async (outcome: E2eTestOutcome, bounds: E2eStopBounds = E2E_STOP_SETTLED_BOUNDS_MS): Promise<void> => {
   const disposing = homes.splice(0);
