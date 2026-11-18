@@ -21,10 +21,10 @@ describe('the reuse mode of a test run', () => {
     expect(() => testReuseModeOf({ MOMONGA_TEST_REUSE: 'yes' })).toThrow(/MOMONGA_TEST_REUSE/);
   });
 
-  it('npm test never replays and npm run test:reuse does', () => {
+  it('npm run test:reuse replays, and every other script that starts a whole run or a tier names MOMONGA_TEST_REUSE=0 so an exported value never turns replay on', () => {
     const scripts = (JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
-    expect(scripts['test']).toMatch(/(^| )MOMONGA_TEST_REUSE=0 /);
-    expect(scripts['test:reuse']).toMatch(/(^| )MOMONGA_TEST_REUSE=1 /);
+    expect(scripts['test:reuse']).toMatch(/^MOMONGA_TEST_REUSE=1 /);
+    for (const name of ['test', 'test:e2e', 'test:packaging', 'test:tlc-deep']) expect(scripts[name], name).toMatch(/^MOMONGA_TEST_REUSE=0 /);
   });
 });
 
@@ -288,6 +288,45 @@ describe('the files the main process loaded for a project', () => {
       expect(run()).toContain('Replayed 1 test files');
       edit('product/loaded.ts');
       expect(run()).toContain('Replayed 0 test files');
+    },
+    REAL_PROCESS_TEST_TIMEOUT_MS * 4,
+  );
+  const twoProjects = (): void => {
+    root = createTempDir();
+    const project = (name: string): string =>
+      `{ test: { name: '${name}', include: ['${name}/**/*.test.ts'], exclude: plan.replayed.get('${name}') ?? [], setupFiles: [${JSON.stringify(path.join(SUPPORT, 'reuse-recorder.ts'))}], globalSetup: [${JSON.stringify(path.join(SUPPORT, 'main-observation.ts'))}, './setup-${name}.ts'] } }`;
+    write(
+      'vitest.config.mjs',
+      [
+        `import { testReusePlan } from ${JSON.stringify(path.join(SUPPORT, 'test-reuse.ts'))};`,
+        "const plan = testReusePlan(import.meta.dirname, { shared: ['vitest.config.mjs'], projects: { first: [], second: [] } });",
+        'export default {',
+        `  test: { pool: 'forks', passWithNoTests: true, reporters: ['default', ${JSON.stringify(path.join(SUPPORT, 'reuse-reporter.ts'))}], projects: [${project('first')}, ${project('second')}] },`,
+        '};',
+        '',
+      ].join('\n'),
+    );
+    for (const name of ['first', 'second']) {
+      write(`setup-${name}.ts`, `import { loaded } from './product/${name}.ts';\nexport default function setup(): void {\n  if (loaded !== 1) throw new Error('not loaded');\n}\n`);
+      write(`product/${name}.ts`, 'export const loaded = 1;\n');
+      write(`${name}/${name}.test.ts`, `import { test } from 'vitest';\ntest('${name}', () => {});\n`);
+    }
+    write('packages/.keep', '');
+    expect(spawnSync('git', ['init', '-q'], { cwd: root }).status).toBe(0);
+    expect(spawnSync('git', ['add', '-A'], { cwd: root }).status).toBe(0);
+  };
+
+  it(
+    'after an edit to a file the global setup of one project loaded, reruns exactly the files of that project and replays the others',
+    () => {
+      twoProjects();
+      run();
+      expect(run()).toContain('Replayed 2 test files');
+      edit('product/first.ts');
+      const output = run();
+      expect(output).toContain('Replayed 1 test files');
+      expect(output).toContain('first/first.test.ts');
+      expect(output).not.toContain('second/second.test.ts');
     },
     REAL_PROCESS_TEST_TIMEOUT_MS * 4,
   );
