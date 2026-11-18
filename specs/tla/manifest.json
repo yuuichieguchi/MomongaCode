@@ -2013,16 +2013,17 @@
     {
       "module": "RunLock",
       "abstractions": [
-        "the kernel lock mechanism: an atomic claim that the kernel releases on death; creating a light file and locking it are one step",
+        "the kernel lock mechanism: an atomic claim that the kernel releases on death; creating a light file and locking it are one step; claiming a heavy-waiting unit and writing its description are one step",
         "the file system (a file exists or not), time and sleeping (a wait is a bounded number of attempts), the description files",
         "the heavy scan works on a snapshot of the light files; a describer and an isHeld probe only read",
+        "a heavy waiter records its unit once, after its first refused attempt, and releases it in the step that ends its wait (HDecide when it runs, GiveUp when it waits out); the release of the unit after the heavy claim succeeded is not a separate step",
         "the state space is bounded by the constants of its configurations; the base row RunLock sets Lights = {l1, l2}, Heavies = {h1}, Waiters = {l1, h1}, MaxAttempts = 2, Nested = FALSE, Variant = \"correct\""
       ],
       "notProved": [
-        "the wait limit in seconds and its fairness between waiters",
+        "the wait limit in seconds and its fairness between waiters: a heavy waiter is not starved in that the light runs holding while it waits are a subset of those holding when it recorded itself (LightsOutWhileWaiting); whether those end within its wait limit is not modelled",
         "a token held by a child whose holder died before the child started (that child is an ordinary new process)",
         "behaviour beyond the constants of its configurations",
-        "that the code follows the model beyond what its tie tests check: test/run-lock-drift (test files)"
+        "that the code follows the model beyond what its tie tests check: test/run-lock-drift, scripts/support/run-lock.test (test files)"
       ],
       "header": [
         "The run lock of development tooling (design-dev-run-reuse, section 3): a heavy run never overlaps any other",
@@ -7243,7 +7244,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 2308,
       "measuredSeconds": 1.62,
       "measuredReuse": "off",
@@ -10136,27 +10137,27 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 25890,
-      "measuredSeconds": 2.09,
+      "distinctStates": 70311,
+      "measuredSeconds": 2.36,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 3.25,
-      "budgetCpuSeconds": 10,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 38.75 at start)",
-      "identity": "85292368c576a597d3f56e27fabbb35ea96e7aa8ed04539f96b03af3f9eaf01c"
+      "measuredCpuSeconds": 5.45,
+      "budgetCpuSeconds": 14,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.71 at start)",
+      "identity": "e5638e5644bb6cfb013654da1560e71620cb27700c7f439d3bbd8b1416f5accf"
     },
     {
       "config": "RunLock.twoHeavies",
       "role": "check",
       "expect": "holds",
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 15964,
-      "measuredSeconds": 1.36,
+      "tier": "deep",
+      "distinctStates": 27647,
+      "measuredSeconds": 2.02,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.89,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.24 at start)",
-      "identity": "2632fbfba7adf023983efc466731333d316502fa9ae6b6a30436458da4bf40ce"
+      "measuredCpuSeconds": 3.3,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.71 at start)",
+      "identity": "3fc961053d218b695019e9da8937e31cbc37042c4e0ce5ed6bc6169520e9db35"
     },
     {
       "config": "RunLock.nested",
@@ -10165,12 +10166,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 17237,
-      "measuredSeconds": 1.88,
+      "measuredSeconds": 1.63,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.62,
+      "measuredCpuSeconds": 2.92,
       "budgetCpuSeconds": 9,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 36.61 at start)",
-      "identity": "2fd90b5a66b94dbbade161d3314235239e6bb012e8d315f4ab141cf010351834"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.74 at start)",
+      "identity": "aaeddf079dd4429545a984409bf5a489c5231aaae3dafffce1c0d3e98d0fb0d9"
     },
     {
       "config": "RunLock.oneShot",
@@ -10179,12 +10180,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 112,
-      "measuredSeconds": 1.18,
+      "measuredSeconds": 1.22,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.46,
+      "measuredCpuSeconds": 1.24,
       "budgetCpuSeconds": 6,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.94 at start)",
-      "identity": "0de032de16f5d2e6ec300d4b64352467f0a9e5a9fe7617cebec7a07813d16f9e"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.74 at start)",
+      "identity": "bcece9f1709925e2b22e831abeb9dfccc4be08a231cbae1f8253a45596e00d89"
     },
     {
       "config": "RunLock.wait",
@@ -10192,13 +10193,13 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1046,
-      "measuredSeconds": 1.22,
+      "distinctStates": 1669,
+      "measuredSeconds": 1.51,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.07,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.63 at start)",
-      "identity": "ded4b6177763f8b0c11c7a18e9233329c30b46fc61d85ae9885ce6d27658e4f5"
+      "measuredCpuSeconds": 2.62,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.74 at start)",
+      "identity": "bc17a7f5f6d104c1a5042bf6175494be8379c254c20b8ee55f36e635f8031c13"
     },
     {
       "config": "RunLock.noLightCheck",
@@ -10210,12 +10211,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 70,
-      "measuredSeconds": 1.64,
+      "measuredSeconds": 1.14,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.91,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.92 at start)",
-      "identity": "db19c4d1ad9062e492fe6da99f667c3b8b87b454be77650c324738e41755e3b5"
+      "measuredCpuSeconds": 1.17,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.74 at start)",
+      "identity": "37647e2c3e3124709454c5df65643e0de9d020532ff00beea867f1a39f5485e2"
     },
     {
       "config": "RunLock.noHeavyScan",
@@ -10227,12 +10228,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 63,
-      "measuredSeconds": 1.35,
+      "measuredSeconds": 1.19,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.81,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.57 at start)",
-      "identity": "23184d734724770bdb4de61b097918a139114d515eee7e3307ee10f5f1f22205"
+      "measuredCpuSeconds": 1.1,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.72 at start)",
+      "identity": "041c6950aa4b2986d81c6f7e07b57a45721fca0e1e71fbe0bfdea6c526bdbb7a"
     },
     {
       "config": "RunLock.checkFirst",
@@ -10243,13 +10244,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 81,
-      "measuredSeconds": 1.56,
+      "distinctStates": 77,
+      "measuredSeconds": 1.35,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.51,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 36.61 at start)",
-      "identity": "61e66fe5c2972523ab2b948b87b90f7908c51716a423937e12c3db2ec1bb4db7"
+      "measuredCpuSeconds": 1.28,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.72 at start)",
+      "identity": "9abd5f627a5db088df66eed4684330fa7e2658bbe4b78871bf82d020c3eb3d21"
     },
     {
       "config": "RunLock.staleIsLive",
@@ -10260,13 +10261,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 106,
-      "measuredSeconds": 1.59,
+      "distinctStates": 108,
+      "measuredSeconds": 1.23,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.91,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.64 at start)",
-      "identity": "e3a54f898e66e4d4b31b08a54f56ce39738ea2c1e975fe3143c1411d550130a2"
+      "measuredCpuSeconds": 1.22,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.72 at start)",
+      "identity": "c7f4e9d72553a0dc75f46d7981facd32f56f0fb5ec22c69772f6e4d1fe7e5c00"
     },
     {
       "config": "RunLock.crashKeeps",
@@ -10278,12 +10279,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 25,
-      "measuredSeconds": 1.36,
+      "measuredSeconds": 1.18,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.77,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.14 at start)",
-      "identity": "3b53a714009cd0f01b0a3b72d3b5de8eb9d63c6e1e51560d293027f4d7099e3c"
+      "measuredCpuSeconds": 1.18,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.72 at start)",
+      "identity": "186a41d204b44ffaad81a874cb29f2efaf44e124facd66e0f2dddfae90bbf882"
     },
     {
       "config": "RunLock.orphan",
@@ -10294,13 +10295,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 346,
-      "measuredSeconds": 1.2,
+      "distinctStates": 392,
+      "measuredSeconds": 1.24,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.55,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.11 at start)",
-      "identity": "07eab673cf9811750e6c540779a256815c1466955a2b863f0bec0c10bc4e1e3a"
+      "measuredCpuSeconds": 1.44,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "accdc1907ec591ca04194f39ed8689c4ed3384f2b88398b58f8af53e352abc12"
     },
     {
       "config": "RunLock.orphanLimit",
@@ -10311,13 +10312,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 100,
-      "measuredSeconds": 1.18,
+      "distinctStates": 92,
+      "measuredSeconds": 1.19,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.46,
+      "measuredCpuSeconds": 1.24,
       "budgetCpuSeconds": 6,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.11 at start)",
-      "identity": "394a4bfe23a07a7303b78b247fec4b297d79c9521bd75c5bf058581dfb76ff4a"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "d5d9774b5925c36656d9b83b16f8fb367395f01c2334594e138ee419c61fa8ae"
     },
     {
       "config": "RunLock.heavyUnderLight",
@@ -10328,13 +10329,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 992,
-      "measuredSeconds": 1.62,
+      "distinctStates": 956,
+      "measuredSeconds": 1.28,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.6,
+      "measuredCpuSeconds": 1.63,
       "budgetCpuSeconds": 7,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 34.64 at start)",
-      "identity": "8ed4d88f3ef4b531bf7398456e26ee5499e303dd593a6aaa46b4e386a3e6c7ef"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "7b736b42d594d2f3b0cdae9a60be9a850b1d59ea118f7a729b3e63da151b78e9"
     },
     {
       "config": "RunLock.bothRefused",
@@ -10346,12 +10347,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 112,
-      "measuredSeconds": 1.39,
+      "measuredSeconds": 1.19,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.85,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.38 at start)",
-      "identity": "0b065b337e8a0828e76c7e6bc477d4dd86dcfcce007782d84380f1b4a284b0df"
+      "measuredCpuSeconds": 1.3,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "315595596051c3c189fe341090542b23a397a98a52e0f342c1abca35baec9874"
     },
     {
       "config": "RunLock.lightsOverlap",
@@ -10363,12 +10364,12 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 64,
-      "measuredSeconds": 1.9,
+      "measuredSeconds": 1.2,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.11,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.67 at start)",
-      "identity": "00cb94582f114c5c0fb36e4d72576a50312e069490779d36a672679bbc30a561"
+      "measuredCpuSeconds": 1.24,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "30b07cca1e0b3f086bda721c40081f38731b12d80efd0f6514fa0f726c80fc20"
     },
     {
       "config": "RunLock.childRefused",
@@ -10379,13 +10380,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 85,
+      "distinctStates": 106,
       "measuredSeconds": 1.19,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.47,
+      "measuredCpuSeconds": 1.28,
       "budgetCpuSeconds": 6,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.01 at start)",
-      "identity": "28fbfe0bda06b4a41f23b93d007ac1db49107c35c632578c7938b9de11e5152e"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "edf71309643628b974ba7561a0ad9731260373c87a861da16d55e6bc939065c2"
     },
     {
       "config": "RunLock.retryRuns",
@@ -10396,13 +10397,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 244,
-      "measuredSeconds": 1.19,
+      "distinctStates": 288,
+      "measuredSeconds": 1.24,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.54,
-      "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.62 at start)",
-      "identity": "6d0f29c87ae4f55c20ecb271a63d271a505acdf772e3808c278d083c668a36e2"
+      "measuredCpuSeconds": 1.4,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "6bd0452a1af2b84d9fefe123d15763cd22de37ff973eb5d6f68dba96cbf975e2"
     },
     {
       "config": "RunLock.unboundedWait",
@@ -10413,13 +10414,47 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 125,
-      "measuredSeconds": 1.22,
+      "distinctStates": 331,
+      "measuredSeconds": 1.37,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.68,
+      "measuredCpuSeconds": 1.94,
       "budgetCpuSeconds": 7,
-      "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.04 at start)",
-      "identity": "20fe2462d6ae6d4717593b6c216ae8d46b1904075f49ad90835a7e1d83a20fa0"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.34 at start)",
+      "identity": "d48b371924c3d5b23e92463b5bd394dee2c0b77c7b5cfe89f14d8c5ab5409da7"
+    },
+    {
+      "config": "RunLock.noWaiterCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "LightsOutWhileWaiting",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 425,
+      "measuredSeconds": 1.31,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.35,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 14.59 at start)",
+      "identity": "7f7f1142890b61acafa4a30171fdfd62737566e0495e1ff9085be74626b39d8e"
+    },
+    {
+      "config": "RunLock.staleWaiterIsLive",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoDeadWaiterBlocks",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 273,
+      "measuredSeconds": 1.27,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.36,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 14.59 at start)",
+      "identity": "f53a8cd37c72bf06c25f807ae7a72530bdec0ffe4719a3a1bb31bcd9e5374f3b"
     },
     {
       "config": "LeftoverCleanup.jobsIgnored",
