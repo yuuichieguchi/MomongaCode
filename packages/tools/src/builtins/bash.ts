@@ -187,7 +187,8 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
   }
   return {
     status: 'completed',
-    output: withLine(`Started background job ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`, timeout.note),
+    output: `Started background job ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`,
+    ...(timeout.note === undefined ? {} : { notes: [timeout.note] }),
     detached: true,
   };
 };
@@ -354,7 +355,8 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
       if (ctx.limits.bash.onTimeout === 'kill' || jobs === undefined) ctx.stopForTimeout();
       else {
         const groupNotice = await attached;
-        const seen = withLine(capture.text().replace(/\n+$/, ''), groupNotice);
+        const printed = capture.text().replace(/\n+$/, '');
+        const seen = withLine(printed, groupNotice);
         try {
           const { jobId } = await jobs.adopt({
             runId: ctx.runId,
@@ -388,7 +390,7 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
               failure: () => pump.failure(),
             },
           });
-          return { status: 'completed', output: withLine(withLine(seen, timeout.note), movedText(jobId, timeout.ms)), detached: true };
+          return { status: 'completed', output: printed, notes: [...(groupNotice === undefined ? [] : [groupNotice]), ...(timeout.note === undefined ? [] : [timeout.note]), movedText(jobId, timeout.ms)], detached: true };
         } catch (error) {
           if (!(error instanceof ToolExecutionError)) throw error;
           ctx.stopForTimeout(error.message);
@@ -419,23 +421,25 @@ export const bashToolFor = (offer: BuiltinToolOffer): AnyTool => defineTool<Bash
     if (failure !== undefined) throw failure.error;
 
     const extracted = extractCwd(capture.text(), nonce);
-    let output = extracted.output.replace(/\n+$/, '');
+    const output = extracted.output.replace(/\n+$/, '');
+    const cwdNotes: string[] = [];
     if (extracted.cwd !== undefined) {
       if (await insideAny(extracted.cwd, await canonicalDirectories(ctx.roots, ctx.paths), ctx.paths)) {
         ctx.session.cwd = extracted.cwd;
       } else {
-        output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${await shownPath(ctx, ctx.session.cwd)}`;
+        cwdNotes.push(`Shell cwd was reset to ${await shownPath(ctx, ctx.session.cwd)}`);
       }
     } else {
-      output += `${output === '' ? '' : '\n'}Shell cwd could not be determined and stays at ${await shownPath(ctx, ctx.session.cwd)}`;
+      cwdNotes.push(`Shell cwd could not be determined and stays at ${await shownPath(ctx, ctx.session.cwd)}`);
     }
-    for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;
-    output = withLine(output, timeout.note);
+    const ending = exit.signal !== null ? [`[terminated by ${exit.signal}]`] : exit.code !== 0 ? [`[exit code ${exit.code}]`] : [];
+    const productNotes = [...cwdNotes, ...notes, ...(timeout.note === undefined ? [] : [timeout.note]), ...ending];
+    const noted = productNotes.length === 0 ? {} : { notes: productNotes };
     const exitCode = exit.code === null ? {} : { exitCode: exit.code };
     const incomplete = residue ? { outputIncomplete: 'residue' as const } : {};
-    if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]`, ...incomplete };
-    if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]`, ...exitCode, ...incomplete };
-    return { status: 'completed', output, ...exitCode, ...incomplete };
+    if (exit.signal !== null) return { status: 'failed', output, ...noted, ...incomplete };
+    if (exit.code !== 0) return { status: 'failed', output, ...noted, ...exitCode, ...incomplete };
+    return { status: 'completed', output, ...noted, ...exitCode, ...incomplete };
   },
   reconcile: async (input, record, ctx) => {
     if (input.run_in_background === true) {

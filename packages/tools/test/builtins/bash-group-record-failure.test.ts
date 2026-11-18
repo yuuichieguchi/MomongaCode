@@ -81,7 +81,8 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
     const command = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"; echo finished`;
     const result = await bashToolFor(TEST_BUILTIN_TOOL_OFFER).execute({ command }, ctx, undefined);
 
-    const output = (result as { output: string }).output;
+    const { output: printed, notes = [] } = result as { output: string; notes?: string[] };
+    const output = [printed, ...notes].join('\n');
     const outlived = Number(/pid:(\d+)/.exec(output)?.[1]);
     if (outlived > 1) trackPid(outlived);
     expect(recordFailures).toHaveLength(1);

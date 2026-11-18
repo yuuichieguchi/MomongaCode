@@ -89,9 +89,10 @@ export const globTool = defineTool<GlobInput>({
     }
     ctx.signal.throwIfAborted();
     const partial = ctx.expired.aborted ? [partialSearchNote(ctx.limits.search.timeoutMs, 'entries')] : [];
-    if (matches.length === 0) return { status: 'completed', output: ['No files found', ...partial].join('\n') };
+    if (matches.length === 0) return { status: 'completed', output: 'No files found', ...(partial.length === 0 ? {} : { notes: partial }) };
     const sorted = await sortByMtimeThenPath(ctx.files, matches);
     const listed = await mapAsync(sorted.slice(0, MAX_GLOB_RESULTS), (file) => shownPath(ctx, file));
-    return { status: 'completed', output: [...listed, ...(sorted.length > MAX_GLOB_RESULTS ? [TRUNCATION_NOTICE] : []), ...partial].join('\n') };
+    const notes = [...(sorted.length > MAX_GLOB_RESULTS ? [TRUNCATION_NOTICE] : []), ...partial];
+    return { status: 'completed', output: listed.join('\n'), ...(notes.length === 0 ? {} : { notes }) };
   },
 });
