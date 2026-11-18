@@ -5,7 +5,7 @@ import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, MODERN_FIXTURE_SETSI
 import type { ModernFixtureRecord } from '@momonga/testkit';
 import { skipCase, titleOf } from './support/cases.ts';
 import { GRANDCHILD_READY_FILE_NAME, MCP_RECORD_FILE_NAME, createE2eHome, markersOf } from './support/home.ts';
-import { isAlive } from './support/process.ts';
+import { processRunning } from './support/process.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import { startStack } from './support/stack.ts';
@@ -80,8 +80,8 @@ describe('mcp: orphaned MCP server tree', () => {
       await home.ledger.add(serverPid, 'mcp-record');
       await home.ledger.add(grandchildPid, 'mcp-record');
 
-      expect(isAlive(serverPid)).toBe(true);
-      expect(isAlive(grandchildPid)).toBe(true);
+      expect(processRunning(serverPid)).toBe(true);
+      expect(processRunning(grandchildPid)).toBe(true);
       expect(fs.readdirSync(markersOf(home).mcp).length).toBeGreaterThanOrEqual(1);
 
       const before = await stack.client.health();
@@ -99,7 +99,7 @@ describe('mcp: orphaned MCP server tree', () => {
       );
       expect(newRuntime.restarts).toBe(1);
 
-      await until(() => !isAlive(serverPid) && !isAlive(grandchildPid) && fs.readdirSync(markersOf(home).mcp).length === 0, {
+      await until(() => !processRunning(serverPid) && !processRunning(grandchildPid) && fs.readdirSync(markersOf(home).mcp).length === 0, {
         deadlineMs: E2E_RECOVERY_BOUND_MS,
         description: 'MCP server, setsid grandchild and MCP markers are gone',
       });

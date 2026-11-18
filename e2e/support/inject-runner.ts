@@ -239,19 +239,20 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
         fs.writeFileSync(portFaultOf(env).marker, '');
         return;
       }
-      env.filler = path.join(env.home.root, 'filler.bin');
-      const descriptor = fs.openSync(env.filler, 'w');
-      const chunk = Buffer.alloc(FILL_CHUNK_BYTES);
-      try {
-        for (;;) fs.writeSync(descriptor, chunk);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOSPC') throw error;
-      } finally {
-        fs.closeSync(descriptor);
-      }
+      env.holds.push((env.fake as FakeChatCompletionsServer).hold());
     },
     inject: async (env) => {
       if (env.scenario.requires === 'linux-container') {
+        const hold = env.holds[0] as FakeResponseHold;
+        await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request of the run' });
+        const restartsBefore = childOf(await (env.stack as E2eStack).client.health(), 'runtime').restarts;
+        await (env.stream as RunEventStream).close();
+        fillVolume(env);
+        hold.release();
+        await until(async () => childOf(await (env.stack as E2eStack).client.health(), 'runtime').restarts > restartsBefore, {
+          deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+          description: `the runtime holding the run to stop after its writes to the full volume under ${env.home.root} were refused`,
+        });
         fs.rmSync(env.filler as string, { force: true });
         return;
       }
@@ -353,6 +354,19 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       else fs.rmSync(input.file_path, { force: true });
     },
   },
+};
+
+const fillVolume = (env: TrialEnv): void => {
+  env.filler = path.join(env.home.root, 'filler.bin');
+  const descriptor = fs.openSync(env.filler, 'w');
+  const chunk = Buffer.alloc(FILL_CHUNK_BYTES);
+  try {
+    for (;;) fs.writeSync(descriptor, chunk);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOSPC') throw error;
+  } finally {
+    fs.closeSync(descriptor);
+  }
 };
 
 const portFaultOf = (env: TrialEnv): RoleMainFileFault => ({

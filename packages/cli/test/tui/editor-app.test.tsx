@@ -254,6 +254,22 @@ describe('typed text while a run works', () => {
     expect(backend.calls.filter((call) => call === 'cancel:run-1')).toHaveLength(2);
     app.unmount();
   });
+
+  it('clears the input at ctrl+c once the run has ended, while the next queued run is still being looked up', async () => {
+    const { backend, app } = await start();
+    const lookup = Promise.withResolvers<undefined>();
+    backend.inbox.successor = () => lookup.promise;
+    await untilFrame(app, READY);
+    await runStarted(backend, app, 'one');
+    backend.finish(runView({ status: 'CANCELLED' }));
+    await untilFrame(app, (shown) => shown.includes('CANCELLED') && !shown.includes(TASK_RUNNING));
+    await type(app, 'draft', '> draft');
+    app.stdin.write(`${KEYS.ctrlC}/exit`);
+    await untilFrame(app, (shown) => inputLines(shown)[0] === '> /exit');
+    expect(backend.calls.filter((call) => call === 'cancel:run-1')).toEqual([]);
+    lookup.resolve(undefined);
+    app.unmount();
+  });
 });
 
 describe('history', () => {

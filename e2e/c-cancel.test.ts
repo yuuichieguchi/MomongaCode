@@ -6,7 +6,7 @@ import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
-import { groupAlive } from './support/process.ts';
+import { expectEndedAtTerminal, groupRunning } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
@@ -46,7 +46,7 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Say hello');
     const pgid = await until(() => toolGroupsOf(home)[0], { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'idempotency row with a pgid' });
-    expect(groupAlive(pgid)).toBe(true);
+    expect(await groupRunning(pgid)).toBe(true);
     await until(() => fs.existsSync(path.join(home.project, TRAP_READY_FILE)), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the command installed its TERM trap' });
     expect((await runtime.getRun(run.id)).run.status).not.toBe('CANCELLED');
 
@@ -55,7 +55,7 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     expect(cancelled.run.cancelRequested).toBe(true);
 
     await untilStatus(runtime, run.id, 'CANCELLED', cancelBoundMs);
-    expect(groupAlive(pgid)).toBe(false);
+    await expectEndedAtTerminal('CANCELLED', { group: pgid });
 
     const stream = runtime.events(run.id);
     const frames = await stream.toEnd(E2E_MARGIN_MS);

@@ -1,4 +1,4 @@
-import { syncPaths } from '@momonga/foundation';
+import { hostRunStateOf, syncPaths } from '@momonga/foundation';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -116,7 +116,7 @@ const sleep = async (ms: number, signal?: AbortSignal): Promise<void> => {
 
 export const nodeClock: CliClock = { now: () => systemClock.now(), sleep };
 
-export const nodeProcess: ProcessPort = { pid: process.pid, uid: () => process.getuid?.(), kill: (pid, signal) => void process.kill(pid, signal) };
+export const nodeProcess: ProcessPort = { pid: process.pid, uid: () => process.getuid?.(), kill: (pid, signal) => void process.kill(pid, signal), runState: hostRunStateOf };
 
 export const nodeHelperHost = (): Omit<HelperHost, 'args'> => ({ env: process.env, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
 

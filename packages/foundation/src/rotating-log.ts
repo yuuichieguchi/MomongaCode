@@ -121,9 +121,32 @@ export const createRotatingLogFile = (options: RotatingLogFileOptions): Rotating
     }
   };
 
+  const takeBackTail = (currentFd: number, part: Buffer): void => {
+    const size = fs.fstatSync(currentFd).size;
+    if (size < part.length) return;
+    const tail = Buffer.alloc(part.length);
+    const readFd = fs.openSync(file, fs.constants.O_RDONLY);
+    try {
+      fs.readSync(readFd, tail, 0, part.length, size - part.length);
+    } finally {
+      fs.closeSync(readFd);
+    }
+    if (tail.equals(part)) fs.ftruncateSync(currentFd, size - part.length);
+  };
+
   const writeAll = (currentFd: number, data: Buffer): void => {
     let offset = 0;
-    while (offset < data.length) offset += writeSync(currentFd, data, offset, data.length - offset);
+    try {
+      while (offset < data.length) offset += writeSync(currentFd, data, offset, data.length - offset);
+    } catch (error) {
+      if (offset === 0) throw error;
+      try {
+        takeBackTail(currentFd, data.subarray(0, offset));
+      } catch (takeBackError) {
+        throw new AggregateError([error, takeBackError], `a log line cut short in ${file} could not be taken back`);
+      }
+      throw error;
+    }
   };
 
   try {
