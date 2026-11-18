@@ -102,16 +102,41 @@ describe('/config, the settings screen', () => {
     started.app.unmount();
   });
 
-  it('labels a setting a running daemon keeps as applying when the daemon next starts', async () => {
-    const place = freshPlace();
-    const started = await startAt(place);
-    await open(started);
-    await openRow(started, 'daemon', 'a whole number from 1');
-    await press(started, `${CLEAR}90000`, '> 90000');
-    await press(started, KEYS.enter, `90000  user  ${APPLIES_NEXT_DAEMON_START.slice(0, 'applies when'.length)}`);
-    expect(stored(place.userFile)).toEqual({ daemon: { startupStallMs: 90000 } });
-    started.app.unmount();
-  });
+  for (const size of [{ columns: 100, rows: 40 }, { columns: 40, rows: 24 }]) {
+    describe(`at ${size.columns}x${size.rows} the applies text after a write is shown whole`, () => {
+      it('for a setting a running daemon keeps until it restarts', async () => {
+        const place = freshPlace();
+        const started = await startAt(place, {}, undefined, { size });
+        await open(started);
+        await openRow(started, 'daemon', 'a whole number from 1');
+        await press(started, `${CLEAR}90000`, '> 90000');
+        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NEXT_DAEMON_START));
+        expect(stored(place.userFile)).toEqual({ daemon: { startupStallMs: 90000 } });
+        started.app.unmount();
+      });
+
+      it('for a setting read at the start of the terminal session', async () => {
+        const place = freshPlace();
+        const started = await startAt(place, {}, undefined, { size });
+        await open(started);
+        await press(started, 'Mouse', 'filter: Mouse');
+        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NEXT_SESSION));
+        expect(stored(place.userFile)).toEqual({ tui: { mouse: false } });
+        started.app.unmount();
+      });
+
+      it('for a setting read per operation', async () => {
+        const place = freshPlace();
+        const started = await startAt(place, {}, undefined, { size });
+        await open(started);
+        await openRow(started, 'Forget after', 'a whole number from 1');
+        await press(started, `${CLEAR}30`, '> 30');
+        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NOW));
+        expect(stored(place.userFile)).toEqual({ memory: { forgetAfterDays: 30 } });
+        started.app.unmount();
+      });
+    });
+  }
 
   it('shows the range with both ends where the schema has both', async () => {
     const started = await startAt(freshPlace());

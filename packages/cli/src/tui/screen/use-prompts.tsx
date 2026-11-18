@@ -314,7 +314,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
 
   const errorFor = (active: Active): string | undefined => (failed.current?.owner === active.owner ? failed.current.text : undefined);
 
-  const layoutOf = (active: Active): SelectLayout => selectLayout(active.spec, stateOf(active), textOf(active), frameOf(active), (errorFor(active) === undefined ? 0 : 1) + (host.screenReader ? 1 : 0));
+  const layoutOf = (active: Active): SelectLayout => selectLayout(active.spec, stateOf(active), textOf(active), frameOf(active), (errorFor(active) === undefined ? 0 : 1) + (host.screenReader ? 1 : 0), host.screenReader);
 
   const detailOf = (active: Active): { owner: string; top: number } | undefined => (detail.current?.owner === active.owner ? detail.current : undefined);
 
