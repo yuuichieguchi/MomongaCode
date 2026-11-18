@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
