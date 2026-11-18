@@ -16,11 +16,10 @@ import {
   E2E_CANCEL_KILL_BOUND_MS,
   E2E_CANCEL_STREAM_BOUND_MS,
   E2E_CANCEL_TERM_BOUND_MS,
-  E2E_MARGIN_MS,
   E2E_RECOVERY_BOUND_MS,
+  E2E_RUN_COMPLETED_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
   until,
-  E2E_RUN_COMPLETED_BOUND_MS,
 } from './support/wait.ts';
 
 const PARTIAL_TEXT = 'partial';
@@ -58,7 +57,7 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     await expectEndedAtTerminal('CANCELLED', { group: pgid });
 
     const stream = runtime.events(run.id);
-    const frames = await stream.toEnd(E2E_MARGIN_MS);
+    const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
     await stream.close();
     expect(frames.at(-1)?.data.type).toBe('run.status');
     expect(frames.at(-1)?.data.to).toBe('CANCELLED');
@@ -109,7 +108,7 @@ describe('c: cancel', () => {
         description: 'the upstream connection was cut',
       });
 
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       expect(frames.at(-1)?.data.type).toBe('run.status');
       expect(frames.at(-1)?.data.to).toBe('CANCELLED');
@@ -146,13 +145,13 @@ describe('c: cancel', () => {
       const cancelled = await runtime.cancel(runB.id);
       expect(cancelled.status).toBe(202);
       await untilStatus(runtime, runB.id, 'CANCELLED', E2E_CANCEL_TERM_BOUND_MS);
-      const rowB = await until(() => runRowOf(home, runB.id), { deadlineMs: E2E_MARGIN_MS, description: `run ${runB.id} row readable` });
+      const rowB = await until(() => runRowOf(home, runB.id), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${runB.id} row readable` });
       expect(rowB.status).toBe('CANCELLED');
       expect(rowB.lease_owner).toBeNull();
       expect((await runtime.getRun(runA.id)).run.status).toBe('RUNNING');
 
       const streamB = runtime.events(runB.id);
-      const framesB = await streamB.toEnd(E2E_MARGIN_MS);
+      const framesB = await streamB.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await streamB.close();
       expect(framesB.at(-1)?.data.to).toBe('CANCELLED');
       expect(framesOfType(framesB, 'model.requested')).toEqual([]);

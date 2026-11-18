@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { bsdFileLock, sqliteFileLock } from '@momonga/foundation';
+import { EXIT_CODES, bsdFileLock, sqliteFileLock } from '@momonga/foundation';
 import type { KernelLockMechanism, LockCapability } from '@momonga/foundation';
-import { HEAVY_STEPS, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
+import { HEAVY_STEPS, LIGHT_HOLDER_STALL_MS, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, RUN_LOCK_EXIT, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
 import { createTempRoot, removeTempRoot } from './temp.ts';
 
 const STARTED = '2026-11-10T00:00:00.000Z';
@@ -40,6 +40,7 @@ const descriptionOf = (pid: number, command: string, token: string, runClass: 'h
   JSON.stringify({ format: 'momonga-run-lock/1', token, class: runClass, pid, startedAt: STARTED, cwd: '/w', command });
 
 describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
+  let progress = 0;
   const request = (over: Partial<Request> = {}): Request => ({
     runClass: 'heavy',
     dir,
@@ -56,6 +57,11 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
     sleep: async () => undefined,
     pollMs: 1000,
     mechanism,
+    progressOf: async () => {
+      progress += 1;
+      return progress;
+    },
+    endHolder: () => undefined,
     ...over,
   });
 
@@ -232,6 +238,65 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
     ]);
     expect(outcome.kind).toBe('acquired');
     expect(entries().filter((name) => name.startsWith('heavy-waiting'))).toEqual([]);
+  });
+
+  it('a heavy run that waits for a light holder whose processes gain no CPU time for LIGHT_HOLDER_STALL_MS ends that holder and starts', async () => {
+    const stalled = await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+    const said: string[] = [];
+    const ended: Array<{ pid: number; at: number }> = [];
+    let clock = 0;
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        waitSeconds: (LIGHT_HOLDER_STALL_MS / 1000) * 4,
+        say: (line) => said.push(line),
+        monotonic: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
+        pollMs: 60_000,
+        progressOf: async () => 7,
+        endHolder: async (pid) => {
+          ended.push({ pid, at: clock });
+          await stalled.release();
+        },
+      }),
+    );
+    if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+
+    expect(outcome.kind).toBe('acquired');
+    expect(ended).toEqual([{ pid: 222, at: LIGHT_HOLDER_STALL_MS }]);
+    expect(said).toContain(`run-lock: heavy run ends light pid 222 started ${STARTED} in /w: cmd2: its processes used no CPU time for ${LIGHT_HOLDER_STALL_MS / 1000} s`);
+  });
+
+  it('a heavy run never ends a light holder whose processes keep gaining CPU time, and gives up at its own limit', async () => {
+    await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+    const ended: number[] = [];
+    let clock = 0;
+    let cpu = 0;
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        waitSeconds: (LIGHT_HOLDER_STALL_MS / 1000) * 3,
+        monotonic: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
+        pollMs: 60_000,
+        progressOf: async () => {
+          cpu += 0.01;
+          return cpu;
+        },
+        endHolder: (pid) => {
+          ended.push(pid);
+        },
+      }),
+    );
+
+    expect(outcome.kind).toBe('waited-out');
+    expect(ended).toEqual([]);
   });
 
   it('a heavy waiter whose process died does not keep a light run out, and its files are removed', async () => {
@@ -593,5 +658,23 @@ describe('the directories of the run lock', () => {
     );
     const naming = sources.filter((file) => DIRECTORY_NAME.test(fs.readFileSync(path.join(repoRoot, file), 'utf8'))).sort();
     expect(naming).toEqual(['scripts/support/run-lock.ts']);
+  });
+});
+
+describe('the exit codes of the run lock', () => {
+  const TLC_EXIT_STATUSES: readonly number[] = [0, 10, 11, 12, 13, 14, 75, 76, 77, 150, 151, 152, 153, 255];
+  const TLC_SCRIPT_EXITS: readonly number[] = [2, 3, 4, 5];
+  const SHELL_EXITS: readonly number[] = [1, 2, 126, 127];
+  const SIGNAL_EXIT_BASE = 128;
+  const ownCodes = [RUN_LOCK_EXIT.cpuBudget, RUN_LOCK_EXIT.starterGone];
+
+  it('end a breached run with codes no product, TLC, tlc.sh or shell code uses', () => {
+    const taken = new Set([...Object.values(EXIT_CODES).map((entry) => entry.code), ...TLC_EXIT_STATUSES, ...TLC_SCRIPT_EXITS, ...SHELL_EXITS]);
+    expect(ownCodes.filter((code) => taken.has(code) || code >= SIGNAL_EXIT_BASE)).toEqual([]);
+  });
+
+  it('give each outcome a code of its own', () => {
+    const codes = Object.values(RUN_LOCK_EXIT);
+    expect(new Set(codes).size).toBe(codes.length);
   });
 });
