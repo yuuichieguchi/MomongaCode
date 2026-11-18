@@ -80,6 +80,34 @@ describe('every bound the person types reaches the runs of the mode it is given 
   });
 });
 
+describe('-p takes its prompt as its value or as the positional argument, with options in any order', () => {
+  it.each([
+    [['-p', '--output-format', 'json', 'the prompt']],
+    [['-p', 'the prompt', '--output-format', 'json']],
+    [['--output-format', 'json', '-p', 'the prompt']],
+    [['--print', '--output-format', 'json', 'the prompt']],
+  ])('%j runs the prompt as json', async (args) => {
+    expect((await ran(...args)).code).toBe(0);
+
+    expect(seen.headless).toHaveLength(1);
+    expect(seen.headless[0]).toMatchObject({ prompt: 'the prompt', format: 'json' });
+  });
+
+  it('-p --model x "the prompt" runs the prompt with the model', async () => {
+    expect((await ran('-p', '--model', 'x', 'the prompt')).code).toBe(0);
+
+    expect(seen.headless[0]).toMatchObject({ prompt: 'the prompt', model: 'x' });
+  });
+
+  it('a value for -p and a different prompt is refused with what to do', async () => {
+    const result = await ran('-p', 'one', 'two');
+
+    expect(result.code).toBe(EXIT_USAGE);
+    expect(result.written).toContain('--print was given the prompt "one" and also "two"; give one prompt: put it in quotes as one argument, either right after --print or anywhere after the options.');
+    expect(seen.headless).toEqual([]);
+  });
+});
+
 describe('an option the mode cannot apply is refused by name before any work starts', () => {
   it.each([
     [['-p', 'one', 'two'], '"two"'],

@@ -217,7 +217,8 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
       const typed = (name: keyof RootOptions): boolean => command.getOptionValueSource(name) === 'cli';
       const unapplied = (printing ? INTERACTIVE_ONLY_OPTIONS : PRINT_ONLY_OPTIONS).find((option) => typed(option.name));
       if (unapplied !== undefined) throw new UsageError(messageOf(printing ? 'optionNeedsInteractive' : 'optionNeedsPrint', 'cli', { option: unapplied.flag }));
-      if (printing && prompt !== undefined) throw new UsageError(messageOf('promptGivenTwice', 'cli', { prompt }));
+      if (options.print !== undefined && options.print !== true && prompt !== undefined) throw new UsageError(messageOf('promptGivenTwice', 'cli', { value: options.print, prompt }));
+      const print = options.print === true && prompt !== undefined ? prompt : options.print;
       const reopen = reopenOf(options);
       const permissionMode = options.dangerouslySkipPermissions === true ? 'bypassPermissions' : options.permissionMode;
       const session = {
@@ -227,7 +228,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       };
       const bounds = { ...mandateOf(options), ...(options.maxCostUsd === undefined ? {} : { limits: { maxCostUsd: options.maxCostUsd } }) };
-      const headlessInput = options.issue !== undefined ? { issue: options.issue } : options.print === undefined ? undefined : { print: options.print };
+      const headlessInput = options.issue !== undefined ? { issue: options.issue } : print === undefined ? undefined : { print };
       if (headlessInput !== undefined) {
         const resumed = headlessReopenOf(reopen);
         const headlessPrompt = async (): Promise<string> => ('issue' in headlessInput ? issueRunInput(headlessInput.issue) : printedPrompt(headlessInput.print, ports.stdin, deps.interrupt));
