@@ -600,7 +600,7 @@ const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string
   if (platform === 'win32') return ensureSessionTmpDirWindows(paths, sessionId);
   const uid = process.getuid?.();
   if (uid === undefined) throw new Error('process.getuid is required to verify directory ownership');
-  const openFlags = OPEN_FLAGS.readOnly | directoryFlag(platform) | noFollowFlag(platform);
+  const openFlags = OPEN_FLAGS.readOnly | directoryFlag() | noFollowFlag();
   const directory = path.join(paths.tmp.sessions, sessionId);
   let rootHandle: ReadHandle | undefined;
   let childHandle: ReadHandle | undefined;

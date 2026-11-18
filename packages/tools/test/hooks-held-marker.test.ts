@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, createProcessInspector, hostInspectorPorts, nodeCommandRunner } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, hostProcessInspector, hostInspectorPorts, nodeCommandRunner } from '@momonga/foundation';
 import type { CommandOptions, CommandRunner } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -55,7 +55,7 @@ const contextWith = (command: string, run: CommandRunner) => {
     drainIdleMs: 1000,
     started: () => undefined,
     report: (execution: HookExecution) => void executions.push(execution),
-    inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), run, capability: notProved } as never),
+    inspector: hostProcessInspector({ ...hostInspectorPorts(testLocks().capability), run, capability: notProved } as never),
   } as HookRunContext;
   return { context, executions, markerDir };
 };

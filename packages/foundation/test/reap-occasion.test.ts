@@ -103,3 +103,21 @@ describe('the final notice of a survivor is said only after the fourth chance, w
     expect(world.warnings.filter((warning) => warning.includes('retries') || warning.includes('/markers ignore'))).toEqual([]);
   });
 });
+
+describe('a marker record is told apart from a spent one, and a reap that ends with its marker kept always says why', () => {
+  it('a malformed attempt record is reported as malformed, never as retries spent, and nothing is signalled', async () => {
+    const world = survivingWorld();
+    const { dir } = markerDirectoryWith('42\n');
+    await reapAt(dir, 'startup', world, 'daemon');
+    expect(world.sent).toEqual([]);
+    expect(world.warnings).toEqual([`a daemon process (marker ${MARKER_NAME}) may still be running. The attempt record of its marker is malformed, so MomongaCode does not try to stop it. Stop the process that holds it, or, if it can stay running, run /markers ignore ${MARKER_NAME} in an interactive session.`]);
+  });
+
+  it('a reap whose processes are gone but whose marker cannot be read as free says so', async () => {
+    const world = survivingWorld();
+    const inspector = { ...world.inspector, holdersOf: async () => ({ kind: 'value', value: [] }), markerState: async () => 'unknown' } as unknown as ProcessInspector;
+    const { dir } = markerDirectoryWith('r00000\n');
+    await reapMarkerDirectory({ dir, occasion: 'sweep', killGraceMs: KILL_GRACE_MS, label: 'daemon', onWarning: (message: string) => world.warnings.push(message), kill: world.kill, timing: world.timing, inspector, signal: new AbortController().signal } as ReapOptions);
+    expect(world.warnings).toEqual([`daemon marker ${path.join(dir, MARKER_NAME)} kept: no process holds it, but its state reads unknown rather than free`]);
+  });
+});

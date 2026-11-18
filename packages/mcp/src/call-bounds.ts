@@ -1,6 +1,8 @@
-export { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS } from '@momonga/foundation';
+export { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TIMEOUT_FLOOR_MS, MCP_TOOL_TOTAL_TIMEOUT_MS } from '@momonga/foundation';
 
 export type McpTransportKind = 'stdio' | 'network';
+
+export const MCP_TOTAL_SETTING_KEY = 'mcp.toolTotalTimeoutMs';
 
 export const MCP_IDLE_SETTING_KEYS: Readonly<Record<McpTransportKind, string>> = { network: 'mcp.toolIdleTimeoutNetworkMs', stdio: 'mcp.toolIdleTimeoutStdioMs' };
 

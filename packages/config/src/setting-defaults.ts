@@ -4,8 +4,20 @@ export const FIVE_MINUTES_MS = 300_000;
 
 export const DEFAULT_RETENTION_DAYS = 30;
 
-export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
-  platform === 'darwin' ? 'seatbelt' : platform === 'linux' ? 'bubblewrap' : 'none';
+export type MechanismSandbox = Exclude<SandboxSetting, 'none'>;
+
+export const SANDBOX_MECHANISM_OF_OS: Readonly<Partial<Record<NodeJS.Platform, MechanismSandbox>>> = { darwin: 'seatbelt', linux: 'bubblewrap' };
+
+export type SandboxLauncher = { readonly kind: MechanismSandbox; readonly launcher: string };
+
+export const SANDBOX_LAUNCHERS: readonly SandboxLauncher[] = [
+  { kind: 'seatbelt', launcher: '/usr/bin/sandbox-exec' },
+  { kind: 'bubblewrap', launcher: '/usr/bin/bwrap' },
+];
+
+export const SANDBOX_LAUNCHERS_LOOKED_FOR = SANDBOX_LAUNCHERS.map(({ kind, launcher }) => `${launcher} (${kind})`).join(' and ');
+
+export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting => SANDBOX_MECHANISM_OF_OS[platform] ?? 'none';
 
 export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
 

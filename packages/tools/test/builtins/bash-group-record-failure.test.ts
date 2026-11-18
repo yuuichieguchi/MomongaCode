@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, createMarker, hostProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { TEST_BUILTIN_TOOL_OFFER, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_TOOL_LIMITS, testPaths, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createMarkerSettle, nodeShellHost } from '@momonga/tools';
@@ -34,7 +34,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
     const handle = await createMarker(marker, { capability: UNMEASURED_CAPABILITY });
     fs.writeFileSync(marker, NOT_AN_ATTEMPT_RECORD);
     const warnings: string[] = [];
-    const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), capability: UNMEASURED_CAPABILITY } as never);
+    const inspector = hostProcessInspector({ ...hostInspectorPorts(testLocks().capability), capability: UNMEASURED_CAPABILITY } as never);
     const settle = createMarkerSettle({ marker, mode: handle.mode, inspector, killGraceMs: 300, onWarning: (message) => void warnings.push(message) });
     const recordFailures: unknown[] = [];
     const attached: number[] = [];

@@ -108,3 +108,48 @@ describe('nodeEntryIo: errors on its own standard streams (11.3)', () => {
     expect(streamRecords(file).filter((record) => record.msg === 'stdio.closed')).toHaveLength(1);
   });
 });
+
+describe('nodeEntryIo: the throttle of its write-failure records reads the given clock port', () => {
+  const steppedTiming = () => {
+    const at = { wall: Date.UTC(2026, 10, 18), monotonic: 0 };
+    return { at, timing: { now: () => at.wall, monotonicMs: () => at.monotonic } };
+  };
+
+  const openLogWith = (context: Parameters<typeof withTempDir>[0], timing: { now: () => number; monotonicMs: () => number }) => {
+    const file = path.join(withTempDir(context), 'logs', 'runtime.log');
+    fs.mkdirSync(path.dirname(file), { mode: 0o700 });
+    const host = fakeHost();
+    const io = nodeEntryIo(host.asProcess, undefined, timing);
+    return { file, host, log: io.logFile(file) };
+  };
+
+  it('stamps a record with the wall time of the port', (context) => {
+    const { at, timing } = steppedTiming();
+    const { file, host, log } = openLogWith(context, timing);
+    host.stdout.emit('error', errnoError('EIO'));
+    log.close();
+    expect(streamRecords(file).map((record) => record['ts'])).toEqual([new Date(at.wall).toISOString()]);
+  });
+
+  it('opens the interval again when the monotonic reading passes a minute, whatever the wall clock does', (context) => {
+    const { at, timing } = steppedTiming();
+    const { file, host, log } = openLogWith(context, timing);
+    host.stdout.emit('error', errnoError('EIO'));
+    at.wall -= 3_600_000;
+    at.monotonic += 60_000;
+    host.stdout.emit('error', errnoError('EIO'));
+    log.close();
+    expect(streamRecords(file)).toHaveLength(2);
+  });
+
+  it('keeps the interval closed while the monotonic reading stays inside a minute, though the wall clock jumps ahead', (context) => {
+    const { at, timing } = steppedTiming();
+    const { file, host, log } = openLogWith(context, timing);
+    host.stdout.emit('error', errnoError('EIO'));
+    at.wall += 3_600_000;
+    at.monotonic += 59_999;
+    host.stdout.emit('error', errnoError('EIO'));
+    log.close();
+    expect(streamRecords(file)).toHaveLength(1);
+  });
+});

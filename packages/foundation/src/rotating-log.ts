@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { rotatedLogPath } from './momonga-paths.ts';
+import { nodeFileSystemSync } from './node-file-system.ts';
 
 export const LOG_MAX_BYTES = 10 * 1024 * 1024;
 export const LOG_KEEP = 4;
@@ -16,7 +17,7 @@ export type RotatingLogFileOptions = {
   maxBytes: number;
   keep: number;
   mode?: number;
-  writeSync?: typeof fs.writeSync;
+  writeSync?: (handle: number, data: Uint8Array, offset: number, length: number) => number;
   onWriteFailure?: (error: Error) => void;
 };
 
@@ -41,7 +42,8 @@ export class LogDirectoryMissingError extends Error {
 }
 
 export const createRotatingLogFile = (options: RotatingLogFileOptions): RotatingLogFile => {
-  const { path: file, maxBytes, keep, mode = 0o600, writeSync = fs.writeSync, onWriteFailure } = options;
+  const { path: file, maxBytes, keep, mode = 0o600, writeSync = nodeFileSystemSync.writeBytesSync, onWriteFailure } = options;
+  const files = nodeFileSystemSync;
   const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT;
   let fd: number | undefined;
   let identity: FileIdentity;
@@ -49,16 +51,16 @@ export const createRotatingLogFile = (options: RotatingLogFileOptions): Rotating
   let closed = false;
 
   const openCurrent = (): void => {
-    const opened = fs.openSync(file, flags, mode);
+    const opened = files.openDescriptorSync(file, flags, mode);
     fd = opened;
-    identity = identityOf(fs.fstatSync(opened, { bigint: true }));
+    identity = identityOf(files.fstatBigIntSync(opened));
   };
 
   const closeCurrent = (): void => {
     if (fd === undefined) return;
     const closing = fd;
     fd = undefined;
-    fs.closeSync(closing);
+    files.closeSync(closing);
   };
 
   const openFd = (): number => {
@@ -72,7 +74,7 @@ export const createRotatingLogFile = (options: RotatingLogFileOptions): Rotating
 
   const statCurrent = (): fs.BigIntStats | undefined => {
     try {
-      return fs.statSync(file, { bigint: true });
+      return files.statBigIntSync(file);
     } catch (error) {
       if (errorCode(error) === 'ENOENT') return undefined;
       throw error;
@@ -82,12 +84,12 @@ export const createRotatingLogFile = (options: RotatingLogFileOptions): Rotating
   const rotate = (): void => {
     for (let generation = keep - 1; generation >= 1; generation -= 1) {
       try {
-        fs.renameSync(rotatedLogPath(file, generation), rotatedLogPath(file, generation + 1));
+        files.renameSync(rotatedLogPath(file, generation), rotatedLogPath(file, generation + 1));
       } catch (error) {
         if (errorCode(error) !== 'ENOENT') throw error;
       }
     }
-    fs.renameSync(file, rotatedLogPath(file, 1));
+    files.renameSync(file, rotatedLogPath(file, 1));
     closeCurrent();
     openCurrent();
   };
@@ -122,16 +124,16 @@ export const createRotatingLogFile = (options: RotatingLogFileOptions): Rotating
   };
 
   const takeBackTail = (currentFd: number, part: Buffer): void => {
-    const size = fs.fstatSync(currentFd).size;
+    const size = files.fstatSync(currentFd).size;
     if (size < part.length) return;
     const tail = Buffer.alloc(part.length);
-    const readFd = fs.openSync(file, fs.constants.O_RDONLY);
+    const readFd = files.openDescriptorSync(file, fs.constants.O_RDONLY);
     try {
-      fs.readSync(readFd, tail, 0, part.length, size - part.length);
+      files.readAtSync(readFd, tail, size - part.length);
     } finally {
-      fs.closeSync(readFd);
+      files.closeSync(readFd);
     }
-    if (tail.equals(part)) fs.ftruncateSync(currentFd, size - part.length);
+    if (tail.equals(part)) files.truncateSync(currentFd, size - part.length);
   };
 
   const writeAll = (currentFd: number, data: Buffer): void => {

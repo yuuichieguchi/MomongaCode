@@ -260,6 +260,7 @@
       {"name":"ABORT_SETTLE_LIMIT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"ENTRY_HARD_EXIT_MARGIN_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"MCP_TOOL_IDLE_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
+      {"name":"MCP_TOOL_TIMEOUT_FLOOR_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"MCP_TOOL_TOTAL_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"SANDBOX_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},

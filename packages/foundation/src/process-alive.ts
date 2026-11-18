@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
 import type { FileSystem } from './node-file-system.ts';
+import { nodeFileSystemSync } from './node-file-system.ts';
 import { hostSignalSender } from './platform/group-port.ts';
 import { isErrno } from './platform/inspector-types.ts';
 import { canStillRun } from './platform/run-state.ts';
@@ -29,7 +29,17 @@ export const linuxRunStateOf =
     return stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[0];
   };
 
-export const hostRunStateOf: RunStateOf | null = process.platform === 'linux' ? linuxRunStateOf((file) => readFileSync(file, 'utf8')) : null;
+export const runStateOfHost = (read: (file: string) => string): RunStateOf | null => {
+  try {
+    read('/proc/self/stat');
+  } catch (error) {
+    if (isErrno(error, 'ENOENT', 'ENOTDIR')) return null;
+    throw error;
+  }
+  return linuxRunStateOf(read);
+};
+
+export const hostRunStateOf: RunStateOf | null = runStateOfHost((file) => nodeFileSystemSync.readTextFileSync(file));
 
 export const isProcessAlive = (pid: number, send: SignalSender = hostSignalSender, stateOf: RunStateOf | null = send === hostSignalSender ? hostRunStateOf : null): boolean => {
   try {

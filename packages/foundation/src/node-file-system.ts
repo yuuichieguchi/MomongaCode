@@ -74,6 +74,8 @@ export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
   writeTextAtSync(handle: number, text: string, position: number): void;
   lstatBigIntSync(file: string): fs.BigIntStats;
   fstatBigIntSync(handle: number): fs.BigIntStats;
+  statBigIntSync(file: string): fs.BigIntStats;
+  writeBytesSync(handle: number, data: Uint8Array, offset: number, length: number): number;
   unlinkSync(file: string): void;
   readTextFileSync(file: string): string;
   makeDirectorySync(directory: string, mode: number): void;
@@ -269,6 +271,8 @@ export const nodeFileSystemSync: FileSystemSync = {
   writeTextAtSync: (handle, text, position) => void fs.writeSync(handle, text, position),
   lstatBigIntSync: (file) => fs.lstatSync(file, { bigint: true }),
   fstatBigIntSync: (handle) => fs.fstatSync(handle, { bigint: true }),
+  statBigIntSync: (file) => fs.statSync(file, { bigint: true }),
+  writeBytesSync: (handle, data, offset, length) => fs.writeSync(handle, data, offset, length),
   unlinkSync: (file) => fs.unlinkSync(file),
   readTextFileSync: (file) => fs.readFileSync(file, 'utf8'),
   makeDirectorySync: (directory, mode) => void fs.mkdirSync(directory, { mode }),

@@ -225,7 +225,7 @@ describe('stale fm marker reaping', () => {
     expect(warnings).toEqual([unprovedGroupWarning(planted.marker, victim)]);
   });
 
-  it('treats unreadable marker content as a record whose retries are all spent: it signals nothing, keeps the marker and tells the person once (decision 12)', async () => {
+  it('treats unreadable marker content as a malformed record: it signals nothing, keeps the marker and tells the person once, as malformed (decision 12)', async () => {
     const context = await setup();
     reapAll(context);
     const planted = plantHolderInForeignGroup(context.markers, 'not a pid');
@@ -237,7 +237,7 @@ describe('stale fm marker reaping', () => {
     expect(isAlive(holder)).toBe(true);
     expect(fs.existsSync(planted.marker)).toBe(true);
     expect(warnings).toEqual([
-      'a managed server process (marker stale-marker) may still be running. MomongaCode has used its 4 retries and will not try again. Stop the process that holds it, or, if it can stay running, run /markers ignore stale-marker in an interactive session.',
+      'a managed server process (marker stale-marker) may still be running. The attempt record of its marker is malformed, so MomongaCode does not try to stop it. Stop the process that holds it, or, if it can stay running, run /markers ignore stale-marker in an interactive session.',
     ]);
   });
 });

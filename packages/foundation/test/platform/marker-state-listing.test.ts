@@ -57,7 +57,7 @@ const BASE: Record<string, FakeEntry> = {
 const ownStatus: FakeEntry = { text: `Name:\tsleep\nUid:\t${UID}\t${UID}\t${UID}\t${UID}\n` };
 
 const listingInspector = (entries: Record<string, FakeEntry>) =>
-  createProcessInspector('linux', { ...hostInspectorPorts(testLocks().capability), procfs: fakeProcfs({ ...BASE, ...entries }), uid: () => UID, capability: fixedCapability('unenforced') });
+  createProcessInspector('procfs', { ...hostInspectorPorts(testLocks().capability), procfs: fakeProcfs({ ...BASE, ...entries }), uid: () => UID, capability: fixedCapability('unenforced') });
 
 describe('T2 listing path: one rule decides the marker state (R1)', () => {
   it('is free only when the listing succeeded, named nobody and reported nothing uninspectable', async () => {
