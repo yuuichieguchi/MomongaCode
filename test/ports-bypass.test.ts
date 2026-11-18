@@ -17,6 +17,12 @@ const DAEMON_PACKAGES: readonly string[] = ['foundation', 'gateway', 'mcp', 'run
 
 const SYNCHRONOUS_FILE_ADAPTERS = adapterFilesOf('synchronous-file-calls');
 
+const CLOCK_ADAPTERS = adapterFilesOf('clock-reads');
+
+const CLOCK_READS = new Set(['Date.now', 'performance.now', 'process.hrtime', 'new Date()']);
+
+const clockReadsOf = (source: ParsedSource): Counts => Object.fromEntries(Object.entries(countHostUses(source)).filter(([name]) => CLOCK_READS.has(name)));
+
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/handover/replace-process.ts': { 'node:child_process': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
@@ -27,7 +33,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
   'packages/foundation/src/outbound.ts': { 'node:net': 1, 'node:worker_threads': 1 },
   'packages/foundation/src/process-contract.ts': { 'AbortSignal.timeout': 1 },
-  'packages/foundation/src/rotating-log.ts': { 'node:fs': 7 },
   'packages/foundation/src/socket-path.ts': { 'node:net': 1 },
   'packages/foundation/src/uds.ts': { 'node:fs': 4, 'node:net': 1 },
   'packages/gateway/src/core/store-worker.ts': { 'node:worker_threads': 2 },
@@ -71,7 +76,6 @@ const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
 };
 
 const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
-  'packages/foundation/src/rotating-log.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'renameSync': 2, 'statSync': 1, 'writeSync': 1 },
   'packages/gateway/src/process-ports.ts': { 'existsSync': 1, 'readFileSync': 1, 'statSync': 1 },
   'packages/runtime/src/memory/journal-thread.ts': { 'statSync': 1 },
   'packages/sandbox/src/scratch.ts': { 'statSync': 1 },
@@ -151,6 +155,15 @@ describe('ports bypass scan', () => {
 
   it('the direct host calls outside the adapters are exactly the listed present bypasses', () => {
     expect(actualBypasses()).toEqual(PRESENT_BYPASSES);
+  });
+
+  it('an adapter of other host capabilities reads no clock: every clock read outside the Timing adapter goes through the clock port', () => {
+    const otherAdapters = Object.keys(HOST_USE_ADAPTERS).filter((file) => !(file in CLOCK_ADAPTERS)).map((file) => path.join(ROOT, file));
+    expect(perFile(otherAdapters, clockReadsOf)).toEqual({});
+  });
+
+  it('counts a clock read in an adapter that is not the clock adapter', () => {
+    expect(counted('const a = Date.now();\nconst b = performance.now();\nconst c = clock.now();', clockReadsOf)).toEqual({ 'Date.now': 1, 'performance.now': 1 });
   });
 
   it('the synchronous file calls on the daemon paths are exactly the listed ones', () => {

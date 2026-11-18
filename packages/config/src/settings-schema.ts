@@ -16,9 +16,10 @@ export const ISSUE_AUTHOR_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'] as 
 
 export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES, screen: TUI_SCREEN_MODES } as const;
 
+export const SANDBOX_DEFAULT_PLATFORMS = ['darwin', 'linux', 'win32'] as const satisfies readonly NodeJS.Platform[];
+
 export const SETTING_UNITS = { milliseconds: 'milliseconds', seconds: 'seconds', days: 'days', usd: 'USD', usdPerMillionTokens: 'USD per million tokens' } as const;
 
-export const SANDBOX_DEFAULT_PLATFORMS = ['darwin', 'linux', 'win32'] as const satisfies readonly NodeJS.Platform[];
 
 const MEMORY_DEFAULTS = defaultMemorySettings();
 const VERIFICATION_DEFAULTS = defaultVerificationSettings();
@@ -35,6 +36,11 @@ const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } 
 
 export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 
+const MCP_SERVER_CALL_BOUNDS = {
+  timeoutMs: { type: 'integer', minimum: 1 },
+  idleTimeoutMs: { type: 'integer', minimum: 0 },
+} as const;
+
 export const MCP_SERVER_SCHEMA = {
   oneOf: [
     {
@@ -46,6 +52,7 @@ export const MCP_SERVER_SCHEMA = {
         env: STRING_MAP,
         secretEnv: { type: 'object', propertyNames: { pattern: ENV_NAME_PATTERN }, additionalProperties: { type: 'string', pattern: SECRET_NAME_PATTERN } },
         cwd: { type: 'string' },
+        ...MCP_SERVER_CALL_BOUNDS,
       },
       required: ['command'],
       additionalProperties: false,
@@ -65,6 +72,7 @@ export const MCP_SERVER_SCHEMA = {
           },
           additionalProperties: false,
         },
+        ...MCP_SERVER_CALL_BOUNDS,
       },
       required: ['type', 'url'],
       additionalProperties: false,
@@ -454,6 +462,8 @@ export const SETTING_UNIT_OF: Readonly<Record<string, SettingUnit>> = {
   'ceilings.timeMs': SETTING_UNITS.milliseconds,
   'mandates.<name>.costUsd': SETTING_UNITS.usd,
   'mandates.<name>.timeMs': SETTING_UNITS.milliseconds,
+  'mcpServers.<name>.timeoutMs': SETTING_UNITS.milliseconds,
+  'mcpServers.<name>.idleTimeoutMs': SETTING_UNITS.milliseconds,
   'retention.days': SETTING_UNITS.days,
 };
 

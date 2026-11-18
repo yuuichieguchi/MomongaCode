@@ -246,7 +246,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(ConfigError);
     expect((error as Error).message).toBe(
-      `sandbox-exec is not available at ${missing}; set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
+      `sandbox-exec is not available at ${missing}; the sandbox launchers looked for are /usr/bin/sandbox-exec (seatbelt) and /usr/bin/bwrap (bubblewrap); set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
     );
     expect(stepsLogged(logger).at(-1)).toBe('sandbox');
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
@@ -261,7 +261,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(ConfigError);
     expect((error as Error).message).toBe(
-      `bwrap is not available at ${missing}; set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
+      `bwrap is not available at ${missing}; the sandbox launchers looked for are /usr/bin/sandbox-exec (seatbelt) and /usr/bin/bwrap (bubblewrap); set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
     );
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
   });
@@ -364,13 +364,14 @@ describe('startRuntimeProcess startup (system timers)', () => {
     });
   });
 
-  it('a sandbox kind from another operating system is a ConfigError', async () => {
+  it('a sandbox kind whose launcher is not executable on this host is a ConfigError naming the launchers looked for, whatever the platform name', async () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'seatbelt' });
-    const { started } = startBare(temp, { platform: 'linux' });
+    const { started } = startBare(temp, { platform: 'darwin', sandboxExecPath: path.join(temp.root, 'no-sandbox-exec') });
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(ConfigError);
-    expect((error as Error).message).toContain('sandbox "seatbelt" is only available on darwin');
+    expect((error as Error).message).toContain(`sandbox-exec is not available at ${path.join(temp.root, 'no-sandbox-exec')}`);
+    expect((error as Error).message).toContain('the sandbox launchers looked for are /usr/bin/sandbox-exec (seatbelt) and /usr/bin/bwrap (bubblewrap)');
   });
 
   it('sandbox none skips the sandbox-exec check and logs the warning', async () => {

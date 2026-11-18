@@ -18,14 +18,10 @@ const PACKAGE_PREFIX = 'packages/';
 const KEPT_FILES: readonly string[] = Object.keys(adapterFilesOf('platform-name')).map((file) => file.slice(PACKAGE_PREFIX.length));
 
 const BURN_DOWN: readonly BurnDown[] = [
-  { file: 'foundation/src/file-rules.ts', rows: 'B7', sites: 1, owner: 'HB10b final deletion of HOST_RULE_ENFORCEMENT' },
-  { file: 'foundation/src/platform/process-inspector.ts', rows: 'B1', sites: 5, owner: 'HB10b' },
-  { file: 'foundation/src/platform/privacy.ts', rows: 'B16', sites: 4, owner: 'wave 3, after hb0 and a84' },
+  { file: 'foundation/src/platform/privacy.ts', rows: 'B16', sites: 2, owner: 'foundation: the mode and owner checks still skip on win32 by name; the probe of a 0600 file and its stat replaces them (T-HB10-3)' },
   { file: 'tools/src/node-ports.ts', rows: 'B4 B6', sites: 2, owner: 'HB10a B4 after the hb0 and a84 check; HB10e' },
   { file: 'tools/src/builtins/bash.ts', rows: 'B4 B5', sites: 1, owner: 'HB10e' },
-  { file: 'config/src/setting-defaults.ts', rows: 'B8', sites: 1, owner: 'HB10c' },
   { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', sites: 1, owner: 'HB10c' },
-  { file: 'foundation/src/socket-path.ts', rows: 'B15', sites: 1, owner: 'config: endpointFormsOfPlatform reads process.platform by default and config/src/models.ts:122 calls it with no platform from its ports' },
   { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', sites: 6, owner: 'not classified by the HB10 table' },
 ];
 
@@ -66,14 +62,6 @@ const testFiles = (directory: string): string[] =>
     return /\.tsx?$/.test(entry.name) ? [full] : [];
   });
 
-const HOST_RULE_READERS_OWNED_ELSEWHERE: Readonly<Record<string, string>> = {
-  'runtime/test/service/helpers.ts': 'fp/interactions and a1de',
-  'runtime/test/worker/harness.ts': 'fp/interactions',
-  'runtime/test/memory/reflection-git.test.ts': 'a1de',
-  'runtime/test/process/policy.test.ts': 'a84',
-  'tools/test/real-workspace.ts': 'a84',
-  'tools/test/history/history-tools.test.ts': 'toolfit',
-};
 
 describe('platform-name branches (I-N1)', () => {
   it('names a platform only in files kept with a reason or listed for burn-down with an owner', () => {
@@ -97,27 +85,15 @@ describe('platform-name branches (I-N1)', () => {
   });
 });
 
-describe('HOST_RULE_ENFORCEMENT readers (B7)', () => {
-  it('is read by no test file except those owned by another branch; every other test states its sandbox kind through ruleEnforcementOf', () => {
+describe('HOST_RULE_ENFORCEMENT is deleted (B7)', () => {
+  it('is named by no source or test file: the rule enforcement follows the sandbox kind through ruleEnforcementOf', () => {
     const readers = fs
       .readdirSync(packagesDir)
-      .filter((name) => fs.existsSync(path.join(packagesDir, name, 'test')))
-      .flatMap((name) => testFiles(path.join(packagesDir, name, 'test')))
-      .filter((file) => fs.readFileSync(file, 'utf8').includes('HOST_RULE_ENFORCEMENT'))
+      .flatMap((name) => ['src', 'test'].map((part) => path.join(packagesDir, name, part)).filter((directory) => fs.existsSync(directory)))
+      .flatMap((directory) => testFiles(directory))
+      .filter((file) => !file.endsWith('.generated.ts') && fs.readFileSync(file, 'utf8').includes('HOST_RULE_ENFORCEMENT'))
       .map((file) => path.relative(packagesDir, file).split(path.sep).join('/'))
-      .filter((file) => !(file in HOST_RULE_READERS_OWNED_ELSEWHERE))
       .sort();
-    expect(readers).toEqual([]);
-  });
-
-  it('is read by no product source file', () => {
-    const readers = fs
-      .readdirSync(packagesDir)
-      .filter((name) => fs.existsSync(path.join(packagesDir, name, 'src')))
-      .flatMap((name) => sourceFiles(path.join(packagesDir, name, 'src')))
-      .filter((file) => !file.endsWith(path.join('foundation', 'src', 'file-rules.ts')) && !file.endsWith(path.join('foundation', 'src', 'index.ts')))
-      .filter((file) => fs.readFileSync(file, 'utf8').includes('HOST_RULE_ENFORCEMENT'))
-      .map((file) => path.relative(packagesDir, file));
     expect(readers).toEqual([]);
   });
 });

@@ -62,6 +62,10 @@ describe('docs/threat-model.md states only what the product does', () => {
     expect(quoted?.[1]).toBe(defaultSandboxSetting(platform));
   });
 
+  it('says that a missing launcher on macOS or Linux refuses a sandboxed run, never falls to none', () => {
+    expect(doc).toContain('when it is not, a sandboxed run refuses to start and names the launchers it looked for, and the default never falls to `none`');
+  });
+
   it('lists every secret location by the name the product denies', () => {
     const section = sectionOf('## Secret locations');
     const listed = [...section.matchAll(/`~\/([^`]+)`/g)].map((match) => match[1]);
