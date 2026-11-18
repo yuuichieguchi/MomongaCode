@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import { describe, expect, it } from 'vitest';
 import { isProcessAlive, linuxRunStateOf, runStateOfHost } from '../src/process-alive.ts';
 

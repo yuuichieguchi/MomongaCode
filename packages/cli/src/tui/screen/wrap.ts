@@ -10,7 +10,7 @@ export type LinkKind = 'web' | 'file';
 
 export type Link = readonly [start: number, end: number, url: string, kind: LinkKind];
 
-export type Row = { text: string; spans: readonly Span[]; wrapped: boolean; prefixCols: number; links?: readonly Link[]; kind?: 'label' };
+export type Row = { text: string; spans: readonly Span[]; wrapped: boolean; prefixCols: number; links?: readonly Link[]; kind?: 'label'; swing?: Row };
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 

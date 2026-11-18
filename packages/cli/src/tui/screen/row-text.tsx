@@ -1,4 +1,6 @@
 import { Text } from 'ink';
+import { useContext, useSyncExternalStore } from 'react';
+import { TailPoseContext } from './tail-wag.ts';
 import { styleOf } from './tokens.ts';
 import type { StyleToken, TextStyle } from './tokens.ts';
 import type { Row } from './wrap.ts';
@@ -27,7 +29,19 @@ export const piecesOf = (row: Row, selected: readonly [number, number] | undefin
   });
 };
 
-export function RowText({ row, selected }: { row: Row; selected?: readonly [number, number] | undefined }) {
+type RowTextProps = { row: Row; selected?: readonly [number, number] | undefined };
+
+function SwingingRowText({ row, swing, selected }: RowTextProps & { swing: Row }) {
+  const pose = useContext(TailPoseContext);
+  const swung = useSyncExternalStore(pose.subscribe, pose.swung);
+  return <DrawnRowText row={swung ? swing : row} selected={selected} />;
+}
+
+export function RowText({ row, selected }: RowTextProps) {
+  return row.swing === undefined ? <DrawnRowText row={row} selected={selected} /> : <SwingingRowText row={row} swing={row.swing} selected={selected} />;
+}
+
+function DrawnRowText({ row, selected }: RowTextProps) {
   if (row.text === '') return <Text> </Text>;
   return (
     <Text wrap="truncate">

@@ -3,13 +3,14 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { EXIT_RETIRED, GENERATION_POLL_INTERVAL_MS, STARTUP_TIMEOUT_MS, generationLayout, inspectProcessLock, syncPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, prepareGenerationForTest, testKernelLock } from '@momonga/testkit';
 import { TEST_VERSION, pump, pumpUntil, quiesce, settledFlag, startHarness } from './fixtures/p3-harness.ts';
 import type { Harness } from './fixtures/p3-harness.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const FOLD_VERSION = 1;
+const FOLD_VERSION = FIDELITY_FOLD_VERSION;
 
 const layoutOf = (home: string, generation: number) => generationLayout(syncPaths.canonicalPath(home), generation);
 

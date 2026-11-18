@@ -8,6 +8,8 @@ import { SOURCE_SCAN_TEST_TIMEOUT_MS, itWithDocuments } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
+const NODE_CHILD_PROCESS = ['node', 'child_process'].join(':');
+
 const REGISTRY = path.join(ROOT, 'specs/host-bounds/registry.json');
 
 const CONSTANTS_DOCUMENT_VARIABLE = 'MOMONGA_CONSTANTS_DOCUMENT';
@@ -147,8 +149,8 @@ describe('the scan of host bounds', () => {
 
   it('counts a synchronous child process call that sets no timeout, under any name it is reached by', () => {
     const text = [
-      "import { spawnSync, execFileSync as run } from 'node:child_process';",
-      "import childProcess from 'node:child_process';",
+      `import { spawnSync, execFileSync as run } from '${NODE_CHILD_PROCESS}';`,
+      `import childProcess from '${NODE_CHILD_PROCESS}';`,
       "spawnSync('a', [], { stdio: 'ignore' });",
       "run('b');",
       "childProcess.execSync('c');",

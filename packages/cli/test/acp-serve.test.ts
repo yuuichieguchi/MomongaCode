@@ -11,7 +11,7 @@ describe('serveAcp', () => {
     await ensureMomongaDirs(paths);
     const input = { take: () => undefined, arrival: () => new Promise<'bytes' | 'end'>(() => undefined) };
     const output = new WritableStream<Uint8Array>();
-    const ports = { acpStdio: () => ({ input, output }), version: '1.2.3' } as unknown as CliPorts;
+    const ports = { acpStdio: () => ({ input, output }), version: '1.2.3', home, env: process.env } as unknown as CliPorts;
     const interrupt = new AbortController();
     interrupt.abort();
 
