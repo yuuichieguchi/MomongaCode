@@ -425,7 +425,13 @@ describe('agents: background bash', () => {
     if (jobId === undefined) throw new Error('no job was recorded');
     const runId = readDb<{ run_id: string }>(home.paths.databases.runtime, 'SELECT run_id FROM jobs WHERE id = ?', jobId)[0]?.run_id;
     expect(listed.stdout).toBe(`${jobId}  running  run ${runId}  ${command}\n`);
-    const status = await runCli(home, ['status', runId ?? '']);
+    const status = await until(
+      async () => {
+        const result = await runCli(home, ['status', runId ?? '']);
+        return result.stdout.includes('  WAITING_TOOL') ? result : undefined;
+      },
+      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'momonga status to show the run waiting on its job' },
+    );
     expect(status.stdout).toBe(`${runId}  WAITING_TOOL\n`);
 
     fs.writeFileSync(path.join(home.project, 'release-job'), '');
