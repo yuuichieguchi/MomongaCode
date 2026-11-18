@@ -222,7 +222,9 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     return reading.keyHex;
   };
 
-  const decode = async (key: string, text: string | undefined, plaintext: boolean, signal: AbortSignal): Promise<string | undefined> => {
+  type KeyHeld = { keyHex: string | undefined };
+
+  const decode = async (key: string, text: string | undefined, plaintext: boolean, signal: AbortSignal, held: KeyHeld = { keyHex: undefined }): Promise<string | undefined> => {
     if (text === undefined) return undefined;
     const file = credentialFileFor(options.directory, key);
     const envelope = envelopeOf(text);
@@ -234,14 +236,15 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
       throw new CredentialStoreError('store_unreadable', `the credential file ${file} holds the record of another key`, { cause: new Error(`the envelope key is ${JSON.stringify(envelope.key)}`) });
     }
     const keyHex = await keyForReading(signal, file);
+    held.keyHex = keyHex;
     return open(keyHex, envelope).catch((error: unknown) => {
       throw new CredentialStoreError('store_unreadable', `the credential file ${file} could not be decrypted: ${messageOf(error)}`, { cause: error });
     });
   };
 
-  const encode = async (key: string, value: string, signal: AbortSignal): Promise<string> => {
+  const encode = async (key: string, value: string, signal: AbortSignal, held: KeyHeld): Promise<string> => {
     if (options.secretStore.kind === 'none') throw refusedWithoutStore('store_unwritable', { reason: options.secretStore.reason, backend: undefined });
-    const keyHex = await keyForWriting(options.secretStore.store, signal).catch((error: unknown) => {
+    const keyHex = held.keyHex ?? await keyForWriting(options.secretStore.store, signal).catch((error: unknown) => {
       throwIfCancelled(error, signal);
       if (error instanceof SecretStoreAbsentError) throw refusedWithoutStore('store_unwritable', error);
       throw new CredentialStoreError('store_unwritable', `the credential key could not be read or created: ${keyFailureText(error)}`, { cause: error });
@@ -251,9 +254,10 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
 
   const entryOf = (key: string, inner: CredentialEntry, signal: AbortSignal): CredentialEntry => {
     const plaintext = options.plaintextTokenFiles();
+    const held: KeyHeld = { keyHex: undefined };
     return {
-      read: async () => decode(key, await inner.read(), plaintext, signal),
-      write: async (value) => inner.write(plaintext ? value : await encode(key, value, signal)),
+      read: async () => decode(key, await inner.read(), plaintext, signal, held),
+      write: async (value) => inner.write(plaintext ? value : await encode(key, value, signal, held)),
       remove: () => inner.remove(),
     };
   };
