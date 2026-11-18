@@ -13,8 +13,7 @@
     "@momonga/policy": "*",
     "@momonga/protocol": "*",
     "@momonga/sandbox": "*",
-    "ignore": "7.0.14",
-    "picomatch": "4.0.7"
+    "ignore": "7.0.14"
   },
   "devDependencies": {
     "ajv": "8.20.0"

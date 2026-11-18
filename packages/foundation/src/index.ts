@@ -413,6 +413,7 @@ export { ataEngine } from './untrusted-engine.ts';
 export type { Engine } from './untrusted-engine.ts';
 export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';
 export { PATTERN_CHECK_LIMIT_MS, checkWithPatterns } from './pattern-check.ts';
+export { compileGlob } from './glob-match.ts';
 export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator } from './product-schema.ts';
