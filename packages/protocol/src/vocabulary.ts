@@ -20,8 +20,8 @@ export type VocabularyRow = {
 };
 
 const RULED = 'ruling-2026-11-11.md cli-commands DECISION-10';
-const MODEL_NAMES = 'design-model-names-2026-11-10.md';
-const BUDGET_DELEGATION = 'design-gitpr-budget-delegation.md';
+const MODELS = 'design/models.md';
+const RELIABILITY = 'design/reliability.md sections 2 to 4';
 
 export const VOCABULARY = {
   product: {
@@ -44,36 +44,36 @@ export const VOCABULARY = {
       { variant: 'endpoint', pattern: 'endpoints?', keptFor: 'the address a connection sends its requests to' },
       { variant: 'backend', pattern: 'backends?', keptFor: 'the sandbox mechanism of the platform' },
     ],
-    fixedBy: `${MODEL_NAMES}:110`,
+    fixedBy: `${MODELS} section 2.1`,
   },
   connection: {
     concept: 'a set of endpoint settings (the settings key models.connections)',
     word: 'connection',
     banned: [],
-    fixedBy: `${MODEL_NAMES} 2.3`,
+    fixedBy: `${MODELS} section 6.2`,
   },
   provider: {
     concept: 'the provider of a model, the first part of its reference',
     word: 'provider',
     banned: [],
-    fixedBy: `${MODEL_NAMES} 2.1`,
+    fixedBy: `${MODELS} section 2.2`,
   },
   ownName: {
     concept: 'the name its provider gives a model, the second part of its reference',
     word: 'own name',
     banned: [],
-    fixedBy: `${MODEL_NAMES}:1`,
+    fixedBy: `${MODELS} section 2.3`,
   },
   server: {
     concept: 'a model server the product starts or finds',
     word: 'server',
     banned: [{ variant: 'gateway', pattern: 'gateways?', keptFor: 'the Model Gateway, the process of the product that routes requests to the models' }],
-    fixedBy: `${RULED}; ${MODEL_NAMES} 2.8`,
+    fixedBy: `${RULED}; ${MODELS} section 3.1`,
   },
   session: {
     concept: 'a stored unit of work that can be reopened',
     word: 'session',
-    banned: [{ variant: 'conversation', pattern: 'conversations?', keptFor: 'what a session shows on the screen (design-screens-2026-11-10.md:51)' }],
+    banned: [{ variant: 'conversation', pattern: 'conversations?', keptFor: 'what a session shows on the screen (design/cli-tui.md section 2)' }],
     fixedBy: RULED,
   },
   run: {
@@ -95,7 +95,7 @@ export const VOCABULARY = {
     concept: 'the job slot of a model (the settings key models.roles)',
     word: 'role',
     banned: [{ variant: 'job', pattern: 'jobs?', keptFor: 'a background job of a session (momonga jobs)' }],
-    fixedBy: `${MODEL_NAMES}:26-27`,
+    fixedBy: `${MODELS} section 7.4`,
   },
   budget: {
     concept: 'the money bound of a run',
@@ -105,37 +105,37 @@ export const VOCABULARY = {
       { variant: 'ceiling', pattern: 'ceilings?', keptFor: 'the settings key ceilings' },
       { variant: 'cap', pattern: 'caps?', keptFor: 'a bound of size that is not a budget' },
     ],
-    fixedBy: `${BUDGET_DELEGATION} (budget.exhausted)`,
+    fixedBy: 'design/tools.md section 3.3',
   },
   mandate: {
     concept: 'the named bundle of bounds and permissions of a delegated run',
     word: 'mandate',
-    banned: [{ variant: 'profile', pattern: 'profiles?', keptFor: 'a plan profile of design-chatgpt-plan.md and the sandbox profile of the platform' }],
-    fixedBy: `${BUDGET_DELEGATION}:333`,
+    banned: [{ variant: 'profile', pattern: 'profiles?', keptFor: 'a plan profile of design/sign-in.md section 1.6 and the sandbox profile of the platform' }],
+    fixedBy: 'design/tools.md section 4.1',
   },
   eval: {
     concept: 'a measurement over a dataset',
     word: 'eval',
     banned: [{ variant: 'evaluation', pattern: 'evaluations?', keptFor: 'prose that names no command' }],
-    fixedBy: 'design-reliability-report.md:1',
+    fixedBy: RELIABILITY,
   },
   reliability: {
     concept: 'the report of real runs',
     word: 'reliability',
     banned: [],
-    fixedBy: 'design-reliability-report.md:1',
+    fixedBy: RELIABILITY,
   },
   bench: {
     concept: 'the measurement over the fixed task set',
     word: 'bench',
     banned: [{ variant: 'benchmark', pattern: 'benchmarks?', keptFor: 'prose that names no command' }],
-    fixedBy: 'design-reliability-report.md:1',
+    fixedBy: RELIABILITY,
   },
   daemon: {
     concept: 'the background process of the product',
     word: 'daemon',
     banned: [{ variant: 'background service', pattern: 'background services?' }],
-    fixedBy: 'design-update-no-interrupt-2026-11-07.md:2218',
+    fixedBy: 'design/supervisor-update.md section 2.6',
   },
   compaction: {
     concept: 'the shortening of the context of a session',
@@ -144,7 +144,7 @@ export const VOCABULARY = {
       { variant: 'compact', pattern: 'compact', keptFor: 'the verb in a command or key name' },
       { variant: 'summaries', pattern: 'summaries', keptFor: 'summaries that are not of a compaction' },
     ],
-    fixedBy: 'design-fix-compaction.md',
+    fixedBy: 'design/context.md section 4',
   },
 } as const satisfies Readonly<Record<string, VocabularyRow>>;
 

@@ -346,14 +346,15 @@ Contributions are welcome through pull requests on GitHub.
 
 ```sh
 npm ci
-npm ci --prefix compliance/open-responses
+npm run test:setup
 npm run typecheck
 npm test
 npm run test:e2e
 npm run test:packaging
 ```
 
-- `npm test` runs the unit suite, including the TLA+ models and the Z3 proofs. TLC needs Java 8 or later and a pinned jar; fetch it with `scripts/tlc.sh --fetch-jar`. The Z3 proofs run through the `z3-solver` dependency of `packages/verify`.
+- `npm run test:setup` provides everything the test projects fetch: the Open Responses suite and its bun (`compliance/open-responses`), the pinned TLA+ jar, and the pinned node and ripgrep archives the packaging project builds from. A run that misses one of them, or a system program it needs (bubblewrap, openssl, zig), refuses at its start and names it with the command that provides it.
+- `npm test` runs the unit suite, including the TLA+ models and the Z3 proofs. TLC needs Java 8 or later. The Z3 proofs run through the `z3-solver` dependency of `packages/verify`.
 - `npm run test:tlc-deep` runs the deep tier of the TLA+ configurations, which takes much longer.
 - On Windows, CI runs the unit suite without the TLC tier, which needs bash, `ps`, and `/usr/bin`.
 - On Linux, tests that use the sandbox need bubblewrap installed.

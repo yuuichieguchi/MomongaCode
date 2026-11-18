@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_MANIFEST_ASSET, claimPathOf, lockFormOf, sha256Hex, sidecarOf } from '@momonga/foundation';
 import type { KeeperPreparation } from '@momonga/foundation';
 import { provideEmbeddedWindowsKeeper } from '../src/keeper/host.ts';
-import { nodeSourceKeeperFiles } from '../src/node-ports.ts';
+import { KEEPER_BUILD_BOUND_MS, nodeSourceKeeperFiles, runKeeperBuildWithin } from '../src/node-ports.ts';
 import { sourceBuiltWindowsKeeper } from '../src/keeper/source.ts';
-import type { SourceKeeperPorts } from '../src/keeper/source.ts';
+import type { KeeperBuildEnding, SourceKeeperPorts } from '../src/keeper/source.ts';
 import { createTempDir, testKernelLock, writeLeftoverEntry } from '@momonga/testkit';
 
 const dirs: string[] = [];
@@ -33,7 +33,7 @@ const writesKeeper = (workDir: string, binary: Uint8Array = BINARY): void => {
 
 type World = { ports: SourceKeeperPorts; builds: string[]; root: string };
 
-const worldOf = (build: (workDir: string) => number | null): World => {
+const worldOf = (build: (workDir: string) => KeeperBuildEnding): World => {
   const root = rootOf();
   const script = path.join(root, 'scripts', 'windows-keeper.ts');
   fs.mkdirSync(path.dirname(script), { recursive: true });
@@ -48,7 +48,7 @@ const worldOf = (build: (workDir: string) => number | null): World => {
       build: (given, workDir) => {
         expect(given).toBe(script);
         builds.push(workDir);
-        return build(workDir);
+        return Promise.resolve(build(workDir));
       },
       files: nodeSourceKeeperFiles,
       random: { hex: () => 'abcdef0123456789' },
@@ -176,5 +176,24 @@ describe('the work directory of a from-source build is claimed the product way',
     outcome.lock.release();
     await sourceBuiltWindowsKeeper(world.ports)();
     expect(fs.existsSync(dead)).toBe(false);
+  });
+});
+
+describe('the keeper build is waited for within its registered bound', () => {
+  it('refuses with one sentence that names the build, its source and the bound when the build does not end in time', async () => {
+    const world = worldOf(() => ({ timedOut: true, boundMs: 5 }));
+    await expect(sourceBuiltWindowsKeeper(world.ports)()).rejects.toThrow('the build of the keeper executable from native/windows-keeper/keeper.c did not end within 5 ms');
+  });
+
+  it('runs the build script as a child without blocking, ends it at the bound, and reports its exit code otherwise', async () => {
+    const root = rootOf();
+    const endless = path.join(root, 'endless.mjs');
+    const failing = path.join(root, 'failing.mjs');
+    fs.writeFileSync(endless, 'setInterval(() => undefined, 1000);');
+    fs.writeFileSync(failing, 'process.exit(3);');
+    const pending = runKeeperBuildWithin(300)(endless, root);
+    expect(pending).toBeInstanceOf(Promise);
+    expect(await pending).toEqual({ timedOut: true, boundMs: 300 });
+    expect(await runKeeperBuildWithin(KEEPER_BUILD_BOUND_MS)(failing, root)).toBe(3);
   });
 });

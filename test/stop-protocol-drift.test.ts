@@ -65,7 +65,7 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
   it('RT: the runtime recipient carries its own value, read at the same begin as the gateway value, and its bound enters SUP', () => {
     const spec = fs.readFileSync(specPath, 'utf8');
     expect(spec).toMatch(/rtv\[g\]\.bound = sv\[g\]/);
-    expect(spec).toMatch(/sent\[g\] => rtv\[g\]\.applied = sv\[g\]/);
+    expect(spec).toMatch(/\(rtaken\[g\] \/\\ rhow\[g\] = "signal"\) => rtv\[g\]\.applied = sv\[g\]/);
   });
 
   it('RT: the runtime is killed at its stop budget (RTK) and its term of the supervisor close adds the settle of a killed child, the share the gateway term carries', () => {

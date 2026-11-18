@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { bsdFileLock, sqliteFileLock } from '@momonga/foundation';
+import { EXIT_CODES, REAP_KILL_GRACE_MS, bsdFileLock, sqliteFileLock } from '@momonga/foundation';
 import type { KernelLockMechanism, LockCapability } from '@momonga/foundation';
-import { HEAVY_STEPS, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
+import { HEAVY_STEPS, LIGHT_HOLDER_STALL_MS, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, RUN_LOCK_EXIT, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
 import { createTempRoot, removeTempRoot } from './temp.ts';
 
 const STARTED = '2026-11-10T00:00:00.000Z';
@@ -40,6 +40,7 @@ const descriptionOf = (pid: number, command: string, token: string, runClass: 'h
   JSON.stringify({ format: 'momonga-run-lock/1', token, class: runClass, pid, startedAt: STARTED, cwd: '/w', command });
 
 describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
+  let progress = 0;
   const request = (over: Partial<Request> = {}): Request => ({
     runClass: 'heavy',
     dir,
@@ -56,6 +57,11 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
     sleep: async () => undefined,
     pollMs: 1000,
     mechanism,
+    progressOf: async () => {
+      progress += 1;
+      return progress;
+    },
+    endHolder: () => undefined,
     ...over,
   });
 
@@ -231,20 +237,255 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
       { kind: 'refused', message: `run-lock: light run refused: held by waiting heavy pid 999 started ${STARTED} in /w: cmd9${TO_WAIT}` },
     ]);
     expect(outcome.kind).toBe('acquired');
-    expect(entries().filter((name) => name.startsWith('heavy-waiting'))).toEqual([]);
+    expect(entries().filter((name) => name.startsWith('waiting.'))).toEqual([]);
+  });
+
+  it('a heavy run that waits for a light holder whose processes gain no CPU time for LIGHT_HOLDER_STALL_MS ends that holder and starts', async () => {
+    const stalled = await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+    const said: string[] = [];
+    const ended: Array<{ pid: number; at: number }> = [];
+    let clock = 0;
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        waitSeconds: (LIGHT_HOLDER_STALL_MS / 1000) * 4,
+        say: (line) => said.push(line),
+        monotonic: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
+        pollMs: 60_000,
+        progressOf: async () => 7,
+        endHolder: async (pid, signal) => {
+          ended.push({ pid, at: clock });
+          expect(signal).toBe('SIGTERM');
+          await stalled.release();
+        },
+      }),
+    );
+    if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+
+    expect(outcome.kind).toBe('acquired');
+    expect(ended).toEqual([{ pid: 222, at: LIGHT_HOLDER_STALL_MS }]);
+    expect(said).toContain(`run-lock: heavy run ends light pid 222 started ${STARTED} in /w: cmd2: its processes used no CPU time for ${LIGHT_HOLDER_STALL_MS / 1000} s`);
+  });
+
+  it('a heavy run never ends a light holder whose processes keep gaining CPU time, and gives up at its own limit', async () => {
+    await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+    const ended: number[] = [];
+    let clock = 0;
+    let cpu = 0;
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        waitSeconds: (LIGHT_HOLDER_STALL_MS / 1000) * 3,
+        monotonic: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
+        pollMs: 60_000,
+        progressOf: async () => {
+          cpu += 0.01;
+          return cpu;
+        },
+        endHolder: (pid) => {
+          ended.push(pid);
+        },
+      }),
+    );
+
+    expect(outcome.kind).toBe('waited-out');
+    expect(ended).toEqual([]);
+  });
+
+  it('a heavy run sends SIGKILL to a stalled light holder that outlives SIGTERM by REAP_KILL_GRACE_MS', async () => {
+    const stalled = await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+    const signals: Array<{ signal: string; at: number }> = [];
+    const said: string[] = [];
+    let clock = 0;
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        waitSeconds: (LIGHT_HOLDER_STALL_MS / 1000) * 4,
+        say: (line) => said.push(line),
+        monotonic: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+        },
+        pollMs: 1000,
+        progressOf: async () => 7,
+        endHolder: async (_pid, signal) => {
+          signals.push({ signal, at: clock });
+          if (signal === 'SIGKILL') await stalled.release();
+        },
+      }),
+    );
+    if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+
+    expect(outcome.kind).toBe('acquired');
+    expect(signals).toEqual([
+      { signal: 'SIGTERM', at: LIGHT_HOLDER_STALL_MS },
+      { signal: 'SIGKILL', at: LIGHT_HOLDER_STALL_MS + REAP_KILL_GRACE_MS },
+    ]);
+    expect(said).toContain(`run-lock: heavy run kills light pid 222 started ${STARTED} in /w: cmd2: it outlived SIGTERM by ${REAP_KILL_GRACE_MS / 1000} s`);
+  });
+
+  it('reports a failure of the CPU sampler by naming the sampler and the holder', async () => {
+    await hold({ runClass: 'light', pid: 222, command: 'cmd2' });
+
+    const outcome = await acquireRunLock(
+      request({
+        pid: 999,
+        waitSeconds: 10,
+        progressOf: async () => {
+          throw new Error('ps exited 1');
+        },
+      }),
+    );
+
+    expect(outcome).toEqual({ kind: 'unusable', message: `run-lock: cannot read the CPU time of the processes of light pid 222 started ${STARTED} in /w: cmd2: ps exited 1` });
+  });
+
+  describe('the queue of waiting runs, in arrival order', () => {
+    type Queued = { readonly name: string; outcome: Promise<Outcome>; asleep: boolean; ended: boolean };
+    const wakers: Array<() => void> = [];
+    const queued: Queued[] = [];
+
+    const settle = async (): Promise<void> => {
+      for (let turn = 0; turn < 2000; turn += 1) {
+        if (queued.every((run) => run.ended || run.asleep)) return;
+        await new Promise((resolve) => setTimeout(resolve, 2));
+      }
+      throw new Error('a queued run neither slept nor ended');
+    };
+
+    const arrive = async (name: string, runClass: 'heavy' | 'light'): Promise<Queued> => {
+      const run: Queued = { name, outcome: Promise.resolve({ kind: 'aborted' }), asleep: false, ended: false };
+      run.outcome = acquireRunLock(
+        request({
+          runClass,
+          pid: 500 + queued.length,
+          command: name,
+          waitSeconds: 3600,
+          sleep: () =>
+            new Promise<void>((resolve) => {
+              run.asleep = true;
+              wakers.push(() => {
+                run.asleep = false;
+                resolve();
+              });
+            }),
+        }),
+      ).then((outcome) => {
+        run.ended = true;
+        if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+        return outcome;
+      });
+      queued.push(run);
+      await settle();
+      return run;
+    };
+
+    const tick = async (): Promise<void> => {
+      for (const wake of wakers.splice(0)) wake();
+      await settle();
+    };
+
+    const started = (): string[] => queued.filter((run) => run.ended).map((run) => run.name);
+
+    const acquiredOf = async (run: Queued): Promise<Acquired> => {
+      const outcome = await run.outcome;
+      if (outcome.kind !== 'acquired') throw new Error(`${run.name} did not acquire: ${JSON.stringify(outcome)}`);
+      return outcome;
+    };
+
+    beforeEach(() => {
+      wakers.splice(0);
+      queued.splice(0);
+    });
+
+    it('starts lights that arrived before a heavy waiter together, while the heavy waiter waits, and keeps a light that arrived after it waiting', async () => {
+      const holder = await hold({ pid: 111, command: 'H0' });
+      const first = await arrive('L1', 'light');
+      const second = await arrive('L2', 'light');
+      const heavy = await arrive('H3', 'heavy');
+      const late = await arrive('L4', 'light');
+      await holder.release();
+      await tick();
+
+      expect(started()).toEqual(['L1', 'L2']);
+      expect(await acquireRunLock(request({ runClass: 'light', pid: 600, command: 'L5' }))).toEqual({
+        kind: 'refused',
+        message: `run-lock: light run refused: held by waiting heavy pid 502 started ${STARTED} in /w: H3${TO_WAIT}`,
+      });
+      await (await acquiredOf(first)).release();
+      await tick();
+      expect(started()).toEqual(['L1', 'L2']);
+      await (await acquiredOf(second)).release();
+      await tick();
+      expect(started()).toEqual(['L1', 'L2', 'H3']);
+      await (await acquiredOf(heavy)).release();
+      await tick();
+      expect(started()).toEqual(['L1', 'L2', 'H3', 'L4']);
+      expect((await late.outcome).kind).toBe('acquired');
+    });
+
+    it('starts three heavy runs and the light runs between them in the order they arrived', async () => {
+      const holder = await hold({ pid: 111, command: 'H0' });
+      const names: Array<[string, 'heavy' | 'light']> = [
+        ['L1', 'light'],
+        ['H2', 'heavy'],
+        ['L3', 'light'],
+        ['H4', 'heavy'],
+        ['L5', 'light'],
+        ['H6', 'heavy'],
+      ];
+      for (const [name, runClass] of names) await arrive(name, runClass);
+      await holder.release();
+      const order: string[] = [];
+      for (let round = 0; round < names.length; round += 1) {
+        await tick();
+        const next = queued.filter((run) => run.ended && !order.includes(run.name));
+        expect(next.map((run) => run.name)).toHaveLength(1);
+        const [run] = next;
+        if (run === undefined) throw new Error('no run started');
+        order.push(run.name);
+        await (await acquiredOf(run)).release();
+      }
+
+      expect(order).toEqual(['L1', 'H2', 'L3', 'H4', 'L5', 'H6']);
+      expect(entries().filter((name) => name.startsWith('waiting.'))).toEqual([]);
+    });
+
+    it('a waiter whose process died keeps no later run out, and whoever meets it removes it', async () => {
+      const holder = await hold({ pid: 111, command: 'H0' });
+      const hex = 'eeeeeeeeeeeeeeee';
+      const lock = await claimRaw(`waiting.0000000000000000.heavy.${hex}`, hex);
+      fs.writeFileSync(path.join(dir, `waiting.0000000000000000.heavy.${hex}.info`), descriptionOf(222, 'dead', hex, 'heavy'));
+      lock.release();
+      await arrive('L1', 'light');
+      await holder.release();
+      await tick();
+
+      expect(started()).toEqual(['L1']);
+      expect(entries().filter((name) => name.includes(hex))).toEqual([]);
+    });
   });
 
   it('a heavy waiter whose process died does not keep a light run out, and its files are removed', async () => {
     const hex = 'dddddddddddddddd';
-    const lock = await claimRaw(`heavy-waiting.${hex}`, hex);
-    fs.writeFileSync(path.join(dir, `heavy-waiting.${hex}.info`), descriptionOf(222, 'cmd2', hex, 'heavy'));
+    const lock = await claimRaw(`waiting.0000000000000001.heavy.${hex}`, hex);
+    fs.writeFileSync(path.join(dir, `waiting.0000000000000001.heavy.${hex}.info`), descriptionOf(222, 'cmd2', hex, 'heavy'));
     lock.release();
 
     const outcome = await acquireRunLock(request({ runClass: 'light' }));
     if (outcome.kind === 'acquired') releases.push(() => outcome.release());
 
     expect(outcome.kind).toBe('acquired');
-    expect(entries().filter((name) => name.startsWith('heavy-waiting'))).toEqual([]);
+    expect(entries().filter((name) => name.startsWith('waiting.'))).toEqual([]);
   });
 
   it('TB11 gives up when the limit passes with the holder still there, after exactly two sleeps', async () => {
@@ -593,5 +834,23 @@ describe('the directories of the run lock', () => {
     );
     const naming = sources.filter((file) => DIRECTORY_NAME.test(fs.readFileSync(path.join(repoRoot, file), 'utf8'))).sort();
     expect(naming).toEqual(['scripts/support/run-lock.ts']);
+  });
+});
+
+describe('the exit codes of the run lock', () => {
+  const TLC_EXIT_STATUSES: readonly number[] = [0, 10, 11, 12, 13, 14, 75, 76, 77, 150, 151, 152, 153, 255];
+  const TLC_SCRIPT_EXITS: readonly number[] = [2, 3, 4, 5];
+  const SHELL_EXITS: readonly number[] = [1, 2, 126, 127];
+  const SIGNAL_EXIT_BASE = 128;
+  const ownCodes = [RUN_LOCK_EXIT.cpuBudget, RUN_LOCK_EXIT.starterGone];
+
+  it('end a breached run with codes no product, TLC, tlc.sh or shell code uses', () => {
+    const taken = new Set([...Object.values(EXIT_CODES).map((entry) => entry.code), ...TLC_EXIT_STATUSES, ...TLC_SCRIPT_EXITS, ...SHELL_EXITS]);
+    expect(ownCodes.filter((code) => taken.has(code) || code >= SIGNAL_EXIT_BASE)).toEqual([]);
+  });
+
+  it('give each outcome a code of its own', () => {
+    const codes = Object.values(RUN_LOCK_EXIT);
+    expect(new Set(codes).size).toBe(codes.length);
   });
 });

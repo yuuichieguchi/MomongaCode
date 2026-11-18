@@ -9,7 +9,7 @@ import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_TEST_TIMEOUT_MS, until, E2E_RUN_COMPLETED_BOUND_MS } from './support/wait.ts';
+import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 type ReleaseTiming = 'after-claim' | 'while-down';
 
@@ -42,7 +42,7 @@ const killRuntimeDuringModelCall = async (release: ReleaseTiming): Promise<void>
     expect(oldRuntime.restarts).toBe(0);
     const oldRuntimePid = oldRuntime.pid;
     if (oldRuntimePid === undefined) throw new Error('runtime has no pid');
-    const oldOwner = await until(() => leaseOwnerOf(home, run.id), { deadlineMs: E2E_MARGIN_MS, description: `run ${run.id} lease owner readable` });
+    const oldOwner = await until(() => leaseOwnerOf(home, run.id), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} lease owner readable` });
     expect(oldOwner).toMatch(new RegExp(`^runtime-${oldRuntimePid}-`));
 
     process.kill(oldRuntimePid, 'SIGKILL');
@@ -69,7 +69,7 @@ const killRuntimeDuringModelCall = async (release: ReleaseTiming): Promise<void>
     releaseOnce();
 
     const stream = runtime.events(run.id);
-    const frames = await stream.toEnd(E2E_MARGIN_MS);
+    const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
     await stream.close();
 
     const last = frames.at(-1);

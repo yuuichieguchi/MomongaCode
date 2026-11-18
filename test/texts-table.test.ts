@@ -7,21 +7,13 @@ import type { ParsedSource } from './support/source-scan.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
-const DESIGN_FOLDER = 'MomongaCode-docs';
+const DESIGN_DOCUMENTS_VARIABLE = 'MOMONGA_DESIGN_DOCUMENTS';
 
-const designFolderOf = (start: string): string | undefined => {
-  for (let directory = start; path.dirname(directory) !== directory; directory = path.dirname(directory)) {
-    const candidate = path.join(path.dirname(directory), DESIGN_FOLDER, 'pending');
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return undefined;
-};
-
-const DESIGNS = designFolderOf(ROOT);
+const DESIGNS = process.env[DESIGN_DOCUMENTS_VARIABLE];
 
 const TEXT_SECTIONS = [
-  { design: 'design-model-names-2026-11-10.md', heading: '## 13. Texts approved under cli-tui DECISION-5' },
-  { design: 'design-screens-2026-11-10.md', heading: '## Texts approved under cli-tui DECISION-5' },
+  { design: 'models.md', heading: '## 13. Texts approved under cli-tui DECISION-5' },
+  { design: 'cli-tui.md', heading: '## Texts approved under cli-tui DECISION-5' },
 ] as const;
 
 const PERSON_TREES = ['packages/cli/src/tui', 'packages/cli/src/commands'];
@@ -107,7 +99,7 @@ describe('every text the person reads that was approved without a design text is
     expect(missingOf({ design: 'planted.md', text: 'Wait a minute', files, others: [] }, read)).toEqual(['Wait a minute']);
   });
 
-  it.skipIf(DESIGNS === undefined)(`holds every listed text in the file its bullet names, or in the product when it names none (needs the ${DESIGN_FOLDER} folder beside the repository; the Linux container has no copy)`, () => {
+  it.skipIf(DESIGNS === undefined)(`holds every listed text in the file its bullet names, or in the product when it names none (needs the design folder named by ${DESIGN_DOCUMENTS_VARIABLE}; the release gate sets it)`, () => {
     const texts = listedTexts();
     expect(texts.length).toBeGreaterThan(0);
     const missing = texts.flatMap((listed) => missingOf(listed).map((fragment) => `${listed.design}: ${listed.text} (missing: ${fragment})`));

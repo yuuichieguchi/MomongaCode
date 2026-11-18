@@ -5,7 +5,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import type { CliClock, CliPorts } from '../ports.ts';
 import type { RetiringWork } from '../update/ports.ts';
-import { DaemonStartError, STOP_WAIT_WHEN_UNKNOWN_MS, generationLabel, healthAt, runtimeCountsNotKnown, liveGenerationsUnderLock, reopenSessionMessage } from './ensure-daemon.ts';
+import { DaemonStartError, STOP_WAIT_WHEN_UNKNOWN_MS, generationLabel, healthAt, runtimeCountsNotKnown, liveGenerationsUnderLock, sessionEndMessage } from './ensure-daemon.ts';
 import type { NewerListener } from './ensure-daemon.ts';
 
 const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
@@ -54,8 +54,8 @@ export const endSessionWhenMovedAway =
   async () => {
     const current = await readCurrentGeneration(paths);
     if (current === undefined || current.version === version) return;
-    if (orderVersions(version, current.version) === 'older') await onNewer?.(current.version, 'gone');
-    throw new DaemonStartError(reopenSessionMessage(current.version), paths.logFiles.supervisor, { pointsAtLog: false });
+    const standing = onNewer === undefined || orderVersions(version, current.version) !== 'older' ? 'cannot-move' : await onNewer(current.version, 'gone');
+    throw new DaemonStartError(sessionEndMessage(current.version, standing), paths.logFiles.supervisor, { pointsAtLog: false });
   };
 
 const KILL_WAIT_MS = 5_000;

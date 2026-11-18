@@ -19,7 +19,7 @@ describe('the merge gate', () => {
   });
 
   it('keeps the single runs of the e2e and the packaging projects', () => {
-    expect(scripts()['test:e2e']).toBe('MOMONGA_WHOLE_RUN=1 vitest run --project e2e');
-    expect(scripts()['test:packaging']).toBe('MOMONGA_WHOLE_RUN=1 vitest run --project packaging');
+    expect(scripts()['test:e2e']).toBe(`${TEST_REUSE_ENV}=0 MOMONGA_WHOLE_RUN=1 vitest run --project e2e`);
+    expect(scripts()['test:packaging']).toBe(`${TEST_REUSE_ENV}=0 MOMONGA_WHOLE_RUN=1 vitest run --project packaging`);
   });
 });

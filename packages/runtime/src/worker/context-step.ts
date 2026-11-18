@@ -32,7 +32,7 @@ import { GatewayRequestError } from '../gateway-client.ts';
 import { AdmissionRefusedError, ceilingOf, compactAdmitted, overCeiling, withAdmission } from './admitted-request.ts';
 import { stopIfRefused } from './budget-stop.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
-import { MEMORY_QUERY_MAX_CHARS } from '@momonga/tools';
+import { RECALL_TOUCHED_ROWS } from '../process/constants.ts';
 import { arrivalsOf } from './context-arrivals.ts';
 import { renderedFormsOf } from './context-forms.ts';
 import type { ClaimContext } from './claim-context.ts';
@@ -95,9 +95,11 @@ const advanceTouched = async (ctx: ClaimContext): Promise<void> => {
 const prepareRecall = async (ctx: ClaimContext): Promise<void> => {
   const session = sessionOf(ctx);
   const task = taskOf(ctx);
-  const newest = (await ctx.options.store.sessionTouched.newest(session.id, MEMORY_QUERY_MAX_CHARS)).map((entry) => entry.path);
+  const newest = (await ctx.options.store.sessionTouched.newest(session.id, RECALL_TOUCHED_ROWS)).map((entry) => entry.path);
+  const recall = recallQueryOf(task.text, newest, session.cwd, RECALL_TOUCHED_ROWS);
   await ctx.recalled.prepare({
-    query: recallQueryOf(task.text, newest, session.cwd),
+    query: recall.query,
+    ...(recall.touchedCap === undefined ? {} : { touchedCap: recall.touchedCap }),
     capacity: { capabilities: withCalibration(ctx.capabilities, ctx.calibration), memoryShare: ctx.memoryShare },
     ...(ctx.token.cachePrefix && ctx.journal.state.memoriesLoaded !== undefined ? { pinnedIds: ctx.journal.state.memoriesLoaded.map((memory) => memory.id) } : {}),
   });
@@ -150,6 +152,7 @@ const offeredInputOf = async (
   const projectedWorkingState = projectedWorkingStateOf(ctx, state);
   const task = taskOf(ctx);
   const matchCap = ctx.recalled.matchCap();
+  const touchedCap = ctx.recalled.touchedCap();
   const candidates = ctx.functionTools();
   const companions = ctx.companions();
   const offered = offeredKeyOf(candidates, companions);
@@ -185,6 +188,7 @@ const offeredInputOf = async (
       memories: ctx.recalled.ranked(),
       ...(ctx.recalled.hasMore() ? { moreMemories: true } : {}),
       ...(matchCap === undefined ? {} : { memoryMatchCap: matchCap }),
+      ...(touchedCap === undefined ? {} : { memoryTouchedCap: touchedCap }),
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
         .map((entry) => ({

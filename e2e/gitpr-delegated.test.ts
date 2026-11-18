@@ -13,7 +13,7 @@ import { sandboxOrSkip } from './support/sandbox.ts';
 import { baseSettings, sandboxChoiceOf, startStack, withUpstreamConnection } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const FORGE_SECRET = `forge-delegated-${process.pid}`;
 const FORGE_CREDENTIAL = 'e2e-forge-credential-5b8e2c61';
@@ -59,7 +59,7 @@ const runToEnd = async (runtime: RuntimeClient, input: string, allow: readonly s
   const { run } = await runtime.createRun(session.id, input, { mandate: mandateOf(allow) });
   await until(async () => ['COMPLETED', 'FAILED', 'STOPPED', 'CANCELLED'].includes((await runtime.getRun(run.id)).run.status), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} ended` });
   const stream = runtime.events(run.id);
-  const frames = await stream.toEnd(E2E_MARGIN_MS);
+  const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
   await stream.close();
   return { run: (await runtime.getRun(run.id)).run, frames };
 };
@@ -288,7 +288,7 @@ describe('gitpr: delegated work through the real runtime, from the production st
       expect((await runtime.resolveApproval(approvalId, 'allow_once')).status).toBe(200);
       await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} COMPLETED` });
       const ended = runtime.events(run.id);
-      const frames = await ended.toEnd(E2E_MARGIN_MS);
+      const frames = await ended.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await ended.close();
       expect(outputsOf(frames, 'GitPush').join('\n')).not.toMatch(/did not reach its goal|was not run|refused/);
       expect(gitAt(home, innerBare, 'log', '-1', '--format=%s', BRANCH)).toBe('Add the second widget');
