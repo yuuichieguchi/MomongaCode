@@ -16,9 +16,9 @@ import {
 import type { GenerationLayout, GenerationMember, MarkerKind, MomongaPaths } from './momonga-paths.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { lockPathNameOf } from './platform/lock-form.ts';
-import { readAttemptRecord, readMarkerGroup } from './platform/marker-record.ts';
+import { RETRY_KINDS, isMalformedRecord, parseAttemptRecord, readMarkerGroup, readRecordText } from './platform/marker-record.ts';
 import type { RetryKind } from './platform/marker-record.ts';
-import { survivorNoticeText } from './process-markers.ts';
+import { markerRemedyText, survivorNoticeText } from './process-markers.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import { systemWaitTiming } from './system-timing.ts';
 import { sleep } from './timing.ts';
@@ -198,16 +198,26 @@ const claimDead: StepRunner = async (pass, work) => {
   }
 };
 
+const MALFORMED_RECORD = 'its attempt record is malformed';
+
+const sweepSurvivorText = (label: string, name: string, group: number | undefined): string =>
+  `a ${label} process (marker ${name}) may still be running. The cleanup of dead generations tried once to stop it and will not try again. ${markerRemedyText({ name, group, addressed: 'person' })}`;
+
 const survivorWarning = async (marker: string, kind: MarkerKind): Promise<string | undefined> => {
-  let record: Awaited<ReturnType<typeof readAttemptRecord>>;
+  let text: string;
   try {
-    record = await readAttemptRecord(marker);
+    text = await readRecordText(marker);
   } catch (error) {
     if (missing(error)) return undefined;
     throw error;
   }
+  if (isMalformedRecord(text)) return keptMessage(marker, MALFORMED_RECORD);
+  const record = parseAttemptRecord(text);
   if (record.ignored) return undefined;
-  return record.spent[GENERATION_REAPER_OCCASION] ? survivorNoticeText(GENERATION_MARKER_LABELS[kind], path.basename(marker), await readMarkerGroup(marker)) : keptMessage(marker, NOT_STOPPED);
+  if (!record.spent[GENERATION_REAPER_OCCASION]) return keptMessage(marker, NOT_STOPPED);
+  const label = GENERATION_MARKER_LABELS[kind];
+  const group = await readMarkerGroup(marker);
+  return RETRY_KINDS.every((retry) => record.spent[retry]) ? survivorNoticeText(label, path.basename(marker), group) : sweepSurvivorText(label, path.basename(marker), group);
 };
 
 const reapMarkers: StepRunner = async (pass, work) => {
