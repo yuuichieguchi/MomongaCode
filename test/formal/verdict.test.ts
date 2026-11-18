@@ -25,6 +25,10 @@ const factCases: readonly (readonly [string, ManifestEntry, TlcRun])[] = [
 
 const LOCK_REFUSAL_CODES: readonly number[] = [RUN_LOCK_EXIT.refused, RUN_LOCK_EXIT.waitedOut, RUN_LOCK_EXIT.unusable];
 
+const LOCK_BREACH_CODES: readonly number[] = [RUN_LOCK_EXIT.cpuBudget, RUN_LOCK_EXIT.starterGone];
+
+const LOCK_CODES: readonly number[] = [...LOCK_REFUSAL_CODES, ...LOCK_BREACH_CODES];
+
 const killedRun: TlcRun = { ...runOf(0, ''), exitCode: null, signal: 'SIGKILL', killedAtCpuBudget: true };
 
 const scriptFailureCases: readonly (readonly [number, string])[] = [
@@ -82,18 +86,18 @@ describe('the facts of a TLC run and the verdict on them', () => {
     expect(violating.distinctStates).toBeNull();
   });
 
-  it.each(LOCK_REFUSAL_CODES)('reports exit %i as a failure of the script', (code) => {
+  it.each(LOCK_CODES)('reports exit %i of the run lock as a failure of the script', (code) => {
     expect(verdictProblems(holdsEntry, runOf(code, '', ''))[0]).toBe(`Tiny: tlc.sh exited ${code}`);
   });
 
-  it('lists every exit code by which the run lock refuses a run among the failures of the script', () => {
-    expect(LOCK_REFUSAL_CODES).toHaveLength(3);
-    expect(SCRIPT_FAILURE_CODES).toEqual(expect.arrayContaining([...LOCK_REFUSAL_CODES]));
+  it('lists every exit code by which the run lock refuses or ends a run among the failures of the script', () => {
+    expect(LOCK_CODES).toHaveLength(5);
+    expect(SCRIPT_FAILURE_CODES).toEqual(expect.arrayContaining([...LOCK_CODES]));
   });
 
   it('writes none of the exit codes of the run lock as a number in the verdict module', () => {
     const source = fs.readFileSync(new URL('./verdict.ts', import.meta.url), 'utf8');
-    const written = LOCK_REFUSAL_CODES.filter((code) => new RegExp(`(?<![\\w.])${code}(?![\\w.])`).test(source));
+    const written = LOCK_CODES.filter((code) => new RegExp(`(?<![\\w.])${code}(?![\\w.])`).test(source));
     expect(written).toEqual([]);
   });
 
