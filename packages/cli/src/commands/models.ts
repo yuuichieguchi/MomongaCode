@@ -426,6 +426,26 @@ const addOperation = (connection: Json, model: Json): ModelsOperation => ({ kind
 
 export const entryOf = (id: string, window: number | undefined): Json => ({ id, ...(window === undefined ? {} : { capabilities: { contextWindow: window, maxOutputTokens: maxOutputTokensFor(window) } }) });
 
+const REQUIRED_FACTS = [{ fact: 'context window', option: 'window', given: '--window <tokens>' }] as const;
+
+type RequiredFact = (typeof REQUIRED_FACTS)[number];
+
+const typedWordsOf = (option: string, value: FormOption): string[] => {
+  if (value === undefined || value === false) return [];
+  if (value === true) return [flagOf(option)];
+  return (typeof value === 'string' ? [value] : value).map((text) => `${flagOf(option)} ${text}`);
+};
+
+const typedCommandOf = (input: FormInput): string =>
+  ['momonga models add', ...Object.entries(input.options).flatMap(([option, value]) => (REQUIRED_FACTS.some((required) => required.option === option) ? [] : typedWordsOf(option, value)))].join(' ');
+
+const missingFactsRefusal = (input: FormInput, id: string, reason: (them: string) => string, missing: readonly RequiredFact[]): ShellRefusal => {
+  const facts = missing.map((required) => required.fact).join(' and ');
+  const given = missing.map((required) => required.given).join(' ');
+  const them = missing.length === 1 ? 'it' : 'them';
+  return new ShellRefusal(`The ${facts} of ${id} ${missing.length === 1 ? 'is' : 'are'} needed, and ${reason(them)}. Give ${them} with ${given}: ${typedCommandOf(input)} ${given}`);
+};
+
 const windowOf = (input: FormInput, ceiling: number | undefined): number | undefined => {
   const text = optionText(input, 'window');
   if (text === undefined) return undefined;
@@ -465,7 +485,7 @@ export const foundProposalOf = (edit: ModelsEdit, input: FormInput, server: Dete
     ...keyReferenceOf(input),
   };
   const window = windowOf(input, model.ceiling) ?? model.contextWindow ?? model.ceiling;
-  if (window === undefined) throw new ShellRefusal(`${server.provider} does not report the context window of ${model.id}. Name it: momonga models add --model ${model.id} --window <tokens>`);
+  if (window === undefined) throw missingFactsRefusal(input, model.id, (them) => `${server.provider} at ${server.address} does not report ${them}`, REQUIRED_FACTS);
   return addProposalOf(edit, connection, entryOf(model.id, window));
 };
 
@@ -495,7 +515,9 @@ const proposeAddressedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: F
     if (api === undefined || id === undefined) throw new ShellRefusal(noServerAnsweredStatementOf(address));
     const service = optionText(input, 'service');
     const connection = { adapter: adapterOfApi(api), baseUrl: address, ...(service === undefined ? {} : { provider: service }), ...keyReferenceOf(input) };
-    return addProposalOf(edit, connection, entryOf(id, windowOf(input, undefined)), noServerAnsweredAtText(address));
+    const window = windowOf(input, undefined);
+    if (window === undefined) throw missingFactsRefusal(input, id, () => `no model server answered at ${address}`, REQUIRED_FACTS);
+    return addProposalOf(edit, connection, entryOf(id, window), noServerAnsweredAtText(address));
   }
   if (id === undefined) {
     print(foundLinesOf(server));

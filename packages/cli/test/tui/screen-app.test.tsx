@@ -133,20 +133,20 @@ describe('the layout of the full screen', () => {
     app.unmount();
   });
 
-  it('lists the running subagents below the footer, one row each', async () => {
+  it('lists main and the running subagents below the footer, one row each, with the hint of the keys', async () => {
     let now = 1000;
     const { app, backend } = await start({}, { now: () => now }, { columns: 60, rows: 30 });
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
-    backend.following().onChildStarted('reviewer', 'child-1');
+    backend.following().onChildStarted('reviewer', 'child-1', 0);
     now = 13_000;
-    backend.following().onChildStarted('tester', 'child-2');
+    backend.following().onChildStarted('tester', 'child-2', 0);
     const lines = linesOf(await untilFrame(app, 'tester · starting · 0s'));
     expect(lines).toHaveLength(30);
-    expect(lines.slice(26)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: steer after the next tool call'), 'reviewer · starting · 12s', 'tester · starting · 0s']);
-    backend.following().onChildEnded('reviewer', 'child-1');
+    expect(lines.slice(24)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: steer after the next tool call'), '● main', '  reviewer · starting · 12s', '  tester · starting · 0s', 'down on an empty input: choose a view · enter: open']);
+    backend.following().onChildEnded('reviewer', 'child-1', { kind: 'finished', run: runView({ id: 'child-1' }) });
     const after = linesOf(await untilFrame(app, (shown) => !shown.includes('reviewer')));
-    expect(after.slice(27)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: steer after the next tool call'), 'tester · starting · 0s']);
+    expect(after.slice(25)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: steer after the next tool call'), '● main', '  tester · starting · 0s', 'down on an empty input: choose a view · enter: open']);
     app.unmount();
   });
 

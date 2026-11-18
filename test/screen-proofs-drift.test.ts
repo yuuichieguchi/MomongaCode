@@ -42,7 +42,7 @@ describe('the screen proofs of packages/verify/test/proofs describe the code of 
           for (const menu of REQUEST_VALUES) {
             for (const subagents of REQUEST_VALUES) {
               for (const panel of [undefined, 0, 3, 50] as const) {
-                const requests = { waiting, inputRows, invitation: menu % 2, menu, subagents, footerSecond: waiting % 2, lines: inputRows };
+                const requests = { header: subagents % 2, waiting, inputRows, invitation: menu % 2, menu, subagents, footerSecond: waiting % 2, lines: inputRows };
                 const allocation = allocate(height, { ...requests, panel });
                 const modelled = allocateWith(numberOps, height, requests, panel);
                 expect(allocation).toEqual(modelled);
@@ -86,7 +86,7 @@ describe('the screen proofs of packages/verify/test/proofs describe the code of 
   });
 
   it('keeps the input box where it is when only the waiting row or the menu change (H = 6, one subagent asked, the waiting row from 0 to 1)', () => {
-    const requests = { waiting: 0, inputRows: 1, invitation: 0, menu: 0, subagents: 1, footerSecond: 0, lines: 0, panel: undefined };
+    const requests = { header: 1, waiting: 0, inputRows: 1, invitation: 0, menu: 0, subagents: 1, footerSecond: 0, lines: 0, panel: undefined };
     const before = allocate(6, requests);
     const after = allocate(6, { ...requests, waiting: 1 });
     expect([after.input, after.footer, after.subagents]).toEqual([before.input, before.footer, before.subagents]);

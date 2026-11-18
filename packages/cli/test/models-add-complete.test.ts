@@ -4,7 +4,7 @@ import type { MomongaModelList } from '@momonga/protocol';
 import { listModels, modelDescriber, runModelsForm } from '../src/commands/models.ts';
 import type { FormInput } from '../src/commands/models.ts';
 import { formatTokens } from '../src/format-tokens.ts';
-import { OLLAMA_ADDRESS, documentOf, homeWith, listingOf, ollamaFound, shellOf } from './models-shell-harness.ts';
+import { OLLAMA_ADDRESS, bytesOf, documentOf, homeWith, listingOf, ollamaFound, shellOf } from './models-shell-harness.ts';
 
 const input = (args: readonly string[], options: FormInput['options'] = {}): FormInput => ({ args: [...args], options });
 
@@ -48,7 +48,8 @@ describe('momonga models add writes a complete entry from what the server report
 
     expect(await runModelsForm(harness.shell, 'add', input([], { model: 'bare:3b', yes: true }))).toBe(1);
 
-    expect(harness.err()).toContain('momonga models add --model bare:3b --window <tokens>');
+    expect(harness.err()).toContain(`The context window of bare:3b is needed, and ollama at ${OLLAMA_ADDRESS} does not report it. Give it with --window <tokens>: momonga models add --model bare:3b --yes --window <tokens>`);
+    expect(bytesOf(home.settingsFile)).toBeUndefined();
   });
 
   it('lists the models of each found server with their names when no model is named', async (context) => {
@@ -76,6 +77,29 @@ describe('momonga models add writes a complete entry from what the server report
 
     expect(harness.err()).toContain('momonga models add --address http://127.0.0.1:9 --api <api> --model <id>');
     expect(harness.err()).not.toContain('?');
+  });
+
+  it.for([true, false])('refuses a model at an address where no server answered when no window is given (--yes %s), naming --window, and writes nothing', async (yes, context) => {
+    const home = homeWith(context, undefined);
+    const harness = shellOf(home);
+
+    expect(await runModelsForm(harness.shell, 'add', input([], { address: 'http://127.0.0.1:9', api: 'ollama', model: 'deadmodel', ...(yes ? { yes: true } : {}) }))).toBe(1);
+
+    expect(harness.err()).toContain(
+      `The context window of deadmodel is needed, and no model server answered at http://127.0.0.1:9. Give it with --window <tokens>: momonga models add --address http://127.0.0.1:9 --api ollama --model deadmodel${yes ? ' --yes' : ''} --window <tokens>`,
+    );
+    expect(harness.err()).not.toContain('invalid settings');
+    expect(harness.out()).toBe('');
+    expect(bytesOf(home.settingsFile)).toBeUndefined();
+  });
+
+  it('writes a model at an address where no server answered when its window is given', async (context) => {
+    const home = homeWith(context, undefined);
+    const harness = shellOf(home);
+
+    expect(await runModelsForm(harness.shell, 'add', input([], { address: 'http://127.0.0.1:9', api: 'ollama', model: 'deadmodel', window: '8192', yes: true }))).toBe(0);
+
+    expect(connectionModels(home.settingsFile)).toEqual([{ id: 'deadmodel:latest', capabilities: { contextWindow: 8192, maxOutputTokens: maxOutputTokensFor(8192) } }]);
   });
 
   it('shows the window a model is configured with while the gateway measures it', async (context) => {

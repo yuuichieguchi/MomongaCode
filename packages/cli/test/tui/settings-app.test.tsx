@@ -7,6 +7,7 @@ import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_DAEMON_START, APPLI
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ExternalEditorPort } from '../../src/tui/external-editor.ts';
 import { KEYS, TUI_TEST_TIMEOUT_MS, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { startOnTerminal } from './terminal-app.tsx';
 import { command, freshPlace, localFileOf, outputHolds, press, startAt, stored, typeInto, unwrapped, writeSettings } from './settings-harness.tsx';
 import type { Place, Started } from './settings-harness.tsx';
 import { testKernelLock } from '@momonga/testkit';
@@ -14,6 +15,7 @@ import { testKernelLock } from '@momonga/testkit';
 vi.setConfig({ testTimeout: TUI_TEST_TIMEOUT_MS });
 
 const CLEAR = `${KEYS.ctrlA}${KEYS.ctrlK}`;
+const LONG_PROGRAM = '/opt/tools/search/bin/ripgrep-from-the-team-share';
 const SUBMIT = `${KEYS.ctrlX}${KEYS.enter}`;
 
 const open = (started: Started): Promise<string> => command(started, '/config', SETTINGS_TITLE);
@@ -103,39 +105,51 @@ describe('/config, the settings screen', () => {
     started.app.unmount();
   });
 
-  for (const size of [{ columns: 100, rows: 40 }, { columns: 40, rows: 24 }]) {
-    describe(`at ${size.columns}x${size.rows} the applies text after a write is shown whole`, () => {
-      it('for a setting a running daemon keeps until it restarts', async () => {
-        const place = freshPlace();
-        const started = await startAt(place, {}, undefined, { size });
-        await open(started);
-        await openRow(started, 'daemon', 'a whole number from 1');
-        await press(started, `${CLEAR}90000`, '> 90000');
-        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NEXT_DAEMON_START));
-        expect(stored(place.userFile)).toEqual({ daemon: { startupStallMs: 90000 } });
-        started.app.unmount();
-      });
+  const WRITES = [
+    { key: 'daemon.startupStallMs', filter: 'daemon process', edit: `${CLEAR}45000${KEYS.enter}`, value: '45000  user', applies: APPLIES_NEXT_DAEMON_START, stored: { daemon: { startupStallMs: 45000 } } },
+    { key: 'tui.mouse', filter: 'Mouse', edit: '', value: 'off  user', applies: APPLIES_NEXT_SESSION, stored: { tui: { mouse: false } } },
+    { key: 'tools.bash.drainIdleMs', filter: 'read no further', edit: `${CLEAR}2500${KEYS.enter}`, value: '2500  user', applies: APPLIES_NOW, stored: { tools: { bash: { drainIdleMs: 2500 } } } },
+    { key: 'tools.ripgrep', filter: 'ripgrep', edit: `${CLEAR}${LONG_PROGRAM}${KEYS.enter}`, value: `${LONG_PROGRAM}  user`, applies: APPLIES_NOW, stored: { tools: { ripgrep: LONG_PROGRAM } } },
+  ] as const;
 
-      it('for a setting read at the start of the terminal session', async () => {
-        const place = freshPlace();
-        const started = await startAt(place, {}, undefined, { size });
-        await open(started);
-        await press(started, 'Mouse', 'filter: Mouse');
-        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NEXT_SESSION));
-        expect(stored(place.userFile)).toEqual({ tui: { mouse: false } });
-        started.app.unmount();
-      });
+  const packedText = (text: string): string => text.replace(/\s+/g, '');
 
-      it('for a setting read per operation', async () => {
-        const place = freshPlace();
-        const started = await startAt(place, {}, undefined, { size });
-        await open(started);
-        await openRow(started, 'Forget after', 'a whole number from 1');
-        await press(started, `${CLEAR}30`, '> 30');
-        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NOW));
-        expect(stored(place.userFile)).toEqual({ memory: { forgetAfterDays: 30 } });
-        started.app.unmount();
-      });
+  const insideFrame = (line: string): string => line.replace(/^│ ?/, '').replace(/ *│ *$/, '');
+
+  const keyShown = (shownKey: string, label: string): boolean => {
+    const key = shownKey.replace(/^\d+\. /, '');
+    if (key === label) return true;
+    const [head, tail] = key.split('…');
+    const lastSegment = label.slice(label.lastIndexOf(' ') + 1);
+    return head !== undefined && tail !== undefined && head.length > 0 && label.startsWith(head) && label.endsWith(tail) && tail.endsWith(lastSegment);
+  };
+
+  for (const size of [{ columns: 100, rows: 40 }, { columns: 40, rows: 24 }, { columns: 40, rows: 12 }, { columns: 40, rows: 16 }, { columns: 40, rows: 30 }]) {
+    describe(`at ${size.columns}x${size.rows} on a terminal, the written row shows its key, its whole value and the whole applies text`, () => {
+      for (const write of WRITES) {
+        it(`for ${write.key}`, async () => {
+          const place = freshPlace();
+          const label = SETTING_ROWS[write.key]?.label ?? '';
+          const app = await startOnTerminal(size, { settingsPlace: { home: place.home, projectDir: place.project } });
+          await app.type('/config', (lines) => lines.some((line) => line.includes('/config')), 'the command is typed');
+          await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes(SETTINGS_TITLE)) && lines.some((line) => line.includes('filter:')), 'the settings list is on the screen');
+          await app.type(write.filter, (lines) => lines.some((line) => line.includes(`filter: ${write.filter}`)), 'the filter is typed');
+          await app.type(KEYS.enter, (lines) => write.edit === '' || !lines.some((line) => line.includes(`filter: ${write.filter}`)), 'the row opens');
+          if (write.edit !== '') await app.type(write.edit, (lines) => lines.some((line) => line.includes('filter: ')), 'the value is entered');
+          const shown = (await app.type('', (lines) => lines.some((line) => line.includes(write.applies)) && lines.some((line) => line.includes('to move') || (size.rows < 16 && line.includes('more lines'))), 'the applies text and the keys are shown')).map(insideFrame);
+          const selected = shown.findIndex((line) => line.startsWith('› '));
+          expect(selected, shown.join('\n')).toBeGreaterThanOrEqual(0);
+          const row = shown[selected] ?? '';
+          const block = shown.slice(selected, selected + 6);
+          const valueOnRow = row.includes(`  ${write.value}`);
+          expect(valueOnRow || packedText(block.slice(1).join('')).includes(packedText(write.value)), shown.join('\n')).toBe(true);
+          expect(keyShown(valueOnRow ? row.slice(2, row.indexOf(`  ${write.value}`)) : row.slice(2).trim(), label), shown.join('\n')).toBe(true);
+          expect(block.some((line) => line.trim() === write.applies || line.endsWith(`  ${write.applies}`)), shown.join('\n')).toBe(true);
+          expect(shown.some((line) => line.includes('to move') || (size.rows < 16 && line.includes('more lines'))), shown.join('\n')).toBe(true);
+          expect(stored(place.userFile)).toEqual(write.stored);
+          app.close();
+        });
+      }
     });
   }
 

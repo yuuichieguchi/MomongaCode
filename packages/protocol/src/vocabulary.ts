@@ -334,7 +334,7 @@ export type MessageInputs = {
   storedBypassNeedsOptIn: [given: { readonly id: string }];
   optionNeedsPrint: [given: { readonly option: string }];
   optionNeedsInteractive: [given: { readonly option: string }];
-  promptGivenTwice: [given: { readonly prompt: string }];
+  promptGivenTwice: [given: { readonly value: string; readonly prompt: string }];
   issueNeedsMandate: [];
   issueBesidePrompt: [];
   resumeNeedsIdToPrint: [];
@@ -372,7 +372,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   sessionInOtherFolder: (_surface, given) => `That ${WORDS.session} belongs to the ${WORDS.folder} ${given.folder}. Run: cd ${shellQuote(given.folder, given.platform)} && ${reopenSessionCommand(given.id)}`,
   optionNeedsPrint: (_surface, given) => `${given.option} applies only with ${PRINT_OPTION}; the interactive ${WORDS.session} cannot apply it.`,
   optionNeedsInteractive: (_surface, given) => `${given.option} applies only to the interactive ${WORDS.session}; it cannot be given with ${PRINT_OPTION}.`,
-  promptGivenTwice: (_surface, given) => `${PRINT_OPTION} takes the prompt as its value, so ${JSON.stringify(given.prompt)} cannot be given as well.`,
+  promptGivenTwice: (_surface, given) => `${PRINT_OPTION} was given the prompt ${JSON.stringify(given.value)} and also ${JSON.stringify(given.prompt)}; give one prompt: put it in quotes as one argument, either right after ${PRINT_OPTION} or anywhere after the options.`,
   issueNeedsMandate: () =>
     `--issue starts a ${WORDS.run} that acts on the forge, so it runs only under a named mandate: add --mandate <name>, the name of a mandate under mandates in the user settings.`,
   issueBesidePrompt: () => `--issue takes the words of the ${WORDS.run} from the issue, so it cannot be given with ${PRINT_OPTION} or a prompt of its own.`,

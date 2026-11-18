@@ -2,7 +2,7 @@ import { askTrustItems } from './project-items.ts';
 import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, escapeTerminalLine, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -64,14 +64,17 @@ import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
 import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
+import type { TranscriptStore } from './screen/store.ts';
 import { watchFileLinks } from './screen/file-link-watch.ts';
-import { SubagentRows } from './screen/subagents.tsx';
+import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf, viewTargetsOf } from './screen/subagents.tsx';
+import type { ViewTarget } from './screen/subagents.tsx';
+import { agentHeader, createAgentViews, endStateOf } from './screen/agent-views.ts';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
-import { DAEMON_STOPPING_TEXT, commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
+import { DAEMON_STOPPING_TEXT, commandPhaseText, loadingText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, modeToastText, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, SelectedText, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
@@ -171,6 +174,7 @@ type ExitAction = Extract<ActionId, 'prompt.interrupt' | 'prompt.exit'>;
 const MENU_CONTEXTS: readonly KeyContext[] = ['menu'];
 const SHELL_CONTEXTS: readonly KeyContext[] = ['shell'];
 const EDITOR_CONTEXTS: readonly KeyContext[] = ['chat', 'global'];
+const AGENT_LIST_CONTEXTS: readonly KeyContext[] = ['agents'];
 
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
 
@@ -212,6 +216,18 @@ export function App(props: AppProps) {
   const visible = store.shown();
   useSyncExternalStore(visible.subscribe, visible.version);
   const transcript = visible.state();
+  const [agents, setAgents] = useState(createAgentViews);
+  const agentsRef = useRef(agents);
+  useSyncExternalStore(agents.subscribe, agents.version);
+  const shownAgent = agents.shown();
+  const viewedLive = shownAgent?.store ?? store;
+  const viewed = viewedLive.shown();
+  useSyncExternalStore(viewed.subscribe, viewed.version);
+  const [listFocus, setListFocus] = useState<ViewTarget | undefined>(undefined);
+  const listFocusRef = useRef<ViewTarget | undefined>(undefined);
+  const listTargetsRef = useRef<readonly ViewTarget[]>([]);
+  const listSeen = useRef<{ rows: string; drawn: boolean }>({ rows: '', drawn: false });
+  const listPress = useRef<{ row: number; col: number } | undefined>(undefined);
   const { now, timers } = props;
   const [openedAt] = useState(now);
   const baseSlash = props.slash ?? createSlashRegistry(DEFAULT_SLASH_COMMANDS);
@@ -449,6 +465,10 @@ export function App(props: AppProps) {
   };
 
   const resetTranscript = (): void => {
+    const fresh = createAgentViews();
+    agentsRef.current = fresh;
+    setAgents(fresh);
+    chooseRow(undefined);
     store.reset();
     renewHistory();
     if (sessionModelRef.current !== undefined) showBanner(connectedModel(sessionModelRef.current), notices, true);
@@ -732,6 +752,7 @@ export function App(props: AppProps) {
   };
 
   const follow = (runId: string, replay: Replay | undefined): Promise<RunView> => {
+    const views = agentsRef.current;
     let firstSeq: number | undefined;
     const deliver = (work: () => void, position?: number): void => {
       if (replay === undefined) work();
@@ -771,10 +792,20 @@ export function App(props: AppProps) {
           const key = 'seq' in event ? { runId: event.runId, seq: event.seq } : undefined;
           if (key !== undefined) origins.at(key);
           foldChildEvent(store, event, agent);
+          views.event(event);
           if (key !== undefined) replay?.notes?.after(key);
         }),
-      onChildStarted: (agent, childRunId) => deliver(() => subagentStarted(store, agent, childRunId, now())),
-      onChildEnded: (_agent, childRunId) => deliver(() => subagentEnded(store, childRunId)),
+      onChildStarted: (agent, childRunId, backlog) =>
+        deliver(() => {
+          views.started(agent, childRunId, backlog);
+          subagentStarted(store, agent, childRunId, now());
+        }),
+      onChildEnded: (_agent, childRunId, end) =>
+        deliver(() => {
+          subagentEnded(store, childRunId);
+          views.ended(childRunId, end);
+          if (!agentListDrawn(store.state().subagents, agentsRef.current.shown()?.runId)) chooseRow(undefined);
+        }),
       onReconnecting: () => setReconnectingSince((since) => since ?? now()),
       onDaemonStopping: () => {
         append({ kind: 'notice', level: 'info', text: DAEMON_STOPPING_TEXT });
@@ -1269,12 +1300,15 @@ export function App(props: AppProps) {
   const fileLinksFailed = useEffectEvent((error: unknown): void => reportError(error));
   useEffect(() => {
     const watching = new AbortController();
-    const unwatch = watchFileLinks(store, (candidates, signal) => backend.fileLinks(candidates, signal), watching.signal, (error) => fileLinksFailed(error));
+    const watchStore = (watched: TranscriptStore): (() => void) => watchFileLinks(watched, (candidates, signal) => backend.fileLinks(candidates, signal), watching.signal, (error) => fileLinksFailed(error));
+    const unwatchMain = watchStore(store);
+    const unwatchAgents = agents.watch(watchStore);
     return () => {
       watching.abort();
-      unwatch();
+      unwatchMain();
+      unwatchAgents();
     };
-  }, [store, backend]);
+  }, [store, backend, agents]);
 
   const inboxChanged = useEffectEvent((): void => {
     refreshInbox().catch(reportError);
@@ -1461,6 +1495,38 @@ export function App(props: AppProps) {
     submitSafely(outcome.text, held);
   };
 
+  const chooseRow = (target: ViewTarget | undefined): void => {
+    listFocusRef.current = target;
+    setListFocus(target);
+  };
+
+  const listRows = (): readonly ViewTarget[] => listTargetsRef.current;
+
+  const openView = (target: ViewTarget): void => {
+    agentsRef.current.open(target.kind === 'main' ? undefined : target.runId);
+    chooseRow(undefined);
+  };
+
+  const onListKey = (event: KeyEvent, pressed: KeyTable): void => {
+    const rowsShown = listRows();
+    const chosen = chosenIndexOf(rowsShown, listFocusRef.current);
+    const listAction = pressed.actionOf(AGENT_LIST_CONTEXTS, event);
+    const rowAt = (index: number): ViewTarget => {
+      const target = rowsShown[index];
+      if (target === undefined) throw new Error(`the list of views has no row ${index}`);
+      return target;
+    };
+    if (listAction === 'agents.next') chooseRow(rowAt(Math.min(chosen + 1, rowsShown.length - 1)));
+    else if (listAction === 'agents.previous') chooseRow(chosen === 0 ? undefined : rowAt(chosen - 1));
+    else if (listAction === 'agents.open') {
+      if (listSeen.current.drawn) openView(rowAt(chosen));
+    }
+    else {
+      chooseRow(undefined);
+      routeKey(keyRouteOf(routeFacts()), event, pressed);
+    }
+  };
+
   const onEditorAction = (action: ActionId | undefined, typed: string | undefined): void => {
     const starting = phase.kind === 'starting';
     const working = (busyRef.current && !betweenRuns.current) || commands.length > 0;
@@ -1488,6 +1554,7 @@ export function App(props: AppProps) {
     else if (action === 'screen.repaint') writeThroughInk('');
     else if (action === 'prompt.pasteImage') runFlow(pasteFromClipboard);
     else if (action === 'editor.deleteBefore' && current.text === '' && attachmentsRef.current.length > 0) setAttachments(attachmentsRef.current.slice(0, -1));
+    else if (action === 'editor.down' && current.text === '' && applyAction(current, action) === current && listRows().length > 0) chooseRow({ kind: 'main' });
     else if (isEditorAction(action)) replaceEditor(applyAction(current, action));
     else if (action === undefined && typed !== undefined) replaceEditor(typedIntoDraft(current, typed));
   };
@@ -1502,6 +1569,7 @@ export function App(props: AppProps) {
     detail: prompts.detailShown(panelFacts),
     shellDraft: editorRef.current.shell,
     menuOpen: slashMenu.open || atMenu.open,
+    agentsChosen: listFocusRef.current !== undefined && listRows().length > 0,
     fullscreen,
   });
 
@@ -1546,6 +1614,9 @@ export function App(props: AppProps) {
         return;
       case 'welcome':
         return;
+      case 'agents':
+        onListKey(event, pressed);
+        return;
       case 'prompt':
       case 'shell':
       case 'menu':
@@ -1575,7 +1646,7 @@ export function App(props: AppProps) {
   const replayHeldKeys = useEffectEvent((events: readonly KeyEvent[]): void => {
     for (const event of events) {
       const route = keyRouteOf(routeFacts());
-      if (route === 'shell' || route === 'menu' || route === 'editor') onKey(event, keys);
+      if (route === 'agents' || route === 'shell' || route === 'menu' || route === 'editor') onKey(event, keys);
     }
   });
 
@@ -1627,17 +1698,32 @@ export function App(props: AppProps) {
     panelOwnsEscape: overlay !== undefined,
     loading: phase.kind === 'ready' ? loading : undefined,
   });
+  const listBase = { subagents: transcript.subagents, shown: shownAgent?.runId, keys, screenReader: a11y.screenReader, columns };
+  const awaitingApproval = transcript.subagents.some((subagent) => subagent.runId === shownAgent?.runId && subagent.awaitingApproval);
+  const headerText =
+    shownAgent === undefined
+      ? undefined
+      : `${agentHeader(shownAgent.agent)} · ${shownAgent.loading !== undefined ? loadingText(shownAgent.loading.applied, shownAgent.loading.backlog) : shownAgent.end !== undefined ? endStateOf(shownAgent.end) : awaitingApproval ? 'waiting for approval' : 'running'}`;
   const rowRequests: RowRequests = {
+    header: headerText === undefined ? 0 : 1,
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(editor, columns),
     invitation: invitationText.length,
     menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
-    subagents: transcript.subagents.length,
+    subagents: agentListRequest({ ...listBase, focus: listFocus === undefined ? undefined : 0 }),
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
     lines: inputShown ? shownAttachments.length + waitingLines.length : 0,
     panel: panel === undefined ? undefined : (panelRows ?? 0),
   };
   const allocation = allocate(rows, rowRequests);
+  const listFacts = { ...listBase, rows: fullscreen ? allocation.subagents : rowRequests.subagents };
+  const listTargets = agentListDrawn(transcript.subagents, shownAgent?.runId) ? viewTargetsOf(transcript.subagents) : [];
+  const listRowsKey = listTargets.map((target) => (target.kind === 'main' ? 'main' : target.runId)).join(' ');
+  if (listSeen.current.rows !== listRowsKey) listSeen.current = { rows: listRowsKey, drawn: false };
+  const shownFocus = listFocus === undefined || listTargets.length === 0 ? undefined : chosenIndexOf(listTargets, listFocus);
+  const listLines = agentListLines({ ...listFacts, focus: shownFocus, now: 0 });
+  const agentFeed = useMemo(() => createHistoryFeed(), [shownAgent, historyGeneration]);
+  const shownFeed = shownAgent === undefined ? feed : agentFeed;
   const transcriptAllocation = panel === undefined ? allocation : allocate(rows, { ...rowRequests, panel: 0 });
   const transcriptWidth = fullscreen ? Math.max(1, columns - SCROLLBAR_COLUMNS) : columns;
   const onlyEntry = visible.count() === 1 ? visible.at(0).entry : undefined;
@@ -1650,7 +1736,7 @@ export function App(props: AppProps) {
   const tailPose = useTailWag(!a11y.reducedMotion && !a11y.screenReader && props.reopen === undefined && props.adoption === undefined && loading === undefined && onlyEntry?.kind === 'banner' && figureDrawn(onlyEntry.banner, transcriptWidth), timers);
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const view = useTranscriptView({
-    store: visible,
+    store: viewed,
     terminal,
     fullscreen: fullscreen && !switching,
     width: transcriptWidth,
@@ -1673,7 +1759,7 @@ export function App(props: AppProps) {
   const followRows = listFollows ? drawnTranscriptRows(allocation.viewport, view.window.rows.length) : undefined;
   const pointerAllocation = followRows === undefined ? allocation : { ...allocation, viewport: followRows };
   const toolView = useToolView({
-    store,
+    store: viewedLive,
     terminal,
     now,
     timers,
@@ -1715,6 +1801,29 @@ export function App(props: AppProps) {
     return true;
   });
   useEffect(() => terminal.input.claim('input-caret', (event) => onInputPress(event)), [terminal]);
+  const listTargetAt = (screenRow: number): ViewTarget | undefined => {
+    const hit = regionAt(allocation, screenRow);
+    return hit?.region === 'subagents' ? listLines[hit.row]?.target : undefined;
+  };
+  const onListPointer = useEffectEvent((event: TerminalEvent): boolean => {
+    if (!fullscreen || switching || toolView.shown || event.type !== 'mouse' || event.button !== 'left') return false;
+    const pressed = listPress.current;
+    if (event.kind === 'press') {
+      listPress.current = listTargetAt(event.row) === undefined ? undefined : { row: event.row, col: event.col };
+      return listPress.current !== undefined;
+    }
+    if (pressed === undefined) return false;
+    if (event.kind === 'move') {
+      if (event.row !== pressed.row || event.col !== pressed.col) listPress.current = undefined;
+      return true;
+    }
+    if (event.kind !== 'release') return false;
+    listPress.current = undefined;
+    const target = event.row === pressed.row && event.col === pressed.col ? listTargetAt(event.row) : undefined;
+    if (target !== undefined) openView(target);
+    return true;
+  });
+  useEffect(() => terminal.input.claim('agent-list', (event) => onListPointer(event)), [terminal]);
   const onChord = useEffectEvent((event: TerminalEvent): boolean => {
     if (event.type !== 'key') return false;
     const step = keys.chordStep(chordContextsOf(routeFacts()), chord.current, event);
@@ -1724,10 +1833,18 @@ export function App(props: AppProps) {
     return true;
   });
   useEffect(() => terminal.input.claim('chord', (event) => onChord(event)), [terminal]);
+  useEffect(
+    () =>
+      terminal.input.observeFrames(() => {
+        if (listSeen.current.rows !== '') listSeen.current.drawn = true;
+      }),
+    [terminal],
+  );
   useEffect(() => {
-    facts.current = { overlay: overlay !== undefined, position: view.position, tasks, terminal, flush: waitUntilRenderFlush };
+    facts.current = { overlay: overlay !== undefined, position: shownAgent === undefined ? view.position : FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush };
     feedRef.current = feed;
-    sourceRef.current = view.source;
+    listTargetsRef.current = listTargets;
+    sourceRef.current = shownAgent === undefined ? view.source : undefined;
     move?.check();
   });
   useEffect(() => move?.attach(handover.surface), [move, handover]);
@@ -1766,7 +1883,8 @@ export function App(props: AppProps) {
   const thoughtWindow = thoughtWindowOf(allocation.viewport);
   useEffect(() => {
     setThoughtWindow(store, thoughtWindow);
-  }, [store, thoughtWindow]);
+    if (viewedLive !== store) setThoughtWindow(viewedLive, thoughtWindow);
+  }, [store, viewedLive, thoughtWindow]);
   const footerFacts =
     phase.kind === 'ready' && overlay === undefined && !a11y.screenReader
       ? {
@@ -1790,12 +1908,18 @@ export function App(props: AppProps) {
         panelFollows={followRows}
         onPanelRows={setPanelRows}
         regions={{
+          header:
+            headerText === undefined ? null : (
+              <Text bold wrap="truncate">
+                {escapeTerminalLine(headerText)}
+              </Text>
+            ),
           transcript: fullscreen && toolView.shown ? (
             toolView.view
           ) : fullscreen ? (
-            <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={visible.count()} following={view.position.following} selection={view.selection} />
+            <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={viewed.count()} following={view.position.following} selection={view.selection} />
           ) : (
-            <HistoryView key={historyGeneration} store={visible} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
+            <HistoryView key={`${historyGeneration}:${shownAgent?.runId ?? ''}`} store={viewed} source={view.source} feed={shownFeed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
           ),
           menu: !menuShown ? null : invitationText.length > 0 ? <InvitationLine rows={fullscreen ? invitationText.slice(0, allocation.menu) : invitationText} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
           waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
@@ -1809,7 +1933,7 @@ export function App(props: AppProps) {
               ))}
             </>
           ) : null,
-          input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, visible.settledAt).length, rowRequests))} /> : null,
+          input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(shownFeed.live(view.source, viewed.settledAt).length, rowRequests))} /> : null,
           footer: (
             <>
               <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />
@@ -1820,7 +1944,7 @@ export function App(props: AppProps) {
               )}
             </>
           ),
-          subagents: <SubagentRows subagents={a11y.screenReader ? [] : transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} timers={timers} />,
+          subagents: <AgentList {...listFacts} focus={shownFocus} now={now} timers={timers} />,
         }}
       />
     </TailPoseContext>

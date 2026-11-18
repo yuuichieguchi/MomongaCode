@@ -8,7 +8,7 @@ import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 const plain = { ctrl: false, alt: false, shift: false };
 const wheel: TerminalEvent = { type: 'mouse', kind: 'wheel', button: 'wheel-up', col: 1, row: 1, ...plain };
 
-const idle: KeyRouteFacts = { trust: false, toolView: false, overlay: undefined, betweenLists: false, welcome: false, prompt: undefined, detail: false, shellDraft: false, menuOpen: false, fullscreen: true };
+const idle: KeyRouteFacts = { trust: false, toolView: false, overlay: undefined, betweenLists: false, welcome: false, prompt: undefined, detail: false, shellDraft: false, menuOpen: false, agentsChosen: false, fullscreen: true };
 
 describe('one claim table orders the claims by their priority, never by the order they were made in', () => {
   const offeredIn = (order: readonly ClaimPriority[]): string[] => {
@@ -33,13 +33,15 @@ describe('one claim table orders the claims by their priority, never by the orde
 });
 
 describe('the keyboard is routed by one value', () => {
-  it('gives the key to the highest state: trust, the tool output view, an overlay, the gap between two lists, the welcome, a run prompt, the shell draft, the menu, the editor', () => {
+  it('gives the key to the highest state: trust, the tool output view, an overlay, the gap between two lists, the welcome, a run prompt, the list of views, the shell draft, the menu, the editor', () => {
     expect(keyRouteOf({ ...idle, trust: true, overlay: 'pick', prompt: 'decision', menuOpen: true })).toBe('trust');
     expect(keyRouteOf({ ...idle, toolView: true, overlay: 'pick' })).toBe('tool-view');
     expect(keyRouteOf({ ...idle, overlay: 'loading', betweenLists: true, prompt: 'decision' })).toBe('overlay');
     expect(keyRouteOf({ ...idle, betweenLists: true, prompt: 'decision' })).toBe('between-lists');
     expect(keyRouteOf({ ...idle, welcome: true, menuOpen: true })).toBe('welcome');
     expect(keyRouteOf({ ...idle, prompt: 'decision', shellDraft: true, menuOpen: true })).toBe('prompt');
+    expect(keyRouteOf({ ...idle, prompt: 'decision', agentsChosen: true })).toBe('prompt');
+    expect(keyRouteOf({ ...idle, agentsChosen: true, shellDraft: true, menuOpen: true })).toBe('agents');
     expect(keyRouteOf({ ...idle, shellDraft: true, menuOpen: true })).toBe('shell');
     expect(keyRouteOf({ ...idle, menuOpen: true })).toBe('menu');
     expect(keyRouteOf(idle)).toBe('editor');
@@ -58,6 +60,7 @@ describe('the keyboard is routed by one value', () => {
     expect(chordContextsOf({ ...idle, betweenLists: true })).toEqual([]);
     expect(chordContextsOf({ ...idle, welcome: true })).toEqual([]);
     expect(chordContextsOf({ ...idle, shellDraft: true })).toEqual(['shell', 'viewport', 'chat', 'global']);
+    expect(chordContextsOf({ ...idle, agentsChosen: true })).toEqual(['agents', 'viewport', 'chat', 'global']);
     expect(chordContextsOf({ ...idle, menuOpen: true })).toEqual(['menu', 'viewport', 'chat', 'global']);
     expect(chordContextsOf({ ...idle, fullscreen: false })).toEqual(['chat', 'global']);
   });

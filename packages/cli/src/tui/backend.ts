@@ -31,6 +31,7 @@ import { newerListenerOf } from '../handover/stream.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun, followSession } from '../run/follow.ts';
+import type { ChildEnd } from '../run/follow.ts';
 import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
@@ -47,8 +48,8 @@ import type { FileLinkPlace, FileLinkPorts, FileLinks } from './screen/file-link
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
   onChildEvent(frame: RunEventFrame, agent: string): void;
-  onChildStarted(agent: string, runId: string): void;
-  onChildEnded(agent: string, runId: string): void;
+  onChildStarted(agent: string, runId: string, backlog: number): void;
+  onChildEnded(agent: string, runId: string, end: ChildEnd): void;
   onReconnecting(attempt: number): void;
   onDaemonStopping(): void;
 };

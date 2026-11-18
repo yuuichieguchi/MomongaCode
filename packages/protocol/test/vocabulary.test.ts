@@ -114,7 +114,7 @@ describe('messageOf: one builder per message, which names the command of the sur
       notAnId: (surface) => messageOf('notAnId', surface, { value: '..' }),
       optionNeedsPrint: (surface) => messageOf('optionNeedsPrint', surface, { option: '--verbose' }),
       optionNeedsInteractive: (surface) => messageOf('optionNeedsInteractive', surface, { option: '--screen-reader' }),
-      promptGivenTwice: (surface) => messageOf('promptGivenTwice', surface, { prompt: 'two' }),
+      promptGivenTwice: (surface) => messageOf('promptGivenTwice', surface, { value: 'one', prompt: 'two' }),
       resumeNeedsIdToPrint: (surface) => messageOf('resumeNeedsIdToPrint', surface),
       issueNeedsMandate: (surface) => messageOf('issueNeedsMandate', surface),
       issueBesidePrompt: (surface) => messageOf('issueBesidePrompt', surface),

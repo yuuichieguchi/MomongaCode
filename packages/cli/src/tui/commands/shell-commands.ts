@@ -2,39 +2,59 @@ import { describeFailure } from '../../failure.ts';
 import { commandWords } from '../command-words.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
+type ShellSubcommand = { readonly name: string; readonly description: string };
+
 type ShellSlash = {
   readonly name: string;
   readonly usage: string;
   readonly description: string;
-  readonly subcommands?: readonly string[];
+  readonly subcommands?: readonly ShellSubcommand[];
   readonly elsewhere?: Readonly<Record<string, string>>;
 };
 
 export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   { name: 'cost', usage: '[run-id] [--session <id>] [--all] [--breakdown] [--json]', description: 'show the model cost of a run, of a session, or of the sessions of this folder' },
   { name: 'reliability', usage: '[--group-by <key>] [--days <n>] [--explain]', description: 'report the completion, recovery, duplicate, intervention, budget, time and cost indicators of the ended runs of the period' },
-  { name: 'auth', usage: 'status [--json] | logout <account>', description: 'show the saved subscription accounts, or sign one out', subcommands: ['status', 'logout'], elsewhere: { login: 'sign in with /login' } },
+  { name: 'auth', usage: 'status [--json] | logout <account>', description: 'show the saved subscription accounts, or sign one out', subcommands: [
+      { name: 'status', description: 'show the saved accounts, their state, where to manage usage, and the model new sessions start with or the model named' },
+      { name: 'logout', description: 'sign out a saved account' },
+    ], elsewhere: { login: 'sign in with /login' } },
   { name: 'status', usage: '[run-id] [--json]', description: 'show a run, the subagent runs under it and the approvals waiting in them' },
   { name: 'jobs', usage: '[session-id] [--json]', description: 'list the background jobs of a session, including those of its subagents' },
   { name: 'trace', usage: '[run-id] [--json]', description: 'show the model and tool spans of a run' },
-  { name: 'mcp', usage: 'list [--json] | login <server> [--no-browser]', description: 'inspect and authorize the MCP servers of this folder', subcommands: ['list', 'login'] },
+  { name: 'mcp', usage: 'list [--json] | login <server> [--no-browser]', description: 'inspect and authorize the MCP servers of this folder', subcommands: [
+      { name: 'list', description: 'list the MCP servers with their transport and authorization state' },
+      { name: 'login', description: 'authorize a remote MCP server in the browser' },
+    ] },
   {
     name: 'context',
     usage: 'improve --dataset <file> --model <model> --token-cap <n> --outcome <file> | guideline adopt <file> | guideline list | guideline rollback <version>',
     description: 'improve how the context is compacted, and inspect, adopt and roll back the compaction guideline',
-    subcommands: ['improve', 'guideline'],
+    subcommands: [
+      { name: 'improve', description: 'improve how the context is compacted, from the failures a bench shows' },
+      { name: 'guideline', description: 'inspect, adopt and roll back the compaction guideline' },
+    ],
   },
-  { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>] [--mandate <name>]', description: 'check the permission rules of this folder', subcommands: ['verify'] },
+  { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>] [--mandate <name>]', description: 'check the permission rules of this folder', subcommands: [
+      { name: 'verify', description: 'prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect' },
+    ] },
   { name: 'models', usage: '[--json] | detect [url...] [--json]', description: 'list the configured models with the capabilities they declare, or find the local model servers that are running' },
-  { name: 'gateway', usage: 'probe <model> [--samples <count>] [--step-timeout <seconds>] [--yes]', description: 'measure a model and record the result for the gateway', subcommands: ['probe'] },
+  { name: 'gateway', usage: 'probe <model> [--samples <count>] [--step-timeout <seconds>] [--yes]', description: 'measure a model and record the result for the gateway', subcommands: [{ name: 'probe', description: 'measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record what it supports' }] },
 ];
 
-const refusalOf = (entry: ShellSlash | undefined, words: readonly string[]): string | undefined => {
+const subcommandLines = (entry: ShellSlash, subcommands: readonly ShellSubcommand[]): string[] => {
+  const width = Math.max(...subcommands.map((subcommand) => subcommand.name.length));
+  return [...subcommands.map((subcommand) => `  /${entry.name} ${subcommand.name.padEnd(width)}  ${subcommand.description}`), `usage: /${entry.name} ${entry.usage}`];
+};
+
+const answerWithoutRunning = (entry: ShellSlash | undefined, words: readonly string[]): string | undefined => {
+  if (entry?.subcommands === undefined) return undefined;
   const [first] = words;
-  if (entry?.subcommands === undefined || first === undefined || first.startsWith('-') || entry.subcommands.includes(first)) return undefined;
-  const usage = `usage: /${entry.name} ${entry.usage}`;
+  if (first === undefined) return [`/${entry.name} has these subcommands:`, ...subcommandLines(entry, entry.subcommands)].join('\n');
+  if (first.startsWith('-') || entry.subcommands.some((subcommand) => subcommand.name === first)) return undefined;
   const pointer = entry.elsewhere?.[first];
-  return pointer === undefined ? `/${entry.name} has no subcommand ${first}; ${usage}` : `${usage}; ${pointer}`;
+  if (pointer !== undefined) return `usage: /${entry.name} ${entry.usage}; ${pointer}`;
+  return [`/${entry.name} has no subcommand ${first}; it has these subcommands:`, ...subcommandLines(entry, entry.subcommands)].join('\n');
 };
 
 export const runShellCommand = async (name: string, line: string, context: SlashContext): Promise<void> => {
@@ -43,12 +63,12 @@ export const runShellCommand = async (name: string, line: string, context: Slash
     context.info(`/${name} was not run: ${parsed.reason}`);
     return;
   }
-  const refusal = refusalOf(
+  const answer = answerWithoutRunning(
     SHELL_SLASH_COMMANDS.find((entry) => entry.name === name),
     parsed.words,
   );
-  if (refusal !== undefined) {
-    context.info(refusal);
+  if (answer !== undefined) {
+    context.info(answer);
     return;
   }
   const argv = [name, ...parsed.words];

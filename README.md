@@ -71,7 +71,7 @@ Add one model by one of the three routes below, then run a prompt. The first com
    momonga models add --address http://127.0.0.1:11434 --model <own name> --yes
    ```
 
-   An Ollama server reports the context window and the tool support of its models, so you do not give `--window`. For a server that does not report the window, the command says so; give it with `--window <tokens>`.
+   An Ollama server reports the context window and the tool support of its models, so you do not give `--window`. For a server that does not report the window, or an address where no server answers, the command says so and writes nothing; give it with `--window <tokens>`.
 3. Check that the model is seen:
 
    ```sh
