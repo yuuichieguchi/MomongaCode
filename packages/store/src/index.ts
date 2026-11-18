@@ -17,7 +17,7 @@ export type {
   InheritedWindowRequest,
   WindowEntry,
 } from './inherit-reference.ts';
-export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
+export { StoreIdentityError, isFatalStoreError, isStoreFullError } from './fatal.ts';
 export { UNKNOWN_VALUE, UnknownValueError, knownValue } from './rows.ts';
 export type { Stored } from './rows.ts';
 export { DuplicateChargeError } from './context-charges.ts';

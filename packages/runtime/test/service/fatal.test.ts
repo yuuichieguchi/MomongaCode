@@ -6,6 +6,7 @@ import { expectError, startService, pollFor } from './helpers.ts';
 const SQLITE_IOERR = 10;
 const SQLITE_CORRUPT = 11;
 const SQLITE_BUSY = 5;
+const SQLITE_FULL_EXTENDED = 13 | (1 << 8);
 const SWEEP_INTERVAL_MS = 600_000;
 const POLL_INTERVAL_MS = 1000;
 
@@ -57,6 +58,18 @@ describe('service fatal routing (fake timers)', () => {
     expect(env.fatals).toEqual([fatal]);
     expect(env.fatals[0]).toBe(fatal);
     expect(env.errors).toEqual([]);
+  });
+
+  it('a store write refused because the disk is full answers the typed runtime_store_unwritable refusal naming the cause and the remedy', async () => {
+    const faults: Faults = new Map();
+    const env = await startService({ fakeTimers: true, onFatal: true, wrapStore: faultyStore(faults) });
+    faults.set('createSession', sqliteError(SQLITE_FULL_EXTENDED, 'database or disk is full'));
+
+    const response = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: { PATH: '/usr/bin:/bin' } } });
+
+    expectError(response, 507, 'runtime_store_unwritable');
+    expect(response.json).toMatchObject({ error: { type: 'server_error', message: expect.stringMatching(/database or disk is full.*free disk space/) } });
+    expect(env.fatals).toEqual([]);
   });
 
   it('a fatal sweeper error calls onFatal', async () => {
