@@ -86,6 +86,22 @@ export const claimRetry = (marker: string, kind: RetryKind, { signal, files = no
     }
   });
 
+export type ReturnOutcome = 'returned' | 'absent';
+
+export const returnRetry = (marker: string, kind: RetryKind, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<ReturnOutcome> =>
+  singleFlight(marker, async () => {
+    let text: string;
+    try {
+      text = await files.read(marker);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent';
+      throw error;
+    }
+    if (text === '' || !RECORD_FORM.test(text)) throw new Error(`the marker ${marker} holds no attempt record its ${kind} chance can be returned to`);
+    await files.writeByte(marker, RETRY_KINDS.indexOf(kind) + 1, '0');
+    return 'returned';
+  });
+
 const groupText = (pgid: number, name: string | undefined): string => `g${String(pgid).padStart(GROUP_DIGITS, '0')}\n${name === undefined ? '' : `j${name}\n`}`;
 
 export type RecordGroupOptions = { files?: RecordFiles; names?: GroupNames | undefined };

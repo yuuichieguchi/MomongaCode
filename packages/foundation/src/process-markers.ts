@@ -16,7 +16,7 @@ import { systemWaitTiming } from './system-timing.ts';
 import { sleep } from './timing.ts';
 import type { Timing } from './timing.ts';
 import { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
-import { RETRY_KINDS, claimRetry, isMalformedRecord, nodeRecordFiles, parseAttemptRecord, parseRecordedGroup, parseRecordedGroupName, readMarkerGroup, readRecordText } from './platform/marker-record.ts';
+import { RETRY_KINDS, claimRetry, isMalformedRecord, nodeRecordFiles, parseAttemptRecord, parseRecordedGroup, parseRecordedGroupName, readMarkerGroup, readRecordText, returnRetry } from './platform/marker-record.ts';
 import type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 
 const asyncSenderOf = (kill: SignalSender | undefined): AsyncSignalSender =>
@@ -491,7 +491,7 @@ const lstatIfPresent = async (target: string): Promise<Stats | undefined> => {
   }
 };
 
-export type ReapReport = { removed: boolean; stopped: boolean; uninspectable: UninspectableProcess[] };
+export type ReapReport = { removed: boolean; stopped: boolean; unread: boolean; uninspectable: UninspectableProcess[] };
 
 type HolderPass = { unsignalled: Set<number>; leftAlone: number[]; signalled: boolean };
 
@@ -551,20 +551,20 @@ const leftAloneWarning = (label: string, marker: string, pids: readonly number[]
 const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal): Promise<ReapReport> => {
   const { marker, pgid, killGraceMs, label, onWarning, kill, timing = systemWaitTiming, inspector, markerMode = 'listed' } = options;
   const send = asyncSenderOf(kill);
-  const ended = (stopped: boolean, uninspectable: UninspectableProcess[]): ReapReport => ({ removed: false, stopped, uninspectable });
-  if (stop.aborted) return ended(false, []);
+  const ended = (stopped: boolean, uninspectable: UninspectableProcess[], unread: boolean): ReapReport => ({ removed: false, stopped, unread, uninspectable });
+  if (stop.aborted) return ended(false, [], true);
   const stat = await lstatIfPresent(marker);
-  if (stat === undefined) return { removed: true, stopped: false, uninspectable: [] };
+  if (stat === undefined) return { removed: true, stopped: false, unread: false, uninspectable: [] };
   if (!stat.isFile()) {
     await nodeFileSystem.rm(marker);
     onWarning(`${label} marker ${marker} was not a regular file, so it was removed without being followed`);
-    return { removed: true, stopped: false, uninspectable: [] };
+    return { removed: true, stopped: false, unread: false, uninspectable: [] };
   }
   const recorded = pgid ?? (await readRecordedGroup(marker));
   const group = groupPortOf(options.groupPort, kill);
   if (recorded !== undefined && (await recallMarkerGroup(group, marker, recorded)) === 'unknown') {
     onWarning(`${label} marker ${marker} kept: it records no name for group ${recorded}, and this process did not start that group, so its processes cannot be proved`);
-    return ended(false, []);
+    return ended(false, [], false);
   }
   const ownGroup = (await holderGroups([process.pid], recorded === undefined ? [] : [recorded], { signal: stop, inspector }))[0];
   const unsettled = new Map<number, UninspectableProcess>();
@@ -582,7 +582,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
     if (result.unsignalledPids.length > 0) {
       onWarning(`${label} marker ${marker}: could not signal process ${joinPids(result.unsignalledPids)}`);
     }
-    if (stop.aborted) return ended(stopped, [...unsettled.values()]);
+    if (stop.aborted) return ended(stopped, [...unsettled.values()], true);
     remaining = end.lastHolders;
   } else {
     const { unsignalled, leftAlone, signalled } = await signalHoldersOnly(marker, killGraceMs, send, timing, stop, inspector, unsettled);
@@ -591,21 +591,21 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
     if (unsignalled.size > 0) {
       onWarning(`${label} marker ${marker}: could not signal process ${joinPids([...unsignalled])}`);
     }
-    if (stop.aborted) return ended(stopped, [...unsettled.values()]);
+    if (stop.aborted) return ended(stopped, [...unsettled.values()], true);
     remaining = await holdersAfterWindow(marker, { inspector, timing, signal: stop }, KILL_CONFIRM_MS, unsettled);
   }
   if (remaining.length > 0) {
     onWarning(`${label} marker ${marker} kept: process ${joinPids(remaining)} still hold it after cleanup; the next start will retry`);
-    return ended(stopped, [...unsettled.values()]);
+    return ended(stopped, [...unsettled.values()], false);
   }
-  if (unsettled.size > 0) return ended(stopped, [...unsettled.values()]);
+  if (unsettled.size > 0) return ended(stopped, [...unsettled.values()], true);
   const state = await inspector.markerState(marker, { signal: stop, mode: markerMode });
   if (state !== 'free') {
     if (!stop.aborted) onWarning(`${label} marker ${marker} kept: no process holds it, but its state reads ${state} rather than free`);
-    return ended(stopped, []);
+    return ended(stopped, [], state === 'unknown' || stop.aborted);
   }
   await nodeFileSystem.rm(marker);
-  return { removed: true, stopped, uninspectable: [] };
+  return { removed: true, stopped, unread: false, uninspectable: [] };
 };
 
 class ReapUnlisted extends Error {
@@ -626,7 +626,7 @@ const reapObserved = async (options: ReapMarkedProcessesOptions): Promise<ReapRe
     return await reapWithin(options, operation.signal);
   } catch (error) {
     const endedRead = error instanceof ReapUnlisted || error instanceof ProbeFailedError;
-    if (endedRead && endedByAsker(operation.signal)) return { removed: false, stopped: error instanceof ReapUnlisted && error.signalled, uninspectable: [] };
+    if (endedRead && endedByAsker(operation.signal)) return { removed: false, stopped: error instanceof ReapUnlisted && error.signalled, unread: true, uninspectable: [] };
     throw error instanceof ReapUnlisted ? error.failure : error;
   } finally {
     operation.end();
@@ -696,7 +696,7 @@ export const survivorNoticeText = (label: string, name: string, group: number | 
 
 const allRetriesSpent = (record: AttemptRecord): boolean => RETRY_KINDS.every((kind) => record.spent[kind]);
 
-type MarkerReap = (marker: string) => Promise<{ removed: boolean }>;
+type MarkerReap = (marker: string) => Promise<ReapReport>;
 
 const readTextIfPresent = async (marker: string): Promise<string | undefined> => {
   try {
@@ -727,7 +727,21 @@ const reapOnOccasion = async (marker: string, occasion: RetryKind, label: string
   const claim = await claimRetry(marker, occasion, { signal });
   if (claim === 'absent') return { removed: true };
   if (claim !== 'claimed') return { removed: false };
-  const reaped = await reap(marker);
+  let reaped: ReapReport;
+  try {
+    reaped = await reap(marker);
+  } catch (error) {
+    const returned = await returnRetry(marker, occasion).then(
+      () => undefined,
+      (failure: unknown) => failure,
+    );
+    if (returned !== undefined) throw new AggregateError([error, returned], `the reap of ${marker} failed and its ${occasion} chance could not be returned`);
+    throw error;
+  }
+  if (reaped.unread) {
+    await returnRetry(marker, occasion);
+    return reaped;
+  }
   if (!reaped.removed && allRetriesSpent({ ...record, spent: { ...record.spent, [occasion]: true } })) await tellPerson();
   return reaped;
 };
@@ -746,7 +760,7 @@ export const reapMarkerDirectory = async ({
 }: ReapMarkerDirectoryOptions): Promise<ReapMarkerDirectoryResult> => {
   const markers = await markerFilesUnder(dir);
   const reap: MarkerReap = (marker) =>
-    reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(groupPort === undefined ? {} : { groupPort }), ...(timing === undefined ? {} : { timing }), signal, inspector });
+    reapMarkedProcessesWithReport({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(groupPort === undefined ? {} : { groupPort }), ...(timing === undefined ? {} : { timing }), signal, inspector });
   const outcomes = await Promise.all(
     markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
       try {

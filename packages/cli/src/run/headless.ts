@@ -6,6 +6,7 @@ import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { shellModelsOf } from '../plain-http.ts';
@@ -484,7 +485,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
         seen(frame);
         sink.absorb(frame);
       },
-      reconnectBoundMs: await daemonReadyBoundMs(),
+      reconnectBoundMs: await daemonReadyBoundMs(ports, stderrStopNotice(ports)),
       restoreConnection: restoreDaemon(ports, paths, newerListenerOf(ports)),
       onEvent: (frame) => {
         seen(frame);

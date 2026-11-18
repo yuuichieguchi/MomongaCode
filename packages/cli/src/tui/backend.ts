@@ -300,7 +300,7 @@ export const createTuiBackend = (
         clock: ports.clock,
         random: ports.random,
         runId,
-        reconnectBoundMs: await daemonReadyBoundMs(),
+        reconnectBoundMs: await daemonReadyBoundMs(ports, onNotice),
         restoreConnection: restoreDaemon(ports, paths, onNewer),
         onEvent: handlers.onEvent,
         onChildEvent: handlers.onChildEvent,
@@ -325,7 +325,7 @@ export const createTuiBackend = (
           random: ports.random,
           sessionId,
           after,
-          reconnectBoundMs: await daemonReadyBoundMs(),
+          reconnectBoundMs: await daemonReadyBoundMs(ports, onNotice),
           restoreConnection: restoreDaemon(ports, paths, onNewer),
           onEvent: (frame) => {
             if (frame.data.type === 'inbox.changed') changed();

@@ -21,6 +21,7 @@ import type { KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, 
 import { interceptors, request } from 'undici';
 import { withOutboundNetwork } from '../network.ts';
 import { daemonReadyBoundMs } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import { listLiveGenerations, retiringWorkOf } from '../daemon/generations.ts';
 import type { CliClock, CliPorts } from '../ports.ts';
 import type { DaemonProbe, StagedFile, UpdateFs, UpdateHttp, UpdateLock, UpdatePorts, UpdateStateStore } from './ports.ts';
@@ -154,10 +155,10 @@ export const nodeUpdateState = (paths: MomongaPaths, lock: KernelLockMechanism):
   };
 };
 
-export const nodeDaemonProbe = (paths: MomongaPaths, ports: Pick<CliPorts, 'clock' | 'endpointScope'>, lock: KernelLockMechanism): DaemonProbe => ({
+export const nodeDaemonProbe = (paths: MomongaPaths, ports: Pick<CliPorts, 'clock' | 'endpointScope' | 'env' | 'home' | 'stderr'>, lock: KernelLockMechanism): DaemonProbe => ({
   running: async () => (await listGenerations(paths, { lock })).some((listed) => listed.live),
   retiring: async () => retiringWorkOf(await listLiveGenerations(ports, paths, { lock })),
-  readyBoundMs: () => daemonReadyBoundMs(),
+  readyBoundMs: () => daemonReadyBoundMs(ports, stderrStopNotice(ports)),
 });
 
 const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>

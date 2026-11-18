@@ -16,7 +16,7 @@ import {
   supervisorStartBoundMs,
 } from '@momonga/supervisor';
 import { CLEANUP_KILL_DEADLINE_MS } from '@momonga/testkit';
-import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
+import { readyBoundOfStallMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
 import { REFLECTION_PICKUP_BOUND_MS } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
 import { SWEEP_INTERVAL_MS } from '../../packages/runtime/src/service/service.ts';
@@ -81,8 +81,8 @@ export const e2eTestTimeoutMs = (...sequentialBoundsMs: readonly number[]): numb
 export const E2E_LONGEST_WAIT_MS = Math.max(...Object.values(E2E_TEST_WAIT_BOUNDS_MS));
 export const E2E_TEST_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_LONGEST_WAIT_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 export const E2E_SOLVER_LOAD_ALLOWANCE_MS = STARTUP_TIMEOUT_MS + E2E_MARGIN_MS;
-export const policyVerifyBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_SOLVER_LOAD_ALLOWANCE_MS + RULE_VERIFY_BUDGET_MS;
-export const newerClientRunBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_RUN_COMPLETED_BOUND_MS;
+export const policyVerifyBoundMs = async (): Promise<number> => (await readyBoundOfStallMs(STARTUP_TIMEOUT_MS)) + E2E_SOLVER_LOAD_ALLOWANCE_MS + RULE_VERIFY_BUDGET_MS;
+export const newerClientRunBoundMs = async (): Promise<number> => (await readyBoundOfStallMs(STARTUP_TIMEOUT_MS)) + E2E_RUN_COMPLETED_BOUND_MS;
 export const UNTIL_DEFAULT_INTERVAL_MS = 20;
 
 export type Truthy<T> = Exclude<T, false | null | undefined | 0 | ''>;

@@ -1,12 +1,11 @@
 import path from 'node:path';
-import { readUserStopValuesOrDefault } from '@momonga/config';
+import { readUserStartupStallMsOrDefault, readUserStopValuesOrDefault } from '@momonga/config';
 import {
   isProcessAlive,
   CurrentGenerationUnreadableError,
   GenerationPrepareError,
   HOST_READ_BOUND_MS,
   LIFELINE_FD,
-  STARTUP_TIMEOUT_MS,
   STDIO_FLUSH_MS,
   STOP_WAIT_WHEN_UNKNOWN_MS,
   beginGenerationStart,
@@ -38,6 +37,7 @@ import { CANDIDATE_CHECK_TIMEOUT_MS } from '../update/install.ts';
 import { reportVersionInvocation, superviseInvocation } from './launcher.ts';
 import { anotherVersionInstalledText, installedVersionUnreportedText, startFailureText } from './start-failure.ts';
 import type { StartFailure } from './start-failure.ts';
+import { stderrStopNotice } from './stop-notice.ts';
 import type { StopNotice } from './stop-notice.ts';
 import type { MoveStanding, OwnGeneration } from '../handover/mover.ts';
 
@@ -51,7 +51,7 @@ export class DaemonStartError extends Error {
   }
 }
 
-export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers' | 'endpointScope' | 'files' | 'process'>;
+export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers' | 'endpointScope' | 'files' | 'process' | 'stderr'>;
 
 export type DaemonConnection = { health: SupervisorHealth; clientIsOlder: boolean };
 
@@ -88,9 +88,22 @@ export const startProgressMarkOf = (health: SupervisorHealth | undefined): strin
     ? 'no supervisor'
     : JSON.stringify([health.phase, health.children.map((child) => [child.role, child.state, child.startedAt, child.progressAt, child.readyAt, child.restarts])]);
 
-export const daemonReadyBoundMs = async (): Promise<number> => {
+export const readyBoundOfStallMs = async (startupTimeoutMs: number): Promise<number> => {
   const { DEFAULT_RESTART_POLICY, childRestartBoundMs, resolveStartTiming, supervisorStartBoundMs } = await import('@momonga/supervisor');
-  return Math.max(supervisorStartBoundMs(resolveStartTiming({})), childRestartBoundMs({ policy: DEFAULT_RESTART_POLICY, startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS }));
+  return Math.max(supervisorStartBoundMs(resolveStartTiming({ startupTimeoutMs })), childRestartBoundMs({ policy: DEFAULT_RESTART_POLICY, startupTimeoutMs, stdioFlushMs: STDIO_FLUSH_MS }));
+};
+
+const STARTUP_STALL_READ = 'the read of the start-up stall limit from the user settings';
+
+export const daemonReadyBoundMs = async (ports: Pick<DaemonPorts, 'env' | 'home'>, onNotice: StopNotice): Promise<number> => {
+  const limit = operationLimit(new AbortController().signal, HOST_READ_BOUND_MS, STARTUP_STALL_READ);
+  let startupTimeoutMs: number;
+  try {
+    startupTimeoutMs = await readUserStartupStallMsOrDefault({ env: ports.env, home: ports.home, signal: limit.signal, onNotice });
+  } finally {
+    limit.dispose();
+  }
+  return readyBoundOfStallMs(startupTimeoutMs);
 };
 
 export { STOP_WAIT_WHEN_UNKNOWN_MS };
@@ -425,7 +438,7 @@ const wrapStartError = (paths: MomongaPaths, error: unknown): unknown => {
 export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<DaemonConnection> => {
   const { signal } = options;
   signal?.throwIfAborted();
-  const readyMs = options.bounds?.readyMs ?? (await daemonReadyBoundMs());
+  const readyMs = options.bounds?.readyMs ?? (await daemonReadyBoundMs(ports, stderrStopNotice(ports)));
   const lock = options.lock ?? resolveLayoutLocks(paths).mechanism;
   const scope = await ports.endpointScope(paths);
   const start: { own: OwnStart | undefined } = { own: undefined };
