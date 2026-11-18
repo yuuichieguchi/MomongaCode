@@ -5,7 +5,7 @@ import type { ActionId, ActionRow, KeyContext, KeySpec } from './table.ts';
 
 export const KEY_FILE_MAX_BYTES = 64 * 1024;
 
-export const TEXT_CONTEXTS: readonly KeyContext[] = ['chat', 'menu', 'shell'];
+export const TEXT_CONTEXTS: readonly KeyContext[] = ['chat', 'menu', 'agents', 'shell'];
 
 export const KEPT_WITH_A_KEY: readonly ActionId[] = ['select.decide', 'select.escape', 'prompt.submit'];
 

@@ -143,6 +143,10 @@ export type ChildFrameHandler = (frame: RunEventFrame, agent: string) => void;
 
 export type ChildLifeHandler = (agent: string, runId: string) => void;
 
+export type ChildEnd = { readonly kind: 'finished'; readonly run: RunView } | { readonly kind: 'failed'; readonly error: unknown };
+
+export type ChildEndHandler = (agent: string, runId: string, end: ChildEnd) => void;
+
 export type FollowOptions = {
   client: RuntimeClient;
   clock: CliClock;
@@ -155,7 +159,7 @@ export type FollowOptions = {
   onEvent(frame: RunEventFrame): void;
   onChildEvent?: ChildFrameHandler;
   onChildStarted?: ChildLifeHandler;
-  onChildEnded?: ChildLifeHandler;
+  onChildEnded?: ChildEndHandler;
   onReconnecting?(attempt: number): void;
   onDaemonStopping(): void;
   signal?: AbortSignal;
@@ -198,13 +202,13 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
         onDaemonStopping: stopping,
         signal,
       }).then(
-        () => {
-          options.onChildEnded?.(agent, childRunId);
+        (run) => {
+          options.onChildEnded?.(agent, childRunId, { kind: 'finished', run });
         },
         (error: unknown) => {
           childFailure ??= { error };
           stop.abort();
-          options.onChildEnded?.(agent, childRunId);
+          options.onChildEnded?.(agent, childRunId, { kind: 'failed', error });
         },
       ),
     );

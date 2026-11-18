@@ -2,7 +2,7 @@ import type { KeyEvent, KeyModifiers } from '../terminal/events.ts';
 import { NEWLINE_HINT } from '../terminal/negotiation.ts';
 import type { NegotiationState } from '../terminal/negotiation.ts';
 
-export const KEY_CONTEXTS = ['chat', 'menu', 'select', 'viewport', 'viewer', 'shell', 'global'] as const;
+export const KEY_CONTEXTS = ['chat', 'menu', 'agents', 'select', 'viewport', 'viewer', 'shell', 'global'] as const;
 
 export type KeyContext = (typeof KEY_CONTEXTS)[number];
 
@@ -49,6 +49,9 @@ export const KEYS = [
   { id: 'menu.complete', context: 'menu', default: ['tab'], description: 'complete the highlighted command' },
   { id: 'menu.run', context: 'menu', default: ['enter'], description: 'run the highlighted command' },
   { id: 'menu.close', context: 'menu', default: ['escape', 'ctrl+c'], description: 'close the menu' },
+  { id: 'agents.previous', context: 'agents', default: ['up'], description: 'the row above in the list of views; above main, back to the input' },
+  { id: 'agents.next', context: 'agents', default: ['down'], description: 'the row below in the list of views' },
+  { id: 'agents.open', context: 'agents', default: ['enter'], description: 'show the view of the chosen row: main or a running subagent' },
   { id: 'select.up', context: 'select', default: ['up', 'ctrl+p', 'k'], description: 'move up' },
   { id: 'select.down', context: 'select', default: ['down', 'ctrl+n', 'j'], description: 'move down' },
   { id: 'select.pageUp', context: 'select', default: ['pageup'], description: 'move up by a page' },
