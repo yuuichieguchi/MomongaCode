@@ -309,6 +309,12 @@ describe('a live context run', () => {
     expect(settings[0].models).not.toHaveProperty('targets');
   });
 
+  it('makes every case workspace a git folder, so the executor observes the files a Bash call writes there', async () => {
+    const context = harness();
+    await runContextLive(context.effects, input());
+    expect([...context.files.keys()].filter((file) => file.endsWith('/.git/HEAD'))).toEqual(['/tmp/mc-xxxxxx0/w/.git/HEAD', '/tmp/mc-xxxxxx1/w/.git/HEAD']);
+  });
+
   it('trusts the workspace and seeds the memory through the run api, with paths relative to the workspace', async () => {
     const context = harness();
     await runContextLive(context.effects, input());

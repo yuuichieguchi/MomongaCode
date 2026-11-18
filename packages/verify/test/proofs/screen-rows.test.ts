@@ -58,4 +58,25 @@ describe('screen rows (design/cli-tui.md sections 3.1 and 15.4): the allocation 
       SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
     );
   }
+  for (const withPanel of [false, true]) {
+    it(
+      `keeps the input box and every row below it where they are when only the waiting row, the menu or the rows above the input change, ${withPanel ? 'with' : 'without'} a prompt panel`,
+      async () => {
+        const arith = proofArith(z3.engine().api, `screen-rows-still-${withPanel ? 'panel' : 'input'}`);
+        const { ctx } = arith;
+        const ops = proofOps(arith);
+        const height = heightOf(arith);
+        const requests = requestsOf(arith, '');
+        const changed = requestsOf(arith, 'changed-');
+        for (const name of ['inputRows', 'subagents', 'footerSecond'] as const) arith.given(changed[name].eq(requests[name]));
+        const panel = withPanel ? arith.int('panel') : undefined;
+        if (panel !== undefined) arith.given(panel.ge(0));
+        const before = allocateWith(ops, height, requests, panel);
+        const after = allocateWith(ops, height, changed, panel);
+        const goal = ctx.And(before.input.eq(after.input), before.footer.eq(after.footer), before.subagents.eq(after.subagents));
+        expect(await prove(arith, goal)).toEqual({ status: 'proved' });
+      },
+      SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+    );
+  }
 });

@@ -4,6 +4,7 @@ import type { TestProject } from 'vitest/node';
 import { stateDirOf } from '../../scripts/support/dev-state.ts';
 import { RUN_CLASS_KEY, classOfSelection } from '../../scripts/support/run-class.ts';
 import { wholeRunRefusalOf } from './whole-run-guard.ts';
+import { gateDecisionOf, gateRecordPathOf, gitCommonDirWhenPresentOf, headOf, readGateRecordText, writeGateRecord } from './gate-once.ts';
 import type { ProjectRunClass, SelectionProject } from '../../scripts/support/run-class.ts';
 import { CPU_BUDGET_ENV, breachLine, killTree, usageLine, watchTree } from '../../scripts/support/cpu-budget.ts';
 import { vitestProjectBudgetOf } from '../../scripts/support/run-budgets.ts';
@@ -88,11 +89,23 @@ const endTreeAt = (breach: Parameters<typeof breachLine>[0]): void => {
   );
 };
 
+const holdGate = (projectNames: readonly string[]): void => {
+  const commonDir = gitCommonDirWhenPresentOf(REPO_ROOT);
+  if (commonDir === undefined) return;
+  const recordPath = gateRecordPathOf(commonDir);
+  const recordText = readGateRecordText(recordPath);
+  if (recordText === undefined) return;
+  const decision = gateDecisionOf({ argv: process.argv, env: process.env, projects: projectNames, recordPath, recordText, head: headOf(REPO_ROOT), now: new Date() });
+  if (decision.kind === 'refused') throw refusalOf(decision.message);
+  if (decision.kind === 'record') writeGateRecord(recordPath, decision.record);
+};
+
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const { state, projects } = project.vitest;
   if (typeof state.getPaths !== 'function' || !Array.isArray(projects)) throw refusalOf('run-lock: this vitest no longer exposes the selected test files');
   const refusal = wholeRunRefusalOf({ argv: process.argv, env: process.env, projects: projects.map((selected) => selected.name) });
   if (refusal !== undefined) throw refusalOf(refusal);
+  holdGate(projects.map((selected) => selected.name));
   const selected = state.getPaths();
   const selectionProjects = await Promise.all(projects.map(selectionProjectOf));
   const selectedSet = new Set(selected);

@@ -1,6 +1,6 @@
 import { EXIT_CONFIG, EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
-import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, attachRunCommand, budgetSentence, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, attachRunCommand, budgetSentence, fallbackNoticeTextOn, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -284,7 +284,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         note([`momonga: ${mcpAuthorizationNotice(event.server)}`]);
         break;
       case 'notice':
-        note([`momonga: ${event.level}: ${event.message}`]);
+        note([`momonga: ${event.level}: ${event.fallback === undefined ? event.message : fallbackNoticeTextOn(event.fallback, 'cli')}`]);
         break;
       case 'attempt.failed':
         lastFailure = event;

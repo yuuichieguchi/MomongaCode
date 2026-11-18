@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, EXIT_RETIRED, MAXIMUM_STOP_VALUES, gatewayAbortBudgetMs, gatewayStopBudgetMs, runtimeAbortStopBudgetMs, runtimeStopBudgetMs } from '@momonga/foundation';
-import { afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness, T0 } from './support/p2-manager-harness.ts';
@@ -345,7 +345,7 @@ describe('exit classification in the manager', () => {
     expect(harness.timers.pending()).toEqual([]);
   });
 
-  it('exit 77 does not respawn on a timer and makes the holder external at once', async (context) => {
+  it('exit 77 does not respawn on a timer and makes the holder external at once', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (context) => {
     const harness = await createManagerHarness(context);
     harness.lock.holdExternally(firstGeneration(harness.paths).locks.runtime, process.pid);
     await harness.spawnInitial();
