@@ -26,7 +26,8 @@ import { createFoundServers } from './models/context.ts';
 import { notConfiguredAnyMoreText } from './models/texts.ts';
 import { createPlanFlows } from './plan-flows.ts';
 import type { PlanFlows } from './plan-flows.ts';
-import type { StartupBanner, StartupConfig } from './startup.tsx';
+import { bannerRows } from './startup.tsx';
+import type { BannerModel, StartupBanner, StartupConfig } from './startup.tsx';
 import { pickConversation } from './commands/resume.ts';
 import { skillCommands } from './commands/skills.ts';
 import { createReplayQueue } from './replay.ts';
@@ -432,11 +433,13 @@ export function App(props: AppProps) {
     return read;
   };
 
-  const bannerOf = (shownModel: StartupBanner['model'], shownNotices: readonly string[]): StartupBanner | undefined =>
-    props.startup === undefined ? undefined : { config: props.startup, model: shownModel, cwd: backend.cwd, notices: shownNotices };
+  const bannerOf = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): StartupBanner | undefined =>
+    props.startup === undefined ? undefined : { config: props.startup, model: shownModel, cwd: backend.cwd, notices: shownNotices, figure };
 
-  const showBanner = (shownModel: StartupBanner['model'], shownNotices: readonly string[]): void => {
-    const banner = bannerOf(shownModel, shownNotices);
+  const connectedModel = (stored: string): BannerModel => ({ kind: 'connected', name: shownModel(stored) });
+
+  const showBanner = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): void => {
+    const banner = bannerOf(shownModel, shownNotices, figure);
     if (banner === undefined) return;
     if (store.byKey(BANNER_KEY) === undefined) store.append({ kind: 'banner', banner }, BANNER_KEY);
     else store.change(BANNER_KEY, () => ({ kind: 'banner', banner }));
@@ -445,7 +448,7 @@ export function App(props: AppProps) {
   const resetTranscript = (): void => {
     store.reset();
     renewHistory();
-    if (sessionModelRef.current !== undefined) showBanner(shownModel(sessionModelRef.current), notices);
+    if (sessionModelRef.current !== undefined) showBanner(connectedModel(sessionModelRef.current), notices, true);
   };
 
   const switchScreen = async (next: ScreenMode): Promise<void> => {
@@ -502,7 +505,7 @@ export function App(props: AppProps) {
     setAutoAvailable(await backend.autoModeAvailable());
     const configured = (await readDisplays()).has(session.model);
     unconfiguredModel.current = !configured;
-    showBanner(shownModel(session.model), notices);
+    showBanner(connectedModel(session.model), notices, true);
     const announce = !startsFromRecord.current;
     if (announce) showAutoNotice(session);
     enterPhase({ kind: 'ready' });
@@ -1238,12 +1241,11 @@ export function App(props: AppProps) {
 
 
   const unconnected = phase.kind === 'unconnected';
+  const beforeConversation = phase.kind === 'trust' || phase.kind === 'welcome';
   const syncBanner = useEffectEvent((): void => {
-    if (sessionModel === undefined ? unconnected : store.byKey(BANNER_KEY) !== undefined) showBanner(sessionModel === undefined ? undefined : (displays.get(sessionModel) ?? sessionModel), notices);
+    if (sessionModel === undefined ? unconnected || beforeConversation : store.byKey(BANNER_KEY) !== undefined)
+      showBanner(sessionModel === undefined ? { kind: 'not-connected', login: unconnected } : { kind: 'connected', name: displays.get(sessionModel) ?? sessionModel }, notices, figureFits);
   });
-  useEffect(() => {
-    syncBanner();
-  }, [sessionModel, notices, unconnected, displays]);
 
   const measured = useEffectEvent((entry: MomongaModelEntry): void => showModel(entry));
   const measurementFailed = useEffectEvent((error: unknown): void => modelUnread(error));
@@ -1589,7 +1591,8 @@ export function App(props: AppProps) {
   const fullscreen = terminalState.screen === 'fullscreen';
   const panelFacts = { trustPath: phase.kind === 'trust' ? phase.path : undefined, ready: phase.kind === 'ready' };
   const panel = prompts.panel(panelFacts);
-  const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && panel === undefined;
+  const conversationArea = !beforeConversation;
+  const inputShown = conversationArea && panel === undefined;
   const completionOpen = slashMenu.open || atMenu.open;
   const menuShown = inputShown && (invitationShown || completionOpen);
   const shownAttachments = heldAttachments(attachments, editor.pastes);
@@ -1619,8 +1622,15 @@ export function App(props: AppProps) {
   };
   const allocation = allocate(rows, rowRequests);
   const transcriptAllocation = panel === undefined ? allocation : allocate(rows, { ...rowRequests, panel: 0 });
-  const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const transcriptWidth = fullscreen ? Math.max(1, columns - SCROLLBAR_COLUMNS) : columns;
+  const onlyEntry = store.count() === 1 ? store.at(0).entry : undefined;
+  const followedStart = panel !== undefined && !conversationArea && onlyEntry?.kind === 'banner' ? onlyEntry.banner : undefined;
+  const listFollows = followedStart !== undefined;
+  const figureFits = followedStart === undefined || bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
+  useEffect(() => {
+    syncBanner();
+  }, [sessionModel, notices, unconnected, beforeConversation, displays, figureFits]);
+  const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const view = useTranscriptView({
     store,
     terminal,
@@ -1638,6 +1648,8 @@ export function App(props: AppProps) {
     a11y,
     timers,
   });
+  const followRows = listFollows ? drawnTranscriptRows(allocation.viewport, view.window.rows.length) : undefined;
+  const pointerAllocation = followRows === undefined ? allocation : { ...allocation, viewport: followRows };
   const toolView = useToolView({
     store,
     terminal,
@@ -1655,7 +1667,7 @@ export function App(props: AppProps) {
   usePromptPointer({
     terminal,
     active: fullscreen && !switching,
-    allocation,
+    allocation: pointerAllocation,
     panelOpen: panel !== undefined,
     menuOpen: inputShown && completionOpen,
     panelPress: (row) => prompts.press(panelFacts, row),
@@ -1752,12 +1764,13 @@ export function App(props: AppProps) {
       rows={rows}
       allocation={allocation}
       panel={panel ?? (fullscreen || !toolView.shown ? undefined : toolView.view)}
+      panelFollows={followRows}
       onPanelRows={setPanelRows}
       regions={{
         transcript: fullscreen && toolView.shown ? (
           toolView.view
         ) : fullscreen ? (
-          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
+          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
         ),
