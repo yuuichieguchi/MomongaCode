@@ -120,7 +120,7 @@ describe('a held call that runs after its approval settles through the events of
     await env.resolveApproval(runId, 'allow_once');
     await env.runOnce(reporting(env, 'worker-2'));
 
-    const fold = createFidelityFold([{ token: 'out.txt', claim: 'executed' }], env.project, () => undefined);
+    const fold = createFidelityFold([{ token: 'out.txt', claim: 'executed' }], env.project, 'f'.repeat(32), () => undefined);
     for (const event of env.events(runId)) if (event.type !== 'user.message') await fold.add(event);
 
     expect(fold.attested()).toEqual(['out.txt']);

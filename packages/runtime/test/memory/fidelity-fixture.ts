@@ -67,7 +67,7 @@ export const fidelityEnv = async () => {
     const client = await startJournalThread({ lock: testKernelLock(), busyTimeoutMs: BUSY_WAIT_LIMIT_MS, databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS, blobsDir } as Parameters<typeof startJournalThread>[0]);
     clients.push(client);
     const through = throughEventSeq ?? env.store.getRun(runId)?.lastSeq ?? 0;
-    return (await client.request({ kind: 'fidelity', runId, throughEventSeq: through, cwd: env.project, tokens: tokens.map((entry) => ({ ...entry })) })) as unknown as FidelityReply;
+    return (await client.request({ kind: 'fidelity', runId, throughEventSeq: through, cwd: env.project, sessionBoundary: env.session.fenceNonce, tokens: tokens.map((entry) => ({ ...entry })) })) as unknown as FidelityReply;
   };
   return { ...env, blobsDir, fidelity };
 };

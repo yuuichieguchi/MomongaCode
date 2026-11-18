@@ -20,7 +20,7 @@ export const isFatalStoreError = (error: unknown): boolean => {
   return typeof errcode === 'number' && FATAL_PRIMARY_CODES.includes(errcode & 0xff);
 };
 
-export const isStoreFullError = (error: unknown): error is Error => {
+export const isStoreFullError = (error: unknown): boolean => {
   if (!(error instanceof Error)) return false;
   const { errcode } = error as { errcode?: unknown };
   return typeof errcode === 'number' && (errcode & 0xff) === SQLITE_FULL;

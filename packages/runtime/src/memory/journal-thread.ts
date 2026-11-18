@@ -434,6 +434,7 @@ export const runStateHandler = (reader: Pick<JournalReader, 'runState'>, current
 export const fidelityHandler = ({ reader, blobs, current, gateFor }: FidelityPorts): JournalHandler => async (request, progress) => {
   const runId = textOf(request, 'runId', 'fidelity');
   const cwd = textOf(request, 'cwd', 'fidelity');
+  const sessionBoundary = textOf(request, 'sessionBoundary', 'fidelity');
   const claimed = claimedTokensOf(request);
   const names = claimed.map((entry) => entry.token);
   const through = throughOf(request);
@@ -452,7 +453,7 @@ export const fidelityHandler = ({ reader, blobs, current, gateFor }: FidelityPor
       return true;
     },
   };
-  const fold: FidelityFold = createFidelityFold(claimed, cwd, (event, add) =>
+  const fold: FidelityFold = createFidelityFold(claimed, cwd, sessionBoundary, (event, add) =>
     reader.visitRecord({
       reference: event,
       types: FIDELITY_EVENT_TYPES,

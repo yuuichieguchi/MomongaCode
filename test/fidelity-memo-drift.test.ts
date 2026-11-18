@@ -26,7 +26,7 @@ const completed = (extra: Record<string, unknown> = {}): RunEvent => at(3, { typ
 const reconciled = (outcome: string, output = 'ok'): RunEvent => at(3, { type: 'tool.reconciled', callId: 'c', outcome, output });
 
 const attestedBy = (events: readonly RunEvent[], claim: 'executed' | 'any' = 'executed'): boolean => {
-  const fold = createFidelityFold([{ token: TOKEN, claim }], '/work', () => {
+  const fold = createFidelityFold([{ token: TOKEN, claim }], '/work', 'f'.repeat(32), () => {
     throw new Error('the scenario holds no reference event');
   });
   for (const event of events) fold.add(event);

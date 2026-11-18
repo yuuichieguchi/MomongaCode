@@ -472,8 +472,8 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     }
   };
 
-  const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }, signal) =>
-    fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }, signal));
+  const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, sessionBoundary, tokens }, signal) =>
+    fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, sessionBoundary, tokens }, signal));
 
   const report: JournalThreadClient['report'] = async ({ runId }, signal) => reportOf(await request({ kind: 'report', runId }, signal), runId);
 

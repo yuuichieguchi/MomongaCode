@@ -166,9 +166,10 @@ type RecordPort = (event: RunEvent, add: (event: RunEvent) => void) => void;
 
 describe('the fold reads a reference event through the record port (13.12 design item 2)', () => {
   const foldWith = (claim: 'executed' | 'any', port: RecordPort) =>
-    (createFidelityFold as unknown as (tokens: readonly { token: string; claim: 'executed' | 'any' }[], cwd: string, record: RecordPort) => ReturnType<typeof createFidelityFold>)(
+    (createFidelityFold as unknown as (tokens: readonly { token: string; claim: 'executed' | 'any' }[], cwd: string, sessionBoundary: string, record: RecordPort) => ReturnType<typeof createFidelityFold>)(
       [{ token: TOKEN, claim }],
       '/work',
+      'f'.repeat(32),
       port,
     );
 

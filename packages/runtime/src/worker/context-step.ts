@@ -482,6 +482,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
       runId: ctx.run.id,
       throughEventSeq: projected.workingFacts.replacedThroughEventSeq ?? journal.state.lastSeq,
       cwd: sessionOf(ctx).cwd,
+      sessionBoundary: sessionFenceOf(sessionOf(ctx)),
       tokens: claims,
     },
     ctx.control.signal,

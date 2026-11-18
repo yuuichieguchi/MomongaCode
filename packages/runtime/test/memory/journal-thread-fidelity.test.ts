@@ -45,7 +45,7 @@ const answered = async (eventCount: number, blobBytes: number) => {
   const { handle } = await env.store.blobs.put(blobText(page, Math.max(blobBytes, 3 * page)), { mediaType: 'text/plain' } as never);
   const filler: RunEventPayload[] = Array.from({ length: Math.max(0, Math.floor((eventCount - 6) / 3)) }, (_unused, index) => startedCall(`f${index}`, { command: 'ls' })).flat();
   const run = await env.finished([...startedCall('c1', { command: IN_EVENT }), ...startedCall('c2', { command: 'cat big' }, 'omitted', { handle }), ...filler]);
-  const request = { kind: 'fidelity', runId: run.id, throughEventSeq: env.store.getRun(run.id)?.lastSeq ?? 0, cwd: env.project, tokens: TOKENS };
+  const request = { kind: 'fidelity', runId: run.id, throughEventSeq: env.store.getRun(run.id)?.lastSeq ?? 0, cwd: env.project, sessionBoundary: env.session.fenceNonce, tokens: TOKENS };
   const reply = await env.fidelity(run.id, TOKENS);
   return { reply, request };
 };
