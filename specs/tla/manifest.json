@@ -2382,6 +2382,36 @@
       ]
     },
     {
+      "module": "TerminalModes",
+      "abstractions": [
+        "byte-level parsing: a reply arrives as one token, never split across reads or interleaved with key bytes inside one sequence (the parser property test P4 and test/terminal-modes-conformance cover the bytes)",
+        "the terminal before the start: term and raw start empty and off, because the product enters the alternate screen and bracketed paste before the query batch and never reads the modes it finds",
+        "tui.mouse is on and tui.screen is not set by the person; a screen reader start is the scrollback start",
+        "the replies to 2004 and 2026 change no mode and are left out of the rows; OSC 11 changes no mode and stands for the focus-in query; the 1049 reply is set or refused; a terminal answers its queries in order and a query it does not answer never gets a reply",
+        "Ink writes no mode sequence (packages/cli/src/tui/terminal/frame.tsx (TerminalFrame)); the external editor and a suspended shell are one other reader of the terminal",
+        "a handover by exec hands the terminal over while the layer is still hooked; a handover by relay releases the layer and then spawns the new process; both are one Release step and one Handover step, and a signal between the release and the relayed spawn is not modelled",
+        "an uncaught error restores the modes through the uncaughtExceptionMonitor hook and ends the process: packages/cli/src installs no uncaughtException or unhandledRejection handler that would keep it running",
+        "the state space is bounded by the constants of its configurations; the base row TerminalModes sets AnswerSets = {{\"kitty\", \"1006\", \"osc11\", \"da1\"}, {\"1049\", \"1006\", \"da1\"}}, AltReplies = {\"refused\"}, Screens = {\"fullscreen\"}, MaxFocus = 1, Variant = \"correct\": the kitty terminal, the terminal that gets modify-other-keys and refuses the alternate screen; the scrollback start is the state after Switch(\"scrollback\"), and a terminal that never replies (design cli-tui 15.1 check.noReply) is every behaviour of the row before its first reply, so neither has a row of its own"
+      ],
+      "notProved": [
+        "that no other reader takes a reply as typed input: a reply still outstanding when the layer stops reading (a suspend, the external editor, an exit) goes to the next reader of the terminal, which TerminalModes.replyToOther shows (NoReplyLeftForOthers is violated under the correct variant); design cli-tui 2.3 has nothing wait for a reply",
+        "what a real terminal shows and what it does with a mode it does not know",
+        "a SIGKILL or a crash that runs no hook",
+        "behaviour beyond the constants of its configurations",
+        "that the code follows the model beyond what its tie tests check: test/terminal-modes-conformance, packages/cli/test/tui/terminal-layer (test files)"
+      ],
+      "header": [
+        "The terminal modes of the TUI (design cli-tui 2.2, 2.3, 15.1): the set of modes on in the terminal (term) and",
+        "  the layer's own record of the modes it turned on (enabled), raw mode, and the negotiation replies that arrive",
+        "  interleaved with keys. Actors, derived from packages/cli/src/tui/terminal/layer.ts (createTerminalLayer): the",
+        "  start and its query batch (Start), the terminal's in-order replies read by the layer (ReplyToApp), by the",
+        "  process a handover started (ReplyToSuccessor) or by another reader while the layer does not read (ReplyToOther),",
+        "  the proof key, the focus and title modes the screen turns on and off and the focus-in query, the screen switch,",
+        "  suspend and continue, the external editor (Lend, TakeBack), the handover release, exec and adoption, and the exit",
+        "  paths: finish, failure, a signal, an uncaught error and the exit hook."
+      ]
+    },
+    {
       "module": "TerminalPrepare",
       "abstractions": [
         "a journal is its contributions and the lease is a flag: the rows' content is not modelled",
@@ -3454,7 +3484,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 23,
       "measuredSeconds": 1.6,
       "measuredReuse": "off",
@@ -3519,7 +3549,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 127,
       "measuredSeconds": 1.61,
       "measuredReuse": "off",
@@ -3632,7 +3662,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 64,
       "measuredSeconds": 1.6,
       "measuredReuse": "off",
@@ -3875,7 +3905,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 13,
       "measuredSeconds": 1.59,
       "measuredReuse": "off",
@@ -7733,7 +7763,7 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
+      "tier": "deep",
       "distinctStates": 74,
       "measuredSeconds": 1.59,
       "measuredReuse": "off",
@@ -11028,6 +11058,139 @@
       "budgetCpuSeconds": 6,
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.38 at start)",
       "identity": "928b06aed75f9eb662092f14719972d0b27a0c3d08d6bb91d99cae479f2b8ce4"
+    },
+    {
+      "config": "TerminalModes",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 98850,
+      "measuredSeconds": 2.36,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 6.17,
+      "budgetCpuSeconds": 16,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.55 at start)",
+      "identity": "b57b36395cb24d27760c9c908c1d88be35483dd826a1e3167c811f2503e646a8"
+    },
+    {
+      "config": "TerminalModes.hintOnUnknown",
+      "role": "evidence",
+      "expect": {
+        "violates": "HintTrue",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2,
+      "measuredSeconds": 1.33,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.18,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.55 at start)",
+      "identity": "9e506b6c94f8ee0b4575adb445421210ef7ac458d85c3199e2a88c59ed73efb9"
+    },
+    {
+      "config": "TerminalModes.leaveUnknown",
+      "role": "evidence",
+      "expect": {
+        "violates": "RestoreIdempotent",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 19,
+      "measuredSeconds": 1.36,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 0.97,
+      "budgetCpuSeconds": 5,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
+      "identity": "f6bcc8bb53cf29839f747271469a89c816c9c964057cee3d51cd3b87da1f9297"
+    },
+    {
+      "config": "TerminalModes.mouseAtStart",
+      "role": "evidence",
+      "expect": {
+        "violates": "MouseGuarded",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2,
+      "measuredSeconds": 1.18,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.14,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
+      "identity": "7f9f122ec3b10c526110c21b90d1a78e8601aff90bf9d36e42cc9541c399d63e"
+    },
+    {
+      "config": "TerminalModes.replyAsKey",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReplyNeverKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3,
+      "measuredSeconds": 1.19,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.2,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
+      "identity": "401541b4e263b0e9be3f407311d8a44b4e17c69807172025adafb2f0b319f296"
+    },
+    {
+      "config": "TerminalModes.replyToOther",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoReplyLeftForOthers",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 101,
+      "measuredSeconds": 1.19,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.31,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
+      "identity": "c054e6385f998f21345751d29430f0af0c35818509be10ceb0a7066f92af05e4"
+    },
+    {
+      "config": "TerminalModes.skipRestoreOnFail",
+      "role": "evidence",
+      "expect": {
+        "violates": "RestoredOnExit",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 36,
+      "measuredSeconds": 1.18,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.21,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
+      "identity": "e9fe410fa68daa839fd8e929b0d0d60995fbf379762f3038457801784ec6c2fb"
+    },
+    {
+      "config": "TerminalModes.waitForDa1",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoWait",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2,
+      "measuredSeconds": 1.15,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.23,
+      "budgetCpuSeconds": 6,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
+      "identity": "247e540a9733d2ff8052d32a273a5ba6659c64a73fec4bd6008b7f89cc2df5dc"
     }
   ]
 }
