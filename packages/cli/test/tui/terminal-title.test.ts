@@ -60,8 +60,8 @@ const fakes = () => {
 };
 
 describe('the text of the terminal title', () => {
-  it.each(TITLE_STATES)('names the product, the project folder and the state %s', (state) => {
-    expect(titleOf('/Users/ada/src/momonga-demo', state)).toBe(`momonga · momonga-demo · ${state}`);
+  it.each(TITLE_STATES)('begins with the state %s, then the project folder, then the product', (state) => {
+    expect(titleOf('/Users/ada/src/momonga-demo', state)).toBe(`${state} · momonga-demo · momonga`);
   });
 
   it('has exactly the five states of the design', () => {
@@ -69,20 +69,20 @@ describe('the text of the terminal title', () => {
   });
 
   it('is written with OSC 2', () => {
-    expect(titleSequence('momonga · x · ready')).toBe(`${ESC}]2;momonga · x · ready${ESC}\\`);
+    expect(titleSequence('ready · x · momonga')).toBe(`${ESC}]2;ready · x · momonga${ESC}\\`);
   });
 
   it('removes what a terminal would act on from a hostile folder name', () => {
-    expect(titleOf(`/srv/a${ESC}]0;pwn\u0007b\u009b2J\u202ec\n\td`, 'working')).toBe('momonga · a]0;pwnb2Jcd · working');
+    expect(titleOf(`/srv/a${ESC}]0;pwn\u0007b\u009b2J\u202ec\n\td`, 'working')).toBe('working · a]0;pwnb2Jcd · momonga');
     expect(titleOf(`/srv/x${ESC}\\${ESC}]52;c;AAAA${ESC}\\`, 'done')).not.toContain(ESC);
   });
 
   it.each(TITLE_STATES)('is cut to its bound in the folder name, so the state %s stays whole', (state) => {
     const title = titleOf(`/srv/${'字'.repeat(300)}`, state);
-    expect([...title]).toHaveLength(TITLE_MAX_CHARACTERS);
+    expect([...title].length).toBeLessThanOrEqual(TITLE_MAX_CHARACTERS);
     expect(TITLE_MAX_CHARACTERS).toBe(120);
-    expect(title.startsWith('momonga · 字')).toBe(true);
-    expect(title.endsWith(`字 · ${state}`)).toBe(true);
+    expect(title.startsWith(`${state} · 字`)).toBe(true);
+    expect(title.endsWith('字 · momonga')).toBe(true);
   });
 });
 

@@ -27,8 +27,8 @@ export const titleStateOf = ({ working, prompting, lastRun }: TitleFacts): Title
 };
 
 export const titleOf = (cwd: string, state: TitleState): string => {
-  const head = `${PRODUCT}${SEPARATOR}`;
-  const tail = `${SEPARATOR}${state}`;
+  const head = `${state}${SEPARATOR}`;
+  const tail = `${SEPARATOR}${PRODUCT}`;
   const folder = [...withoutControls(path.basename(cwd))].slice(0, TITLE_MAX_CHARACTERS - [...head].length - [...tail].length).join('');
   return `${head}${folder}${tail}`;
 };

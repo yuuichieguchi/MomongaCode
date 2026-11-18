@@ -12,7 +12,7 @@ import { fakeScreenTerminal } from './screen-fakes.ts';
 import { pollUntil } from '@momonga/testkit';
 
 const HOSTILE_FOLDER = '/work/pro\u001b]0;pwn\u0007ject\u009b2J\n';
-const TITLE = (state: string): string => `momonga · pro]0;pwnject2J · ${state}`;
+const TITLE = (state: string): string => `${state} · pro]0;pwnject2J · momonga`;
 
 const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const focus = (direction: 'in' | 'out'): TerminalEvent => ({ type: 'focus', direction });
@@ -56,7 +56,7 @@ const run = async (started: Awaited<ReturnType<typeof start>>, text = 'go'): Pro
   const runs = started.backend.started.length;
   await submit(started, text);
   await until(() => started.backend.started.length > runs, 'the run is started');
-  await until(() => started.terminal.titles.at(-1)?.endsWith(' · working') === true, 'the title says working');
+  await until(() => started.terminal.titles.at(-1)?.startsWith('working · ') === true, 'the title says working');
 };
 
 const ask = (started: Awaited<ReturnType<typeof start>>): void => {
@@ -124,7 +124,8 @@ describe('the terminal title names the state of the session', () => {
       expect([...title].length).toBeLessThanOrEqual(120);
       expect(title).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
     }
-    expect(started.terminal.titles.at(-1)?.endsWith(' · working')).toBe(true);
+    expect(started.terminal.titles.at(-1)?.startsWith('working · ')).toBe(true);
+    expect(started.terminal.titles.at(-1)?.endsWith(' · momonga')).toBe(true);
     started.app.unmount();
   });
 });
