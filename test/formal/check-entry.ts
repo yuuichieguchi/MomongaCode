@@ -1,7 +1,7 @@
 import { systemWaitTiming, waitForGroupGone } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import type { ManifestEntry, Tier, TlcRun, TlcRunOptions } from './manifest-reader.ts';
-import { measurementOfRun } from './record.ts';
+import { distinctStatesOfRun, measurementOfRun } from './record.ts';
 import type { Measurement } from './record.ts';
 import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord } from './reuse.ts';
 import type { JavaIdentity, RanReason, ResultStore, StoredFacts } from './reuse.ts';
@@ -33,6 +33,11 @@ const FIXED_FINGERPRINT_ARGS = ['-fp', '0'] as const;
 
 type FinishedRun = { readonly run: TlcRun; readonly problems: readonly string[]; readonly wallSeconds: number; readonly loadAtStart: number };
 
+const judgedEntryOf = (request: CheckRequest, run: TlcRun): ManifestEntry => {
+  const distinct = request.record ? distinctStatesOfRun(run) : undefined;
+  return distinct === undefined ? request.entry : { ...request.entry, distinctStates: distinct };
+};
+
 const runAndJudge = async (request: CheckRequest, args: readonly string[]): Promise<FinishedRun> => {
   const { entry } = request;
   const timing = request.timing ?? systemWaitTiming;
@@ -42,7 +47,7 @@ const runAndJudge = async (request: CheckRequest, args: readonly string[]): Prom
   const run = await (request.run ?? runTlc)({ script: request.script, config: entry.config, args, budgetCpuSeconds: entry.budgetCpuSeconds });
   const wallSeconds = (timing.monotonicMs() - started) / 1000;
   const groupGone = await waitForGroupGone(run.pid, deadline, request.groupPort, timing);
-  return { run, wallSeconds, loadAtStart, problems: [...verdictProblems(entry, run), ...(groupGone ? [] : [`${entry.config}: process group ${run.pid} still has members after the run`])] };
+  return { run, wallSeconds, loadAtStart, problems: [...verdictProblems(judgedEntryOf(request, run), run), ...(groupGone ? [] : [`${entry.config}: process group ${run.pid} still has members after the run`])] };
 };
 
 const measuredOf = (request: CheckRequest, finished: FinishedRun): Pick<Extract<CheckOutcome, { outcome: 'ran' }>, 'measurement' | 'loadAtStart'> =>

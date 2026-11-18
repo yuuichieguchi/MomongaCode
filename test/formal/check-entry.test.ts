@@ -215,6 +215,12 @@ describe('checking one configuration', () => {
     expect(callsOf(fake)).toHaveLength(1);
   });
 
+  it('judges a recorded run against the state count it measured, so a row whose count changed is recorded with the new count', async () => {
+    answer(fake, 0, completedOutput(7));
+    const outcome = await checkEntry(request({ mode: 'off', record: true }));
+    expect(outcome).toMatchObject({ outcome: 'ran', problems: [], measurement: { distinctStates: 7 } });
+  });
+
   it('stores nothing for a run that fails its row and runs it again next time', async () => {
     answer(fake, 12, invariantViolationOutput('Other'));
     const first = await checkEntry(request({ entry: invariantEntry }));
@@ -401,6 +407,7 @@ const nestedEnv = (extra: Record<string, string>): Record<string, string | undef
   const inherited: Record<string, string | undefined> = { ...process.env };
   delete inherited['MOMONGA_RUN_LOCK'];
   delete inherited['MOMONGA_TLC_REUSE'];
+  delete inherited['MOMONGA_TLC_RECORD'];
   return { ...inherited, ...extra };
 };
 

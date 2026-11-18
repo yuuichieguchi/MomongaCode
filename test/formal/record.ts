@@ -54,6 +54,11 @@ export const measurementOf = (log: string): Measurement => {
   };
 };
 
+export const distinctStatesOfRun = (run: TlcRun): number | undefined => {
+  const distinct = [...run.stdout.matchAll(DISTINCT_LINE)].at(-1);
+  return distinct === undefined ? undefined : Number((distinct[2] as string).replaceAll(',', ''));
+};
+
 export const measurementOfRun = (run: TlcRun, wallSeconds: number): Measurement => ({
   distinctStates: distinctStatesOf(run.stdout),
   measuredSeconds: round2(Math.max(0, wallSeconds - waitedSecondsOf(`${run.stderr}\n${run.stdout}`))),
