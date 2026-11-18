@@ -33,7 +33,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/eval/src/files.ts': { 'node:fs/promises': 4 },
   'packages/foundation/src/outbound.ts': { 'node:net': 1, 'node:worker_threads': 1 },
   'packages/foundation/src/process-contract.ts': { 'AbortSignal.timeout': 1 },
-  'packages/foundation/src/rotating-log.ts': { 'node:fs': 7 },
   'packages/foundation/src/socket-path.ts': { 'node:net': 1 },
   'packages/foundation/src/uds.ts': { 'node:fs': 4, 'node:net': 1 },
   'packages/gateway/src/core/store-worker.ts': { 'node:worker_threads': 2 },
@@ -77,7 +76,6 @@ const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
 };
 
 const SYNCHRONOUS_FILE_CALLS: Readonly<Record<string, Counts>> = {
-  'packages/foundation/src/rotating-log.ts': { 'closeSync': 1, 'fstatSync': 1, 'openSync': 1, 'renameSync': 2, 'statSync': 1, 'writeSync': 1 },
   'packages/gateway/src/process-ports.ts': { 'existsSync': 1, 'readFileSync': 1, 'statSync': 1 },
   'packages/runtime/src/memory/journal-thread.ts': { 'statSync': 1 },
   'packages/sandbox/src/scratch.ts': { 'statSync': 1 },
