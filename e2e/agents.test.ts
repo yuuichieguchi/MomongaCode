@@ -11,7 +11,7 @@ import { readDb } from './support/db.ts';
 import { createE2eHome, markersOf } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
-import { groupAlive } from './support/process.ts';
+import { expectEndedAtTerminal, groupRunning } from './support/process.ts';
 import { createRuntimeClient, personCapabilityOfHome, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { SANDBOX_ENDS_WITH_RUNTIME, SIGTERM_DEATH, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
@@ -313,7 +313,7 @@ describe('agents: background bash', () => {
       expect(outputs[1]).toContain('started');
       expect(outputs[1]).toContain('ready');
       expect(jobRow(home, jobId)).toMatchObject({ status: 'exited', exit_code: 0 });
-      expect(groupAlive(pgid as number)).toBe(false);
+      await expectEndedAtTerminal('exited', { group: pgid as number });
       await until(() => fs.readdirSync(markersOf(home).tools).length === 0, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the marker of the finished job to be removed' });
 
       const listed = (await rawGet(home, `/v1/sessions/${session.id}/jobs`)).json['jobs'] as Json[];
@@ -344,7 +344,7 @@ describe('agents: background bash', () => {
       const job = jobRow(home, jobId);
       const death = SIGTERM_DEATH[productSandbox()];
       expect(job).toMatchObject({ status: 'killed', exit_code: death.exitCode, signal: death.signal });
-      expect(groupAlive(job?.pgid as number)).toBe(false);
+      await expectEndedAtTerminal('killed', { group: job?.pgid as number });
       const stream = runtime.events(run.id);
       const frames = await stream.toEnd(E2E_MARGIN_MS);
       await stream.close();
@@ -377,16 +377,16 @@ describe('agents: background bash', () => {
       const jobId = jobIdOf(home);
       if (jobId === undefined) throw new Error('no job was recorded');
       const pgid = jobRow(home, jobId)?.pgid as number;
-      expect(groupAlive(pgid)).toBe(true);
+      expect(await groupRunning(pgid)).toBe(true);
 
       const before = await stack.client.health();
       const oldRuntimePid = childOf(before, 'runtime').pid;
       if (oldRuntimePid === undefined) throw new Error('runtime has no pid');
       process.kill(oldRuntimePid, 'SIGKILL');
-      if (!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) expect(groupAlive(pgid)).toBe(true);
+      if (!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) expect(await groupRunning(pgid)).toBe(true);
 
       await untilStatus(runtime, run.id, 'COMPLETED', E2E_RUN_COMPLETED_BOUND_MS);
-      expect(groupAlive(pgid)).toBe(false);
+      await expectEndedAtTerminal('COMPLETED', { group: pgid });
       expect(jobRow(home, jobId)).toMatchObject({ status: 'unknown', exit_code: null, signal: null });
       const stream = runtime.events(run.id);
       const frames = await stream.toEnd(E2E_MARGIN_MS);

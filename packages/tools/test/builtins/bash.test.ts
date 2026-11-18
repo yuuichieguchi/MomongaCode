@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { findHolders, holderGroups } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, testProcessInspector } from '@momonga/testkit';
+import { nodeShellHost } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
@@ -15,27 +17,6 @@ const bash = async (tools: Builtins, command: string, extra: Parameters<Builtins
 
 const attachedGroups = (tools: Builtins): number[] =>
   tools.idempotency.log.flatMap((entry) => (entry.op === 'attachProcess' ? [entry.pgid] : []));
-
-const holdersOf = (file: string): number[] => {
-  try {
-    return execFileSync(LSOF_PATH, ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
-      .split('\n')
-      .filter((line) => line !== '')
-      .map(Number);
-  } catch {
-    return [];
-  }
-};
-
-const groupsOf = (pids: readonly number[]): number[] => {
-  const listing = new Map(
-    execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
-      .split('\n')
-      .filter((line) => line.trim() !== '')
-      .map((line) => line.trim().split(/\s+/).map(Number) as [number, number]),
-  );
-  return pids.flatMap((pid) => (listing.has(pid) ? [listing.get(pid) as number] : []));
-};
 
 const processesWithArgument = (argument: string): number[] =>
   execFileSync('/bin/ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8' })
@@ -236,11 +217,14 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     const groups = attachedGroups(tools);
     groups.forEach(trackGroup);
     expect(groups).toHaveLength(1);
-    const holders = holdersOf(marker);
+    const reaperHandle = fs.openSync(marker, 'r');
+    const probe = { signal: new AbortController().signal, inspector: testProcessInspector() };
+    const holders = await findHolders(marker, probe);
+    fs.closeSync(reaperHandle);
     if (process.platform === 'darwin') {
       expect(holders).toContain(groups[0]);
     } else {
-      const heldGroups = groupsOf(holders);
+      const heldGroups = await holderGroups(holders, [], probe);
       expect(heldGroups.length).toBeGreaterThan(0);
       expect(new Set(heldGroups)).toEqual(new Set([groups[0]]));
     }
@@ -249,16 +233,35 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
   });
 
   it('kills the whole process group on timeout', async () => {
-    const tools = await makeBuiltins({ realSandbox: true });
+    const timeoutMs = 1000;
+    const host = nodeShellHost();
+    const held: (() => void)[] = [];
+    const callTimer = {
+      ...host.child,
+      setTimeout: (callback: () => void, ms: number): unknown => {
+        if (ms !== timeoutMs) return host.child.setTimeout(callback, ms);
+        held.push(callback);
+        return callback;
+      },
+      clearTimeout: (handle: unknown): void => {
+        const index = held.indexOf(handle as () => void);
+        if (index >= 0) held.splice(index, 1);
+        else host.child.clearTimeout(handle);
+      },
+    };
+    const tools = await makeBuiltins({ realSandbox: true, executor: { shellHost: { ...host, child: callTimer } } });
     const childPidFile = path.join(tools.layout.project, 'child.pid');
-    const command = `sleep 30 & echo $! > ${childPidFile}; wait`;
-    const outcome = await tools.run('Bash', { command, timeout: 1000 }, {}, 'allow_once');
-    const result = resultOf(outcome);
+    const command = `sleep 30 & echo $! > ${childPidFile}.tmp; mv ${childPidFile}.tmp ${childPidFile}; wait`;
+    const running = tools.run('Bash', { command, timeout: timeoutMs }, {}, 'allow_once');
+    expect(await waitFor(() => fs.existsSync(childPidFile), 10_000)).toBe(true);
+    const child = Number(fs.readFileSync(childPidFile, 'utf8').trim());
+    trackPid(child);
+    expect(held).toHaveLength(1);
+    held.splice(0).forEach((fire) => fire());
+    const result = resultOf(await running);
     expect(result).toEqual({ status: 'failed', command, output: 'Bash timed out after 1000 ms. Its side effects are unknown; inspect the current state before retrying.' });
     const [pgid] = attachedGroups(tools);
     expect(typeof pgid).toBe('number');
-    const child = Number(fs.readFileSync(childPidFile, 'utf8').trim());
-    trackPid(child);
     expect(await waitFor(() => !isAlive(-(pgid as number)) && !isAlive(child), 5000)).toBe(true);
   });
 

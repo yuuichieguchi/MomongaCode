@@ -12,7 +12,7 @@ import { DAEMON_POLL_INTERVAL_MS } from '../src/constants.ts';
 import { nodeClock, nodeFilesLockedBy } from '../src/node-ports.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, fakeSupervisorProcesses, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor, SpawnedProcess } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -34,7 +34,7 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ files: nodeFilesLockedBy(testKernelLock), version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn, ...installedProgram(version).ports });
+  const portsWith = (spawn: DaemonPorts['spawnDetached'], version = VERSION): DaemonPorts => ({ files: nodeFilesLockedBy(testKernelLock), version, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn, process: fakeSupervisorProcesses(() => running), ...installedProgram(version).ports });
   const counter = path.join(paths.run, 'generation.counter');
   return { home, paths, start, portsWith, counter };
 };

@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cfgNames } from './cfg-names.ts';
+import { specIdentityOf } from './reuse.ts';
+import { recordsTier } from './record.ts';
 import type { CfgNames } from './cfg-names.ts';
 import { moduleOf, readManifest } from './manifest.ts';
 import type { ManifestEntry } from './manifest.ts';
@@ -111,6 +113,7 @@ const sample = (config: string, overrides: Partial<ManifestEntry>): ManifestEntr
   measuredSeconds: 1,
   measuredCpuSeconds: 1,
   budgetCpuSeconds: 5,
+  identity: '0'.repeat(64),
   ...overrides,
 });
 
@@ -167,4 +170,14 @@ describe('the rules that choose the every-run rows (formal-models C20, E1 to E7)
     const waiting = rawEntries().filter((entry) => [entry['note'], entry['measuredNote']].some((note) => typeof note === 'string' && UNMEASURED_NOTE.test(note)));
     expect(waiting.map((entry) => entry['config'])).toEqual([]);
   });
+});
+
+describe('the recorded identity of every row', () => {
+  it('matches the spec closure, cfg, JSON inputs and args that the row was measured with', async () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..', '..');
+    const recording = recordsTier(process.env['MOMONGA_TLC_TIER'] === 'deep' ? 'deep' : 'every-run', process.env);
+    const stale: string[] = [];
+    for (const entry of manifest.entries) if (entry.identity !== (await specIdentityOf(repoRoot, entry)) && !(recording && entry.tier === 'deep')) stale.push(entry.config);
+    expect(stale, `re-measure these rows with scripts/tlc-record.ts: ${stale.join(', ')}`).toEqual([]);
+  }, 120_000);
 });

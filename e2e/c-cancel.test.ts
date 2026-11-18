@@ -6,7 +6,7 @@ import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
-import { groupAlive } from './support/process.ts';
+import { expectEndedAtTerminal, groupRunning } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
@@ -25,6 +25,7 @@ import {
 
 const PARTIAL_TEXT = 'partial';
 const TERM_RECEIVED_FILE = 'term-received';
+const TRAP_READY_FILE = 'trap-ready';
 
 const toolGroupsOf = (home: E2eHome): number[] =>
   readDb<{ pgid: number }>(home.paths.databases.runtime, TOOL_GROUPS_SQL).map((row) => Number(row.pgid));
@@ -45,7 +46,8 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
     const { run } = await runtime.createRun(session.id, 'Say hello');
     const pgid = await until(() => toolGroupsOf(home)[0], { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'idempotency row with a pgid' });
-    expect(groupAlive(pgid)).toBe(true);
+    expect(await groupRunning(pgid)).toBe(true);
+    await until(() => fs.existsSync(path.join(home.project, TRAP_READY_FILE)), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the command installed its TERM trap' });
     expect((await runtime.getRun(run.id)).run.status).not.toBe('CANCELLED');
 
     const cancelled = await runtime.cancel(run.id);
@@ -53,7 +55,7 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     expect(cancelled.run.cancelRequested).toBe(true);
 
     await untilStatus(runtime, run.id, 'CANCELLED', cancelBoundMs);
-    expect(groupAlive(pgid)).toBe(false);
+    await expectEndedAtTerminal('CANCELLED', { group: pgid });
 
     const stream = runtime.events(run.id);
     const frames = await stream.toEnd(E2E_MARGIN_MS);
@@ -76,13 +78,13 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
 describe('c: cancel', () => {
   it.skipIf(skipCase('c1'))(titleOf('c1'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     sandboxOrSkip(context);
-    const { project } = await cancelDuringBash(`trap ': > ${TERM_RECEIVED_FILE}; exit 143' TERM; sleep 30 & wait`, E2E_CANCEL_TERM_BOUND_MS);
+    const { project } = await cancelDuringBash(`trap ': > ${TERM_RECEIVED_FILE}; exit 143' TERM; : > ${TRAP_READY_FILE}; sleep 30 & wait`, E2E_CANCEL_TERM_BOUND_MS);
     expect(fs.existsSync(path.join(project, TERM_RECEIVED_FILE))).toBe(true);
   });
 
   it.skipIf(skipCase('c1b'))(titleOf('c1b'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     sandboxOrSkip(context);
-    const { project } = await cancelDuringBash(`trap ': > ${TERM_RECEIVED_FILE}' TERM; while :; do sleep 1; done`, E2E_CANCEL_KILL_BOUND_MS);
+    const { project } = await cancelDuringBash(`trap ': > ${TERM_RECEIVED_FILE}' TERM; : > ${TRAP_READY_FILE}; while :; do sleep 1; done`, E2E_CANCEL_KILL_BOUND_MS);
     expect(fs.existsSync(path.join(project, TERM_RECEIVED_FILE)), 'the command was asked with SIGTERM first, ignored it, and was killed').toBe(true);
   });
 

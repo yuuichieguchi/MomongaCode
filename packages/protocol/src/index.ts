@@ -831,6 +831,7 @@ export type { PriceField, PriceRow, PriceTableProblem } from './price-table.ts';
 export { OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_REGISTRY_ID, OPEN_RESPONSES_REMOTE_DOCUMENTS, OPEN_RESPONSES_SCHEMA_REGISTRY, openResponsesComponentSchema, openResponsesSchemaRegistry } from './open-responses-registry.ts';
 export type {
   SupervisorChildHealth,
+  SupervisorChildRole,
   SupervisorChildState,
   SupervisorExitReason,
   SupervisorHealth,

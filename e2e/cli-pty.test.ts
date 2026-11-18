@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
-import { answerTrust, KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
+import { answerTrust, spawnPty, untilRunEnds } from './support/pty.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -27,29 +27,21 @@ describe('cli: interactive TUI through a pty', () => {
 
     const pty = await spawnPty(home, []);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('mode: manual');
+    await pty.waitFor({ shows: 'mode: manual', in: 'footer' });
 
-    pty.write(KEYS.shiftTab);
-    await pty.waitFor('mode: acceptEdits');
-    pty.write(KEYS.shiftTab);
-    await pty.waitFor('mode: plan');
-    pty.write(KEYS.shiftTab);
-    await pty.waitFor('mode: manual');
+    await pty.key('shiftTab', { until: { shows: 'mode: acceptEdits', in: 'footer' } });
+    await pty.key('shiftTab', { until: { shows: 'mode: plan', in: 'footer' } });
+    await pty.key('shiftTab', { until: { shows: 'mode: manual', in: 'footer' } });
 
-    pty.write('change the greeting');
-    await pty.waitFor('> change the greeting');
-    pty.write(KEYS.enter);
-    await pty.waitFor('Permission requested: Edit config.toml');
-    await pty.waitForPrompt('+greeting = "hello, momonga"');
-    expect(pty.screen()).toContain('-greeting = "hello"');
-    pty.write('1');
-    await pty.waitFor('Edited the greeting.');
+    await pty.type('change the greeting');
+    await pty.key('enter', { until: 'Permission requested: Edit config.toml' });
+    const prompt = await pty.waitForPrompt('+greeting = "hello, momonga"');
+    expect(prompt.rows.join('\n')).toContain('-greeting = "hello"');
+    await pty.key('1', { until: 'Edited the greeting.' });
     expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello, momonga"\n');
 
-    pty.write(KEYS.ctrlD);
-    await pty.waitFor('Press ctrl+d again to exit');
-    pty.write(KEYS.ctrlD);
-    expect(await pty.exit()).toEqual({ code: 0, signal: null });
+    await pty.key('ctrlD', { until: 'Press ctrl+d again to exit' });
+    expect((await pty.key('ctrlD', { until: 'exit' })).status).toEqual({ code: 0, signal: null });
   });
 
   it(titleOf('cli-pty-child-approval'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -73,22 +65,17 @@ describe('cli: interactive TUI through a pty', () => {
 
     const pty = await spawnPty(home, []);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('mode: manual');
-    pty.write('change the greeting');
-    await pty.waitFor('> change the greeting');
-    pty.write(KEYS.enter);
-    await pty.waitFor('waiting for subagent editor');
+    await pty.waitFor({ shows: 'mode: manual', in: 'footer' });
+    await pty.type('change the greeting');
+    await pty.key('enter', { until: 'waiting for subagent editor' });
     await pty.waitFor('Permission requested: editor: Edit');
     await pty.waitForPrompt('+greeting = "hello, momonga"');
     expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello"\n');
-    pty.write('1');
-    await pty.waitFor('Edited the greeting.');
+    await pty.key('1', { until: 'Edited the greeting.' });
     expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello, momonga"\n');
 
-    pty.write(KEYS.ctrlD);
-    await pty.waitFor('Press ctrl+d again to exit');
-    pty.write(KEYS.ctrlD);
-    expect(await pty.exit()).toEqual({ code: 0, signal: null });
+    await pty.key('ctrlD', { until: 'Press ctrl+d again to exit' });
+    expect((await pty.key('ctrlD', { until: 'exit' })).status).toEqual({ code: 0, signal: null });
   });
 
   it(titleOf('cli-pty-session'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -98,47 +85,32 @@ describe('cli: interactive TUI through a pty', () => {
 
     const pty = await spawnPty(home, []);
     await answerTrust(pty, 'decline');
-    await pty.waitFor('mode: manual');
+    await pty.waitFor({ shows: 'mode: manual', in: 'footer' });
 
-    pty.write('/help');
-    await pty.waitFor('> /help');
-    pty.write(KEYS.enter);
-    await pty.waitFor('click on a menu row  complete it');
-    pty.write(KEYS.ctrlHome);
-    await pty.waitFor('Commands');
-    for (const command of ['/help', '/clear', '/mode', '/exit']) expect(pty.visible().join('\n')).toContain(command);
-    pty.write(KEYS.ctrlEnd);
-    await pty.waitFor('click on a menu row  complete it');
+    await pty.type('/help');
+    await pty.key('enter', { until: { shows: 'click on a menu row  complete it', in: 'transcript' } });
+    const top = await pty.key('ctrlHome', { until: { shows: /^Commands[^\n]*\n  \/help  list the commands/m, in: 'transcript' } });
+    for (const command of ['/help', '/clear', '/mode', '/exit']) expect(top.region('transcript').join('\n')).toContain(command);
+    await pty.key('ctrlEnd', { until: { shows: 'click on a menu row  complete it', in: 'transcript' } });
 
-    pty.write('/mode plan');
-    await pty.waitFor('> /mode plan');
-    pty.write(KEYS.enter);
-    await pty.waitFor('mode: plan');
-    pty.write(KEYS.shiftTab);
-    await pty.waitFor('mode: manual');
+    await pty.type('/mode plan');
+    await pty.key('enter', { until: { shows: 'mode: plan', in: 'footer' } });
+    await pty.key('shiftTab', { until: { shows: 'mode: manual', in: 'footer' } });
 
-    pty.write('line one\\');
-    await pty.waitFor('line one\\');
-    pty.write(KEYS.enter);
-    await pty.waitFor('line one');
-    pty.write('line two');
-    await pty.waitFor('line two');
-    pty.write(KEYS.enter);
-    await pty.waitFor(/\d+s · esc to cancel/);
+    await pty.type('line one\\');
+    await pty.key('enter', { until: { lacks: 'line one\\', in: 'input' } });
+    await pty.type('line two');
+    await pty.key('enter', { until: /\d+s · esc to cancel/ });
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request' });
     expect(messagesOf(chatCompletions(fake)[0]).at(-1)?.content).toContain('line one\nline two');
 
-    pty.write(KEYS.escape);
-    await pty.waitFor('CANCELLED');
+    await pty.key('escape', { until: 'CANCELLED' });
     await untilRunEnds(pty, 'manual');
 
-    pty.write(KEYS.up);
-    await pty.waitFor('line two');
-    pty.write(KEYS.ctrlC);
-    pty.write('/exit');
-    await pty.waitFor('> /exit');
-    pty.write(KEYS.enter);
-    expect(await pty.exit()).toEqual({ code: 0, signal: null });
+    await pty.key('up', { until: { shows: 'line two', in: 'input' } });
+    await pty.key('ctrlC', { until: { lacks: 'line', in: 'input' } });
+    await pty.type('/exit');
+    expect((await pty.key('enter', { until: 'exit' })).status).toEqual({ code: 0, signal: null });
     const history = fs.readFileSync(path.join(home.paths.state, 'history.jsonl'), 'utf8').split('\n').filter((line) => line !== '');
     expect(history.map((line) => JSON.parse(line))).toEqual(['/help', '/mode plan', 'line one\nline two', '/exit']);
   });
@@ -150,17 +122,13 @@ describe('cli: interactive TUI through a pty', () => {
 
     const pty = await spawnPty(home, []);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('mode: manual');
-    pty.write('a long task');
-    await pty.waitFor('> a long task');
-    pty.write(KEYS.enter);
+    await pty.waitFor({ shows: 'mode: manual', in: 'footer' });
+    await pty.type('a long task');
+    await pty.key('enter', { until: /\d+s · esc to cancel/ });
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request' });
-    await pty.waitFor(/\d+s · esc to cancel/);
 
-    pty.write('/exit');
-    await pty.waitFor('> /exit');
-    pty.write(KEYS.enter);
-    expect(await pty.exit()).toEqual({ code: 0, signal: null });
+    await pty.type('/exit');
+    expect((await pty.key('enter', { until: 'exit' })).status).toEqual({ code: 0, signal: null });
 
     const [row] = readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs');
     expect(row?.status).toBe('RUNNING');

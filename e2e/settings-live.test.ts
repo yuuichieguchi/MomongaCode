@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { supervisorLog } from './support/log-reader.ts';
+import { recordNamed, untilRecord } from './support/log-reader.ts';
 import type { LogRecord } from './support/log-reader.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
@@ -45,10 +45,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
       const { run: held } = await runtime.createRun(session.id, 'Say hello');
       await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
       writeSettingsFile(home, withChangedModel(home));
-      await until(() => named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length > 0, {
-        deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,
-        description: 'the supervisor to log the settings change',
-      });
+      await untilRecord(home.paths, stack.ready.pid, recordNamed('settings.changed'), { deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS, description: 'the settings change' });
       hold.release();
       expect(await completed(runtime, held.id)).toBe('COMPLETED');
       const { session: later } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
@@ -56,7 +53,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
       expect(await completed(runtime, next.id)).toBe('COMPLETED');
       const models = stack.fake.requests.filter((request) => request.path === '/v1/chat/completions').map((request) => (request.body as { model?: string }).model);
       expect(models.at(-1)).toBe(CHANGED_MODEL);
-      const records = supervisorLog(home.paths, stack.ready.pid);
+      const records = await untilRecord(home.paths, stack.ready.pid, recordNamed('settings.changed'), { deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS, description: 'the settings change' });
       expect(named(records, 'child.stop')).toEqual([]);
       expect(named(records, 'child.spawn').map((record) => record.reason)).toEqual(['initial', 'initial']);
       const after = await stack.client.health();
@@ -71,10 +68,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
     const home = await createE2eHome();
     const stack = await startStack({ home });
     writeSettingsFile(home, withChangedModel(home));
-    await until(() => named(supervisorLog(home.paths, stack.ready.pid), 'settings.changed').length > 0, {
-      deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS,
-      description: 'the supervisor to log the settings change',
-    });
+    await untilRecord(home.paths, stack.ready.pid, recordNamed('settings.changed'), { deadlineMs: E2E_SETTINGS_SEEN_BOUND_MS, description: 'the settings change' });
     writeSettingsFile(home, '{ "models": ');
     const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.gateway), { connectTimeoutMs: 0 });
     try {

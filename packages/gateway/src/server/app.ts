@@ -36,6 +36,7 @@ export type AppDependencies = {
   retentionPurge: (runIds: readonly string[], cutoffMs: number, signal: AbortSignal) => Promise<number>;
   errors: ErrorExit;
   plan: PlanApi | undefined;
+  onReaderBehind: (() => void) | undefined;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -103,6 +104,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       readerStallMs: services.config.limits.readerStallMs,
       signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
       answer: dependencies.errors.answer,
+      ...(dependencies.onReaderBehind === undefined ? {} : { onReaderBehind: dependencies.onReaderBehind }),
     };
     if (submission.stream && idleBoundMs !== undefined) return sseResponse(undefined, shownEvents, { ...streamOptions, keepAliveMs: keepAliveMsFor(idleBoundMs) });
     const first = await shownEvents.next();

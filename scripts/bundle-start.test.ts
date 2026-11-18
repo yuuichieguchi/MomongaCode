@@ -23,8 +23,8 @@ describe('the start of the single-file bundle', () => {
 
     const pty = await spawnPty(home, [], {}, { bundle: outfile });
 
-    await pty.waitFor('Do you trust the files in');
-    expect(pty.screen()).not.toContain('unsettled top-level await');
+    const { lines } = await pty.waitFor('Do you trust the files in');
+    expect(lines.join('\n')).not.toContain('unsettled top-level await');
   });
 
   it.for(['--version', '--help'])('answers %s without touching a home that cannot be created', (flag) => {

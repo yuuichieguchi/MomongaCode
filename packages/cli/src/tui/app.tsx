@@ -278,6 +278,7 @@ export function App(props: AppProps) {
   const waitingRef = useRef<readonly InboxRowView[]>([]);
   const lastEndedRun = useRef<string | undefined>(undefined);
   const followingQueued = useRef(false);
+  const betweenRuns = useRef(false);
   const [profiles, setProfiles] = useState<readonly PlanProfileView[]>([]);
   const [servedTarget, setServedTarget] = useState<string | undefined>(undefined);
   const typedRef = useRef(false);
@@ -954,8 +955,10 @@ export function App(props: AppProps) {
     try {
       for (let ended = endedRunId; ; ) {
         lastEndedRun.current = ended;
+        betweenRuns.current = true;
         await refreshInbox();
         const next = await backend.inbox.successor(ended);
+        betweenRuns.current = false;
         if (next === undefined) return;
         runLeft(store);
         runCreated(store, next.id, now());
@@ -963,6 +966,7 @@ export function App(props: AppProps) {
         ended = next.id;
       }
     } finally {
+      betweenRuns.current = false;
       followingQueued.current = false;
     }
   };
@@ -1441,7 +1445,7 @@ export function App(props: AppProps) {
 
   const onEditorAction = (action: ActionId | undefined, typed: string | undefined): void => {
     const starting = phase.kind === 'starting';
-    const working = busyRef.current || commands.length > 0;
+    const working = (busyRef.current && !betweenRuns.current) || commands.length > 0;
     const current = editorRef.current;
     if (action === 'prompt.submit') onEnter();
     else if (action === 'prompt.queue' || action === 'prompt.steer') {

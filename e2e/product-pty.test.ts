@@ -6,8 +6,8 @@ import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, SECRETS_FILE_NAME, runCli } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
-import { answerTrust, KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
-import type { PtySession } from './support/pty.ts';
+import { answerTrust, spawnPty, untilRunEnds } from './support/pty.ts';
+import type { Frame, Proof, PtySession } from './support/pty.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -15,25 +15,22 @@ const spawnWithFakes = (home: E2eHome, args: readonly string[] = []): Promise<Pt
 
 const trustAndWait = async (pty: PtySession, mode = 'manual'): Promise<void> => {
   await answerTrust(pty, 'trust');
-  await pty.waitFor(`mode: ${mode}`);
+  await pty.waitFor({ shows: `mode: ${mode}`, in: 'footer' });
 };
 
-const submit = async (pty: PtySession, text: string): Promise<void> => {
-  pty.write(text);
-  await pty.waitFor(`> ${text}`);
-  pty.write(KEYS.enter);
+const submit = async (pty: PtySession, text: string, until: Proof): Promise<Frame> => {
+  await pty.type(text);
+  return pty.key('enter', { until });
 };
 
 const leave = async (pty: PtySession): Promise<void> => {
-  pty.write(KEYS.ctrlD);
-  await pty.waitFor('Press ctrl+d again to exit');
-  pty.write(KEYS.ctrlD);
-  expect(await pty.exit()).toEqual({ code: 0, signal: null });
+  await pty.key('ctrlD', { until: 'Press ctrl+d again to exit' });
+  expect((await pty.key('ctrlD', { until: 'exit' })).status).toEqual({ code: 0, signal: null });
 };
 
-const wrappedText = (phrase: string): RegExp => new RegExp(phrase.split(' ').map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s│]+'));
+const DRAFT_SECOND_ROW = /^│ {3} *│$/;
 
-const pasted = (text: string): string => `\u001b[200~${text}\u001b[201~`;
+const wrappedText = (phrase: string): RegExp => new RegExp(phrase.split(' ').map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s│]+'));
 
 describe('momonga secret set through a pty', () => {
   it(titleOf('cli-secret'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -42,22 +39,24 @@ describe('momonga secret set through a pty', () => {
 
     const stored = await spawnWithFakes(home, ['secret', 'set', 'anthropic-main']);
     await stored.waitFor('Value for secret anthropic-main (input is hidden): ');
-    stored.write(`${value}\r`);
-    await stored.waitFor('Enter it again to confirm: ');
-    stored.write(`${value}\r`);
-    await stored.waitFor('stored secret anthropic-main');
-    expect(await stored.exit()).toEqual({ code: 0, signal: null });
-    expect(stored.screen()).not.toContain(value);
+    await stored.write(value);
+    await stored.key('enter', { until: 'Enter it again to confirm: ' });
+    await stored.write(value);
+    await stored.key('enter', { until: 'stored secret anthropic-main' });
+    const storedExit = await stored.exit();
+    expect(storedExit.status).toEqual({ code: 0, signal: null });
+    expect(storedExit.frame.lines.join('\n')).not.toContain(value);
     expect(JSON.parse(fs.readFileSync(path.join(home.root, SECRETS_FILE_NAME), 'utf8'))).toEqual({ 'anthropic-main': value });
 
     const mismatched = await spawnWithFakes(home, ['secret', 'set', 'other-key']);
     await mismatched.waitFor('Value for secret other-key');
-    mismatched.write('first-value\r');
-    await mismatched.waitFor('Enter it again');
-    mismatched.write('second-value\r');
-    await mismatched.waitFor('the two entries differ; nothing was stored');
-    expect(await mismatched.exit()).toEqual({ code: 1, signal: null });
-    expect(mismatched.screen()).not.toContain('first-value');
+    await mismatched.write('first-value');
+    await mismatched.key('enter', { until: 'Enter it again' });
+    await mismatched.write('second-value');
+    await mismatched.key('enter', { until: 'the two entries differ; nothing was stored' });
+    const mismatchedExit = await mismatched.exit();
+    expect(mismatchedExit.status).toEqual({ code: 1, signal: null });
+    expect(mismatchedExit.frame.lines.join('\n')).not.toContain('first-value');
     expect(Object.keys(JSON.parse(fs.readFileSync(path.join(home.root, SECRETS_FILE_NAME), 'utf8')))).toEqual(['anthropic-main']);
 
     const refused = await runCli(home, ['secret', 'set', 'bad name']);
@@ -71,8 +70,7 @@ describe('the startup screen through a pty', () => {
     const { home } = await prepareProduct();
     const pty = await spawnWithFakes(home);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('mode: manual (shift+tab)');
-    const shown = pty.visible();
+    const { rows: shown } = await pty.waitFor({ shows: 'mode: manual (shift+tab)', in: 'footer' });
     const banner = shown.filter((line) => line.startsWith('│'));
     const screen = shown.join('\n');
     expect(banner.some((line) => line.includes('(•ᴥ•)')), screen).toBe(true);
@@ -93,14 +91,11 @@ describe('skills, memory and images in the terminal', () => {
     const pty = await spawnWithFakes(home);
     await trustAndWait(pty);
 
-    pty.write('/pd');
+    await pty.type('/pd');
     await pty.waitFor('› /pdf <task>  Extract PDF text');
-    pty.write('\t');
-    await pty.waitFor('> /pdf');
-    pty.write('summarize the report');
-    await pty.waitFor('> /pdf summarize the report');
-    pty.write(KEYS.enter);
-    await pty.waitFor('Used the skill.');
+    await pty.key('tab', { until: { shows: '> /pdf', in: 'input' } });
+    await pty.type('summarize the report');
+    await pty.key('enter', { until: 'Used the skill.' });
     expect(requestText(chatCompletions(fake)[0])).toContain('Activated skill pdf');
     expect(requestText(chatCompletions(fake)[0])).toContain('summarize the report');
     await leave(pty);
@@ -114,14 +109,10 @@ describe('skills, memory and images in the terminal', () => {
     const pty = await spawnWithFakes(home);
     await trustAndWait(pty);
 
-    await submit(pty, '/memory');
-    await pty.waitFor(`${id}  [user]  ${note}`);
-    await submit(pty, `/memory show ${id}`);
-    await pty.waitFor('source: session');
-    await submit(pty, `/memory delete ${id}`);
-    await pty.waitFor(`retired memory ${id}`);
-    await submit(pty, '/memory');
-    await pty.waitFor('no memories');
+    await submit(pty, '/memory', `${id}  [user]  ${note}`);
+    await submit(pty, `/memory show ${id}`, 'source: session');
+    await submit(pty, `/memory delete ${id}`, `retired memory ${id}`);
+    await submit(pty, '/memory', 'no memories');
     expect((await runCli(home, ['memory', 'list'])).stdout).toBe('no memories\n');
     await leave(pty);
   });
@@ -133,10 +124,8 @@ describe('skills, memory and images in the terminal', () => {
     await trustAndWait(pty);
     await pty.waitFor('image input: paste a file path');
 
-    pty.write(pasted(shot));
-    await pty.waitFor('attached shot.png (image/png');
-    await submit(pty, 'what is in it');
-    await pty.waitFor('It is a picture.');
+    await pty.paste(shot, { until: 'attached shot.png (image/png' });
+    await submit(pty, 'what is in it', 'It is a picture.');
     expect(requestText(chatCompletions(fake)[0])).toContain(`data:image/png;base64,${PNG_BYTES.toString('base64')}`);
     await leave(pty);
   });
@@ -153,27 +142,23 @@ describe('MCP input in the terminal', () => {
       const pty = await spawnWithFakes(home, ['--dangerously-skip-permissions']);
       await trustAndWait(pty, 'bypassPermissions');
 
-      await submit(pty, 'ask me who I am');
-      await pty.waitFor('MCP server remote asks for input');
+      await submit(pty, 'ask me who I am', 'MCP server remote asks for input');
       await pty.waitFor('Who are you?');
       await pty.waitForPrompt('name (name, string, required)');
-      pty.write('Ada');
-      await pty.waitFor('Ada');
-      pty.write(KEYS.enter);
+      await pty.type('Ada');
+      await pty.key('enter', { until: '1. Submit' });
       await pty.waitForPrompt('1. Submit');
-      pty.write('1');
-      await pty.waitFor('form done');
+      await pty.key('1', { until: 'form done' });
       await untilRunEnds(pty, 'bypassPermissions');
       expect(requestText(chatCompletions(fake)[1])).toContain('hello Ada');
 
-      await submit(pty, 'connect my account');
-      await pty.waitFor('Connect your account.');
+      await submit(pty, 'connect my account', 'Connect your account.');
       await pty.waitFor('URL: https://example.test/connect?s=1');
       expect(fs.existsSync(path.join(home.root, OPEN_LOG_FILE_NAME))).toBe(false);
       await pty.waitForPrompt('1. Open the URL in the browser and accept');
-      pty.write('1');
-      pty.write(KEYS.enter);
-      await pty.waitFor('link done');
+      await pty.key('down', { until: '› 2. Decline' });
+      await pty.key('1', { until: '› 1. Open the URL in the browser and accept' });
+      await pty.key('enter', { until: 'link done' });
       expect(fs.readFileSync(path.join(home.root, OPEN_LOG_FILE_NAME), 'utf8')).toBe('https://example.test/connect?s=1\n');
       expect(requestText(chatCompletions(fake)[3])).toContain('link accept');
       await leave(pty);
@@ -186,13 +171,11 @@ describe('MCP input in the terminal', () => {
     const { home, fake } = await prepareProduct({ script: [textReply('noted 1a')] });
     const pty = await spawnWithFakes(home);
     await trustAndWait(pty);
-    pty.write('1');
-    pty.write('a');
-    await pty.waitFor('> 1a');
-    pty.write(KEYS.up);
-    pty.write(KEYS.down);
-    pty.write(KEYS.enter);
-    await pty.waitFor('noted 1a');
+    await pty.type('1a');
+    await pty.key('ctrlJ', { until: { caretOn: DRAFT_SECOND_ROW } });
+    await pty.key('up', { until: { caretOn: '> 1a' } });
+    await pty.key('down', { until: { caretOn: DRAFT_SECOND_ROW } });
+    await pty.key('enter', { until: 'noted 1a' });
     await untilRunEnds(pty, 'manual');
     expect(requestText(chatCompletions(fake)[0])).toContain('1a');
     expect(fs.existsSync(path.join(home.root, OPEN_LOG_FILE_NAME))).toBe(false);
@@ -209,7 +192,7 @@ describe('MCP input in the terminal', () => {
     fs.writeFileSync(path.join(skills, 'SKILL.md'), '---\nname: nameless\n---\nBody.\n');
     const pty = await spawnWithFakes(home);
     await answerTrust(pty, 'trust');
-    await pty.waitFor('mode: manual (shift+tab)');
+    await pty.waitFor({ shows: 'mode: manual (shift+tab)', in: 'footer' });
     await pty.waitFor('! Agent at');
     await pty.waitFor(wrappedText('broken.md was skipped: the description is missing or empty'));
     await pty.waitFor('! Skill at');

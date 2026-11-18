@@ -20,9 +20,10 @@ export type InstalledDaemon = Exclude<DaemonRestart, { kind: 'failed' }>;
 
 const daemonAfterUpdateText = (to: string, daemon: InstalledDaemon): string => {
   if (daemon.kind === 'not_running') return `Updated to v${to}. No daemon was running; the next command starts v${to}.`;
-  const { steps, jobs, versions } = daemon.retiring;
-  if (steps + jobs === 0) return `Updated to v${to}. The daemon is running the new version.`;
-  return `Updated to v${to}. The daemon is running the new version now. ${steps} running steps and ${jobs} background jobs of ${versions.map((version) => `v${version}`).join(', ')} finish in the background; nothing is interrupted.`;
+  const { steps, jobs, versions, notKnown } = daemon.retiring;
+  if (steps + jobs === 0 && notKnown.length === 0) return `Updated to v${to}. The daemon is running the new version.`;
+  const notKnownText = notKnown.length === 0 ? '' : `, and the work of ${notKnown.join(', ')} is not known: its runtime did not answer in time`;
+  return `Updated to v${to}. The daemon is running the new version now. ${steps} running steps and ${jobs} background jobs of ${versions.map((version) => `v${version}`).join(', ')} finish in the background${notKnownText}; nothing is interrupted.`;
 };
 
 export const installedText = (result: { from: string; to: string; target: string; daemon: InstalledDaemon }): string =>

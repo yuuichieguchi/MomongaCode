@@ -21,10 +21,10 @@ const oversleepingClock = (): CliClock => {
 
 describe('the text of what a stop interrupts (20.75)', () => {
   it('lists up to five items and counts the rest', () => {
-    expect(stoppingText({ steps: 2, jobs: 1, items: [{ kind: 'run', id: 'r1' }, { kind: 'run', id: 'r2' }, { kind: 'job', id: 'j1', command: 'sleep 100' }] })).toBe(
+    expect(stoppingText({ steps: 2, jobs: 1, items: [{ kind: 'run', id: 'r1' }, { kind: 'run', id: 'r2' }, { kind: 'job', id: 'j1', command: 'sleep 100' }], notKnown: [] })).toBe(
       'Stopping the daemon. This interrupts 2 running steps and 1 background jobs: run r1, run r2, job j1 (sleep 100). Interrupted runs resume when the daemon starts again.',
     );
-    expect(stoppingText({ steps: 7, jobs: 0, items: ['r1', 'r2', 'r3', 'r4', 'r5'].map((id) => ({ kind: 'run' as const, id })) })).toBe(
+    expect(stoppingText({ steps: 7, jobs: 0, items: ['r1', 'r2', 'r3', 'r4', 'r5'].map((id) => ({ kind: 'run' as const, id })), notKnown: [] })).toBe(
       'Stopping the daemon. This interrupts 7 running steps and 0 background jobs: run r1, run r2, run r3, run r4, run r5 and 2 more. Interrupted runs resume when the daemon starts again.',
     );
   });
@@ -104,5 +104,37 @@ describe('momonga daemon stop over the live generations (20.75, 15.14 P7 d)', ()
     const one = await stopDaemon({ ...ports, clock: oversleepingClock() }, paths).catch((error: unknown) => error);
 
     expect((one as PollTimeout).message).toBe('the daemon (v1.2.4, pid 4002) did not stop within 200000 ms');
+  });
+
+  it('does not say stopped while a supervisor that freed its lock is still running, and names it when it outlasts the bound', async (context) => {
+    const { paths, start, ports } = await setupGenerations(context, '1.2.4');
+    const lingering = await start({ version: '1.2.4', generation: 1, pid: 4101, outlivesLock: true });
+
+    const stopping = await stopDaemon({ ...ports, clock: oversleepingClock() }, paths).catch((error: unknown) => error);
+
+    expect(lingering.exited).toBe(false);
+    expect(stopping).toBeInstanceOf(PollTimeout);
+    expect((stopping as PollTimeout).message).toMatch(/^the daemon \(v1\.2\.4, pid 4101\) did not stop within \d+ ms$/);
+  });
+
+  it('says it cannot tell what it interrupts in a generation whose runtime did not answer in time, next to what it knows', async (context) => {
+    const { paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
+    await start({ version: '1.2.3', generation: 1, pid: 4001, reports: { steps: 1, jobs: 0, calls: 0, interrupts: [{ kind: 'run', id: 'r1' }] } });
+    await start({ version: '1.2.4', generation: 2, pid: 4002, reports: { calls: 0, countsNotKnown: ['runtime'] } });
+
+    expect(await daemonStop(ports as unknown as CliPorts, paths)).toBe(0);
+    expect(stdout.chunks.join('')).toBe(
+      'Stopping the daemon. This interrupts 1 running steps and 0 background jobs: run r1, and work that is not known in v1.2.4 (pid 4002), whose runtime did not answer in time. Interrupted runs resume when the daemon starts again.\nmomonga daemon stopped\n',
+    );
+  });
+
+  it('says so even when every generation that answered has nothing running', async (context) => {
+    const { paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
+    await start({ version: '1.2.4', generation: 1, pid: 4002, reports: { calls: 0, countsNotKnown: ['runtime'] } });
+
+    expect(await daemonStop(ports as unknown as CliPorts, paths)).toBe(0);
+    expect(stdout.chunks.join('')).toBe(
+      'Stopping the daemon. This interrupts 0 running steps and 0 background jobs, and work that is not known in v1.2.4 (pid 4002), whose runtime did not answer in time. Interrupted runs resume when the daemon starts again.\nmomonga daemon stopped\n',
+    );
   });
 });

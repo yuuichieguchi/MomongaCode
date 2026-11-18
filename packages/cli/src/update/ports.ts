@@ -24,7 +24,7 @@ export type UpdateLock = { acquire(): Promise<UpdateLockHandle | undefined>; isH
 
 export type UpdateStateStore = { readonly file: string; read(): Promise<string | undefined>; write(state: unknown): Promise<void> };
 
-export type RetiringWork = { steps: number; jobs: number; versions: string[] };
+export type RetiringWork = { steps: number; jobs: number; versions: string[]; notKnown: string[] };
 
 export type DaemonProbe = { running(): Promise<boolean>; retiring(): Promise<RetiringWork>; readyBoundMs(): Promise<number> };
 

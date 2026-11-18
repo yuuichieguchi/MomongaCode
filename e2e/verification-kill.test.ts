@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome, markersOf } from './support/home.ts';
-import { groupAlive, isAlive } from './support/process.ts';
+import { expectEndedAtTerminal } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import { sandboxOrSkip } from './support/sandbox.ts';
 import { startStack } from './support/stack.ts';
@@ -48,8 +48,7 @@ describe('v: a completion check interrupted by a runtime SIGKILL', () => {
       });
 
       expect(linesOf(runs)).toEqual(['run', 'run']);
-      expect(isAlive(firstHolder)).toBe(false);
-      expect(groupAlive(firstHolder)).toBe(false);
+      await expectEndedAtTerminal('COMPLETED', { group: firstHolder, processes: [firstHolder] });
       const stream = runtime.events(run.id);
       const frames = await stream.toEnd(E2E_MARGIN_MS);
       await stream.close();

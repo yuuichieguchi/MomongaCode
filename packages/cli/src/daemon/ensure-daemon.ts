@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readUserStopValuesOrDefault } from '@momonga/config';
 import {
+  isProcessAlive,
   CurrentGenerationUnreadableError,
   GenerationPrepareError,
   HOST_READ_BOUND_MS,
@@ -50,7 +51,7 @@ export class DaemonStartError extends Error {
   }
 }
 
-export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers' | 'endpointScope' | 'files'>;
+export type DaemonPorts = Pick<CliPorts, 'version' | 'env' | 'home' | 'clock' | 'self' | 'spawnDetached' | 'exec' | 'timers' | 'endpointScope' | 'files' | 'process'>;
 
 export type DaemonConnection = { health: SupervisorHealth; clientIsOlder: boolean };
 
@@ -128,10 +129,15 @@ const STOP_WAIT_DESCRIPTION = 'the daemon to stop';
 
 const exitDescription = (exit: DetachedExit): string => (exit.code === null ? `signal ${exit.signal}` : `exit code ${exit.code}`);
 
+type StoppingGeneration = { generation: number; pid: number };
+
+const generationGone = async (ports: Pick<DaemonPorts, 'process'>, paths: MomongaPaths, stopping: StoppingGeneration, lock: KernelLockMechanism): Promise<boolean> =>
+  !(await lockReadsHeld(supervisorLockOf(paths, stopping.generation), { lock })) && !isProcessAlive(stopping.pid, ports.process.kill, ports.process.runState);
+
 export const waitForGenerationsGone = async (
-  ports: Pick<DaemonPorts, 'clock'>,
+  ports: Pick<DaemonPorts, 'clock' | 'process'>,
   paths: MomongaPaths,
-  generations: readonly number[],
+  generations: readonly StoppingGeneration[],
   stopMs: number,
   options: { signal?: AbortSignal; lock?: KernelLockMechanism } = {},
 ): Promise<void> => {
@@ -140,7 +146,7 @@ export const waitForGenerationsGone = async (
     ports.clock,
     async () => {
       for (const generation of generations) {
-        if (await lockReadsHeld(supervisorLockOf(paths, generation), { lock })) return undefined;
+        if (!(await generationGone(ports, paths, generation, lock))) return undefined;
       }
       return true;
     },
@@ -163,7 +169,11 @@ export const liveGenerationsUnderLock = async (ports: Pick<DaemonPorts, 'clock'>
     { boundMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the generation lock to list the running daemons' },
   );
 
-export type InterruptedWork = { steps: number; jobs: number; items: readonly InterruptedWorkItem[] };
+export type InterruptedWork = { steps: number; jobs: number; items: readonly InterruptedWorkItem[]; notKnown: readonly string[] };
+
+export const generationLabel = (health: SupervisorHealth): string => `v${health.version} (pid ${health.pid})`;
+
+export const runtimeCountsNotKnown = (health: SupervisorHealth): boolean => health.countsNotKnown?.includes('runtime') === true;
 
 export class DaemonStopTimeout extends PollTimeout {
   readonly remaining: readonly SupervisorHealth[];
@@ -228,6 +238,7 @@ export const stopDaemon = async (
     steps: sumOf(candidates.map((candidate) => candidate.health.steps)),
     jobs: sumOf(candidates.map((candidate) => candidate.health.jobs)),
     items: candidates.flatMap((candidate) => candidate.health.interrupts ?? []),
+    notKnown: candidates.filter((candidate) => runtimeCountsNotKnown(candidate.health)).map((candidate) => generationLabel(candidate.health)),
   });
   let stopValues: Promise<StopValues> | undefined;
   const values = (): Promise<StopValues> => (stopValues ??= readStopValues(ports, onNotice));
@@ -240,7 +251,7 @@ export const stopDaemon = async (
       await waitForGenerationsGone(
         ports,
         paths,
-        asked.map((request) => request.generation),
+        asked.map((request) => ({ generation: request.generation, pid: request.health.pid })),
         stopMs,
         { lock },
       );
@@ -248,7 +259,7 @@ export const stopDaemon = async (
       if (!(error instanceof PollTimeout)) throw error;
       const remaining: SupervisorHealth[] = [];
       for (const request of asked) {
-        if (await lockReadsHeld(supervisorLockOf(paths, request.generation), { lock })) remaining.push(request.health);
+        if (!(await generationGone(ports, paths, { generation: request.generation, pid: request.health.pid }, lock))) remaining.push(request.health);
       }
       if (remaining.length > 0) throw new DaemonStopTimeout(remaining, stopMs);
     }

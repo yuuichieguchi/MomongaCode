@@ -7,14 +7,13 @@ import type { EndpointKey } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec, testKernelLock } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelOf, modelsOf, pause, until } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelOf, modelsOf, until } from './gateway-process-helpers.ts';
 import { OLLAMA_LISTED, startFakeOllama } from './ollama-support.ts';
-import { FIRST_GENERATION } from '@momonga/foundation';
+import { FIRST_GENERATION, POLL_INTERVAL_MS, systemTiming } from '@momonga/foundation';
 import { hostProbePorts } from './probe-ports-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const KEY_LOCK_WAITS_OBSERVED_MS = 500;
 
 const launchWith = async (target: Record<string, unknown>) => {
   const servers = { local: target };
@@ -82,15 +81,25 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
     const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system', testKernelLock());
 
+    let lockHeld = true;
+    let lockPolls = 0;
+    const timers = {
+      ...systemTiming,
+      setTimeout: (callback: () => void, ms: number): unknown => {
+        if (lockHeld && ms === POLL_INTERVAL_MS) lockPolls += 1;
+        return systemTiming.setTimeout(callback, ms);
+      },
+    };
     let settled = false;
-    const probing = probeEndpointTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).finally(() => {
+    const probing = probeEndpointTarget({ ports: { ...hostProbePorts, timers }, lock: testKernelLock(), probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).finally(() => {
       settled = true;
     });
     await until(() => fake.requests.some((request) => request.path === '/v1/chat/completions'), 'the CLI probe to measure');
-    await pause(KEY_LOCK_WAITS_OBSERVED_MS);
+    await until(() => lockPolls > 0, 'the probe to wait at the held record lock');
     expect(settled).toBe(false);
     expect(fs.existsSync(probeRecordDir) ? fs.readdirSync(probeRecordDir).filter((name) => name.endsWith('.json')) : []).toEqual([]);
 
+    lockHeld = false;
     held.release();
     await probing;
     expect(fs.readdirSync(probeRecordDir).filter((name) => name.endsWith('.json'))).toHaveLength(1);

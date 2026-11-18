@@ -1,3 +1,4 @@
+import { canStillRun } from '@momonga/foundation';
 import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import { readDb } from './support/db.ts';
 import { createE2eHome, markersOf } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
-import { groupAlive, hostPidOf, isAlive } from './support/process.ts';
+import { expectEndedAtTerminal, groupRunning, hostPidOf, processRunning } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import { REFUSED_WRITE_TEXT, SANDBOX_ENDS_WITH_RUNTIME, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import { startStack } from './support/stack.ts';
@@ -28,15 +29,17 @@ const linesOf = (file: string): string[] | undefined => {
 const toolGroupsOf = (home: E2eHome): number[] =>
   readDb<{ pgid: number }>(home.paths.databases.runtime, TOOL_GROUPS_SQL).map((row) => Number(row.pgid));
 
-const processTable = (): { pid: number; pgid: number }[] =>
-  execFileSync('/bin/ps', ['-ax', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+const processTable = (): { pid: number; pgid: number; stat: string }[] =>
+  execFileSync('/bin/ps', ['-ax', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } })
     .split('\n')
     .flatMap((line) => {
-      const [pid, pgid] = line.trim().split(/\s+/).map(Number);
-      return pid === undefined || pgid === undefined || Number.isNaN(pid) || Number.isNaN(pgid) ? [] : [{ pid, pgid }];
+      const [pidText, pgidText, stat] = line.trim().split(/\s+/);
+      const pid = Number(pidText);
+      const pgid = Number(pgidText);
+      return stat === undefined || Number.isNaN(pid) || Number.isNaN(pgid) ? [] : [{ pid, pgid, stat }];
     });
 
-const membersOf = (pgid: number): number[] => processTable().filter((entry) => entry.pgid === pgid).map((entry) => entry.pid);
+const membersOf = (pgid: number): number[] => processTable().filter((entry) => entry.pgid === pgid && canStillRun(entry.stat)).map((entry) => entry.pid);
 
 const groupOfPid = (pid: number): number | undefined => processTable().find((entry) => entry.pid === pid)?.pgid;
 
@@ -169,7 +172,7 @@ describe('b2: Bash under the platform sandbox', () => {
       );
       expect(toolGroups).toHaveLength(1);
       const pgid = toolGroups[0] as number;
-      expect(groupAlive(pgid)).toBe(true);
+      expect(await groupRunning(pgid)).toBe(true);
       expect(fs.readdirSync(markersOf(home).tools).length).toBeGreaterThanOrEqual(1);
 
       const before = await stack.client.health();
@@ -179,7 +182,7 @@ describe('b2: Bash under the platform sandbox', () => {
       expect(chatCompletions(stack.fake)).toHaveLength(1);
 
       process.kill(oldRuntimePid, 'SIGKILL');
-      if (!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) expect(groupAlive(pgid)).toBe(true);
+      if (!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) expect(await groupRunning(pgid)).toBe(true);
 
       await until(async () => (await runtime.getRun(run.id)).run.status === 'WAITING_HUMAN', {
         deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
@@ -198,7 +201,7 @@ describe('b2: Bash under the platform sandbox', () => {
         description: `run ${run.id} COMPLETED after the answer`,
       });
 
-      expect(groupAlive(pgid)).toBe(false);
+      await expectEndedAtTerminal('COMPLETED', { group: pgid });
       const stream = runtime.events(run.id);
       const frames = await stream.toEnd(E2E_MARGIN_MS);
       await stream.close();
@@ -244,9 +247,8 @@ describe('b2: Bash under the platform sandbox', () => {
       killed.kill();
       await killed.completed();
 
-      expect(groupAlive(killed.pgid)).toBe(false);
+      await expectEndedAtTerminal('COMPLETED', { group: killed.pgid, processes: members });
       expect(membersOf(killed.pgid)).toEqual([]);
-      for (const pid of members) expect(isAlive(pid)).toBe(false);
       expect(linesOf(killed.files.effect)).toEqual(['effect']);
     } finally {
       await killed.runtime.close();
@@ -261,14 +263,13 @@ describe('b2: Bash under the platform sandbox', () => {
     try {
       const escaped = await until(() => hostPidIn(killed.files.escaped, killed.pgid), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the host pid of the escaping process' });
       await until(() => groupOfPid(escaped) === escaped, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process leading a group of its own' });
-      expect(isAlive(escaped)).toBe(true);
+      expect(processRunning(escaped)).toBe(true);
       expect(membersOf(killed.pgid)).not.toContain(escaped);
 
       killed.kill();
       await killed.completed();
 
-      expect(groupAlive(killed.pgid)).toBe(false);
-      expect(isAlive(escaped)).toBe(false);
+      await expectEndedAtTerminal('COMPLETED', { group: killed.pgid, processes: [escaped] });
     } finally {
       await killed.runtime.close();
     }
@@ -287,10 +288,11 @@ describe('b2: Bash under the platform sandbox', () => {
       killed.kill();
       await killed.completed();
 
-      expect(groupAlive(killed.pgid)).toBe(false);
-      expect(isAlive(escaped)).toBe(!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]);
+      await expectEndedAtTerminal('COMPLETED', { group: killed.pgid });
+      if (SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) await expectEndedAtTerminal('COMPLETED', { processes: [escaped] });
+      else expect(processRunning(escaped)).toBe(true);
     } finally {
-      if (escaped !== undefined && isAlive(escaped)) process.kill(escaped, 'SIGKILL');
+      if (escaped !== undefined && processRunning(escaped)) process.kill(escaped, 'SIGKILL');
       await killed.runtime.close();
     }
   });

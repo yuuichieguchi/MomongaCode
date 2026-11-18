@@ -22,17 +22,22 @@ afterEach(() => {
 
 const keptWorld = () => {
   const fake = fakeKeeperHost((keeper) => {
+    if (keeper.mode === 'attach') {
+      keeper.say('failed job-absent 2\n');
+      return;
+    }
     answeringMembers(() => [COMMAND_PID])(keeper);
     keeper.say(`started ${COMMAND_PID} 3\n`);
   });
-  const port = createProcessGroupPort('win32', { run: nodeCommandRunner, env: {}, kept: createKeptGroupControl(fake.host) });
+  const kept = createKeptGroupControl(fake.host);
+  const port = createProcessGroupPort('win32', { run: nodeCommandRunner, env: {}, kept });
   const spawnProcess = ((file: string, args: readonly string[]) => {
     fake.start(file, args);
     const child = Object.assign(new EventEmitter(), { pid: KEEPER_PID, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), stdio: [null, null, null], kill: () => true });
     process.nextTick(() => child.emit('spawn'));
     return child;
   }) as unknown as SpawnProcess;
-  return { fake, port, spawnProcess };
+  return { fake, kept, port, spawnProcess };
 };
 
 const transportOver = (world: ReturnType<typeof keptWorld>) => {
@@ -87,5 +92,24 @@ describe('a stdio MCP server launched over a job group port', () => {
     keeper?.say('empty\n');
     keeper?.say('exit 1\n');
     await closing;
+  });
+
+  it('finds its emptied job absent when a later check attaches by the name its marker recorded', async () => {
+    const world = keptWorld();
+    const { transport } = transportOver(world);
+    await transport.start();
+    await settle();
+    const keeper = world.fake.keepers[0];
+    const name = world.port.names?.nameOf(KEEPER_PID);
+    const closing = transport.close(0);
+    await vi.waitFor(() => expect(keeper?.written).toContain('terminate\n'));
+    keeper?.say('empty\n');
+    keeper?.say('exit 1\n');
+    await closing;
+    expect(name).toBeDefined();
+    await vi.waitFor(() => expect(world.kept.leads(KEEPER_PID)).toBe(false));
+    world.port.names?.recall(KEEPER_PID, name ?? '');
+    expect(await world.port.alive(KEEPER_PID, { signal: new AbortController().signal })).toBe(false);
+    expect(world.fake.keepers.map((each) => each.mode)).toEqual(['launch', 'attach']);
   });
 });

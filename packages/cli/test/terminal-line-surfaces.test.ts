@@ -155,7 +155,7 @@ describe('a value a person did not write stays on its own line in command output
       `momonga 2.0.0 ${SHOWN} is available (running 1); run \`momonga update\` to install it\n`,
     );
     expect(upToDateText(`1 ${FORGED}`)).toBe(`momonga 1 ${SHOWN} is up to date\n`);
-    expect(installedText({ from: '1', to: `2 ${FORGED}`, target: 't', daemon: { kind: 'restarted', retiring: { steps: 0, jobs: 0, versions: [] } } })).toBe(
+    expect(installedText({ from: '1', to: `2 ${FORGED}`, target: 't', daemon: { kind: 'restarted', retiring: { steps: 0, jobs: 0, versions: [], notKnown: [] } } })).toBe(
       `updated momonga 1 -> 2 ${SHOWN} (t)\nUpdated to v2 ${SHOWN}. The daemon is running the new version.\n`,
     );
   });

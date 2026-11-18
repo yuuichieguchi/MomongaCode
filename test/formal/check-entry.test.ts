@@ -132,6 +132,8 @@ describe('checking one configuration', () => {
       java: createJavaIdentityReader({ env: javaEnv }),
       limitMs: limitOf(entry),
       now: () => new Date(NOW),
+      record: false,
+      loadAverage: () => 0,
       ...overrides,
     };
   };
@@ -211,6 +213,20 @@ describe('checking one configuration', () => {
     expect(await checkEntry(request({ entry: deep }))).toEqual({ outcome: 'ran', reason: 'no record', problems: [], stored: 'stored' });
     expect(await checkEntry(request({ entry: deep }))).toEqual({ outcome: 'reused', producedAt: NOW });
     expect(callsOf(fake)).toHaveLength(1);
+  });
+
+  it('judges a recorded run against the state count it measured, so a row whose count changed is recorded with the new count', async () => {
+    answer(fake, 0, completedOutput(7));
+    const outcome = await checkEntry(request({ mode: 'off', record: true }));
+    expect(outcome).toMatchObject({ outcome: 'ran', problems: [], measurement: { distinctStates: 7 } });
+  });
+
+  it('runs a row in record mode whose manifest identity is out of date, even when a record for its inputs exists', async () => {
+    const deep = { ...holdsEntry, tier: 'deep' as const };
+    expect(await checkEntry(request({ entry: deep }))).toMatchObject({ outcome: 'ran', stored: 'stored' });
+    const outcome = await checkEntry(request({ entry: deep, record: true }));
+    expect(outcome).toMatchObject({ outcome: 'ran', reason: 'manifest identity differs', problems: [], measurement: { distinctStates: 3 } });
+    expect(callsOf(fake)).toHaveLength(2);
   });
 
   it('stores nothing for a run that fails its row and runs it again next time', async () => {
@@ -399,6 +415,7 @@ const nestedEnv = (extra: Record<string, string>): Record<string, string | undef
   const inherited: Record<string, string | undefined> = { ...process.env };
   delete inherited['MOMONGA_RUN_LOCK'];
   delete inherited['MOMONGA_TLC_REUSE'];
+  delete inherited['MOMONGA_TLC_RECORD'];
   return { ...inherited, ...extra };
 };
 

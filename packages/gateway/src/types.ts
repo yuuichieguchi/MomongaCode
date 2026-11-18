@@ -79,6 +79,7 @@ export type GatewayCommonOptions = {
   pid: number;
   version: string;
   onError?: (error: unknown) => void;
+  onReaderBehind?: () => void;
   plan?: PlanApi;
   onFatal?: (error: Error) => void;
 };

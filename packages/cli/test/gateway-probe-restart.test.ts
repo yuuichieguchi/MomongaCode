@@ -9,7 +9,7 @@ import { restartDaemon } from '../src/commands/gateway.ts';
 import { DaemonStartError } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts, SelfExecutable } from '../src/ports.ts';
-import { createFakeWork, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, fakeSupervisorProcesses, installedProgram, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor, SpawnedProcess } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -40,6 +40,7 @@ const setup = async (context: TestContext) => {
     clock: virtualClock(work),
     self: SELF,
     spawnDetached: spawn,
+    process: fakeSupervisorProcesses(() => running),
     ...installedProgram(version).ports,
     stdout: { write: (text: string) => void printed.push(text) },
   });

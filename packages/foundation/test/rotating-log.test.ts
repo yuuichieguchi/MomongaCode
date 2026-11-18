@@ -245,6 +245,27 @@ describe('createRotatingLogFile', () => {
     sink.close();
   });
 
+  it('a line cut short by a full disk is taken back, so the file holds whole lines only', (context) => {
+    const file = path.join(withTempDir(context), 'runtime.log');
+    let full = false;
+    const writeSync = ((fd: number, buffer: NodeJS.ArrayBufferView, offset: number, length: number): number => {
+      if (!full) return fs.writeSync(fd, buffer, offset, length);
+      if (offset > 0) throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+      return fs.writeSync(fd, buffer, offset, Math.floor(length / 2));
+    }) as typeof fs.writeSync;
+    const onWriteFailure = vi.fn();
+    const sink = createRotatingLogFile({ path: file, maxBytes: MAX_BYTES * 10, keep: LOG_KEEP, writeSync, onWriteFailure });
+    sink.write(line('before'));
+    full = true;
+    sink.write(line('cut'));
+    full = false;
+    sink.write(line('after'));
+    sink.close();
+    expect(tagsIn(file)).toEqual(['before', 'after']);
+    expect(sink.droppedLines).toBe(1);
+    expect((onWriteFailure.mock.calls[0]?.[0] as NodeJS.ErrnoException).code).toBe('ENOSPC');
+  });
+
   it('writes after close are counted as dropped', (context) => {
     const file = path.join(withTempDir(context), 'runtime.log');
     const sink = sinkAt(file);

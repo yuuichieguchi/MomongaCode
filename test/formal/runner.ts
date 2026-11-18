@@ -69,7 +69,7 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
     });
     try {
       const ended = await end;
-      return { pid, exitCode: ended.code, signal: ended.signal, killedAtCpuBudget: ended.breach?.kind === 'cpu', metadir, stdout, stderr };
+      return { pid, exitCode: ended.code, signal: ended.signal, killedAtCpuBudget: ended.breach?.kind === 'cpu', usedCpuSeconds: ended.usedCpuSeconds, metadir, stdout, stderr };
     } finally {
       killGroup(pid);
       untrackGroup();

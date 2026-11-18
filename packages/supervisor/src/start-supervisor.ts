@@ -1,4 +1,4 @@
-import { syncPaths } from '@momonga/foundation';
+import { HEALTH_CHILD_COUNTS_BOUND_MS, syncPaths } from '@momonga/foundation';
 import path from 'node:path';
 import type fs from 'node:fs';
 import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopValuesOfSettings, userSettingsChangeKey, writeAppliedRecord } from '@momonga/config';
@@ -426,7 +426,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
           promoting = false;
         });
     }
-    const refreshCounts = async (): Promise<void> => {
+    const readCounts = async (): Promise<GenerationCounts> => {
       const reader = options.childCounts ?? readChildCounts;
       const read = async (manager: ChildManager): Promise<GenerationCounts> => {
         if (manager.state() !== 'ready') return {};
@@ -438,7 +438,36 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         }
       };
       const [fromGateway, fromRuntime] = await Promise.all([read(gateway), read(runtime)]);
-      counts = { ...fromRuntime, ...fromGateway };
+      return { ...fromRuntime, ...fromGateway };
+    };
+    const refreshCounts = async (): Promise<void> => {
+      counts = await readCounts();
+    };
+    const answeredCounts = async (): Promise<GenerationCounts & { countsNotKnown?: ChildRole[] }> => {
+      const reader = options.childCounts ?? readChildCounts;
+      const read = async (manager: ChildManager): Promise<GenerationCounts | 'not known'> => {
+        if (manager.state() !== 'ready') return {};
+        let timer: unknown;
+        const bound = new Promise<'not known'>((resolve) => {
+          timer = timers.setTimeout(() => resolve('not known'), HEALTH_CHILD_COUNTS_BOUND_MS);
+        });
+        const reading = reader(manager.role, roleEndpoint(own, manager.role).socketPath).catch((error: unknown) => {
+          reportTransient(error, `child-counts-${manager.role}`);
+          return 'not known' as const;
+        });
+        try {
+          return await Promise.race([reading, bound]);
+        } finally {
+          timers.clearTimeout(timer);
+        }
+      };
+      const [fromGateway, fromRuntime] = await Promise.all([read(gateway), read(runtime)]);
+      const notKnown = ([['runtime', fromRuntime], ['gateway', fromGateway]] as const).filter(([, read]) => read === 'not known').map(([role]) => role);
+      return {
+        ...(fromRuntime === 'not known' ? {} : fromRuntime),
+        ...(fromGateway === 'not known' ? {} : fromGateway),
+        ...(notKnown.length === 0 ? {} : { countsNotKnown: notKnown }),
+      };
     };
 
     const warnWhenMany = async (): Promise<void> => {
@@ -490,7 +519,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       }, intervals.generationPollMs);
     };
 
-    const health = (): SupervisorHealth => ({
+    const healthWith = (current: GenerationCounts & { countsNotKnown?: ChildRole[] }): SupervisorHealth => ({
       status: 'ok',
       version: options.version,
       pid: process.pid,
@@ -502,9 +531,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
       generation: own.generation,
       role,
-      ...counts,
-      retention: counts.retention ?? null,
+      ...current,
+      retention: current.retention ?? null,
     });
+    const health = (): SupervisorHealth => healthWith(counts);
+    const answeredHealth = async (): Promise<SupervisorHealth> => healthWith(await answeredCounts());
 
     let recordFailedKey: string | undefined;
     let lastWrittenSeq: number | undefined;
@@ -635,7 +666,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...omitUndefined({ startSignal: options.signal }),
       socketPath: own.sockets.supervisor,
       timers,
-      health,
+      health: answeredHealth,
       credential: async (name, capability, signal) => {
         if (capability === undefined || !gateway.holdsCapability(capability)) return { kind: 'refused' };
         const loaded = await settings.loadOrKeep(signal).catch((error: unknown) => {

@@ -137,7 +137,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism): 
     startDaemon: async (root, paths, env) => {
       await ensureCurrentDaemon({ ...ports, home: root, env }, paths, { lifeline: true });
     },
-    terminate: (paths) => stopAllGenerations({ clock: ports.clock, isAlive: (pid) => isProcessAlive(pid, ports.process.kill), signal: signalThrough(ports.process) }, paths, { lock }),
+    terminate: (paths) => stopAllGenerations({ clock: ports.clock, isAlive: (pid) => isProcessAlive(pid, ports.process.kill, ports.process.runState), signal: signalThrough(ports.process) }, paths, { lock }),
     remove: (directory) => roots.remove(directory),
     connect: (paths) => connectRuntime(ports, paths),
     applyStep: (cwd, step) => applyWorkspaceStep(ports.files, cwd, step),

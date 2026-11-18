@@ -146,7 +146,7 @@ export const isUnixSocketLive = (socketPath: string, signal: AbortSignal): Promi
     });
     probe.once('error', (error: NodeJS.ErrnoException) => {
       settle();
-      if (error.code === 'ECONNREFUSED' || error.code === 'ENOENT') resolve(false);
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOENT' || error.code === 'ECONNRESET') resolve(false);
       else reject(error);
     });
   });

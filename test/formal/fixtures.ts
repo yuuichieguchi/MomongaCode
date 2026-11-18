@@ -15,6 +15,7 @@ export const holdsEntry: ManifestEntry = {
   measuredSeconds: 1,
   measuredCpuSeconds: 1,
   budgetCpuSeconds: 5,
+  identity: '0'.repeat(64),
 };
 
 export const invariantEntry: ManifestEntry = {
@@ -48,7 +49,7 @@ export const actionPropertyViolationOutput = (property: string): string =>
 
 export const temporalViolationOutput = ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', 'Error: Temporal properties were violated.', 'Error: The following behavior constitutes a counter-example:'].join('\n');
 
-export const runOf = (exitCode: number, stdout: string, stderr = ''): TlcRun => ({ pid: 4242, exitCode, signal: null, killedAtCpuBudget: false, metadir: path.join(systemTempRoot(), 'mmt-fixture-tlc-4242'), stdout, stderr });
+export const runOf = (exitCode: number, stdout: string, stderr = ''): TlcRun => ({ pid: 4242, exitCode, signal: null, killedAtCpuBudget: false, usedCpuSeconds: 0, metadir: path.join(systemTempRoot(), 'mmt-fixture-tlc-4242'), stdout, stderr });
 
 export const writeFile = (file: string, text: string): void => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
