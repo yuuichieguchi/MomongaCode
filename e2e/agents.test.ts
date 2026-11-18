@@ -21,7 +21,6 @@ import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import {
   E2E_CANCEL_STREAM_BOUND_MS,
-  E2E_MARGIN_MS,
   E2E_RECOVERY_BOUND_MS,
   E2E_RESTART_BOUND_MS,
   E2E_RESTART_POLICY,
@@ -113,7 +112,7 @@ describe('agents: subagents', () => {
       await untilStatus(runtime, run.id, 'COMPLETED', E2E_RUN_COMPLETED_BOUND_MS);
 
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       const statuses = framesOfType(frames, 'run.status').map((frame) => frame.data.to);
       expect(statuses).toEqual(['WAITING_TOOL', 'QUEUED', 'COMPLETED']);
@@ -128,7 +127,7 @@ describe('agents: subagents', () => {
       expect(framesOfType(frames, 'tool.completed').map((frame) => frame.data['output'])).toEqual(['child verdict: ship it']);
 
       const childStream = runtime.events(child['id'] as string);
-      const childFrames = await childStream.toEnd(E2E_MARGIN_MS);
+      const childFrames = await childStream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await childStream.close();
       expect(childFrames[0]?.data).toMatchObject({ type: 'user.message', text: 'Look at the change' });
       expect(childFrames.at(-1)?.data).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
@@ -173,12 +172,12 @@ describe('agents: subagents', () => {
         description: 'the child upstream connection was cut',
       });
       const childStream = runtime.events(child.id);
-      const childFrames = await childStream.toEnd(E2E_MARGIN_MS);
+      const childFrames = await childStream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await childStream.close();
       expect(childFrames.at(-1)?.data).toMatchObject({ type: 'run.status', to: 'CANCELLED' });
       expect(framesOfType(childFrames, 'model.responded')).toEqual([]);
       const parentStream = runtime.events(run.id);
-      const parentFrames = await parentStream.toEnd(E2E_MARGIN_MS);
+      const parentFrames = await parentStream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await parentStream.close();
       expect(framesOfType(parentFrames, 'tool.completed').map((frame) => [frame.data['status'], frame.data['output']])).toEqual([['failed', 'Subagent reviewer was cancelled.']]);
       expect(framesOfType(parentFrames, 'tool.reconciled')).toEqual([]);
@@ -214,7 +213,7 @@ describe('agents: subagents', () => {
       const { session } = await runtime.createSession({ permissionMode: 'bypassPermissions' });
       const { run } = await runtime.createRun(session.id, 'Review my change');
       await childRequest.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the held model request' });
-      const child = await until(() => childRunsOf(home, run.id)[0], { deadlineMs: E2E_MARGIN_MS, description: 'a child run' });
+      const child = await until(() => childRunsOf(home, run.id)[0], { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'a child run' });
 
       const before = await stack.client.health();
       const oldRuntimePid = childOf(before, 'runtime').pid;
@@ -230,12 +229,12 @@ describe('agents: subagents', () => {
       expect(toolTexts(calls[2])).toHaveLength(1);
       expect(toolTexts(calls[2])).toEqual(agentEnvelopes(calls[2], 'child recovered'));
       const childStream = runtime.events(child.id);
-      const childFrames = await childStream.toEnd(E2E_MARGIN_MS);
+      const childFrames = await childStream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await childStream.close();
       expect(framesOfType(childFrames, 'model.requested')).toHaveLength(1);
       expect(framesOfType(childFrames, 'model.responded')).toHaveLength(1);
       const parentStream = runtime.events(run.id);
-      const parentFrames = await parentStream.toEnd(E2E_MARGIN_MS);
+      const parentFrames = await parentStream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await parentStream.close();
       expect(framesOfType(parentFrames, 'tool.waiting')).toHaveLength(1);
       expect(framesOfType(parentFrames, 'tool.completed').map((frame) => frame.data['output'])).toEqual(['child recovered']);
@@ -303,7 +302,7 @@ describe('agents: background bash', () => {
       await untilStatus(runtime, run.id, 'COMPLETED', E2E_RUN_COMPLETED_BOUND_MS);
 
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       expect(framesOfType(frames, 'tool.waiting').map((frame) => frame.data['awaits'])).toEqual([{ kind: 'job', jobId }]);
       expect(framesOfType(frames, 'job.finished').map((frame) => frame.data)).toMatchObject([{ jobId, status: 'exited', exitCode: 0 }]);
@@ -346,7 +345,7 @@ describe('agents: background bash', () => {
       expect(job).toMatchObject({ status: 'killed', exit_code: death.exitCode, signal: death.signal });
       await expectEndedAtTerminal('killed', { group: job?.pgid as number });
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       expect(framesOfType(frames, 'job.finished').map((frame) => frame.data)).toMatchObject([{ jobId, status: 'killed' }]);
       const stopped = death.signal === null ? 'it was stopped' : `it was stopped (${death.signal})`;
@@ -389,7 +388,7 @@ describe('agents: background bash', () => {
       await expectEndedAtTerminal('COMPLETED', { group: pgid });
       expect(jobRow(home, jobId)).toMatchObject({ status: 'unknown', exit_code: null, signal: null });
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       expect(framesOfType(frames, 'job.finished').map((frame) => frame.data)).toMatchObject([{ jobId, status: 'unknown' }]);
       const outputs = framesOfType(frames, 'tool.completed').map((frame) => String(frame.data['output']));

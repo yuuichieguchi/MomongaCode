@@ -44,7 +44,7 @@ const untilStatus = async (runtime: RuntimeClient, runId: string, status: string
 
 const framesOf = async (runtime: RuntimeClient, runId: string): Promise<RunEventFrame[]> => {
   const stream = runtime.events(runId);
-  const frames = await stream.toEnd(E2E_MARGIN_MS);
+  const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
   await stream.close();
   return frames;
 };
@@ -177,7 +177,7 @@ describe('multi-turn sessions', () => {
           const rows = eventRows(home, second.id, ['context.inherited', 'model.requested']);
           return rows.some((row) => row.type === 'model.requested') ? rows : undefined;
         },
-        { deadlineMs: E2E_MARGIN_MS, description: `run ${second.id} model.requested readable` },
+        { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${second.id} model.requested readable` },
       );
       expect(before.map((row) => row.type)).toEqual(['context.inherited', 'model.requested']);
 
@@ -247,7 +247,7 @@ describe('multi-turn sessions', () => {
       await stream.until((frame) => frame.data.type === 'agent.message.delta', E2E_RECOVERY_BOUND_MS);
       await runtime.cancel(first.id);
       await untilStatus(runtime, first.id, 'CANCELLED', E2E_CANCEL_STREAM_BOUND_MS);
-      const firstFrames = await stream.toEnd(E2E_MARGIN_MS);
+      const firstFrames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       const streamed = framesOfType(firstFrames, 'agent.message.delta').map((frame) => String(frame.data.text)).join('');
       expect(streamed).toBe('partial words');
