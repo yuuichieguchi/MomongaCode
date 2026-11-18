@@ -131,6 +131,7 @@
     {"name":"HISTORY_QUERY_MAX_CHARS","file":"packages/tools/src/history/constants.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"MIN_BODY_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"OMISSION_RESERVE_CHARS","file":"packages/tools/src/history/render.ts","kind":"stated","owner":"tools","row":"context.md"},
+    {"name":"MEMORY_QUERY_MAX_CHARS","file":"packages/tools/src/memory/constants.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"OBSERVED_FILE_HASH_PAGE_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"OBSERVED_UNTRACKED_FILE_MAX_BYTES","file":"packages/tools/src/work-tree-observer.ts","kind":"stated","owner":"tools","row":"context.md"},
     {"name":"SOLVER_THREAD_POLL_MS","file":"packages/verify/src/engine.ts","kind":"C","owner":"policy-verify-sandbox","row":"verify.md"}
@@ -353,7 +354,6 @@
       {"name":"RULE_PROPOSE_TOOL_TIMEOUT_MS","file":"packages/tools/src/governance/constants.ts","lacks":["kind","row"]},
       {"name":"HISTORY_TOOL_TIMEOUT_MS","file":"packages/tools/src/history/constants.ts","lacks":["kind"]},
       {"name":"MAX_CONTINUATION_CHARS","file":"packages/tools/src/history/render.ts","lacks":["row"]},
-      {"name":"MEMORY_QUERY_MAX_CHARS","file":"packages/tools/src/memory/constants.ts","lacks":["row"]},
       {"name":"MEMORY_TEXT_MAX_CHARS","file":"packages/tools/src/memory/constants.ts","lacks":["row"]},
       {"name":"MEMORY_TOOL_TIMEOUT_MS","file":"packages/tools/src/memory/constants.ts","lacks":["kind","row"]},
       {"name":"MAX_ASK_BYTES","file":"packages/tools/src/operations/git-credential.ts","lacks":["row"]},
