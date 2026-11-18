@@ -2369,12 +2369,15 @@
       "abstractions": [
         "time is an integer clock up to MaxT and stop values are small integers (Vals): real milliseconds are not modelled",
         "one runtime child, one gateway and one managed server per generation",
-        "the state space is bounded by the constants of its configurations; the base row StopProtocol sets Gens = {1, 2}, Vals = {1, 3}, MaxT = 21, Variant = \"decided\""
+        "the runtime child's receipt of the stop message (packages/foundation/src/daemon-entry.ts (onLifelineLine, takeStopValues, beginShutdown)): one line per stop; a malformed line is a line that sets nothing; the child's own begin (a fatal error, an uncaught error, the end of the lifeline, a requested stop) is one action ChildBegin(g, \"self\"), and the values a requested stop gives are not modelled; a child that begins its own exit outside a stop of its supervisor stays closing until that stop (its restart is not modelled)",
+        "the supervisor's write of the runtime line completes in one step (RtWriteDone puts the line in the pipe and sends the signal), as packages/supervisor/src/child-manager.ts (sendStop, signalStop, forceKill) does in the write callback",
+        "the state space is bounded by the constants of its configurations; the base row StopProtocol sets Gens = {1}, Vals = {1, 2}, MaxT = 18, Variant = \"decided\""
       ],
       "notProved": [
         "the bounds in milliseconds (the stop-bound proofs cover the arithmetic)",
+        "a second stop message, a line longer than STOP_MESSAGE_MAX_BYTES and a line split across reads (covered by the entry tests of the foundation package)",
         "behaviour beyond the constants of its configurations",
-        "that the code follows the model beyond what its tie tests check: test/process-stop-conformance, test/stop-protocol-drift (test files)"
+        "that the code follows the model beyond what its tie tests check: test/process-stop-conformance, test/stop-protocol-drift, test/stop-protocol-child-conformance, packages/supervisor/test/runtime-stop-message (test files)"
       ]
     },
     {
@@ -7210,13 +7213,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 16556,
-      "measuredSeconds": 3.46,
+      "distinctStates": 319228,
+      "measuredSeconds": 57,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 8.83,
-      "budgetCpuSeconds": 21,
-      "note": "measured cold (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load not recorded at start)",
-      "identity": "bef4bfd7532b2c4cd8d5504e3a1fb5c1b11a46356f84111a9556cf3e6f23748b"
+      "measuredCpuSeconds": 140.97,
+      "budgetCpuSeconds": 285,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 17.45 at start)",
+      "identity": "47d6e9fc73c2acec06d6208a3838e7a5b1c7e6c74cce9bbf5368263dd05f5faf"
     },
     {
       "config": "StopProtocol.malformed",
@@ -7224,13 +7227,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 25576,
-      "measuredSeconds": 3.09,
+      "distinctStates": 338538,
+      "measuredSeconds": 52.87,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 8.41,
-      "budgetCpuSeconds": 20,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.12 at start)",
-      "identity": "31ca6c21dda10aec76c896a6268609e2be9515a59bdc6f3232d89ff491b2330f"
+      "measuredCpuSeconds": 89.84,
+      "budgetCpuSeconds": 183,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 17.45 at start)",
+      "identity": "ff593b5a6adffbd43b731aa09e77b5fc7bb806cc309b9550c9e4022964c65843"
     },
     {
       "config": "StopProtocol.noReap",
@@ -7241,13 +7244,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 760,
-      "measuredSeconds": 1.51,
+      "distinctStates": 2308,
+      "measuredSeconds": 1.62,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.48,
+      "measuredCpuSeconds": 2.25,
       "budgetCpuSeconds": 8,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.12 at start)",
-      "identity": "6d414a60a00e6219efae63baf35ed0ae4d04231135e587ff3ad5aaf9e4683ce0"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.45 at start)",
+      "identity": "759157215400cd30de651db9d1eeb03ad9ec089c496ad88a2f83f93575105f3c"
     },
     {
       "config": "StopProtocol.mixed",
@@ -7257,14 +7260,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 138,
-      "measuredSeconds": 1.46,
+      "tier": "deep",
+      "distinctStates": 682,
+      "measuredSeconds": 1.38,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.13,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.12 at start)",
-      "identity": "46d150a829fe9a4999ecd28a46a7b36f9f947a32707be2c28a587d716771aae3"
+      "measuredCpuSeconds": 1.86,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.01 at start)",
+      "identity": "62360d64f5aef8707cf6b0f6540265a500e38810d83d263c2d436e5104b826b2"
     },
     {
       "config": "StopProtocol.noMessage",
@@ -7275,13 +7278,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 149,
-      "measuredSeconds": 1.48,
+      "distinctStates": 354,
+      "measuredSeconds": 1.35,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.17,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.11 at start)",
-      "identity": "64ec14290d3e6ca5d9439a05c6a2f61b6d7c832b2193d022577365994a41672b"
+      "measuredCpuSeconds": 1.69,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.01 at start)",
+      "identity": "8e3d43c924d6d20d5c214372925311672791a354461c8b1c24b774f8f09b4cf5"
     },
     {
       "config": "StopProtocol.noDeadline",
@@ -7292,13 +7295,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 1824,
-      "measuredSeconds": 1.54,
+      "distinctStates": 9326,
+      "measuredSeconds": 1.67,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.72,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.11 at start)",
-      "identity": "8ad7a6d7ea1ce3071d64c18c673bd70806d045e5594886ffb80c128ed5ae91c9"
+      "measuredCpuSeconds": 3.06,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.01 at start)",
+      "identity": "e12805c261e9d6a5c447ac41df793cad1a3555e32d19201fb5ce32093c11d4d8"
     },
     {
       "config": "StopProtocol.waitsForever",
@@ -7309,13 +7312,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 29310,
-      "measuredSeconds": 2.86,
+      "distinctStates": 529688,
+      "measuredSeconds": 37.09,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6.77,
-      "budgetCpuSeconds": 17,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.42 at start)",
-      "identity": "ac217d68764e0bc8fee5f066fa4faaa04db8f2bdaae36d8591f12eeb446c8633"
+      "measuredCpuSeconds": 77.03,
+      "budgetCpuSeconds": 158,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.01 at start)",
+      "identity": "7bef3bf318bef3b61c59671bd6d3a7b2c9372141fda1d15fee061b598ed436e8"
     },
     {
       "config": "StopProtocol.malformedNoKill",
@@ -7326,13 +7329,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 3828,
-      "measuredSeconds": 1.67,
+      "distinctStates": 14659,
+      "measuredSeconds": 1.73,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 3.65,
-      "budgetCpuSeconds": 11,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.42 at start)",
-      "identity": "28c9b97165c1e575d925b8857e846078403735a6983a99deee879f8310589e27"
+      "measuredCpuSeconds": 3.16,
+      "budgetCpuSeconds": 10,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.01 at start)",
+      "identity": "3405216e7edd46ef64847b81b9b0ec005fa6f999ca1c418351375a69961e1c3c"
     },
     {
       "config": "StopProtocol.sigtermAfterFail",
@@ -7343,13 +7346,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 141,
-      "measuredSeconds": 1.47,
+      "distinctStates": 630,
+      "measuredSeconds": 1.55,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.11,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.23 at start)",
-      "identity": "1bd9cd943f50b863a92f451f5daeb10cdeb2dec26d4731418ffc8e11fccb2b0e"
+      "measuredCpuSeconds": 1.87,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.53 at start)",
+      "identity": "b6b11289b1d39d705ed44441e7568124e8ac7ec8c273aab68a353eb43676751f"
     },
     {
       "config": "StopProtocol.runtimeLate",
@@ -7359,14 +7362,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "deep",
-      "distinctStates": 147,
-      "measuredSeconds": 1.46,
+      "tier": "every-run",
+      "distinctStates": 252,
+      "measuredSeconds": 1.31,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.12,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.23 at start)",
-      "identity": "0a91591867a75b180789f8ede400248cb04627a587c3e393f51723ce089665c1"
+      "measuredCpuSeconds": 1.56,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.53 at start)",
+      "identity": "ed2d2d7aad0fdf2b351ebdbcbe5f0e4efedffc79e0480c78490deda260300bbb"
     },
     {
       "config": "StopProtocol.graceConfirm",
@@ -7377,13 +7380,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 185,
-      "measuredSeconds": 1.48,
+      "distinctStates": 677,
+      "measuredSeconds": 1.41,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.18,
-      "budgetCpuSeconds": 8,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.23 at start)",
-      "identity": "d53ef1c6b23ab6273493dba8ee915fa95c34d6b906099075c9bd663c2ad110ce"
+      "measuredCpuSeconds": 1.6,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.53 at start)",
+      "identity": "fb69914ba8bd52fb4af2190e1c44745037aa224008e8c679c7436da8009927d3"
     },
     {
       "config": "StopProtocol.failOnUnconfirmed",
@@ -7394,13 +7397,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 1312,
-      "measuredSeconds": 1.56,
+      "distinctStates": 4816,
+      "measuredSeconds": 1.74,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.77,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.85 at start)",
-      "identity": "f29e9443c812b62a51e04893dd875dd6d8a7249b1de0469bf92d106c899934ef"
+      "measuredCpuSeconds": 3.61,
+      "budgetCpuSeconds": 11,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.17 at start)",
+      "identity": "7bfc28064f3b9e5f8ed602656df410ee6f201290d945345f8b7895c228951979"
     },
     {
       "config": "StopProtocol.unboundedConfirm",
@@ -7410,14 +7413,14 @@
         "exitCode": 12
       },
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 1322,
-      "measuredSeconds": 1.59,
+      "tier": "deep",
+      "distinctStates": 5163,
+      "measuredSeconds": 1.69,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.75,
+      "measuredCpuSeconds": 2.89,
       "budgetCpuSeconds": 9,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.85 at start)",
-      "identity": "8b6e2a8e99194cd79dd7070d534595afb69aa70e0d023e9baa40adfd90abe407"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.17 at start)",
+      "identity": "a72edf8a6e973276cce9a20026ee53d13db4cc097b230bff617a8626901d47c7"
     },
     {
       "config": "StopProtocol.runtimeNoShare",
@@ -7428,13 +7431,64 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 35684,
-      "measuredSeconds": 1.83,
+      "distinctStates": 450014,
+      "measuredSeconds": 6.86,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 4.53,
-      "budgetCpuSeconds": 13,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.85 at start)",
-      "identity": "0dfe64c21472be3187a15ca534c221d1608268e419d3a43aa77df63daad0e45b"
+      "measuredCpuSeconds": 22.64,
+      "budgetCpuSeconds": 49,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.17 at start)",
+      "identity": "243a422449794d5dabeec2fad440414c42eabd02dc15ab3d04a28437e6dfad5a"
+    },
+    {
+      "config": "StopProtocol.lateApplies",
+      "role": "evidence",
+      "expect": {
+        "violates": "ValuesFixed",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1229,
+      "measuredSeconds": 1.48,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 2.19,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.60 at start)",
+      "identity": "c959228a4084f4e882dc402cb0b363c3b77cde68c8952b8034fcb197c9e9cfd2"
+    },
+    {
+      "config": "StopProtocol.runtimeSignalAfterFail",
+      "role": "evidence",
+      "expect": {
+        "violates": "SameValues",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 516,
+      "measuredSeconds": 1.45,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.52,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.60 at start)",
+      "identity": "a1e0828bd2efa4f8adea0ee3d827d8defa58410dab77975eb03deda91f02da2f"
+    },
+    {
+      "config": "StopProtocol.takeBeforeDrain",
+      "role": "evidence",
+      "expect": {
+        "violates": "SameValues",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 478,
+      "measuredSeconds": 1.56,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 1.76,
+      "budgetCpuSeconds": 7,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.60 at start)",
+      "identity": "9b3007a9e95c919140c6fdfe321112a307fa0571d65921495c91a2ce99073b3d"
     },
     {
       "config": "ProcessMarker.unscopedReap",
