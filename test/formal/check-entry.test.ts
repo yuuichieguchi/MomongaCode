@@ -221,6 +221,14 @@ describe('checking one configuration', () => {
     expect(outcome).toMatchObject({ outcome: 'ran', problems: [], measurement: { distinctStates: 7 } });
   });
 
+  it('runs a row in record mode whose manifest identity is out of date, even when a record for its inputs exists', async () => {
+    const deep = { ...holdsEntry, tier: 'deep' as const };
+    expect(await checkEntry(request({ entry: deep }))).toMatchObject({ outcome: 'ran', stored: 'stored' });
+    const outcome = await checkEntry(request({ entry: deep, record: true }));
+    expect(outcome).toMatchObject({ outcome: 'ran', reason: 'manifest identity differs', problems: [], measurement: { distinctStates: 3 } });
+    expect(callsOf(fake)).toHaveLength(2);
+  });
+
   it('stores nothing for a run that fails its row and runs it again next time', async () => {
     answer(fake, 12, invariantViolationOutput('Other'));
     const first = await checkEntry(request({ entry: invariantEntry }));

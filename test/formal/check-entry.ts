@@ -3,7 +3,7 @@ import type { ProcessGroupPort, Timing } from '@momonga/foundation';
 import type { ManifestEntry, Tier, TlcRun, TlcRunOptions } from './manifest-reader.ts';
 import { distinctStatesOfRun, measurementOfRun } from './record.ts';
 import type { Measurement } from './record.ts';
-import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord } from './reuse.ts';
+import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord, specIdentityOf } from './reuse.ts';
 import type { JavaIdentity, RanReason, ResultStore, StoredFacts } from './reuse.ts';
 import { TLC_WORKERS, runTlc } from './runner.ts';
 import { factsOf, problemsOf, verdictProblems } from './verdict.ts';
@@ -77,12 +77,27 @@ const keyOfRun = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode
   return 'unreadable' in parts ? { unkeyed: 'input not readable' } : { key: keyOf(parts) };
 };
 
-export const reusableOf = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode' | 'env' | 'store' | 'java' | 'limitMs'>): Promise<boolean> => {
-  if (request.mode === 'off') return false;
+const identityStaleOf = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'record'>): Promise<boolean> =>
+  request.record && request.entry.identity !== (await specIdentityOf(request.repoRoot, request.entry));
+
+export const reusableOf = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode' | 'env' | 'store' | 'java' | 'limitMs' | 'record'>): Promise<boolean> => {
+  if (request.mode === 'off' || (await identityStaleOf(request))) return false;
   const keyed = await keyOfRun(request, [...request.entry.args, ...FIXED_FINGERPRINT_ARGS]);
   if ('unkeyed' in keyed) return false;
   const found = await request.store.read(request.entry.config, keyed.key);
   return found.kind === 'hit' && problemsOf(request.entry, found.record.facts).length === 0;
+};
+
+const runAndStore = async (request: CheckRequest, key: string, args: readonly string[], reason: RanReason): Promise<CheckOutcome> => {
+  const { entry, store } = request;
+  const finished = await runAndJudge(request, args);
+  const { run, problems } = finished;
+  const facts = storedFactsOf(run);
+  if (problems.length > 0 || facts === undefined) return { outcome: 'ran', reason, problems, stored: 'not eligible', ...measuredOf(request, finished) };
+  const keyedAfter = await keyOfRun(request, args);
+  if ('unkeyed' in keyedAfter || keyedAfter.key !== key) return { outcome: 'ran', reason: 'inputs changed during the run', problems, stored: 'not eligible' };
+  const written = await store.write(sealedRecord({ format: RECORD_FORMAT, key, config: entry.config, facts, producedAt: request.now().toISOString() }));
+  return { outcome: 'ran', reason, problems, stored: written.stored ? 'stored' : { notStored: written.reason }, ...measuredOf(request, finished) };
 };
 
 export const checkEntry = async (request: CheckRequest): Promise<CheckOutcome> => {
@@ -90,17 +105,10 @@ export const checkEntry = async (request: CheckRequest): Promise<CheckOutcome> =
   const args = [...entry.args, ...FIXED_FINGERPRINT_ARGS];
   const keyed = await keyOfRun(request, args);
   if ('unkeyed' in keyed) return runFresh(request, keyed.unkeyed);
+  if (await identityStaleOf(request)) return runAndStore(request, keyed.key, args, 'manifest identity differs');
   const found = await store.read(entry.config, keyed.key);
   if (found.kind === 'hit' && problemsOf(entry, found.record.facts).length === 0) return { outcome: 'reused', producedAt: found.record.producedAt };
-  const reason: RanReason = found.kind === 'hit' ? 'record does not satisfy the manifest entry' : found.reason;
-  const finished = await runAndJudge(request, args);
-  const { run, problems } = finished;
-  const facts = storedFactsOf(run);
-  if (problems.length > 0 || facts === undefined) return { outcome: 'ran', reason, problems, stored: 'not eligible', ...measuredOf(request, finished) };
-  const keyedAfter = await keyOfRun(request, args);
-  if ('unkeyed' in keyedAfter || keyedAfter.key !== keyed.key) return { outcome: 'ran', reason: 'inputs changed during the run', problems, stored: 'not eligible' };
-  const written = await store.write(sealedRecord({ format: RECORD_FORMAT, key: keyed.key, config: entry.config, facts, producedAt: request.now().toISOString() }));
-  return { outcome: 'ran', reason, problems, stored: written.stored ? 'stored' : { notStored: written.reason }, ...measuredOf(request, finished) };
+  return runAndStore(request, keyed.key, args, found.kind === 'hit' ? 'record does not satisfy the manifest entry' : found.reason);
 };
 
 type TierReport = {

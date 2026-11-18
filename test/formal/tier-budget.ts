@@ -2,6 +2,7 @@ import path from 'node:path';
 import { reusableOf } from './check-entry.ts';
 import type { ManifestEntry, Tier } from './manifest-reader.ts';
 import { readManifest } from './manifest-reader.ts';
+import { recordsTier } from './record.ts';
 import { createJavaIdentityReader, createResultStore } from './reuse.ts';
 import { TLC_WORKERS } from './runner.ts';
 
@@ -32,6 +33,6 @@ export const tierRunPlanOf = async (options: TierRunOptions): Promise<ColdRunPla
   return coldRunPlanOf({
     entries,
     isReusable: async (entry) =>
-      store !== undefined && (await reusableOf({ entry, repoRoot: options.repoRoot, mode: 'on', env: options.env, store, java, limitMs: entry.budgetCpuSeconds * TLC_WORKERS * 1000 })),
+      store !== undefined && (await reusableOf({ entry, repoRoot: options.repoRoot, mode: 'on', env: options.env, store, java, limitMs: entry.budgetCpuSeconds * TLC_WORKERS * 1000, record: recordsTier(options.tier, options.env) })),
   });
 };

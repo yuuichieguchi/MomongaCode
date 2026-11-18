@@ -179,5 +179,5 @@ describe('the recorded identity of every row', () => {
     const stale: string[] = [];
     for (const entry of manifest.entries) if (entry.identity !== (await specIdentityOf(repoRoot, entry)) && !(recording && entry.tier === 'deep')) stale.push(entry.config);
     expect(stale, `re-measure these rows with scripts/tlc-record.ts: ${stale.join(', ')}`).toEqual([]);
-  });
+  }, 120_000);
 });

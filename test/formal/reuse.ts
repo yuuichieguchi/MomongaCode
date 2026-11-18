@@ -22,6 +22,7 @@ export const RAN_REASONS = [
   'record unreadable',
   'record altered',
   'record does not satisfy the manifest entry',
+  'manifest identity differs',
   'inputs changed during the run',
 ] as const;
 
