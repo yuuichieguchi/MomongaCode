@@ -14,7 +14,7 @@ const SOURCE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..
 const LSOF_TWO_HOLDERS = { exitCode: 0, stdout: '4242\n4243\n', stderr: '' };
 
 const darwinWith = (run: Parameters<typeof createDarwinInspector>[0]['run']) =>
-  createProcessInspector('darwin', { ...hostInspectorPorts(testLocks().capability), run, capability: fixedCapability('unenforced') });
+  createProcessInspector('lsof', { ...hostInspectorPorts(testLocks().capability), run, capability: fixedCapability('unenforced') });
 
 describe('T1 the listing path does not depend on how long the listing takes', () => {
   it.for([110, 2100, 6000])('holdersOf answers the same holders when lsof takes %i ms', async (latencyMs) => {

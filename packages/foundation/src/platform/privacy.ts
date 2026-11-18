@@ -29,9 +29,17 @@ export const assertPrivateRegularFile = (stat: { mode: number; uid: number; isFi
   if (!modeIsPrivate(stat, 'file')) throw new Error(`${description} must have mode 0600, found ${(stat.mode & 0o777).toString(8).padStart(4, '0')}`);
 };
 
-export const noFollowFlag = (platform: NodeJS.Platform = process.platform): number => (platform === 'win32' ? 0 : fs.constants.O_NOFOLLOW);
+export type OpenFlagConstants = { readonly O_NOFOLLOW?: number | undefined; readonly O_DIRECTORY?: number | undefined };
 
-export const directoryFlag = (platform: NodeJS.Platform = process.platform): number => (platform === 'win32' ? 0 : fs.constants.O_DIRECTORY);
+const offeredFlag = (flag: number | undefined): number => (flag === undefined ? 0 : flag);
+
+export const noFollowFlagOf = (constants: OpenFlagConstants): number => offeredFlag(constants.O_NOFOLLOW);
+
+export const directoryFlagOf = (constants: OpenFlagConstants): number => offeredFlag(constants.O_DIRECTORY);
+
+export const noFollowFlag = (): number => noFollowFlagOf(fs.constants);
+
+export const directoryFlag = (): number => directoryFlagOf(fs.constants);
 
 export type AclReport = { owner: string; me: string; system: string; administrators: string; foreign: readonly string[] };
 

@@ -105,8 +105,6 @@ const compileException = async (
 
 export type RuleEnforcement = 'seatbelt-profile' | 'exact-paths';
 
-export const HOST_RULE_ENFORCEMENT: RuleEnforcement = process.platform === 'darwin' ? 'seatbelt-profile' : 'exact-paths';
-
 export const ruleEnforcementOf = (sandboxKind: 'seatbelt' | 'bubblewrap' | 'none'): RuleEnforcement => (sandboxKind === 'seatbelt' ? 'seatbelt-profile' : 'exact-paths');
 
 const compileEntry = async (
