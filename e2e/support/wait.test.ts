@@ -18,7 +18,7 @@ import {
   E2E_LEASE_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
   E2E_ORPHAN_GRACE_MS,
-  E2E_PHASE2_REACHED_BOUND_MS,
+  E2E_PHASE2_HELD_BOUND_MS,
   E2E_READY_DEADLINE_MS,
   E2E_REAP_TO_RUNNING_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
@@ -67,7 +67,7 @@ describe('wait constants', () => {
   });
 
   it('wait for phase 2 of the orphan reap exactly as long as phase 1 of the short-grace e2e supervisor lasts, plus the observer margin', () => {
-    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS);
+    expect(E2E_PHASE2_HELD_BOUND_MS).toBe(orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS);
   });
 
   it('give a test the sum of the bounds it waits on in sequence, plus the observer margin', () => {

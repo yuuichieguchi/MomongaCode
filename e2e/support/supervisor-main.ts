@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { nodeEntryIo, parseFlags } from '@momonga/foundation';
+import { nodeEntryIo, parseFlags, reapMarkerDirectory } from '@momonga/foundation';
 import { SUPERVISE_ENTRY_FLAGS } from '@momonga/supervisor';
 import type { SupervisorEntryDeps } from '@momonga/supervisor';
 import { startGenerationForTest } from '@momonga/testkit/first-generation';
@@ -10,6 +10,8 @@ import { runSupervise } from '../../packages/cli/src/daemon/supervise.ts';
 import { nodeSpawnDetached } from '../../packages/cli/src/node-ports.ts';
 import type { SelfExecutable } from '../../packages/cli/src/ports.ts';
 import { entryFileLauncher } from './launcher.ts';
+import { holdReapOfDirectory } from './reap-hold.ts';
+import type { ReapHold } from './reap-hold.ts';
 import type { LauncherOverrides } from './launcher.ts';
 import { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN } from './run-env.ts';
 
@@ -26,12 +28,13 @@ export const E2E_DEPS_KEYS = [
   'watchSettings',
   'launcherOverrides',
   'version',
+  'reapHold',
 ] as const;
 
 export type E2eDeps = Pick<
   SupervisorEntryDeps,
   'runtime' | 'gateway' | 'startupTimeoutMs' | 'reaper' | 'heldRetryMs' | 'restart' | 'intervals' | 'watchSettings'
-> & { launcherOverrides?: LauncherOverrides };
+> & { launcherOverrides?: LauncherOverrides; reapHold?: ReapHold };
 
 export type E2eDepsFile = E2eDeps & { version: string };
 
@@ -124,13 +127,14 @@ export const supervisorMain = async (): Promise<void> => {
     refuse(error instanceof Error ? error.message : String(error));
     return;
   }
-  const { launcherOverrides, ...rest } = loaded;
+  const { launcherOverrides, reapHold, ...rest } = loaded;
+  const deps = reapHold === undefined ? rest : { ...rest, markerPorts: { reapMarkerDirectory: holdReapOfDirectory(reapMarkerDirectory, reapHold) } };
   const io = nodeEntryIo();
   const argv = io.argv.some((argument) => argument.startsWith('--generation=')) ? io.argv : [...io.argv, `--generation=${(await startGenerationForTest(homeOfArgv(io.argv, io.home), { version: loaded.version })).generation}`];
   const self: SelfExecutable = { kind: 'script', execPath: process.execPath, script: fileURLToPath(import.meta.url) };
   const finished = runSupervise(
     { ...io, argv, env: withoutHarnessVariables(process.env) },
-    { launcher: entryFileLauncher(loaded.version, launcherOverrides), deps: rest, successor: { self, spawnDetached: nodeSpawnDetached } },
+    { launcher: entryFileLauncher(loaded.version, launcherOverrides), deps, successor: { self, spawnDetached: nodeSpawnDetached } },
   );
   watchParentDeath();
   await finished;

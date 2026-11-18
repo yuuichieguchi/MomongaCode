@@ -28,7 +28,7 @@ export const CONFIRM_ROWS = ['No', 'Yes'] as const;
 export const STRUCTURED_LINES = ['The value as JSON. Nothing is written until the settings loader accepts it.'] as const;
 export const shadowedText = (layer: SettingsLayer, shadow: SettingsShadow, value: string): string => `Saved to ${layer}. ${shadow.layer} sets it in ${shadow.file}, so the value in effect is still ${value}.`;
 
-export const SETTING_SECTIONS = ['Display', 'Permissions', 'Context', 'Tools', 'Memory', 'Verification', 'MCP', 'Hooks', 'Models', 'Environment variables', 'Credentials', 'Network', 'Sandbox', 'Telemetry', 'Pricing', 'Budget and delegation', 'Git and pull requests', 'Updates', 'Shutdown'] as const;
+export const SETTING_SECTIONS = ['Display', 'Permissions', 'Context', 'Tools', 'Memory', 'Verification', 'MCP', 'Hooks', 'Models', 'Environment variables', 'Credentials', 'Network', 'Sandbox', 'Telemetry', 'Pricing', 'Budget and delegation', 'Git and pull requests', 'Updates', 'Start-up', 'Shutdown'] as const;
 
 export type SettingSection = (typeof SETTING_SECTIONS)[number];
 
@@ -153,6 +153,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'operations.approval': { label: 'Approval class by operation (rule or always)', section: 'Git and pull requests' },
   autoUpdates: { label: 'Automatic updates', section: 'Updates' },
   'update.stallTimeoutMs': { label: 'Time an update transfer may wait for an answer or for data (ms)', section: 'Updates' },
+  'daemon.startupStallMs': { label: 'Time a starting daemon process may go without reporting progress before it is restarted (ms)', section: 'Start-up' },
   'gateway.closeGraceMs': { label: 'Close grace (ms)', section: 'Shutdown' },
   'gateway.managedServerStopGraceMs': { label: 'Managed server stop grace (ms)', section: 'Shutdown' },
   'runtime.drainTimeoutMs': { label: 'Run drain timeout (ms)', section: 'Shutdown' },

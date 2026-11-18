@@ -203,6 +203,21 @@ describe('runSupervisorEntry', () => {
     expect(run.fake.spawnCount()).toBe(0);
   });
 
+  it('the start-up stall limit of the children is the setting daemon.startupStallMs', async (context) => {
+    const run = startEntry(context, {
+      prepare: (home) => writeSettings(home, { ...validSettings(), daemon: { startupStallMs: 240_000 } }),
+      behaviours: { runtime: { autoReady: false } },
+    });
+    await ready(run);
+    await pumpUntil(run.timers, () => run.fake.spawnCount('runtime') >= 1, { maxMs: 10_000, description: 'the runtime spawned', realWork: run.realWork });
+    const startupTimeouts = (): JsonLine[] => run.supervisorLog().filter((line) => line.msg === 'child.stop' && line['stop'] === 'startup-timeout');
+    const pastDefaultAt = run.timers.now() + 200_000;
+    await pumpUntil(run.timers, () => startupTimeouts().length > 0 || run.timers.now() >= pastDefaultAt, { maxMs: 210_000, description: 'well past the default limit', realWork: run.realWork });
+    expect(startupTimeouts()).toEqual([]);
+    await pumpUntil(run.timers, () => startupTimeouts().length === 1, { maxMs: 60_000, description: 'the stop at the set limit', realWork: run.realWork });
+    expect(startupTimeouts()).toEqual([expect.objectContaining({ child: 'runtime', lastProgressStep: null, lastProgressAt: null })]);
+  });
+
   it('every line of the supervisor log carries the generation', async (context) => {
     const run = startEntry(context);
     await childrenReady(run);
