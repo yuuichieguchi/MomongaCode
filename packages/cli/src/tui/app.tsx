@@ -65,7 +65,7 @@ import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlash
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
 import { watchFileLinks } from './screen/file-link-watch.ts';
-import { AgentList, agentListDrawn, agentListLines, agentListRequest, openableRows } from './screen/subagents.tsx';
+import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf } from './screen/subagents.tsx';
 import type { ViewTarget } from './screen/subagents.tsx';
 import { createAgentViews } from './screen/agent-views.ts';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
@@ -215,14 +215,15 @@ export function App(props: AppProps) {
   const visible = store.shown();
   useSyncExternalStore(visible.subscribe, visible.version);
   const transcript = visible.state();
-  const [agents] = useState(createAgentViews);
+  const [agents, setAgents] = useState(createAgentViews);
+  const agentsRef = useRef(agents);
   useSyncExternalStore(agents.subscribe, agents.version);
   const shownAgent = agents.shown();
   const viewedLive = shownAgent?.store ?? store;
   const viewed = viewedLive.shown();
   useSyncExternalStore(viewed.subscribe, viewed.version);
-  const [listFocus, setListFocus] = useState<number | undefined>(undefined);
-  const listFocusRef = useRef<number | undefined>(undefined);
+  const [listFocus, setListFocus] = useState<ViewTarget | undefined>(undefined);
+  const listFocusRef = useRef<ViewTarget | undefined>(undefined);
   const listTargetsRef = useRef<readonly ViewTarget[]>([]);
   const listPress = useRef<{ row: number; col: number } | undefined>(undefined);
   const { now, timers } = props;
@@ -462,7 +463,9 @@ export function App(props: AppProps) {
   };
 
   const resetTranscript = (): void => {
-    agents.reset();
+    const fresh = createAgentViews();
+    agentsRef.current = fresh;
+    setAgents(fresh);
     chooseRow(undefined);
     store.reset();
     renewHistory();
@@ -747,6 +750,7 @@ export function App(props: AppProps) {
   };
 
   const follow = (runId: string, replay: Replay | undefined): Promise<RunView> => {
+    const views = agentsRef.current;
     let firstSeq: number | undefined;
     const deliver = (work: () => void, position?: number): void => {
       if (replay === undefined) work();
@@ -786,19 +790,19 @@ export function App(props: AppProps) {
           const key = 'seq' in event ? { runId: event.runId, seq: event.seq } : undefined;
           if (key !== undefined) origins.at(key);
           foldChildEvent(store, event, agent);
-          agents.event(event);
+          views.event(event);
           if (key !== undefined) replay?.notes?.after(key);
         }),
       onChildStarted: (agent, childRunId) =>
         deliver(() => {
-          agents.started(agent, childRunId);
+          views.started(agent, childRunId);
           subagentStarted(store, agent, childRunId, now());
         }),
       onChildEnded: (_agent, childRunId, end) =>
         deliver(() => {
           subagentEnded(store, childRunId);
-          agents.ended(childRunId, end);
-          if (!agentListDrawn(store.state().subagents, agents.shown()?.runId)) chooseRow(undefined);
+          views.ended(childRunId, end);
+          if (!agentListDrawn(store.state().subagents, agentsRef.current.shown()?.runId)) chooseRow(undefined);
         }),
       onReconnecting: () => setReconnectingSince((since) => since ?? now()),
       onDaemonStopping: () => {
@@ -1486,29 +1490,31 @@ export function App(props: AppProps) {
     submitSafely(outcome.text, held);
   };
 
-  const chooseRow = (index: number | undefined): void => {
-    listFocusRef.current = index;
-    setListFocus(index);
+  const chooseRow = (target: ViewTarget | undefined): void => {
+    listFocusRef.current = target;
+    setListFocus(target);
   };
 
   const listRows = (): readonly ViewTarget[] => listTargetsRef.current;
 
   const openView = (target: ViewTarget): void => {
-    agents.open(target.kind === 'main' ? undefined : target.runId);
+    agentsRef.current.open(target.kind === 'main' ? undefined : target.runId);
     chooseRow(undefined);
   };
 
   const onListKey = (event: KeyEvent, pressed: KeyTable): void => {
-    const chosen = listFocusRef.current ?? 0;
     const rowsShown = listRows();
+    const chosen = chosenIndexOf(rowsShown, listFocusRef.current);
     const listAction = pressed.actionOf(AGENT_LIST_CONTEXTS, event);
-    if (listAction === 'agents.next') chooseRow(Math.min(chosen + 1, rowsShown.length - 1));
-    else if (listAction === 'agents.previous') chooseRow(chosen === 0 ? undefined : chosen - 1);
-    else if (listAction === 'agents.open') {
-      const target = rowsShown[Math.min(chosen, rowsShown.length - 1)];
-      if (target === undefined) throw new Error('the list of views has no row to open');
-      openView(target);
-    } else {
+    const rowAt = (index: number): ViewTarget => {
+      const target = rowsShown[index];
+      if (target === undefined) throw new Error(`the list of views has no row ${index}`);
+      return target;
+    };
+    if (listAction === 'agents.next') chooseRow(rowAt(Math.min(chosen + 1, rowsShown.length - 1)));
+    else if (listAction === 'agents.previous') chooseRow(chosen === 0 ? undefined : rowAt(chosen - 1));
+    else if (listAction === 'agents.open') openView(rowAt(chosen));
+    else {
       chooseRow(undefined);
       routeKey(keyRouteOf(routeFacts()), event, pressed);
     }
@@ -1541,7 +1547,7 @@ export function App(props: AppProps) {
     else if (action === 'screen.repaint') writeThroughInk('');
     else if (action === 'prompt.pasteImage') runFlow(pasteFromClipboard);
     else if (action === 'editor.deleteBefore' && current.text === '' && attachmentsRef.current.length > 0) setAttachments(attachmentsRef.current.slice(0, -1));
-    else if (action === 'editor.down' && current.text === '' && applyAction(current, action) === current && listRows().length > 0) chooseRow(0);
+    else if (action === 'editor.down' && current.text === '' && applyAction(current, action) === current && listRows().length > 0) chooseRow({ kind: 'main' });
     else if (isEditorAction(action)) replaceEditor(applyAction(current, action));
     else if (action === undefined && typed !== undefined) replaceEditor(typedIntoDraft(current, typed));
   };
@@ -1684,21 +1690,22 @@ export function App(props: AppProps) {
     panelOwnsEscape: overlay !== undefined,
     loading: phase.kind === 'ready' ? loading : undefined,
   });
+  const listBase = { subagents: transcript.subagents, shown: shownAgent?.runId, keys, screenReader: a11y.screenReader, columns };
   const rowRequests: RowRequests = {
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(editor, columns),
     invitation: invitationText.length,
     menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
-    subagents: agentListRequest(transcript.subagents, shownAgent?.runId),
+    subagents: agentListRequest({ ...listBase, focus: listFocus === undefined ? undefined : 0 }),
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
     lines: inputShown ? shownAttachments.length + waitingLines.length : 0,
     panel: panel === undefined ? undefined : (panelRows ?? 0),
   };
   const allocation = allocate(rows, rowRequests);
-  const listFacts = { subagents: transcript.subagents, shown: shownAgent?.runId, keys, screenReader: a11y.screenReader, rows: fullscreen ? allocation.subagents : rowRequests.subagents };
+  const listFacts = { ...listBase, rows: fullscreen ? allocation.subagents : rowRequests.subagents };
   const listLines = agentListLines({ ...listFacts, focus: undefined, now: 0 });
   const listTargets = listLines.flatMap((line) => (line.target === undefined ? [] : [line.target]));
-  const shownFocus = listFocus === undefined || listTargets.length === 0 ? undefined : Math.min(listFocus, listTargets.length - 1);
+  const shownFocus = listFocus === undefined || listTargets.length === 0 ? undefined : chosenIndexOf(listTargets, listFocus);
   const agentFeed = useMemo(() => createHistoryFeed(), [shownAgent, historyGeneration]);
   const shownFeed = shownAgent === undefined ? feed : agentFeed;
   const transcriptAllocation = panel === undefined ? allocation : allocate(rows, { ...rowRequests, panel: 0 });
@@ -1783,7 +1790,7 @@ export function App(props: AppProps) {
     return hit?.region === 'subagents' ? listLines[hit.row]?.target : undefined;
   };
   const onListPointer = useEffectEvent((event: TerminalEvent): boolean => {
-    if (!fullscreen || switching || event.type !== 'mouse' || event.button !== 'left') return false;
+    if (!fullscreen || switching || toolView.shown || event.type !== 'mouse' || event.button !== 'left') return false;
     const pressed = listPress.current;
     if (event.kind === 'press') {
       listPress.current = listTargetAt(event.row) === undefined ? undefined : { row: event.row, col: event.col };
@@ -1811,10 +1818,10 @@ export function App(props: AppProps) {
   });
   useEffect(() => terminal.input.claim('chord', (event) => onChord(event)), [terminal]);
   useEffect(() => {
-    facts.current = { overlay: overlay !== undefined, position: view.position, tasks, terminal, flush: waitUntilRenderFlush };
+    facts.current = { overlay: overlay !== undefined, position: shownAgent === undefined ? view.position : FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush };
     feedRef.current = feed;
     listTargetsRef.current = listTargets;
-    sourceRef.current = view.source;
+    sourceRef.current = shownAgent === undefined ? view.source : undefined;
     move?.check();
   });
   useEffect(() => move?.attach(handover.surface), [move, handover]);

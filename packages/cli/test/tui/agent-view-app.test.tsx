@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { KEYS as TABLE } from '../../src/tui/keys/table.ts';
 import { allocate } from '../../src/tui/screen/layout.ts';
 import type { RowRequests } from '../../src/tui/screen/layout.ts';
-import { agentListLines } from '../../src/tui/screen/subagents.tsx';
+import { agentListLines, agentListRequest } from '../../src/tui/screen/subagents.tsx';
 import { createAgentViews } from '../../src/tui/screen/agent-views.ts';
 import { createKeyTable } from '../../src/tui/keys/table.ts';
 import type { KeyName, TerminalEvent } from '../../src/tui/terminal/events.ts';
-import { KEYS, untilFrame } from '../ink-helpers.ts';
+import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { runView } from '../fake-backend.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 
@@ -89,12 +89,60 @@ describe('the list of the running subagents (design cli-tui 3.3)', () => {
     const started = await running();
     const { app, terminal } = started;
     terminal.emit(named('down'));
+    terminal.emit(named('down'));
     terminal.emit(named('up'));
+    terminal.emit(named('up'));
+    terminal.emit(named('down'));
+    terminal.emit(named('down'));
     terminal.emit(named('enter'));
+    await untilFrame(app, 'Subagent reviewer');
     terminal.emit(named('down'));
     terminal.emit(typed('x'));
     await untilFrame(app, '> x');
-    expect(app.lastFrame()).not.toContain('Subagent');
+    expect(app.lastFrame()).toContain('Subagent reviewer');
+    expect(app.lastFrame()).toContain('down on an empty input: choose a view');
+    app.unmount();
+  });
+
+  it('keeps the chosen row on its subagent when a row above it leaves the list', async () => {
+    const started = await running();
+    const { app, terminal, follow } = started;
+    terminal.emit(named('down'));
+    terminal.emit(named('down'));
+    terminal.emit(named('down'));
+    follow.onChildEnded('reviewer', 'child-1', { kind: 'finished', run: runView({ id: 'child-1', status: 'COMPLETED' }) });
+    await untilFrame(app, (shown) => !shown.includes('reviewer ·'));
+    terminal.emit(named('enter'));
+    await untilFrame(app, 'Subagent tester');
+    app.unmount();
+  });
+
+  it('lists and opens a row in screen-reader mode as plain lines that do not tick', async () => {
+    let now = 1000;
+    const started = await start({}, { now: () => now, tuiSettings: { initial: { theme: 'auto', notify: 'off', screenReader: true, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true }, save: async () => undefined } }, { ...SIZE, screen: 'scrollback' });
+    const { app, backend, terminal } = started;
+    await untilFrame(app, (shown) => shown.includes('>'));
+    await runStarted(backend, app, 'go');
+    backend.following().onChildStarted('reviewer', 'child-1');
+    backend.following().onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'child one looks' }), 'reviewer');
+    await untilFrame(app, 'reviewer · starting');
+    now = 9000;
+    expect(app.lastFrame()).not.toMatch(/reviewer · starting · \d+s/);
+    expect(linesOf(app.lastFrame())).toContain('main (shown)');
+    terminal.emit(named('down'));
+    await untilFrame(app, 'main (shown) (chosen)');
+    terminal.emit(named('down'));
+    terminal.emit(named('enter'));
+    await untilFrame(app, 'reviewer · starting (shown)');
+    await untilOutput(app, 'child one looks');
+    app.unmount();
+  });
+
+  it('draws the list at 40x24 with the rows kept and the hint dropped when it does not fit', async () => {
+    const { app } = await running({ columns: 40, rows: 24 });
+    const lines = linesOf(app.lastFrame());
+    expect(lines).toHaveLength(24);
+    expect(lines.slice(21)).toEqual(['● main', '  reviewer · starting · 3s', '  tester · starting · 0s']);
     app.unmount();
   });
 
@@ -149,7 +197,19 @@ describe('the list of the running subagents (design cli-tui 3.3)', () => {
     const asked = await untilFrame(app, 'Allow once');
     expect(asked).toContain('reviewer');
     expect(asked).toContain('Subagent tester');
-    terminal.emit(named('escape'));
+    app.unmount();
+  });
+
+  it('shows an approval of a subagent with its name in the panel while the main view is shown', async () => {
+    const { app, follow } = await running();
+    follow.onChildEvent(childFrame('child-1', { type: 'tool.call', callId: 'k1', providerCallId: 'p-k1', name: 'Bash', kind: 'execute', title: 'Bash rm -r build', rawInput: {} }), 'reviewer');
+    follow.onChildEvent(
+      childFrame('child-1', { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'k1', subjectDigest: 'd', reason: 'commands require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'Bash rm -r build', input: {} } }),
+      'reviewer',
+    );
+    const asked = await untilFrame(app, 'Allow once');
+    expect(asked).toContain('reviewer: Bash rm -r build');
+    expect(asked).toContain('main says hello');
     app.unmount();
   });
 
@@ -181,19 +241,24 @@ describe('the rows of the list', () => {
   ];
 
   it('drops the hint before a row and keeps main, then cuts subagents to an overflow row', () => {
-    const facts = { subagents, shown: undefined, focus: undefined, keys, screenReader: false, now: 2000 };
+    const facts = { subagents, shown: undefined, focus: undefined, keys, screenReader: false, columns: 100, now: 2000 };
     expect(agentListLines({ ...facts, rows: 4 }).map((line) => line.text)).toEqual(['● main', '  reviewer · Read a.ts · 2s', '  tester · waiting for approval · 2s', 'down on an empty input: choose a view · enter: open']);
     expect(agentListLines({ ...facts, rows: 3 }).map((line) => line.text)).toEqual(['● main', '  reviewer · Read a.ts · 2s', '  tester · waiting for approval · 2s']);
     expect(agentListLines({ ...facts, rows: 2 }).map((line) => line.text)).toEqual(['● main', 'and 2 more']);
   });
 
   it('names the shown row as plain text for a screen reader and states the keys of the list while it is chosen', () => {
-    const lines = agentListLines({ subagents, shown: 'child-1', focus: 1, keys, screenReader: true, now: 0, rows: 4 }).map((line) => line.text);
-    expect(lines).toEqual(['main', 'reviewer · Read a.ts · 0s (shown)', 'tester · waiting for approval · 0s', 'up or down: move · enter: open · typing returns to the input']);
+    const lines = agentListLines({ subagents, shown: 'child-1', focus: 1, keys, screenReader: true, columns: 100, now: 0, rows: 4 }).map((line) => line.text);
+    expect(lines).toEqual(['main', 'reviewer · Read a.ts (shown) (chosen)', 'tester · waiting for approval', 'up or down: move · enter: open · typing returns to the input']);
   });
 
   it('allocates the list rows and the hint at 100x40 and 40x24', () => {
-    const requests: RowRequests = { waiting: 1, inputRows: 1, invitation: 0, menu: 0, subagents: 4, footerSecond: 1, lines: 0, panel: undefined };
+    const base = { focus: undefined, keys, screenReader: false };
+    expect(agentListRequest({ ...base, subagents, shown: undefined, columns: 100 })).toBe(4);
+    expect(agentListRequest({ ...base, subagents, shown: undefined, columns: 40 })).toBe(3);
+    expect(agentListRequest({ ...base, subagents: [], shown: 'child-1', columns: 100 })).toBe(1);
+    expect(agentListRequest({ ...base, subagents: [], shown: undefined, columns: 100 })).toBe(0);
+    const requests: RowRequests = { waiting: 1, inputRows: 1, invitation: 0, menu: 0, subagents: agentListRequest({ ...base, subagents, shown: undefined, columns: 100 }), footerSecond: 1, lines: 0, panel: undefined };
     expect(allocate(40, requests)).toMatchObject({ subagents: 4, footer: 2, input: 3, viewport: 30 });
     expect(allocate(24, requests)).toMatchObject({ subagents: 4, footer: 2, input: 3, viewport: 14 });
   });
@@ -222,6 +287,23 @@ describe('the rows of the list', () => {
 });
 
 describe('the conversations kept for the views', () => {
+  it('drops every kept conversation at /clear, and the events of a follow from before it reach no view of the new conversation', async () => {
+    const started = await running();
+    const { app, backend, follow } = started;
+    backend.finish(runView());
+    await untilFrame(app, (shown) => !shown.includes('esc to cancel'));
+    app.stdin.write('/clear');
+    await untilFrame(app, '> /clear');
+    app.stdin.write(KEYS.enter);
+    await backend.called('openSession');
+    follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c9', text: 'late child text' }), 'reviewer');
+    follow.onChildEnded('reviewer', 'child-1', { kind: 'finished', run: runView({ id: 'child-1', status: 'COMPLETED' }) });
+    await untilFrame(app, (shown) => !shown.includes('main says hello'));
+    expect(app.lastFrame()).not.toContain('late child text');
+    app.unmount();
+  });
+
+
   const finished = (id: string) => ({ kind: 'finished', run: runView({ id, status: 'COMPLETED' }) }) as const;
 
   it('keeps one per running subagent and the one finished view being shown, and drops it when the view is left', () => {
