@@ -13,7 +13,7 @@
     "test": "MOMONGA_TEST_REUSE=0 MOMONGA_TLC_REUSE=0 MOMONGA_WHOLE_RUN=1 vitest run --project unit --project e2e --project packaging",
     "test:reuse": "MOMONGA_TEST_REUSE=1 MOMONGA_TLC_REUSE=1 MOMONGA_WHOLE_RUN=1 vitest run --project unit --project e2e --project packaging",
     "test:tlc-deep": "MOMONGA_TLC_REUSE=1 MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
-    "test:setup": "node scripts/fetch-tla.ts",
+    "test:setup": "node scripts/test-setup.ts",
     "test:load": "node scripts/test-under-load.ts",
     "test:e2e": "MOMONGA_WHOLE_RUN=1 vitest run --project e2e",
     "test:packaging": "MOMONGA_WHOLE_RUN=1 vitest run --project packaging",
