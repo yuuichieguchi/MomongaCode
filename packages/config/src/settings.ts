@@ -20,7 +20,14 @@ export type PermissionsSettings = {
   additionalDirectories?: string[];
 };
 
-export type McpStdioServerConfig = {
+export type McpServerCallBounds = {
+  timeoutMs?: number;
+  idleTimeoutMs?: number;
+};
+
+export const MCP_SERVER_CALL_BOUND_KEYS = ['timeoutMs', 'idleTimeoutMs'] as const satisfies ReadonlyArray<keyof McpServerCallBounds>;
+
+export type McpStdioServerConfig = McpServerCallBounds & {
   type?: 'stdio';
   command: string;
   args?: string[];
@@ -35,7 +42,7 @@ export type McpOAuthConfig = {
   callbackPort?: number;
 };
 
-export type McpRemoteServerConfig = {
+export type McpRemoteServerConfig = McpServerCallBounds & {
   type: 'http';
   url: string;
   headers?: Record<string, string>;

@@ -203,6 +203,7 @@
       {"name":"KILL_CONFIRM_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind"]},
       {"name":"LOCAL_REQUEST_HEADERS_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind"]},
       {"name":"MCP_TOOL_IDLE_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
+      {"name":"MCP_TOOL_TIMEOUT_FLOOR_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"MCP_TOOL_TOTAL_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"REAP_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind"]},
       {"name":"RUNTIME_ABORT_BUDGET_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind"]},
