@@ -5,7 +5,8 @@ CONSTANTS Gens, Vals, MaxT, Variant
 
 ASSUME Variant \in {"decided", "mixed", "noMessage", "noDeadline", "waitsForever",
                     "sigtermAfterFail", "malformed", "malformedNoKill", "noReap", "runtimeLate",
-                    "graceConfirm", "failOnUnconfirmed", "unboundedConfirm", "runtimeNoShare"}
+                    "graceConfirm", "failOnUnconfirmed", "unboundedConfirm", "runtimeNoShare",
+                    "takeBeforeDrain", "lateApplies", "runtimeSignalAfterFail"}
 ASSUME MaxT \in Nat
 ASSUME Gens # {}
 ASSUME Vals \subseteq Nat \ {0}
@@ -34,11 +35,14 @@ VARIABLES file, clock, reqVal,
           sst, sv, sBegin, sent, bvSup, wr, mode, cdl,
           gst, gv, gBegin, gcalls, gphase, ms, rdl,
           cw, cwDL, cwVal, rtv,
-          kdl, kat, alive, sfail, rst, rtdl
+          kdl, kat, alive, sfail, rst, rtdl,
+          rw, rsig, rpipe, rrecv, rhow, rtaken, rgot, rfile
 
-vars == << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rtv, kdl, kat, alive, sfail, rst, rtdl >>
+ChildVars == << rw, rsig, rpipe, rrecv, rhow, rtaken, rgot, rfile >>
 
-ProtoVars == << sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rtv, kdl, kat, alive, sfail, rst, rtdl >>
+vars == << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rtv, kdl, kat, alive, sfail, rst, rtdl, ChildVars >>
+
+ProtoVars == << sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rtv, kdl, kat, alive, sfail, rst, rtdl, ChildVars >>
 
 Init ==
     /\ file \in Vals
@@ -69,6 +73,14 @@ Init ==
     /\ sfail = [g \in Gens |-> FALSE]
     /\ rst = [g \in Gens |-> "up"]
     /\ rtdl = [g \in Gens |-> 0]
+    /\ rw = [g \in Gens |-> "none"]
+    /\ rsig = [g \in Gens |-> FALSE]
+    /\ rpipe = [g \in Gens |-> FALSE]
+    /\ rrecv = [g \in Gens |-> 0]
+    /\ rhow = [g \in Gens |-> "none"]
+    /\ rtaken = [g \in Gens |-> FALSE]
+    /\ rgot = [g \in Gens |-> FALSE]
+    /\ rfile = [g \in Gens |-> 0]
 
 SupOverdue(g) == Variant # "waitsForever" /\ sst[g] = "stopping" /\ clock >= sBegin[g] + SUP(bvSup[g], rtv[g].bound)
 DeadlineOverdue(g) == DeadlineKills /\ sst[g] = "stopping" /\ rst[g] = "gone" /\ gst[g] \in {"none", "closing"} /\ clock >= cdl[g]
@@ -112,7 +124,9 @@ CliStop ==
     /\ cwVal' = [g \in Gens |-> file]
     /\ rtv' = [g \in Gens |-> [rtv[g] EXCEPT !.carry = file, !.bound = file]]
     /\ cwDL' = [g \in Gens |-> clock + DAEMON(file, file)]
-    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl >>
+    /\ rw' = [g \in Gens |-> "writing"]
+    /\ rsig' = [g \in Gens |-> Variant = "runtimeLate"]
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl, rpipe, rrecv, rhow, rtaken, rgot, rfile >>
 
 SelfBegin(g) ==
     /\ sst[g] = "up"
@@ -127,7 +141,9 @@ SelfBegin(g) ==
     /\ cdl' = [cdl EXCEPT ![g] = 0]
     /\ rst' = [rst EXCEPT ![g] = "closing"]
     /\ rtdl' = [rtdl EXCEPT ![g] = clock + RTK(file)]
-    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
+    /\ rw' = [rw EXCEPT ![g] = "writing"]
+    /\ rsig' = [rsig EXCEPT ![g] = Variant = "runtimeLate"]
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rpipe, rrecv, rhow, rtaken, rgot, rfile >>
 
 Escalate(g) ==
     /\ sst[g] = "stopping"
@@ -137,7 +153,7 @@ Escalate(g) ==
     /\ cdl' = [cdl EXCEPT ![g] = IF rst[g] = "gone" /\ clock + ABUD(bvSup[g]) < cdl[g] THEN clock + ABUD(bvSup[g]) ELSE cdl[g]]
     /\ gphase' = [gphase EXCEPT ![g] = IF gst[g] = "closing" /\ gphase[g] = "none" THEN "fm" ELSE gphase[g]]
     /\ ms' = [ms EXCEPT ![g] = IF gst[g] = "closing" /\ gphase[g] = "none" THEN "stopping" ELSE ms[g]]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, gst, gv, gBegin, gcalls, rdl, cw, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, gst, gv, gBegin, gcalls, rdl, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 SendStop(g) ==
     /\ sst[g] = "stopping"
@@ -154,8 +170,8 @@ SendStop(g) ==
     /\ ms' = [ms EXCEPT ![g] = IF mode[g] = "int" THEN "stopping" ELSE ms[g]]
     /\ gv' = [gv EXCEPT ![g] = IF NoValidMessage THEN file ELSE sv[g]]
     /\ bvSup' = [bvSup EXCEPT ![g] = IF Variant = "mixed" THEN file ELSE bvSup[g]]
-    /\ rtv' = [rtv EXCEPT ![g].applied = IF NoValidMessage \/ Variant = "runtimeLate" THEN file ELSE rtv[g].carry, ![g].bound = IF Variant = "mixed" THEN file ELSE rtv[g].bound]
-    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, mode, cdl, rdl, cw, cwDL, cwVal, rst, rtdl >>
+    /\ rtv' = [rtv EXCEPT ![g].bound = IF Variant = "mixed" THEN file ELSE rtv[g].bound]
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, mode, cdl, rdl, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 WriteFailed(g) ==
     /\ sst[g] = "stopping"
@@ -168,9 +184,9 @@ WriteFailed(g) ==
     /\ gBegin' = [gBegin EXCEPT ![g] = IF Variant = "sigtermAfterFail" THEN clock ELSE gBegin[g]]
     /\ gcalls' = [gcalls EXCEPT ![g] = IF Variant = "sigtermAfterFail" THEN TRUE ELSE gcalls[g]]
     /\ gv' = [gv EXCEPT ![g] = IF Variant = "sigtermAfterFail" THEN file ELSE gv[g]]
-    /\ rtv' = [rtv EXCEPT ![g].applied = IF Variant = "sigtermAfterFail" THEN file ELSE rtv[g].applied]
+    /\ UNCHANGED rtv
     /\ gphase' = [gphase EXCEPT ![g] = IF Variant = "sigtermAfterFail" /\ mode[g] = "int" THEN "fm" ELSE gphase[g]]
-    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, bvSup, mode, cdl, ms, rdl, cw, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, bvSup, mode, cdl, ms, rdl, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 KillNow(g) ==
     /\ gst' = [gst EXCEPT ![g] = "killing"]
@@ -183,7 +199,7 @@ KillNow(g) ==
     /\ gBegin' = [gBegin EXCEPT ![g] = 0]
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
     /\ gphase' = [gphase EXCEPT ![g] = "none"]
-    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, ms, rdl, cw, cwDL, cwVal, sfail, rst, rtdl >>
+    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, ms, rdl, cw, cwDL, cwVal, sfail, rst, rtdl, ChildVars >>
 
 DeadlineKill(g) ==
     /\ DeadlineOverdue(g)
@@ -198,7 +214,7 @@ CallEnds(g) ==
     /\ gphase[g] = "none"
     /\ gcalls[g]
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 GraceEnd(g) ==
     /\ gst[g] = "closing"
@@ -207,7 +223,7 @@ GraceEnd(g) ==
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
     /\ gphase' = [gphase EXCEPT ![g] = "fm"]
     /\ ms' = [ms EXCEPT ![g] = "stopping"]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, rdl, cw, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, rdl, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 FmDone(g) ==
     /\ Variant # "waitsForever"
@@ -222,7 +238,7 @@ FmDone(g) ==
     /\ gBegin' = [gBegin EXCEPT ![g] = 0]
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
     /\ gphase' = [gphase EXCEPT ![g] = "none"]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, cw, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 GwForcedGone(g) ==
     /\ GwOverdue(g)
@@ -235,7 +251,7 @@ KernelGone(g) ==
     /\ gst' = [gst EXCEPT ![g] = IF gst[g] = "killing" THEN "gone" ELSE gst[g]]
     /\ rdl' = [rdl EXCEPT ![g] = IF gst[g] = "killing" THEN clock + REAP ELSE rdl[g]]
     /\ kdl' = [kdl EXCEPT ![g] = IF gst[g] = "killing" THEN 0 ELSE kdl[g]]
-    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, sfail, rst, rtdl >>
+    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, sfail, rst, rtdl, ChildVars >>
 
 Unconfirmed(g) ==
     /\ Variant # "unboundedConfirm"
@@ -244,7 +260,7 @@ Unconfirmed(g) ==
     /\ rdl' = [rdl EXCEPT ![g] = clock + REAP]
     /\ kdl' = [kdl EXCEPT ![g] = 0]
     /\ sfail' = [sfail EXCEPT ![g] = sfail[g] \/ Variant = "failOnUnconfirmed"]
-    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, alive, kat, rst, rtdl >>
+    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, alive, kat, rst, rtdl, ChildVars >>
 
 Reap(g) ==
     /\ Variant # "noReap"
@@ -252,7 +268,7 @@ Reap(g) ==
     /\ ms[g] # "gone"
     /\ ms' = [ms EXCEPT ![g] = "gone"]
     /\ rdl' = [rdl EXCEPT ![g] = 0]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, cw, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 SupGone(g) ==
     /\ sst[g] = "stopping"
@@ -263,16 +279,17 @@ SupGone(g) ==
     /\ cdl' = [cdl EXCEPT ![g] = 0]
     /\ wr' = [wr EXCEPT ![g] = "none"]
     /\ mode' = [mode EXCEPT ![g] = "term"]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sv, sBegin, sent, bvSup, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sv, sBegin, sent, bvSup, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 RtEnded(g) ==
     /\ rst' = [rst EXCEPT ![g] = "gone"]
     /\ rtdl' = [rtdl EXCEPT ![g] = 0]
     /\ cdl' = [cdl EXCEPT ![g] = clock + IF mode[g] = "int" THEN ABUD(bvSup[g]) ELSE CHILD(bvSup[g])]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, ChildVars >>
 
 RtDone(g) ==
     /\ rst[g] = "closing"
+    /\ rtaken[g]
     /\ RtEnded(g)
 
 RtKill(g) ==
@@ -280,29 +297,81 @@ RtKill(g) ==
     /\ clock >= rtdl[g]
     /\ rst' = [rst EXCEPT ![g] = "killing"]
     /\ rtdl' = [rtdl EXCEPT ![g] = clock + KILLCONF]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, ChildVars >>
 
 RtGone(g) ==
     /\ rst[g] = "killing"
     /\ RtEnded(g)
 
+RtWriteDone(g) ==
+    /\ rw[g] = "writing"
+    /\ rst[g] = "closing"
+    /\ rw' = [rw EXCEPT ![g] = "written"]
+    /\ rpipe' = [rpipe EXCEPT ![g] = ~NoValidMessage]
+    /\ rsig' = [rsig EXCEPT ![g] = TRUE]
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl, rrecv, rhow, rtaken, rgot, rfile >>
+
+RtWriteFailed(g) ==
+    /\ rw[g] = "writing"
+    /\ rst[g] = "closing"
+    /\ rw' = [rw EXCEPT ![g] = "failed"]
+    /\ rsig' = [rsig EXCEPT ![g] = rsig[g] \/ Variant = "runtimeSignalAfterFail"]
+    /\ rst' = [rst EXCEPT ![g] = IF Variant = "runtimeSignalAfterFail" THEN "closing" ELSE "killing"]
+    /\ rtdl' = [rtdl EXCEPT ![g] = IF Variant = "runtimeSignalAfterFail" THEN rtdl[g] ELSE clock + KILLCONF]
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rpipe, rrecv, rhow, rtaken, rgot, rfile >>
+
+ChildBegin(g, how) ==
+    /\ rhow[g] = "none"
+    /\ rst[g] # "gone"
+    /\ (how = "self" \/ rsig[g])
+    /\ rhow' = [rhow EXCEPT ![g] = how]
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl, rw, rsig, rpipe, rrecv, rtaken, rgot, rfile >>
+
+ChildRead(g) ==
+    /\ rpipe[g]
+    /\ rst[g] # "gone"
+    /\ rpipe' = [rpipe EXCEPT ![g] = FALSE]
+    /\ rrecv' = [rrecv EXCEPT ![g] = IF rtaken[g] \/ rrecv[g] # 0 THEN rrecv[g] ELSE rtv[g].carry]
+    /\ rtv' = [rtv EXCEPT ![g].applied = IF rtaken[g] /\ Variant = "lateApplies" THEN rtv[g].carry ELSE rtv[g].applied]
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl, rw, rsig, rhow, rtaken, rgot, rfile >>
+
+Drains(g) == rpipe[g] /\ Variant # "takeBeforeDrain"
+
+ChildTake(g) ==
+    /\ rhow[g] # "none"
+    /\ ~rtaken[g]
+    /\ rst[g] # "gone"
+    /\ rtaken' = [rtaken EXCEPT ![g] = TRUE]
+    /\ rpipe' = [rpipe EXCEPT ![g] = IF Drains(g) THEN FALSE ELSE rpipe[g]]
+    /\ rrecv' = [rrecv EXCEPT ![g] = IF Drains(g) /\ rrecv[g] = 0 THEN rtv[g].carry ELSE rrecv[g]]
+    /\ rgot' = [rgot EXCEPT ![g] = rrecv[g] # 0 \/ Drains(g)]
+    /\ rfile' = [rfile EXCEPT ![g] = file]
+    /\ rtv' = [rtv EXCEPT ![g].applied = IF rrecv[g] # 0 THEN rrecv[g] ELSE IF Drains(g) THEN rtv[g].carry ELSE file]
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rst, rtdl, rw, rsig, rhow >>
+
 Give(g) ==
     /\ cw[g] = "armed"
     /\ clock >= cwDL[g]
     /\ cw' = [cw EXCEPT ![g] = "gaveUp"]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 Done(g) ==
     /\ cw[g] = "armed"
     /\ sst[g] = "gone"
     /\ cw' = [cw EXCEPT ![g] = "done"]
-    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal, rst, rtdl >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal, rst, rtdl, ChildVars >>
 
 GenStep(g) ==
     \/ SelfBegin(g)
     \/ RtDone(g)
     \/ RtKill(g)
     \/ RtGone(g)
+    \/ RtWriteDone(g)
+    \/ RtWriteFailed(g)
+    \/ ChildBegin(g, "signal")
+    \/ ChildBegin(g, "self")
+    \/ ChildRead(g)
+    \/ ChildTake(g)
     \/ Escalate(g)
     \/ SendStop(g)
     \/ WriteFailed(g)
@@ -349,6 +418,14 @@ TypeOK ==
     /\ sfail \in [Gens -> BOOLEAN]
     /\ rst \in [Gens -> {"up", "closing", "killing", "gone"}]
     /\ rtdl \in [Gens -> 0..(MaxT + RTK(MaxVal))]
+    /\ rw \in [Gens -> {"none", "writing", "written", "failed"}]
+    /\ rsig \in [Gens -> BOOLEAN]
+    /\ rpipe \in [Gens -> BOOLEAN]
+    /\ rrecv \in [Gens -> Vals \cup {0}]
+    /\ rhow \in [Gens -> {"none", "signal", "self"}]
+    /\ rtaken \in [Gens -> BOOLEAN]
+    /\ rgot \in [Gens -> BOOLEAN]
+    /\ rfile \in [Gens -> Vals \cup {0}]
 
 SameValues ==
     \A g \in Gens :
@@ -356,7 +433,11 @@ SameValues ==
         /\ sent[g] => gv[g] = sv[g]
         /\ cw[g] \in {"armed", "gaveUp", "done"} => cwVal[g] = sv[g]
         /\ sst[g] # "up" => rtv[g].bound = sv[g]
-        /\ sent[g] => rtv[g].applied = sv[g]
+        /\ (rtaken[g] /\ rhow[g] = "signal") => rtv[g].applied = sv[g]
+
+ChildValues == \A g \in Gens : rtaken[g] => rtv[g].applied = IF rgot[g] THEN rrecv[g] ELSE rfile[g]
+
+ValuesFixed == [][\A g \in Gens : rtaken[g] => rtv'[g].applied = rtv[g].applied]_vars
 
 NoOutlast == \A g \in Gens : cw[g] = "gaveUp" => sst[g] = "gone"
 

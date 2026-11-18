@@ -4,7 +4,7 @@ import type { ManifestEntry, TlcRun } from './manifest-reader.ts';
 export const COMPLETION_LINE = 'Model checking completed. No error has been found.';
 export const DISTINCT_STATES = /(\d[\d,]*) states generated, (\d[\d,]*) distinct states found, 0 states left on queue\./g;
 export const TEMPORAL_LINE = 'Temporal properties were violated';
-export const SCRIPT_FAILURE_CODES: readonly number[] = [2, 3, 4, 5, RUN_LOCK_EXIT.refused, RUN_LOCK_EXIT.waitedOut, RUN_LOCK_EXIT.unusable];
+export const SCRIPT_FAILURE_CODES: readonly number[] = [2, 3, 4, 5, RUN_LOCK_EXIT.refused, RUN_LOCK_EXIT.waitedOut, RUN_LOCK_EXIT.unusable, RUN_LOCK_EXIT.cpuBudget, RUN_LOCK_EXIT.starterGone];
 
 const INVARIANT_VIOLATED = /Invariant (\S+) is violated/g;
 const ACTION_PROPERTY_VIOLATED = /Action property (\S+) is violated/g;

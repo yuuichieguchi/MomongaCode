@@ -5,14 +5,14 @@ import { parseArgs } from 'node:util';
 import { releaseTargetOf } from '@momonga/foundation';
 import { bundle, defaultEntry, repoRoot } from './bundle.ts';
 import type { UpdateSourceInputs } from './bundle.ts';
-import { SEA_TARGETS, ensureSeaNode, isSeaTargetName } from './node-runtime.ts';
+import { SEA_TARGETS, ensureSeaNode, isSeaTargetName, nodeArchiveCacheDir } from './node-runtime.ts';
 import type { SeaTargetName } from './node-runtime.ts';
 import { buildLinuxSocketGuardAssets } from './linux-socket-guard.ts';
 import { buildRipgrepAssets } from './ripgrep-release.ts';
 import { buildWindowsKeeperAssets } from './windows-keeper.ts';
 import { buildZ3Assets } from './z3-assets.ts';
 
-export const nodeCacheDir = `${repoRoot}.cache/node`;
+export const nodeCacheDir = nodeArchiveCacheDir;
 export const entitlementsPath = `${repoRoot}scripts/sea-entitlements.plist`;
 
 export type SeaOptions = UpdateSourceInputs & {

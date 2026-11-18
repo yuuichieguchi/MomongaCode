@@ -19,11 +19,21 @@ export interface HostBounds {
   readonly literalBounds: PerFile<number>;
   readonly signalTimeouts: PerFile<readonly string[]>;
   readonly clientsWithoutEveryBound: PerFile<number>;
+  readonly synchronousChildWaits: PerFile<number>;
 }
 
 const NAMED_BOUND = /^[A-Z][A-Z0-9_]*_(MS|SECONDS|BYTES|CHARS)$/;
 
 const NUMERIC_BOUND = /[a-z0-9](Ms|Seconds)$/;
+
+const COUNT_WORDS = new Set(['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'FIFTEEN', 'TWENTY', 'THIRTY', 'SIXTY']);
+
+const TIME_UNIT_WORDS = new Set(['MILLISECOND', 'MILLISECONDS', 'SECOND', 'SECONDS', 'MINUTE', 'MINUTES', 'HOUR', 'HOURS', 'DAY', 'DAYS', 'WEEK', 'WEEKS']);
+
+export const isTimeUnitName = (name: string): boolean => {
+  const words = name.split('_').slice(0, -1);
+  return words.length > 0 && TIME_UNIT_WORDS.has(words.at(-1) ?? '') && words.slice(0, -1).every((word) => COUNT_WORDS.has(word));
+};
 
 export const TIME_BOUND = /(_MS|_SECONDS|Ms|Seconds)$/;
 
@@ -67,6 +77,24 @@ const keysOf = (args: readonly SourceNode[]): string[] =>
     );
   });
 
+const SYNCHRONOUS_CHILD_CALLS = new Set(['spawnSync', 'execFileSync', 'execSync']);
+
+const CHILD_PROCESS_MODULES = new Set(['node:child_process', 'child_process']);
+
+const isSynchronousChildCall = (source: ParsedSource, call: SourceNode): boolean => {
+  const callee = unwrapped(childOf(call, 'callee'));
+  const name = identifierName(callee);
+  if (name !== undefined) {
+    const binding = source.imports.get(name);
+    return binding !== undefined && CHILD_PROCESS_MODULES.has(binding.module) && SYNCHRONOUS_CHILD_CALLS.has(binding.imported);
+  }
+  const [head, method, ...rest] = (memberChain(callee) ?? '').split('.');
+  const binding = source.imports.get(head ?? '');
+  return rest.length === 0 && binding !== undefined && CHILD_PROCESS_MODULES.has(binding.module) && SYNCHRONOUS_CHILD_CALLS.has(method ?? '');
+};
+
+const isUnboundedSynchronousChild = (source: ParsedSource, call: SourceNode): boolean => isSynchronousChildCall(source, call) && !keysOf(childrenOf(call, 'arguments')).includes('timeout');
+
 const UNDICI_CALLS = new Set(['fetch', 'request', 'stream', 'pipeline', 'buildConnector']);
 
 const constructionOf = (source: ParsedSource, node: SourceNode): string | undefined => {
@@ -106,16 +134,19 @@ export const scanSource = (source: ParsedSource): HostBounds => {
   const signalTimeouts: string[] = [];
   let literalBounds = 0;
   let clientsWithoutEveryBound = 0;
+  let synchronousChildWaits = 0;
   for (const { node } of source.nodes) {
     if (node.type === 'VariableDeclaration' && node['kind'] === 'const') {
       for (const declarator of childrenOf(node, 'declarations')) {
         const name = identifierName(childOf(declarator, 'id'));
         if (name === undefined) continue;
+        if (isTimeUnitName(name)) continue;
         if (NAMED_BOUND.test(name) || (NUMERIC_BOUND.test(name) && isNumericExpression(childOf(declarator, 'init')))) constants.add(name);
       }
     }
     if (node.type === 'CallExpression') {
       literalBounds += literalDelays(node);
+      if (isUnboundedSynchronousChild(source, node)) synchronousChildWaits += 1;
       if (isSignalTimeout(node)) {
         const bound = childrenOf(node, 'arguments')[0];
         if (bound !== undefined) signalTimeouts.push(textOf(source, bound).replace(/\s+/g, ' '));
@@ -135,6 +166,7 @@ export const scanSource = (source: ParsedSource): HostBounds => {
     literalBounds: forFile(file, literalBounds, literalBounds === 0),
     signalTimeouts: forFile(file, sortedUnique(signalTimeouts), signalTimeouts.length === 0),
     clientsWithoutEveryBound: forFile(file, clientsWithoutEveryBound, clientsWithoutEveryBound === 0),
+    synchronousChildWaits: forFile(file, synchronousChildWaits, synchronousChildWaits === 0),
   };
 };
 
@@ -145,6 +177,7 @@ export const merged = (parts: readonly HostBounds[]): HostBounds => ({
   literalBounds: joined(parts.map((part) => part.literalBounds)),
   signalTimeouts: joined(parts.map((part) => part.signalTimeouts)),
   clientsWithoutEveryBound: joined(parts.map((part) => part.clientsWithoutEveryBound)),
+  synchronousChildWaits: joined(parts.map((part) => part.synchronousChildWaits)),
 });
 
 export const scanProduct = (): HostBounds => merged(productSources().map((file) => scanSource(parsedProductSource(file))));

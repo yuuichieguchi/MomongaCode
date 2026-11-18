@@ -17,5 +17,5 @@ chown -R dev:dev /home/dev/src
 node --version
 bwrap --version
 su dev -c 'cd /home/dev/src && npm ci --no-audit --no-fund > /home/dev/npm-ci.log 2>&1 && tail -3 /home/dev/npm-ci.log'
-if [ "${WITH_COMPLIANCE:-}" = 1 ]; then su dev -c 'cd /home/dev/src && npm ci --no-audit --no-fund --prefix compliance/open-responses > /home/dev/compliance-ci.log 2>&1 && tail -3 /home/dev/compliance-ci.log'; fi
+su dev -c 'cd /home/dev/src && npm ci --no-audit --no-fund --prefix compliance/open-responses > /home/dev/compliance-ci.log 2>&1 && tail -3 /home/dev/compliance-ci.log'
 tini -s -- su dev -c "cd /home/dev/src && $* ; status=\$? ; if [ -n \"\${MOMONGA_INJECTION_REPORT:-}\" ]; then if [ -f \"\$MOMONGA_INJECTION_REPORT\" ]; then echo INJECTION_REPORT_BEGIN; cat \"\$MOMONGA_INJECTION_REPORT\"; echo INJECTION_REPORT_END; else echo \"INJECTION_REPORT_MISSING \$MOMONGA_INJECTION_REPORT\"; status=1; fi; fi; echo EXIT=\$status"
