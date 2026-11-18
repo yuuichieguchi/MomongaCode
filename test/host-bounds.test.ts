@@ -28,6 +28,11 @@ interface OpenConstant extends FoundConstant {
   readonly lacks: readonly string[];
 }
 
+interface OpenWait {
+  readonly count: number;
+  readonly fixedBy: string;
+}
+
 interface Registry {
   readonly kinds: PerFile<string>;
   readonly constants: readonly RuledConstant[];
@@ -36,6 +41,7 @@ interface Registry {
     readonly constants: readonly OpenConstant[];
     readonly literalBounds: PerFile<number>;
     readonly clientsWithoutEveryBound: PerFile<number>;
+    readonly synchronousChildWaits: PerFile<OpenWait>;
   };
 }
 
@@ -87,6 +93,11 @@ const openOf = (value: unknown, where: string): OpenConstant => {
   return { name: textOf(entry['name'], `${where}.name`), file: textOf(entry['file'], `${where}.file`), lacks: textsOf(entry['lacks'], `${where}.lacks`) };
 };
 
+const openWaitOf = (value: unknown, where: string): OpenWait => {
+  const entry = recordOf(value, where);
+  return { count: countOf(entry['count'], `${where}.count`), fixedBy: textOf(entry['fixedBy'], `${where}.fixedBy`) };
+};
+
 const registryOf = (value: unknown): Registry => {
   const registry = recordOf(value, 'the registry');
   const burnDown = recordOf(registry['burnDown'], 'burnDown');
@@ -98,6 +109,7 @@ const registryOf = (value: unknown): Registry => {
       constants: listOf(burnDown['constants'], 'burnDown.constants').map((item, index) => openOf(item, `burnDown.constants[${index}]`)),
       literalBounds: tableOf(burnDown['literalBounds'], 'burnDown.literalBounds', countOf),
       clientsWithoutEveryBound: tableOf(burnDown['clientsWithoutEveryBound'], 'burnDown.clientsWithoutEveryBound', countOf),
+      synchronousChildWaits: tableOf(burnDown['synchronousChildWaits'], 'burnDown.synchronousChildWaits', openWaitOf),
     },
   };
 };
@@ -127,6 +139,23 @@ describe('the scan of host bounds', () => {
     expect(scanned('const signal = AbortSignal.timeout(3000);').literalBounds).toEqual({ 'sample.ts': 1 });
     expect(scanned('const options = { timeout: 100, headersTimeout: 5000, graceMs: 20, connectTimeoutMs: 1 };').literalBounds).toEqual({ 'sample.ts': 4 });
     expect(scanned('timing.setTimeout(done, WAIT_MS);\nsetTimeout(done, 0);\nconst options = { bodyTimeout: 0, timeoutMs: WAIT_MS, attempts: 3 };').literalBounds).toEqual({});
+  });
+
+  it('takes a name made only of a count and a unit of time for a unit, never for a bound', () => {
+    expect(namesIn('const DAY_MS = 86_400_000;\nconst FIVE_MINUTES_MS = 5 * 60 * 1000;\nconst SECONDS_MS = 1000;\nconst SEVEN_DAYS_MS = 7 * DAY_MS;\nconst IDLE_MINUTES_MS = 5;\nconst MAX_DAY_MS = 9;')).toEqual(['IDLE_MINUTES_MS', 'MAX_DAY_MS']);
+  });
+
+  it('counts a synchronous child process call that sets no timeout, under any name it is reached by', () => {
+    const text = [
+      "import { spawnSync, execFileSync as run } from 'node:child_process';",
+      "import childProcess from 'node:child_process';",
+      "spawnSync('a', [], { stdio: 'ignore' });",
+      "run('b');",
+      "childProcess.execSync('c');",
+      "childProcess.execSync('d', { timeout: LIMIT_MS });",
+      "spawnSync('e', [], { timeout: 5, stdio: 'ignore' });",
+    ].join('\n');
+    expect(scanned(text).synchronousChildWaits).toEqual({ 'sample.ts': 3 });
   });
 
   it('names what each signal timeout is built from', () => {
@@ -181,14 +210,30 @@ describe('every host bound is registered once', () => {
     expect(found.clientsWithoutEveryBound).toEqual(registry.burnDown.clientsWithoutEveryBound);
   });
 
+  it('lists exactly the synchronous child process calls that still wait with no bound, each with the item that fixes it', () => {
+    expect(found.synchronousChildWaits).toEqual(Object.fromEntries(Object.entries(registry.burnDown.synchronousChildWaits).map(([file, wait]) => [file, wait.count])));
+    expect(Object.values(registry.burnDown.synchronousChildWaits).filter((wait) => wait.fixedBy.trim() === '')).toEqual([]);
+  });
+
   const constantsDocument = process.env[CONSTANTS_DOCUMENT_VARIABLE];
   const rowsTitle = `finds the row of every ruled constant in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
 
+  const staleTitle = `keeps on the burn-down list no constant said to lack a row that has one in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
+
   if (constantsDocument === undefined) {
     it(rowsTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
+    it(staleTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
   } else {
     it(rowsTitle, () => {
       expect(registry.constants.filter((entry) => !hasRow(fs.readFileSync(path.join(constantsDocument, entry.row), 'utf8'), entry.name))).toEqual([]);
+    });
+    it(staleTitle, () => {
+      const documents = fs
+        .readdirSync(constantsDocument)
+        .filter((file) => file.endsWith('.md'))
+        .map((file) => fs.readFileSync(path.join(constantsDocument, file), 'utf8'));
+      const rowed = (name: string): boolean => documents.some((document) => hasRow(document, name));
+      expect(registry.burnDown.constants.filter((entry) => entry.lacks.includes('row') === rowed(entry.name)).map(keyOf)).toEqual([]);
     });
   }
 });

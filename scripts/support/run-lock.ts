@@ -4,6 +4,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { bsdFileLock, createLockCapability, lockPathNameOf, sqliteFileLock } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism, LockCapabilityProbe } from '@momonga/foundation';
+import { treeCpuSeconds } from './cpu-budget.ts';
 
 export type RunClass = 'heavy' | 'light';
 
@@ -11,7 +12,8 @@ export const RUN_LOCK_ENV = 'MOMONGA_RUN_LOCK';
 export const RUN_LOCK_WAIT_ENV = 'MOMONGA_RUN_LOCK_WAIT_SECONDS';
 export const RUN_LOCK_DEFAULT_WAIT_SECONDS = 3600;
 export const RUN_LOCK_POLL_MS = 1000;
-export const RUN_LOCK_EXIT = { usage: 64, refused: 71, waitedOut: 72, unusable: 73, interrupted: 130, terminated: 143, cpuBudget: 75, starterGone: 76 } as const;
+export const RUN_LOCK_EXIT = { usage: 64, refused: 71, waitedOut: 72, unusable: 73, interrupted: 130, terminated: 143, cpuBudget: 81, starterGone: 82 } as const;
+export const LIGHT_HOLDER_STALL_MS = 10 * 60 * 1000;
 export const LIGHT_STEPS = ['claimOwn', 'checkHeavy'] as const;
 export const HEAVY_STEPS = ['claimHeavy', 'scanOne', 'decide'] as const;
 
@@ -128,6 +130,8 @@ export type RunLockRequest = {
   pollMs?: number;
   mechanism?: KernelLockMechanism;
   capability?: Pick<LockCapabilityProbe, 'of'>;
+  progressOf?: (pid: number) => Promise<number>;
+  endHolder?: (pid: number) => void | Promise<void>;
 };
 
 export type RunLockOutcome =
@@ -174,7 +178,8 @@ type AttemptContext = {
 };
 
 type Holding = { readonly kind: 'holding'; readonly lock: HeldKernelLock; readonly lockPath: string; readonly hex: string };
-type Busy = { readonly kind: 'busy'; readonly clauses: readonly string[] };
+type LightHolder = { readonly pid: number; readonly clause: string };
+type Busy = { readonly kind: 'busy'; readonly clauses: readonly string[]; readonly lights: readonly LightHolder[] };
 type Attempt = Holding | Busy;
 
 const newTokenHex = (): string => randomBytes(8).toString('hex');
@@ -226,7 +231,7 @@ const claimOwn = async ({ request, mechanism, now }: AttemptContext): Promise<Cl
   const hex = newTokenHex();
   const lockPath = lightPathOf(request.dir, hex);
   const lock = await claimNamed(mechanism, lockPath, hex);
-  if (lock === undefined) return { kind: 'busy', clauses: [await clauseOfHeld(lockPath, 'light', mechanism)] };
+  if (lock === undefined) return { kind: 'busy', clauses: [await clauseOfHeld(lockPath, 'light', mechanism)], lights: [] };
   return { lock, lockPath, hex, startedAt: now().toISOString() };
 };
 
@@ -250,7 +255,7 @@ const lockUnitsNamed = async ({ request, mechanism }: AttemptContext, pattern: R
 const checkHeavy = async (context: AttemptContext): Promise<Busy | undefined> => {
   const { request, mechanism } = context;
   const heavyPath = heavyPathOf(request.dir);
-  if (await mechanism.isHeld(heavyPath)) return { kind: 'busy', clauses: [await clauseOfHeld(heavyPath, 'heavy', mechanism)] };
+  if (await mechanism.isHeld(heavyPath)) return { kind: 'busy', clauses: [await clauseOfHeld(heavyPath, 'heavy', mechanism)], lights: [] };
   const waiterNames = await lockUnitsNamed(context, HEAVY_WAITER_NAME);
   const waiters: string[] = [];
   for (const name of waiterNames) {
@@ -258,7 +263,7 @@ const checkHeavy = async (context: AttemptContext): Promise<Busy | undefined> =>
     const clause = await liveHolderClause(mechanism, waiterPath, () => waitingHeavyClause(mechanism, waiterPath));
     if (clause !== undefined) waiters.push(clause);
   }
-  return waiters.length === 0 ? undefined : { kind: 'busy', clauses: waiters };
+  return waiters.length === 0 ? undefined : { kind: 'busy', clauses: waiters, lights: [] };
 };
 
 const lightAttempt = async (context: AttemptContext): Promise<Attempt> => {
@@ -276,17 +281,30 @@ const claimHeavy = async ({ request, mechanism, now }: AttemptContext): Promise<
   const hex = newTokenHex();
   const lockPath = heavyPathOf(request.dir);
   const lock = await claimNamed(mechanism, lockPath, hex);
-  if (lock === undefined) return { kind: 'busy', clauses: [await clauseOfHeld(lockPath, 'heavy', mechanism)] };
+  if (lock === undefined) return { kind: 'busy', clauses: [await clauseOfHeld(lockPath, 'heavy', mechanism)], lights: [] };
   return { lock, lockPath, hex, startedAt: now().toISOString() };
 };
 
-const scanOne = ({ mechanism }: AttemptContext, lightPath: string): Promise<string | undefined> =>
-  liveHolderClause(mechanism, lightPath, () => clauseOfHeld(lightPath, 'light', mechanism));
+type ScannedLight = { readonly clause: string; readonly pid: number | undefined };
 
-const decide = async (context: AttemptContext, heavy: Claimed, lightHolders: readonly string[]): Promise<Attempt> => {
+const scanOne = async ({ mechanism }: AttemptContext, lightPath: string): Promise<ScannedLight | undefined> => {
+  let pid: number | undefined;
+  const clause = await liveHolderClause(mechanism, lightPath, async () => {
+    const description = await descriptionOfHeld(lightPath, 'light', mechanism);
+    pid = description?.pid;
+    return clauseOf('light', description);
+  });
+  return clause === undefined ? undefined : { clause, pid };
+};
+
+const decide = async (context: AttemptContext, heavy: Claimed, lightHolders: readonly ScannedLight[]): Promise<Attempt> => {
   if (lightHolders.length === 0) return describedHolding(context, heavy);
   heavy.lock.dispose();
-  return { kind: 'busy', clauses: lightHolders };
+  return {
+    kind: 'busy',
+    clauses: lightHolders.map((holder) => holder.clause),
+    lights: lightHolders.flatMap(({ clause, pid }) => (pid === undefined ? [] : [{ pid, clause }])),
+  };
 };
 
 const heavyAttempt = async (context: AttemptContext): Promise<Attempt> => {
@@ -294,10 +312,10 @@ const heavyAttempt = async (context: AttemptContext): Promise<Attempt> => {
   if ('kind' in heavy) return heavy;
   return disposedOnFailure(heavy.lock, async () => {
     const lightNames = await lockUnitsNamed(context, LIGHT_NAME);
-    const lightHolders: string[] = [];
+    const lightHolders: ScannedLight[] = [];
     for (const name of lightNames) {
-      const clause = await scanOne(context, path.join(context.request.dir, name));
-      if (clause !== undefined) lightHolders.push(clause);
+      const holder = await scanOne(context, path.join(context.request.dir, name));
+      if (holder !== undefined) lightHolders.push(holder);
     }
     return decide(context, heavy, lightHolders);
   });
@@ -377,16 +395,46 @@ const acquireOrWait = async (request: RunLockRequest): Promise<RunLockOutcome> =
   }
 
   say(`run-lock: ${runClass} run waits up to ${waitSeconds} s for ${first.clauses.join('; ')}`);
-  if (runClass === 'light') return waitForLock(context, first.clauses);
+  if (runClass === 'light') return waitForLock(context, first);
   const waiter = await lockWork(() => recordHeavyWaiter(context));
   try {
-    return await waitForLock(context, first.clauses);
+    return await waitForLock(context, first);
   } finally {
     await waiter.release();
   }
 };
 
-const waitForLock = async (context: AttemptContext, firstClauses: readonly string[]): Promise<RunLockOutcome> => {
+const endByTerm = (pid: number): void => {
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  }
+};
+
+type Progress = { readonly cpuSeconds: number; readonly sinceMs: number };
+
+const stalledLightWatch = (request: RunLockRequest, monotonic: () => number) => {
+  const progressOf = request.progressOf ?? treeCpuSeconds;
+  const endHolder = request.endHolder ?? endByTerm;
+  const seen = new Map<number, Progress>();
+  return async (lights: readonly LightHolder[]): Promise<void> => {
+    for (const { pid, clause } of lights) {
+      const cpuSeconds = await progressOf(pid);
+      const nowMs = monotonic();
+      const last = seen.get(pid);
+      if (last === undefined || cpuSeconds > last.cpuSeconds) {
+        seen.set(pid, { cpuSeconds, sinceMs: nowMs });
+      } else if (nowMs - last.sinceMs >= LIGHT_HOLDER_STALL_MS) {
+        request.say(`run-lock: ${request.runClass} run ends ${clause}: its processes used no CPU time for ${Math.floor((nowMs - last.sinceMs) / 1000)} s`);
+        seen.delete(pid);
+        await endHolder(pid);
+      }
+    }
+  };
+};
+
+const waitForLock = async (context: AttemptContext, first: Busy): Promise<RunLockOutcome> => {
   const { request } = context;
   const { runClass, waitSeconds, signal, say } = request;
   const monotonic = request.monotonic ?? ((): number => performance.now());
@@ -394,7 +442,9 @@ const waitForLock = async (context: AttemptContext, firstClauses: readonly strin
   const pollMs = request.pollMs ?? RUN_LOCK_POLL_MS;
   const waitStart = monotonic();
   const limitMs = waitSeconds * 1000;
-  let holders = firstClauses;
+  const watchLights = stalledLightWatch(request, monotonic);
+  let holders = first.clauses;
+  await lockWork(() => watchLights(first.lights));
   for (;;) {
     const remainingMs = limitMs - (monotonic() - waitStart);
     if (remainingMs <= 0) return { kind: 'waited-out', message: `run-lock: ${runClass} run gave up after ${waitSeconds} s: still held by ${holders.join('; ')}` };
@@ -411,6 +461,7 @@ const waitForLock = async (context: AttemptContext, firstClauses: readonly strin
       return acquiredFrom(context, next);
     }
     holders = next.clauses;
+    await lockWork(() => watchLights(next.lights));
   }
 };
 

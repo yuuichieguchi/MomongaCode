@@ -80,7 +80,7 @@ type Exception = { readonly file: string; readonly tests: Selection; readonly re
 const FORMAT_FILES = ['date-time', 'date', 'duration', 'ecmascript-regex', 'email', 'hostname', 'idn-email', 'idn-hostname', 'ipv4', 'ipv6', 'iri-reference', 'iri', 'json-pointer', 'regex', 'relative-json-pointer', 'time', 'uri-reference', 'uri-template', 'uri', 'uuid'];
 
 const FORMAT_REASON =
-  'format is an annotation in the product: the engine runs with assertFormat:false (packages/foundation/src/untrusted-engine.ts OPTIONS). Draft 2020-12 Validation section 7.2.1 makes the format-annotation vocabulary the default, and section 7.2.1 says assertion is optional ("MAY"). The files under optional/format check assertion, so only the tests that expect a rejection are left out; every test that expects acceptance still runs. The required format.json, which expects annotation, passes.';
+  'format is an annotation in the product unless the meta-schema named by the schema\'s $schema declares the format-assertion vocabulary: the engine sets assertFormat per schema (assertsFormat in packages/foundation/src/untrusted-engine.ts), and the schemas of optional/format name the 2020-12 meta-schema, which declares format-annotation only. Draft 2020-12 Validation section 7.2.1 makes the format-annotation vocabulary the default, and section 7.2.1 says assertion is optional ("MAY"). The files under optional/format check assertion, so only the tests that expect a rejection are left out; every test that expects acceptance still runs. The required format.json, which expects annotation, passes.';
 
 const EXCEPTIONS: readonly Exception[] = [
   ...FORMAT_FILES.map((name): Exception => ({ file: `optional/format/${name}`, tests: 'expected-invalid', reason: FORMAT_REASON })),
