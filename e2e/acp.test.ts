@@ -8,7 +8,7 @@ import type { FakeScriptedReply } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { startAcpClient, updatesOf } from './support/acp.ts';
 import { titleOf } from './support/cases.ts';
-import { E2E_CHECK_PASSED_TEXT, decideProjectFolderWithCheck, runCli } from './support/cli.ts';
+import { E2E_CHECK_PASSED_TEXT, decideProjectFolderWithCheck, runCli, stopDaemonCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
@@ -68,8 +68,8 @@ describe('acp: momonga acp', () => {
     const first = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
     expect(first.sessionId).not.toBe('');
 
-    const stopped = await runCli(home, ['daemon', 'stop']);
-    expect(stopped.stdout).toBe('momonga daemon stopped\n');
+    const supervisorPid = Number(/pid (\d+)/.exec((await runCli(home, ['daemon', 'status'])).stdout)?.[1]);
+    expect(await stopDaemonCli(home, [supervisorPid])).toEqual({ stdout: 'momonga daemon stopped\n', code: 0 });
 
     const second = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
     expect(second.sessionId).not.toBe(first.sessionId);

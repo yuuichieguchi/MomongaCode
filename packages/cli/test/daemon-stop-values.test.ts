@@ -10,7 +10,8 @@ import { STOP_WAIT_WHEN_UNKNOWN_MS, daemonReadyBoundMs, ensureDaemon, stopDaemon
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { installedProgram, recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
+import { fakeSupervisorProcesses, installedProgram, recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
+import type { FakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
 const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' };
@@ -37,8 +38,10 @@ const setup = async (context: TestContext) => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(value));
   };
+  const started: FakeSupervisor[] = [];
   const start = async (options: Omit<Parameters<typeof startFakeSupervisor>[0], 'paths'>, holdsLock = true) => {
     const supervisor = await startFakeSupervisor({ paths, holdsKernelLock: false, ...options });
+    started.push(supervisor);
     registerCleanup(context, () => supervisor.stop());
     if (holdsLock) {
       const lock = await acquireProcessLock(firstGeneration(paths).locks.supervisor, undefined, { mechanism: testKernelLock() });
@@ -46,7 +49,7 @@ const setup = async (context: TestContext) => {
     }
     return supervisor;
   };
-  const ports: DaemonPorts = { files: nodeFilesLockedBy(testKernelLock), version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn, ...installedProgram(VERSION).ports };
+  const ports: DaemonPorts = { files: nodeFilesLockedBy(testKernelLock), version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn, process: fakeSupervisorProcesses(() => started), ...installedProgram(VERSION).ports };
   return { paths, ports, start, writeUserSettings };
 };
 
