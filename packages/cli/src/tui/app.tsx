@@ -1626,7 +1626,7 @@ export function App(props: AppProps) {
   const onlyEntry = store.count() === 1 ? store.at(0).entry : undefined;
   const followedStart = panel !== undefined && !conversationArea && onlyEntry?.kind === 'banner' ? onlyEntry.banner : undefined;
   const listFollows = followedStart !== undefined;
-  const figureFits = followedStart === undefined || bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
+  const figureFits = followedStart === undefined ? conversationArea : panelRows !== undefined && bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
   useEffect(() => {
     syncBanner();
   }, [sessionModel, notices, unconnected, beforeConversation, displays, figureFits]);

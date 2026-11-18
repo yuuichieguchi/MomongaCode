@@ -8,6 +8,8 @@ const STARTUP = { startup: { version: '1.2.3', home: '/Users/ada' } };
 const VERSION = 'MomongaCode v1.2.3';
 const WELCOME_TITLE = 'Connect a model to start';
 const TRUST_ROW = '1. Yes, I trust this folder';
+const FIGURE_ROWS = 7;
+const LIST_ROWS = ['1. Continue with ChatGPT', '2. Use an API key', '3. Use a local server', 'esc: go back'];
 
 const rowsOf = (frame: string): string[] => frame.split('\n');
 
@@ -70,6 +72,22 @@ describe('the first screen shows the start screen at the top with the list direc
     app.stdin.write(KEYS.escape);
     const frame = await untilFrame(app, (shown) => !shown.includes(WELCOME_TITLE) && shown.includes('(use /login)'));
     expect(frame.split(VERSION)).toHaveLength(2);
+    app.unmount();
+  });
+
+  it.each([
+    ['100x12', { columns: 100, rows: 12 }],
+    ['100x50', { columns: 100, rows: 50 }],
+  ] as const)('every frame from launch at %s shows the figure whole or not at all, and the list whole', async (_name, screen) => {
+    const { app } = await startPlan({ models: [], accounts: [] }, STARTUP, screen);
+    await untilFrame(app, (shown) => shown.includes(WELCOME_TITLE) && shown.includes('esc: go back'));
+    const shown = app.frames.filter((frame) => frame.includes(VERSION));
+    expect(shown.length).toBeGreaterThan(0);
+    for (const frame of shown) {
+      const figureRows = rowsOf(frame).filter((row) => /[∩•░┬]|╰─╮/.test(row)).length;
+      expect([0, FIGURE_ROWS]).toContain(figureRows);
+      if (frame.includes(WELCOME_TITLE)) for (const row of LIST_ROWS) expect(frame).toContain(row);
+    }
     app.unmount();
   });
 });
