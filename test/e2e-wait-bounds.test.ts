@@ -12,7 +12,7 @@ const KEPT: Readonly<Record<string, Kept>> = {
   'e2e/support/cli.test.ts': { waits: 1, reason: 'the subject is the bound of the CLI helper itself: it counts from when the test waits for the result, not from the start' },
   'e2e/support/log-reader.test.ts': { waits: 3, reason: 'the subject is the bound of untilRecord against a log file the case writes itself, in process' },
   'e2e/support/process.test.ts': { waits: 2, reason: 'the subject is the bound of untilProcessesEnded against fake liveness ports' },
-  'e2e/support/pty-session.test.ts': { waits: 14, reason: 'the subject is the session helper against in-process streams; no host process is waited on' },
+  'e2e/support/pty-session.test.ts': { waits: 16, reason: 'the subject is the session helper against in-process streams; no host process is waited on' },
   'e2e/support/wait.test.ts': { waits: 7, reason: 'the subject is until and withinBound themselves, driven by in-process predicates and promises' },
 };
 

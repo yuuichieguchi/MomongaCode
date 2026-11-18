@@ -70,7 +70,8 @@ describe('the pty session of the e2e tests', () => {
     void echoed.then(() => {
       settled = true;
     });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    draw(frameOf(['> line two', 'drawn before the echo'], '> ', 'mode: manual (shift+tab)'));
+    await session.waitFor('drawn before the echo', { boundMs: BOUND_MS });
     expect(settled).toBe(false);
     draw(frameOf(['> line two'], '> line two', 'mode: manual (shift+tab)'));
     const frame = await echoed;
@@ -110,7 +111,8 @@ describe('the pty session of the e2e tests', () => {
     void prompt.then(() => {
       settled = true;
     });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    draw(frameOf(['Pick one', '› 1. Yes', 'drawn before the hint'], '> ', 'mode: manual (shift+tab)'));
+    await session.waitFor('drawn before the hint', { boundMs: BOUND_MS });
     expect(settled).toBe(false);
     draw(frameOf(['Pick one', '› 1. Yes', 'enter to choose'], '> ', 'mode: manual (shift+tab)'));
     expect((await prompt).rows).toContain('enter to choose');
