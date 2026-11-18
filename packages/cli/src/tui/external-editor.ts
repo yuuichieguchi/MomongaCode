@@ -32,7 +32,7 @@ export type ExternalEditorHost = {
   writePrivate(file: string, text: string): Promise<void>;
   read(file: string): Promise<string>;
   remove(directory: string): Promise<void>;
-  leaveScreen(): () => Promise<void>;
+  leaveScreen(): Promise<() => Promise<void>>;
   launch(argv: readonly string[]): Promise<void>;
 };
 
@@ -50,7 +50,7 @@ const commandOf = (env: ExternalEditorHost['env']): readonly string[] | undefine
 };
 
 const launchedOn = async (host: ExternalEditorHost, command: readonly string[], file: string): Promise<void> => {
-  const returnToScreen = host.leaveScreen();
+  const returnToScreen = await host.leaveScreen();
   try {
     await host.launch([...command, file]);
   } finally {

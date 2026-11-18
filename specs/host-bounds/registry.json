@@ -22,6 +22,7 @@
     {"name":"NEXT_TURN_MS","file":"packages/cli/src/tui/screen/history-view.tsx","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"HIGHLIGHT_MAX_BYTES","file":"packages/cli/src/tui/screen/markdown.ts","kind":"stated","owner":"cli","row":"cli.md"},
     {"name":"FOCUS_REPORT_WAIT_MS","file":"packages/cli/src/tui/screen/notify.ts","kind":"P","owner":"cli","row":"cli.md"},
+    {"name":"NEGOTIATION_DRAIN_MS","file":"packages/cli/src/tui/terminal/constants.ts","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"BACKGROUND_CHECK_INTERVAL_MS","file":"packages/cli/src/update/state.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"DEFAULT_BASH_BACKGROUND_TIMEOUT_MS","file":"packages/config/src/context-settings.ts","kind":"P","owner":"tools","row":"recovery.md"},
     {"name":"DEFAULT_BASH_DRAIN_IDLE_MS","file":"packages/config/src/context-settings.ts","kind":"P","owner":"tools","row":"recovery.md"},
