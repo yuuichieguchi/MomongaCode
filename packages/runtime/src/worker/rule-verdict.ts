@@ -29,6 +29,16 @@ type Undecided = { verdict: RuleVerdict; retry: Promise<void> | undefined };
 
 const undecidedByVerifier = new WeakMap<RuleVerifierPort, Map<string, Undecided>>();
 
+const inFlightByVerifier = new WeakMap<RuleVerifierPort, Map<string, Promise<RuleVerdict>>>();
+
+const inFlightOf = (verifier: RuleVerifierPort): Map<string, Promise<RuleVerdict>> => {
+  const known = inFlightByVerifier.get(verifier);
+  if (known !== undefined) return known;
+  const fresh = new Map<string, Promise<RuleVerdict>>();
+  inFlightByVerifier.set(verifier, fresh);
+  return fresh;
+};
+
 const undecidedOf = (verifier: RuleVerifierPort): Map<string, Undecided> => {
   const known = undecidedByVerifier.get(verifier);
   if (known !== undefined) return known;
@@ -102,7 +112,16 @@ export const verdictOfKey = async ({ verifier, cache, fingerprint, solver, signa
     }
   };
   const earlier = undecided.get(fingerprint);
-  if (earlier === undefined) return settledOrAborted(verify().then((verdict) => (settle(verdict), verdict)), signal);
+  if (earlier === undefined) {
+    const inFlight = inFlightOf(verifier);
+    const running = inFlight.get(fingerprint);
+    if (running !== undefined) return settledOrAborted(running, signal);
+    const started = verify()
+      .then((verdict) => (settle(verdict), verdict))
+      .finally(() => inFlight.delete(fingerprint));
+    inFlight.set(fingerprint, started);
+    return settledOrAborted(started, signal);
+  }
   earlier.retry ??= verdictOrUnverified(retry(), solver).then(settle, (error: unknown) => {
     earlier.retry = undefined;
     onRetryFailure(error);

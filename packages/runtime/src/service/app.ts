@@ -13,7 +13,7 @@ import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayC
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
-import { JournalThreadError, SESSION_PAGE_ROWS, inboxRowView, knownValue, sameRunRequest } from '@momonga/store';
+import { JournalThreadError, SESSION_PAGE_ROWS, inboxRowView, isStoreFullError, knownValue, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, ListedSession, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
@@ -33,6 +33,7 @@ import {
   imageInputUnsupported,
   idempotencyKeyReused,
   internalErrorResponse,
+  runtimeStoreUnwritable,
   invalidRequest,
   methodNotAllowed,
   modeNotAllowed,
@@ -926,6 +927,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (isAbortOf(error, context.req.raw.signal)) return new Response(null, { status: CLIENT_CLOSED_REQUEST_STATUS });
     if (error instanceof ApiError) return errorResponse(error);
     if (error instanceof JournalThreadError) return errorResponse(contributionUnavailable(error.message));
+    if (isStoreFullError(error)) return errorResponse(runtimeStoreUnwritable(error));
     if (error instanceof GatewayRequestError && error.status >= 400 && error.status < 600) return errorResponse(gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message }));
     deps.onError(error);
     return internalErrorResponse();

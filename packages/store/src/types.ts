@@ -804,7 +804,7 @@ export type ReflectionInputRequest = { runId: string; project: string; capabilit
 
 export type ReflectionInputReply = { lastSeq: number; input: string };
 
-export type FidelityRequest = { runId: string; throughEventSeq: number; cwd: string; tokens: readonly ClaimedToken[] };
+export type FidelityRequest = { runId: string; throughEventSeq: number; cwd: string; sessionBoundary: string; tokens: readonly ClaimedToken[] };
 
 export const VERDICT_RANKS = ['none', 'stated', 'executed'] as const;
 

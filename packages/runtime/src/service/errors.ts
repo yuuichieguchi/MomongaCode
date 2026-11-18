@@ -122,6 +122,16 @@ export const imageInputUnsupported = (display: string): ApiError =>
     param: 'images',
   });
 
+export const RUNTIME_STORE_UNWRITABLE_CODE = 'runtime_store_unwritable' as const;
+
+export const runtimeStoreUnwritable = (cause: Error): ApiError =>
+  new ApiError({
+    status: 507,
+    type: 'server_error',
+    code: RUNTIME_STORE_UNWRITABLE_CODE,
+    message: `The runtime store could not be written (${cause.message}). The request was not completed; free disk space and send it again.`,
+  });
+
 export const configError = (message: string, param?: string): ApiError =>
   new ApiError({ status: 422, type: 'invalid_request', code: 'config_error', message, ...(param === undefined ? {} : { param }) });
 

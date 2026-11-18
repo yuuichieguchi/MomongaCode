@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ClaimedToken, RunEvent, RunEventPayload } from '@momonga/protocol';
+import { userShellText } from '@momonga/protocol';
 import { FIDELITY_EVENT_TYPES, createFidelityFold } from '../../src/memory/fidelity-fold.ts';
 import { enqueue, mustClaim, rawDb } from '../../../store/test/helpers.ts';
 import { deniedCall, fidelityEnv, modelSaid, reconciledCall, startedCall, unfinishedCall } from './fidelity-fixture.ts';
@@ -182,8 +183,8 @@ const generatedRun = (random: (bound: number) => number, run: number): RunEventP
 };
 
 const oracle = (journals: readonly (readonly RunEvent[])[], tokens: readonly ClaimedToken[], cwd: string): string[] => {
-  const withPort = createFidelityFold as unknown as (tokens: readonly ClaimedToken[], cwd: string, record: (event: RunEvent) => void) => ReturnType<typeof createFidelityFold>;
-  const fold = withPort(tokens, cwd, () => {
+  const withPort = createFidelityFold as unknown as (tokens: readonly ClaimedToken[], cwd: string, sessionBoundary: string, record: (event: RunEvent) => void) => ReturnType<typeof createFidelityFold>;
+  const fold = withPort(tokens, cwd, 'f'.repeat(32), () => {
     throw new Error('the oracle holds no reference event');
   });
   for (const event of journals.flat()) {
@@ -206,5 +207,45 @@ describe('differential: an inheriting run attests what one run holding the conca
     const reply = await env.fidelity(last, tokens);
     expect(reply.unreadable).toEqual([]);
     expect([...reply.attested].sort()).toEqual(expected);
+  });
+});
+
+describe('an inherited user message of the copy form offers each part by its own source', () => {
+  const FENCE = 'f'.repeat(32);
+  const inheritedUserMessage = (parts: readonly string[]): RunEvent =>
+    ({
+      seq: 1,
+      runId: 'run_inheriting',
+      type: 'context.inherited',
+      fromRunId: 'run_parent',
+      fromLastSeq: 4,
+      history: [{ seq: 1, item: { type: 'message', role: 'user', content: parts.map((text) => ({ type: 'input_text', text })) } }],
+      nextItemSeq: 2,
+      evicted: [],
+      closures: [],
+      markers: [],
+      digest: 'digest',
+    }) as unknown as RunEvent;
+
+  const attestedOf = async (claim: Claim, parts: readonly string[]): Promise<string[]> => {
+    const fold = createFidelityFold([{ token: TOKEN, claim }], '/project', FENCE, () => undefined);
+    await fold.add(inheritedUserMessage(parts));
+    fold.finish();
+    return fold.attested();
+  };
+
+  it('attests as executed a token held by an included shell output of the earlier run', async () => {
+    const shell = userShellText({ command: 'make', exitCode: 0, output: `ran ${TOKEN}` }, FENCE);
+    expect(await attestedOf('executed', ['see the output', shell])).toEqual([TOKEN]);
+  });
+
+  it('keeps a token the person only typed as stated', async () => {
+    expect(await attestedOf('executed', [`please run ${TOKEN}`])).toEqual([]);
+    expect(await attestedOf('any', [`please run ${TOKEN}`])).toEqual([TOKEN]);
+  });
+
+  it('keeps as stated a shell-shaped text that does not carry the session boundary', async () => {
+    const forged = userShellText({ command: 'make', exitCode: 0, output: `ran ${TOKEN}` }, 'e'.repeat(32));
+    expect(await attestedOf('executed', [forged])).toEqual([]);
   });
 });

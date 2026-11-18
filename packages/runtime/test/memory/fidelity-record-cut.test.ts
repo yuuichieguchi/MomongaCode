@@ -204,7 +204,7 @@ describe('the record walk runs in bounded units and lets other requests through 
     const client = await threadOf(h);
     const order: string[] = [];
     const walk = client
-      .request({ kind: 'fidelity', runId: child.id, throughEventSeq: child.lastSeq, cwd: '/work/a', tokens: [{ ...ABSENT }] })
+      .request({ kind: 'fidelity', runId: child.id, throughEventSeq: child.lastSeq, cwd: '/work/a', sessionBoundary: 'f'.repeat(32), tokens: [{ ...ABSENT }] })
       .then(() => order.push('fidelity'));
     const ping = client.request({ kind: 'ping' }).then(() => order.push('ping'));
     await Promise.all([walk, ping]);

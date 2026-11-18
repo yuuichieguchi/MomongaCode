@@ -1,8 +1,8 @@
-import { textOfItem } from '@momonga/context';
+import { textOfContent, textOfItem } from '@momonga/context';
 import { isRecord, jsonValueOrText } from '@momonga/foundation';
 import { createCallRunTracker } from '@momonga/memory';
-import { EXECUTED_TEXT_EVENT_TYPES, callInputTracker, readExecutedText, tokenMatcherOf } from '@momonga/protocol';
-import type { ClaimedToken, ExecutedTextHandlers, FidelityClaim, RunEvent } from '@momonga/protocol';
+import { EXECUTED_TEXT_EVENT_TYPES, callInputTracker, isUserShellText, readExecutedText, tokenMatcherOf } from '@momonga/protocol';
+import type { ClaimedToken, ContentPart, ExecutedTextHandlers, FidelityClaim, InputItem, RunEvent } from '@momonga/protocol';
 import { VERDICT_RANKS } from '@momonga/store';
 import type { FidelityVerdict, FidelityVerdictRow, VerdictRank } from '@momonga/store';
 
@@ -76,7 +76,7 @@ const ownRankOf = (entry: Entry): number => (entry.executedAt !== null ? EXECUTE
 
 const rankOf = (entry: Entry): number => Math.max(entry.inh, ownRankOf(entry));
 
-export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string, record: RecordPort): FidelityFold => {
+export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string, sessionBoundary: string, record: RecordPort): FidelityFold => {
   const inputs = callInputTracker(jsonValueOrText);
   const entries: Entry[] = tokens.map((entry) => ({
     ...entry,
@@ -181,7 +181,7 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string,
         for (const entry of event.history) {
           if (entry.handle !== undefined) noteHandle(entry.handle, 'inherited', event.seq);
           if (entry.item.type === 'message') {
-            if (entry.item.role === 'user') offer(textOfItem(entry.item), 'stated', 'inherited', event.seq);
+            if (entry.item.role === 'user') offerUserMessage(entry.item, event.seq);
           } else if (entry.item.type === 'function_call' || entry.item.type === 'function_call_output') {
             offer(textOfItem(entry.item), 'executed', 'inherited', event.seq);
           }
@@ -190,6 +190,13 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string,
       default:
         return;
     }
+  };
+
+  const offerUserMessage = (item: Extract<InputItem, { type: 'message' }>, seq: number): void => {
+    const isShell = (part: ContentPart): boolean => part.type === 'input_text' && isUserShellText(part.text, sessionBoundary);
+    const parts = typeof item.content === 'string' ? [] : item.content;
+    offer(typeof item.content === 'string' ? item.content : textOfContent(parts.filter((part) => !isShell(part))), 'stated', 'inherited', seq);
+    for (const part of parts) if (part.type === 'input_text' && isShell(part)) offer(part.text, 'executed', 'inherited', seq);
   };
 
   const noteHandle = (handle: string, phase: Phase, seq: number): void => {

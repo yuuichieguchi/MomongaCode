@@ -30,6 +30,7 @@ const requestOf = (h: ReferenceHarness, request: FidelityRequest) => ({
   runId: request.runId,
   throughEventSeq: request.throughEventSeq ?? mustRun(h.store, request.runId).lastSeq,
   cwd: request.cwd ?? CWD,
+  sessionBoundary: 'f'.repeat(32),
   tokens: request.tokens.map((entry) => ({ ...entry })),
 });
 

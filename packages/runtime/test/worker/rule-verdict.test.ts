@@ -9,7 +9,7 @@ import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
 import { deferred } from './deferred.ts';
 import { RuleVerificationFailure } from '../../src/process/rule-verifier-thread-client.ts';
 import { folderPolicyVerification } from '../../src/process/folder-verification.ts';
-import { ruleVerdictFor } from '../../src/worker/rule-verdict.ts';
+import { ruleVerdictFor, verdictOfKey } from '../../src/worker/rule-verdict.ts';
 import { parseRule } from '@momonga/config';
 import type { FakeRuleVerifier } from './fake-rule-verifier.ts';
 
@@ -442,3 +442,23 @@ describe('the rules of a run under a mandate', () => {
   });
 });
 
+
+describe('one verification per fingerprint', () => {
+  it('two concurrent claims with one fingerprint share the verification that is in flight and both read its final verdict', async () => {
+    const stored = new Map<string, RuleVerdict>();
+    const cache = { get: (key: string) => (stored.has(key) ? { verdict: stored.get(key) as RuleVerdict } : undefined), put: (key: string, verdict: RuleVerdict) => void stored.set(key, verdict) };
+    const verifier = createFakeRuleVerifier();
+    const answer = deferred<RuleVerdict>();
+    const verify = vi.fn(() => answer.promise);
+    const claim = () =>
+      verdictOfKey({ verifier, cache, fingerprint: 'fp', solver: SOLVER, signal: new AbortController().signal, verify, retry: verify, onRetryFailure: () => undefined });
+
+    const first = claim();
+    const second = claim();
+    answer.resolve(proved);
+
+    expect(await Promise.all([first, second])).toEqual([proved, proved]);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(stored.get('fp')).toEqual(proved);
+  });
+});
