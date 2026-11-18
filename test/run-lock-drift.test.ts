@@ -33,15 +33,19 @@ describe('the run lock steps in the code are the actions of RunLock.tla', () => 
     }
   });
 
-  it('the heavy-waiting unit is modelled: a waiter records itself before it retries, the light check looks at heavy first and then at live waiters, and a decided heavy releases its waiter', () => {
-    expect(positionOf('HRecordWait')).toBeGreaterThan(0);
-    expect(definitionBody('Retry')).toContain('(p \\in Heavies => waitHeld[p])');
-    expect(definitionBody('LiveWaiters')).toContain('{h \\in Heavies : waitHeld[h]}');
+  it('the arrival queue is modelled as built: a busy run of either class records its arrival, a heavy checks the queue before it claims heavy, a light looks at heavy and then at earlier heavy waiters, and a run releases its waiter when it starts', () => {
+    expect(positionOf('HCheckQueue')).toBeLessThan(positionOf('HClaimHeavy'));
+    expect(definitionBody('HStep')).toMatch(/^HStep\(h\) == HCheckQueue\(h\) \\\/ HClaimHeavy\(h\)/);
+    expect(definitionBody('Record')).toContain('/\\ p \\in Waiters');
+    expect(definitionBody('Record')).toContain("next' = IF next < Inf THEN next + 1 ELSE next");
+    expect(definitionBody('Retry')).toContain('/\\ arr[p] # 0');
+    expect(definitionBody('Earlier')).toContain('{q \\in classes \\ {p} : Seen(q) /\\ ArrOf(q) < ArrOf(p)}');
+    expect(definitionBody('LightAhead')).toContain('ELSE Earlier(l, Heavies)');
+    expect(definitionBody('HCheckQueue')).toContain('IF Earlier(h, Procs) # {}');
     const check = definitionBody('LCheckHeavy');
-    expect(check.indexOf('heavyHeld # None')).toBeGreaterThan(0);
-    expect(check.indexOf('LiveWaiters # {}')).toBeGreaterThan(check.indexOf('heavyHeld # None'));
-    expect(definitionBody('HDecide')).toMatch(/waitHeld' = \[waitHeld EXCEPT !\[h\] = IF blocked\[h\] THEN waitHeld\[h\] ELSE FALSE\]/);
-    expect(definitionBody('Crash')).toContain("waitHeld' =");
+    expect(check.indexOf('LightAhead(l) # {}')).toBeGreaterThan(check.indexOf('heavyHeld # None'));
+    expect(definitionBody('HDecide')).toContain('Released(h)');
+    expect(definitionBody('Crash')).toContain("waiting' =");
     expect(definitionBody('Crash')).toContain('waitFile');
   });
 });
