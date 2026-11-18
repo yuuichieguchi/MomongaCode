@@ -22,10 +22,10 @@ describe('row allocation', () => {
     expect(allocate(MIN_ROWS, none)).toEqual({ viewport: 2, menu: 0, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
   });
 
-  it('serves the requests in the order waiting row, input rows, menu, subagents, second footer row, lines', () => {
+  it('serves the rows at and below the input first (input rows, subagents, second footer row), then the rows above it (waiting row, menu, lines)', () => {
     const asked: RowRequests = { waiting: 1, inputRows: 9, invitation: 0, menu: 9, subagents: 9, footerSecond: 1, lines: 9, panel: undefined };
-    expect(allocate(6, asked)).toEqual({ viewport: 1, menu: 0, waiting: 1, lines: 0, input: 3, footer: 1, subagents: 0 });
-    expect(allocate(7, asked)).toEqual({ viewport: 1, menu: 0, waiting: 1, lines: 0, input: 4, footer: 1, subagents: 0 });
+    expect(allocate(6, asked)).toEqual({ viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 0 });
+    expect(allocate(7, asked)).toEqual({ viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 1 });
     expect(allocate(30, asked)).toEqual({ viewport: 1, menu: 9, waiting: 1, lines: 1, input: 11, footer: 2, subagents: 5 });
     expect(allocate(60, asked)).toEqual({ viewport: 23, menu: 9, waiting: 1, lines: 9, input: 11, footer: 2, subagents: 5 });
   });
@@ -64,20 +64,22 @@ describe('row allocation', () => {
       expect(rows.viewport).toBeGreaterThanOrEqual(1);
       expect(rows.waiting).toBeLessThanOrEqual(asked.waiting);
       expect(rows.menu).toBeLessThanOrEqual(asked.invitation + asked.menu);
-      if (asked.panel === undefined) expect(rows.menu).toBeGreaterThanOrEqual(asked.invitation);
+      if (asked.panel === undefined && (rows.waiting > 0 || rows.lines > 0)) expect(rows.menu).toBeGreaterThanOrEqual(asked.invitation);
       expect(rows.subagents).toBeLessThanOrEqual(asked.subagents);
       expect(rows.lines).toBeLessThanOrEqual(asked.lines);
       expect(rows.footer).toBeLessThanOrEqual(1 + asked.footerSecond);
       const more = allocate(height, { ...asked, waiting: 1, menu: asked.menu + 3 });
-      if (asked.panel === undefined && more.subagents === rows.subagents && more.footer === rows.footer && more.input === rows.input) expect(more.viewport + more.menu + more.waiting + more.lines).toBe(rows.viewport + rows.menu + rows.waiting + rows.lines);
+      expect([more.input, more.footer, more.subagents]).toEqual([rows.input, rows.footer, rows.subagents]);
+      expect(more.viewport + more.menu + more.waiting + more.lines).toBe(rows.viewport + rows.menu + rows.waiting + rows.lines);
     }
   });
 
-  it('gives the line of an open invitation its row before any other request, at 15 rows and at the smallest height', () => {
+  it('gives the line of an open invitation its row before the other rows above the input, at 15 rows and at the smallest height', () => {
     const crowded: RowRequests = { waiting: 1, inputRows: 9, invitation: 1, menu: 0, subagents: 9, footerSecond: 1, lines: 9, panel: undefined };
     expect(allocate(15, crowded).menu).toBe(1);
-    expect(allocate(MIN_ROWS, crowded)).toEqual({ viewport: 1, menu: 1, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
-    expect(allocate(MIN_ROWS, { ...crowded, menu: 9 }).menu).toBe(1);
+    expect(allocate(MIN_ROWS, crowded)).toEqual({ viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 0 });
+    expect(allocate(MIN_ROWS, { ...crowded, inputRows: 1, subagents: 0, footerSecond: 0 })).toEqual({ viewport: 1, menu: 1, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
+    expect(allocate(MIN_ROWS, { ...crowded, inputRows: 1, subagents: 0, footerSecond: 0, menu: 9 }).menu).toBe(1);
     expect(allocate(24, { ...crowded, panel: 5 }).menu).toBe(0);
   });
 
