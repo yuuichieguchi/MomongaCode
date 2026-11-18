@@ -417,6 +417,10 @@ export type ContextHosts = {
   dispose(): Promise<void>;
 };
 
+const refuseSettingsNotice = (message: string): void => {
+  throw new Error(`the settings this case wrote could not be read back: ${message}`);
+};
+
 const BENCHMARK_GUIDELINE_REPORT = { source: 'context improve benchmark' } as const;
 
 export type ReflectionBounds = Pick<ReflectionSettle, 'pendingBoundMs' | 'attemptBoundMs' | 'pollMs'>;
@@ -494,7 +498,7 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
     const follow: EventFollow = {
       clock: { now: () => effects.now(), sleep: (milliseconds, signal) => effects.after(milliseconds, signal ?? options.interrupt) },
       random: () => effects.random(),
-      reconnectBoundMs: await daemonReadyBoundMs(),
+      reconnectBoundMs: await daemonReadyBoundMs({ home: root, env: daemonEnv }, refuseSettingsNotice),
       restoreConnection: () => effects.startDaemon(root, paths, daemonEnv),
     };
     return {
