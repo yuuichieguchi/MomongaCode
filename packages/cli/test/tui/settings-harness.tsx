@@ -39,9 +39,9 @@ export const stored = (file: string): unknown => JSON.parse(fs.readFileSync(file
 
 export type Started = { app: Instance; backend: FakeBackend; place: Place };
 
-export const startAt = async (place: Place, options: FakeBackendOptions = {}, tuiSettings?: TuiSettingsPort, extra: Partial<Pick<AppProps, 'externalEditor'>> = {}): Promise<Started> => {
+export const startAt = async (place: Place, options: FakeBackendOptions = {}, tuiSettings?: TuiSettingsPort, { size = { columns: 140, rows: 120 }, ...extra }: Partial<Pick<AppProps, 'externalEditor'>> & { size?: { columns: number; rows: number } } = {}): Promise<Started> => {
   const backend = fakeBackend({ settingsPlace: { home: place.home, projectDir: place.project }, ...options });
-  const terminal = fakeScreenTerminal({ columns: 140, rows: 120 });
+  const terminal = fakeScreenTerminal(size);
   const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} {...(tuiSettings === undefined ? {} : { tuiSettings })} {...extra} onExit={() => undefined} />);
   await untilFrame(app, 'mode: manual');
   return { app, backend, place };

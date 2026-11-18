@@ -732,6 +732,8 @@ The layer column names the settings files that may set the key: the user file `~
 | `autoUpdates` | boolean | `true` |  | user |
 | `update` | object |  |  | user, project, local |
 | `update.stallTimeoutMs` | integer (at least 1) | `30000` | milliseconds | user, project, local |
+| `daemon` | object |  |  | user |
+| `daemon.startupStallMs` | integer (at least 1) | `60000` | milliseconds | user |
 | `tui` | object |  |  | user, project, local |
 | `tui.theme` | `"auto"` or `"dark"` or `"light"` or `"dark-colorblind"` or `"light-colorblind"` | `"auto"` |  | user, project, local |
 | `tui.notify` | `"off"` or `"bell"` | `"off"` |  | user, project, local |

@@ -14,11 +14,17 @@
       "packages/cli/src/commands/report.ts": {
         "limit": 1
       },
+      "packages/cli/src/daemon/ensure-daemon.ts": {
+        "limit": 1
+      },
       "packages/cli/src/keeper/source.ts": {
         "directory": 1
       },
       "packages/cli/src/plan/sign-in.ts": {
         "gateway": 1
+      },
+      "packages/config/src/user-settings.ts": {
+        "limit": 1
       },
       "packages/eval/src/context-improve.ts": {
         "benchmark": 5,

@@ -205,7 +205,7 @@ Inside the interactive session, slash commands include `/help`, `/clear`, `/exit
 | `~/.momonga/projects/<hash>/settings.local.json` | Local settings for one project, kept outside the repository |
 | `<project>/.mcp.json` | Project MCP servers |
 
-Project and local settings cannot set `models`, `credentials`, `mcp`, `mcpServers`, `sandboxNetwork`, `sandbox`, `sandboxUnixSockets`, `telemetry`, `projectApprovals`, `projectChecks`, `retention`, `network`, `limits`, `ceilings`, `mandates`, `issues`, `forges`, `operations`, `pricing`, `autoUpdates`, `gateway`, `runtime`, or `autoMode`; those keys are discarded with a warning. Nor can they set `tools.ripgrep`, `tui.screen`, `tui.mouse`, or `tui.copyOnSelect`. They can set `permissions.defaultMode` only to modes other than `bypassPermissions` and `auto`. In `env`, only a short allowlist of names is kept. Unknown keys are ignored with a warning.
+Project and local settings cannot set `models`, `credentials`, `mcp`, `mcpServers`, `sandboxNetwork`, `sandbox`, `sandboxUnixSockets`, `telemetry`, `projectApprovals`, `projectChecks`, `retention`, `network`, `limits`, `ceilings`, `mandates`, `issues`, `forges`, `operations`, `pricing`, `autoUpdates`, `daemon`, `gateway`, `runtime`, or `autoMode`; those keys are discarded with a warning. Nor can they set `tools.ripgrep`, `tui.screen`, `tui.mouse`, or `tui.copyOnSelect`. They can set `permissions.defaultMode` only to modes other than `bypassPermissions` and `auto`. In `env`, only a short allowlist of names is kept. Unknown keys are ignored with a warning.
 
 ### Models
 
@@ -353,7 +353,7 @@ npm run test:e2e
 npm run test:packaging
 ```
 
-- `npm run test:setup` provides everything the test projects fetch: the Open Responses suite and its bun (`compliance/open-responses`), the pinned TLA+ jar, and the pinned node and ripgrep archives the packaging project builds from. A run that misses one of them, or a system program it needs (bubblewrap, openssl, zig), refuses at its start and names it with the command that provides it.
+- `npm run test:setup` provides everything the test suites fetch: the Open Responses suite and its bun (`compliance/open-responses`), the pinned TLA+ jar, and the pinned node and ripgrep archives the packaging tests build from. A run that misses one of them, or a system program it needs (bubblewrap, openssl, zig), refuses at its start and names it with the command that provides it.
 - `npm test` runs the unit suite, including the TLA+ models and the Z3 proofs. TLC needs Java 8 or later. The Z3 proofs run through the `z3-solver` dependency of `packages/verify`.
 - `npm run test:tlc-deep` runs the deep tier of the TLA+ configurations, which takes much longer.
 - On Windows, CI runs the unit suite without the TLC tier, which needs bash, `ps`, and `/usr/bin`.

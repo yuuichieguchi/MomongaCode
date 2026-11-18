@@ -6,9 +6,9 @@ import { currentA11y } from './screen/a11y.ts';
 import type { KeyEvent } from './terminal/events.ts';
 import { styleOf as styleOfTokens } from './screen/theme.ts';
 import type { StyleToken } from './screen/theme.ts';
-import { withoutTabs, wrapLine } from './screen/wrap.ts';
+import { displayWidth, withoutTabs, wrapLine } from './screen/wrap.ts';
 
-export type SelectRow = { readonly label: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean };
+export type SelectRow = { readonly label: string; readonly kept?: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean };
 
 export type SelectLine = string | { readonly text: string; readonly token?: StyleToken; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
 
@@ -49,6 +49,8 @@ export type SelectLayout = {
   readonly more: number;
   readonly moreRow: boolean;
   readonly items: readonly number[];
+  readonly itemLines: readonly number[];
+  readonly rowWidth: number;
   readonly above: number;
   readonly below: number;
   readonly listTop: number;
@@ -235,11 +237,32 @@ export const selectText = (spec: SelectSpec, frame: SelectFrame): TextRow[] => {
   return [...(spec.title === undefined ? [] : wrapped({ text: spec.title, bold: true }, width)), ...(spec.lines ?? []).flatMap((line) => wrapped(line, width))];
 };
 
-export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonly TextRow[], frame: SelectFrame, extraRows: number): SelectLayout => {
+const choiceText = (label: string, number: number | undefined, disabled: boolean | undefined): string => `${number === undefined ? '' : `${number}. `}${escapeTerminalLine(label)}${disabled === true ? ' (unavailable)' : ''}`;
+
+const choicePrefix = (selected: boolean, screenReader: boolean): string => (screenReader ? '' : `${selected ? SELECTED_MARKER : ' '} `);
+
+const KEPT_GAP = '  ';
+
+export const choiceLines = (line: string, prefix: string, kept: string | undefined, width: number): string[] => {
+  if (kept === undefined) return [`${prefix}${line}`];
+  const whole = `${prefix}${line}${KEPT_GAP}${escapeTerminalLine(kept)}`;
+  if (displayWidth(whole) <= width) return [whole];
+  const shown = escapeTerminalLine(kept);
+  const indent = ' '.repeat(Math.max(0, Math.min(displayWidth(prefix) + KEPT_GAP.length, width - displayWidth(shown))));
+  return [`${prefix}${line}`, ...wrapLine(shown, Math.max(1, width - indent.length), { links: false }).map((row) => `${indent}${row.text}`)];
+};
+
+const linesOfRow = (row: SelectRow | undefined, number: number, width: number, screenReader: boolean): number =>
+  row === undefined || row.separator === true ? 1 : choiceLines(choiceText(row.label, number, row.disabled), choicePrefix(false, screenReader), row.kept, width).length;
+
+export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonly TextRow[], frame: SelectFrame, extraRows: number, screenReader: boolean): SelectLayout => {
   const listed = listedOf(spec, state.filter);
+  const stops = stopsOf(spec, state.filter);
   const border = frame.border ? BORDER_ROWS : 0;
   const filterRows = spec.filter ? 1 : 0;
-  const fixed = border + filterRows + (state.confirming === undefined ? 0 : 1) + extraRows + 1;
+  const rowWidth = innerWidth(frame);
+  const tallRows = listed.reduce((sum, index) => sum + linesOfRow(spec.rows[index], stops.indexOf(index) + 1, rowWidth, screenReader) - 1, 0);
+  const fixed = border + filterRows + (state.confirming === undefined ? 0 : 1) + extraRows + tallRows + 1;
   const available = Math.max(0, frame.rows - fixed);
   const count = Math.max(1, listed.length);
   const titleRows = Math.min(text.length, TEXT_KEPT_ROWS);
@@ -252,11 +275,14 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
   const capacity = Math.max(1, listRows);
   const position = Math.max(0, listed.indexOf(state.index));
   const span = spanAt(listed.length, state.scrolled ? state.top : topFor(position, state.top, listed.length, capacity), capacity);
+  const items = listed.slice(span.start, span.end);
   return {
     text: shown,
     more,
     moreRow,
-    items: listed.slice(span.start, span.end),
+    items,
+    itemLines: items.map((index) => linesOfRow(spec.rows[index], stops.indexOf(index) + 1, rowWidth, screenReader)),
+    rowWidth,
     above: span.start,
     below: listed.length - span.end,
     listTop: border / 2 + shown.length + (moreRow ? 1 : 0) + filterRows,
@@ -265,8 +291,14 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
 };
 
 export const selectRowAt = (layout: SelectLayout, row: number): number | undefined => {
-  const slot = row - layout.listTop - (layout.above > 0 ? 1 : 0);
-  return slot < 0 ? undefined : layout.items[slot];
+  let slot = row - layout.listTop - (layout.above > 0 ? 1 : 0);
+  if (slot < 0) return undefined;
+  for (const [position, index] of layout.items.entries()) {
+    const lines = layout.itemLines[position] ?? 1;
+    if (slot < lines) return index;
+    slot -= lines;
+  }
+  return undefined;
 };
 
 export const detailCapacity = (frame: SelectFrame): number => Math.max(1, frame.rows - (frame.border ? BORDER_ROWS : 0) - 1);
@@ -302,14 +334,18 @@ function Panel({ border, children }: { border: boolean; children: ReactNode }) {
   );
 }
 
-export function ChoiceRow({ selected, label, number, disabled }: { selected: boolean; label: string; number?: number; disabled?: boolean }) {
+export function ChoiceRow({ selected, label, number, disabled, kept, width }: { selected: boolean; label: string; number?: number; disabled?: boolean; kept?: string; width?: number }) {
   const { screenReader } = currentA11y();
-  const text = `${number === undefined ? '' : `${number}. `}${escapeTerminalLine(label)}${disabled === true ? ' (unavailable)' : ''}`;
-  if (screenReader) return <Text wrap="truncate">{text}</Text>;
+  const style = selected && !screenReader ? styleOfTokens(['choice.selected']) : {};
+  const lines = choiceLines(choiceText(label, number, disabled), choicePrefix(selected, screenReader), kept, width ?? Number.POSITIVE_INFINITY);
   return (
-    <Text wrap="truncate" {...(selected ? styleOfTokens(['choice.selected']) : {})}>
-      {`${selected ? SELECTED_MARKER : ' '} ${text}`}
-    </Text>
+    <>
+      {lines.map((line, index) => (
+        <Text key={index} wrap="truncate" {...style}>
+          {line}
+        </Text>
+      ))}
+    </>
   );
 }
 
@@ -339,7 +375,7 @@ export function SelectView({ spec, state, layout, border, sending, settling, key
         const row = spec.rows[index];
         if (row === undefined) return null;
         if (row.separator === true) return <Text key={index} dimColor wrap="truncate">{`${screenReader ? '' : '  '}${escapeTerminalLine(row.label)}`}</Text>;
-        return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} label={row.label} {...(row.disabled === true ? { disabled: true } : {})} />;
+        return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} label={row.label} width={layout.rowWidth} {...(row.kept === undefined ? {} : { kept: row.kept })} {...(row.disabled === true ? { disabled: true } : {})} />;
       })}
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
       {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}

@@ -185,6 +185,6 @@ describe('the touched-path bound of the recall', () => {
     const capabilities = capabilitiesFor(200000);
     const { ports } = harness(capabilities);
     const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ memories: [memoryOf(1)], memoryTouchedCap: 4 }) }), ports);
-    expect(String(memoryMessageOf(result.input)?.content)).toContain('Only the newest 4 touched paths were used, with the task, to choose the notes shown');
+    expect(String(memoryMessageOf(result.input)?.content)).toContain('Only the newest 4 touched paths were used, with the request of the run, to choose the notes shown');
   });
 });

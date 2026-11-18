@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
+import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_DAEMON_START, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ExternalEditorPort } from '../../src/tui/external-editor.ts';
 import { KEYS, TUI_TEST_TIMEOUT_MS, untilOutput } from '../ink-helpers.ts';
@@ -101,6 +101,42 @@ describe('/config, the settings screen', () => {
     expect(stored(place.userFile)).toEqual({ memory: { forgetAfterDays: 30 } });
     started.app.unmount();
   });
+
+  for (const size of [{ columns: 100, rows: 40 }, { columns: 40, rows: 24 }]) {
+    describe(`at ${size.columns}x${size.rows} the applies text after a write is shown whole`, () => {
+      it('for a setting a running daemon keeps until it restarts', async () => {
+        const place = freshPlace();
+        const started = await startAt(place, {}, undefined, { size });
+        await open(started);
+        await openRow(started, 'daemon', 'a whole number from 1');
+        await press(started, `${CLEAR}90000`, '> 90000');
+        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NEXT_DAEMON_START));
+        expect(stored(place.userFile)).toEqual({ daemon: { startupStallMs: 90000 } });
+        started.app.unmount();
+      });
+
+      it('for a setting read at the start of the terminal session', async () => {
+        const place = freshPlace();
+        const started = await startAt(place, {}, undefined, { size });
+        await open(started);
+        await press(started, 'Mouse', 'filter: Mouse');
+        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NEXT_SESSION));
+        expect(stored(place.userFile)).toEqual({ tui: { mouse: false } });
+        started.app.unmount();
+      });
+
+      it('for a setting read per operation', async () => {
+        const place = freshPlace();
+        const started = await startAt(place, {}, undefined, { size });
+        await open(started);
+        await openRow(started, 'Forget after', 'a whole number from 1');
+        await press(started, `${CLEAR}30`, '> 30');
+        await press(started, KEYS.enter, (frame) => frame.includes(APPLIES_NOW));
+        expect(stored(place.userFile)).toEqual({ memory: { forgetAfterDays: 30 } });
+        started.app.unmount();
+      });
+    });
+  }
 
   it('shows the range with both ends where the schema has both', async () => {
     const started = await startAt(freshPlace());

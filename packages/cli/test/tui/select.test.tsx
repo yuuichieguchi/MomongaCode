@@ -165,7 +165,7 @@ describe('the list in the rows it is given', () => {
   it('shows a window with the rows left above and below, keeps the highlight in it and maps a screen row to its choice', () => {
     const of = spec({ title: 'Pick', rows: labels(12) });
     const text = selectText(of, frame);
-    const top = selectLayout(of, selectStart(of), text, frame, 0);
+    const top = selectLayout(of, selectStart(of), text, frame, 0, false);
     expect(top.items).toEqual([0, 1, 2, 3]);
     expect([top.above, top.below]).toEqual([0, 8]);
     expect(top.listTop).toBe(2);
@@ -174,10 +174,10 @@ describe('the list in the rows it is given', () => {
     expect(selectRowAt(top, 6)).toBeUndefined();
     expect(selectRowAt(top, 1)).toBeUndefined();
     const moved = after(of, [['', { end: true }]]).state;
-    const end = selectLayout(of, moved, text, frame, 0);
+    const end = selectLayout(of, moved, text, frame, 0, false);
     expect(end.items).toEqual([8, 9, 10, 11]);
     expect([end.above, end.below]).toEqual([8, 0]);
-    const wider = selectLayout(of, moved, text, { ...frame, rows: 30 }, 0);
+    const wider = selectLayout(of, moved, text, { ...frame, rows: 30 }, 0, false);
     expect(wider.items).toHaveLength(12);
     expect(moved.index).toBe(11);
   });
@@ -185,23 +185,23 @@ describe('the list in the rows it is given', () => {
   it('the wheel scrolls the list and leaves the highlight where it is', () => {
     const of = spec({ title: 'Pick', rows: labels(12) });
     const text = selectText(of, frame);
-    const scrolled = selectWheel(of, selectStart(of), 3, selectLayout(of, selectStart(of), text, frame, 0).capacity);
+    const scrolled = selectWheel(of, selectStart(of), 3, selectLayout(of, selectStart(of), text, frame, 0, false).capacity);
     expect(scrolled.index).toBe(0);
-    expect(selectLayout(of, scrolled, text, frame, 0).items).toEqual([3, 4, 5]);
+    expect(selectLayout(of, scrolled, text, frame, 0, false).items).toEqual([3, 4, 5]);
   });
 
   it('keeps the approval title in a short frame: the frame bound wins over the list floor', () => {
     const title = 'Permission requested: Write a.txt';
     const of = spec({ title, lines: Array.from({ length: 20 }, (_, index) => `line ${index}`), rows: labels(3) });
     const short = { width: 60, rows: 8, border: true };
-    const layout = selectLayout(of, selectStart(of), selectText(of, short), short, 1);
+    const layout = selectLayout(of, selectStart(of), selectText(of, short), short, 1, false);
     expect(layout.text[0]?.text).toBe(title);
     expect(layout.text.length + layout.items.length + (layout.moreRow ? 1 : 0)).toBeLessThanOrEqual(4);
   });
 
   it('never hides text without saying so: the last text row counts the rows that did not fit', () => {
     const of = spec({ title: 'Permission requested: Write a.txt', lines: Array.from({ length: 20 }, (_, index) => `line ${index}`), rows: labels(2) });
-    const layout = selectLayout(of, selectStart(of), selectText(of, frame), frame, 0);
+    const layout = selectLayout(of, selectStart(of), selectText(of, frame), frame, 0, false);
     expect(layout.text.map((row) => row.text)).toEqual(['Permission requested: Write a.txt', 'line 0', 'line 1']);
     expect(layout.more).toBe(18);
     expect(layout.items).toEqual([0, 1]);
@@ -211,7 +211,7 @@ describe('the list in the rows it is given', () => {
 describe('the rows a list panel draws are the rows it was given (cli-tui-23)', () => {
   const drawnRows = (of: SelectSpec, frame: { width: number; rows: number; border: boolean }): string[] => {
     const state = selectStart(of);
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, 0)} state={state} border={frame.border} keys={DEFAULT_KEY_TABLE} sending={false} settling={false} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, 0, false)} state={state} border={frame.border} keys={DEFAULT_KEY_TABLE} sending={false} settling={false} />);
     const shown = (app.lastFrame() ?? '').split('\n');
     app.unmount();
     return shown;
@@ -236,10 +236,10 @@ describe('the rows a list panel draws are the rows it was given (cli-tui-23)', (
     const of = spec({ title: 'Permission requested: Bash ls', lines: ['the reason'], rows: labels(4) });
     const long = spec({ ...of, lines: ['a', 'b', 'c'] });
     const wider = { width: 60, rows: 8, border: true };
-    const roomy = selectLayout(long, selectStart(long), selectText(long, wider), wider, 0);
+    const roomy = selectLayout(long, selectStart(long), selectText(long, wider), wider, 0, false);
     expect([roomy.text.length, roomy.more, roomy.moreRow, roomy.listTop]).toEqual([1, 3, true, 3]);
     const tight = { width: 60, rows: SMALLEST_BORDERED_ROWS, border: true };
-    const layout = selectLayout(of, selectStart(of), selectText(of, tight), tight, 0);
+    const layout = selectLayout(of, selectStart(of), selectText(of, tight), tight, 0, false);
     expect([layout.text.length, layout.more, layout.moreRow, layout.listTop]).toEqual([0, 2, false, 1]);
     const shown = drawnRows(of, tight);
     expect(shown).toHaveLength(SMALLEST_BORDERED_ROWS);
@@ -271,7 +271,7 @@ describe('a row that opens a browser or starts a sign-in', () => {
 describe('the rows as drawn', () => {
   const drawn = (of: SelectSpec, state: SelectState, extra: { sending?: boolean; error?: string } = {}): string => {
     const frame = { width: 60, rows: 20, border: false };
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} settling={false} {...(extra.error === undefined ? {} : { error: extra.error })} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1, false)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} settling={false} {...(extra.error === undefined ? {} : { error: extra.error })} />);
     const shown = app.lastFrame() ?? '';
     app.unmount();
     return shown;

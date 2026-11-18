@@ -17,6 +17,7 @@ export const SAVE_TO_TITLE = 'Save to:';
 export const SAVING_SETTING = 'saving the setting';
 export const APPLIES_NOW = 'applies now';
 export const APPLIES_NEXT_SESSION = 'applies from the next session';
+export const APPLIES_NEXT_DAEMON_START = 'applies when the daemon next starts';
 export const NOT_SET = 'not set';
 export const NONE = 'none';
 export const ADD_ROW = 'Add';
@@ -259,10 +260,11 @@ export const shownValue = (value: unknown): string => {
   return wordOf(value);
 };
 
-export const appliesNowOf = (key: string, table: Readonly<Record<string, SettingReadPoint>>): boolean => settingReadPointOf(key, table) === 'operation';
+const APPLIES_LABELS: Readonly<Record<SettingReadPoint, string>> = { operation: APPLIES_NOW, start: APPLIES_NEXT_SESSION, 'daemon-start': APPLIES_NEXT_DAEMON_START };
 
-export const settingRowLabel = (label: string, value: unknown, source: SettingSource, applied?: boolean): string =>
-  [label, shownValue(value), source, ...(applied === undefined ? [] : [applied ? APPLIES_NOW : APPLIES_NEXT_SESSION])].join('  ');
+export const appliesLabelOf = (key: string, table: Readonly<Record<string, SettingReadPoint>>): string => APPLIES_LABELS[settingReadPointOf(key, table)];
+
+export const settingRowLabel = (label: string, value: unknown, source: SettingSource): string => [label, shownValue(value), source].join('  ');
 
 type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'mandate' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'command'; readonly command: string };
 
@@ -286,7 +288,7 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
     }
     for (const { leaf, presentation } of settings) {
       const { value, source } = currentOf(snapshot, leaf.path);
-      rows.push({ label: settingRowLabel(presentation.label, value, source, written === leaf.key ? appliesNowOf(leaf.key, SETTING_READ_POINTS) : undefined) });
+      rows.push({ label: settingRowLabel(presentation.label, value, source), ...(written === leaf.key ? { kept: appliesLabelOf(leaf.key, SETTING_READ_POINTS) } : {}) });
       listed.push({ kind: 'setting', leaf, presentation });
     }
     if (section === MANDATE_SECTION && mandate !== undefined) {
