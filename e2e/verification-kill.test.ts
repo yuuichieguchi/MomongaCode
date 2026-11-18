@@ -9,7 +9,7 @@ import { sandboxOrSkip } from './support/sandbox.ts';
 import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, textReply } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const linesOf = (file: string): string[] | undefined => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter((line) => line !== '') : undefined);
 
@@ -50,7 +50,7 @@ describe('v: a completion check interrupted by a runtime SIGKILL', () => {
       expect(linesOf(runs)).toEqual(['run', 'run']);
       await expectEndedAtTerminal('COMPLETED', { group: firstHolder, processes: [firstHolder] });
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       expect(framesOfType(frames, 'verification.started').map((frame) => frame.data['attempt'])).toEqual([1, 2]);
       expect(framesOfType(frames, 'verification.completed').map((frame) => frame.data['outcome'])).toEqual(['passed']);

@@ -1,7 +1,7 @@
 import { spawn } from '@momonga/testkit/child-process';
 import { describe, expect, it } from 'vitest';
 import { PTY_HOST, PYTHON_BINARY } from './pty.ts';
-import { E2E_MARGIN_MS, withinBound } from './wait.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
 const runUnderPty = async (script: string, input: string): Promise<{ output: string; code: number | null }> => {
   const child = spawn(PYTHON_BINARY, [PTY_HOST, '100', '40', '/bin/sh', '-c', script], { stdio: ['pipe', 'pipe', 'ignore'] });
@@ -15,7 +15,7 @@ const runUnderPty = async (script: string, input: string): Promise<{ output: str
     child.once('close', (code) => resolve(code));
   });
   child.stdin.write(input);
-  const code = await withinBound(closed, E2E_MARGIN_MS, 'the command under the pty host to exit');
+  const code = await withinBound(closed, E2E_RUN_COMPLETED_BOUND_MS, 'the command under the pty host to exit');
   return { output, code };
 };
 
