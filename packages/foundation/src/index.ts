@@ -321,8 +321,8 @@ export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirec
 export { createLiveIdentities } from './platform/live-identities.ts';
 export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry } from './uninspectable-registry.ts';
-export { isProcessAlive, pidNamespaceOf } from './process-alive.ts';
-export type { SignalSender } from './process-alive.ts';
+export { hostRunStateOf, isProcessAlive, pidNamespaceOf } from './process-alive.ts';
+export type { RunStateOf, SignalSender } from './process-alive.ts';
 export type { ProcessPort } from './process-port.ts';
 export { HELPER_COMMAND, helperCommandLine } from './executable-helper.ts';
 export type { ExecutableHelper, ExecutableHelpers, HelperHost, HelperSelf } from './executable-helper.ts';

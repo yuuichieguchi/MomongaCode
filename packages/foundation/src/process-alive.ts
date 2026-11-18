@@ -8,6 +8,10 @@ export type SignalSender = (pid: number, signal: NodeJS.Signals | 0) => void;
 
 export type RunStateOf = (pid: number) => string | undefined;
 
+const UNREADABLE_CODES: ReadonlySet<string | undefined> = new Set(['EACCES', 'EPERM']);
+
+export const UNREAD_STATE = 'unread';
+
 const GONE_READ_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ESRCH']);
 
 export const linuxRunStateOf =
@@ -17,13 +21,15 @@ export const linuxRunStateOf =
     try {
       stat = read(`/proc/${pid}/stat`);
     } catch (error) {
-      if (GONE_READ_CODES.has((error as NodeJS.ErrnoException).code)) return undefined;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (GONE_READ_CODES.has(code)) return undefined;
+      if (UNREADABLE_CODES.has(code)) return UNREAD_STATE;
       throw error;
     }
     return stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[0];
   };
 
-const hostRunStateOf: RunStateOf | null = process.platform === 'linux' ? linuxRunStateOf((file) => readFileSync(file, 'utf8')) : null;
+export const hostRunStateOf: RunStateOf | null = process.platform === 'linux' ? linuxRunStateOf((file) => readFileSync(file, 'utf8')) : null;
 
 export const isProcessAlive = (pid: number, send: SignalSender = hostSignalSender, stateOf: RunStateOf | null = send === hostSignalSender ? hostRunStateOf : null): boolean => {
   try {
@@ -35,7 +41,7 @@ export const isProcessAlive = (pid: number, send: SignalSender = hostSignalSende
   }
   if (stateOf === null || pid <= 0) return true;
   const state = stateOf(pid);
-  return state !== undefined && canStillRun(state);
+  return state !== undefined && (state === UNREAD_STATE || canStillRun(state));
 };
 
 export const PID_NAMESPACE_LINK = '/proc/self/ns/pid';

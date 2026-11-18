@@ -31,6 +31,13 @@ describe('isProcessAlive', () => {
     expect(linuxRunStateOf(read)(42)).toBe('Z');
   });
 
+  it('a process whose state cannot be read is left as the signal answered: alive', () => {
+    const denied = (): string => {
+      throw Object.assign(new Error('no'), { code: 'EACCES' });
+    };
+    expect(isProcessAlive(42, delivered, linuxRunStateOf(denied))).toBe(true);
+  });
+
   it('the linux reader reports an absent process as undefined', () => {
     const read = (): string => {
       throw Object.assign(new Error('no'), { code: 'ENOENT' });

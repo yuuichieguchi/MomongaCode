@@ -21,6 +21,7 @@ const fakeProcess = (alive: Set<number>, uid: number | undefined = 501): { sent:
     port: {
       pid: FAKE_PID,
       uid: () => uid,
+      runState: null,
       kill: (pid, signal) => {
         if (signal !== 0) {
           sent.push({ pid, signal });
