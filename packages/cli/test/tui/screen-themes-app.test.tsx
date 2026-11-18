@@ -9,7 +9,7 @@ import type { ColourHost } from '../../src/tui/screen/theme.ts';
 import type { TerminalState } from '../../src/tui/terminal/layer.ts';
 import { fakeBackend, runView } from '../fake-backend.ts';
 import { freshHome } from '../fresh-home.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS, TEST_KEY_SETTLE_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -64,7 +64,7 @@ const startIn = async (home: string, colour: ColourHost = TRUECOLOR, backgroundC
     }
     return shown as TerminalState;
   };
-  const app = renderObservable(<App backend={backend} terminal={{ ...terminal, state }} initialMode={undefined} now={Date.now} timers={systemTiming} colour={colour} tuiSettings={await portOf(home)} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={{ ...terminal, state }} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} colour={colour} tuiSettings={await portOf(home)} onExit={() => undefined} />);
   await untilFrame(app, 'mode: manual');
   app.stdin.write('hello there');
   await untilFrame(app, '> hello there');
@@ -86,7 +86,7 @@ describe('/theme', () => {
   it('lists the five sets with the one in force highlighted, and enter is the key that chooses', async () => {
     const { app } = await startIn(freshHome());
     await openThemes(app);
-    const shown = await untilFrame(app, '5. light-colorblind');
+    const shown = await untilFrame(app, (frame) => frame.includes('5. light-colorblind') && frame.includes('esc: go back'));
     expect(shown).toContain('› 1. auto');
     expect(shown).toContain('  2. dark');
     expect(shown).toContain('  3. light');

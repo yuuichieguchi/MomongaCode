@@ -279,7 +279,7 @@ describe('/keybindings', () => {
 
   it('lists every action by context with its keys in force, marks a changed one, and shows why an entry was ignored', async () => {
     const { app } = await opened(file(['chat', { 'ctrl+s': 'history.search', 'ctrl+c': 'editor.undo' }]));
-    const shown = app.lastFrame() ?? '';
+    const shown = await untilFrame(app, 'type to filter');
     expect(shown).toContain('Open the file');
     expect(shown).toContain('Reset all to the defaults');
     expect(shown).toContain('  chat');

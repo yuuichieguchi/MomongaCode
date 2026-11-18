@@ -137,9 +137,8 @@ describe('/permissions', () => {
     const started = await startAt(place);
     await command(started, '/permissions', PERMISSIONS_TITLE);
     await press(started, '2', '› 2. Allow rules');
-    const list = await press(started, KEYS.enter, '1. Bash(npm run lint)  project');
+    const list = await press(started, KEYS.enter, (frame) => frame.includes('1. Bash(npm run lint)  project') && frame.includes('delete: delete'));
     expect(list).toContain('2. Add');
-    expect(list).toContain('delete: delete');
     expect(list).not.toContain('tab');
     await press(started, '2', '› 2. Add');
     const prompt = await press(started, KEYS.enter, 'Allowed: Bash(npm test:*)');

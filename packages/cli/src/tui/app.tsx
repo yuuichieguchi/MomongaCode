@@ -622,7 +622,7 @@ export function App(props: AppProps) {
     terminal,
     timers,
     keySettleMs: props.keySettleMs ?? KEY_SETTLE_MS,
-    draftHeld: () => editorRef.current.text !== '',
+    keepTyped: (text) => replaceEditor(typedIntoDraft(editorRef.current, text)),
     columns,
     panelRows: panelRowsCap(rows),
     keys,
@@ -1554,6 +1554,7 @@ export function App(props: AppProps) {
           typedRef.current = true;
           prompts.dismissInvitation();
         }
+        if (route !== 'prompt' && action === 'prompt.submit') prompts.keyConsumed();
         if (action === 'mode.cycle') {
           if (sessionModel !== undefined) cycleMode();
         } else if (route === 'prompt') prompts.runPromptKey(event, pressed);

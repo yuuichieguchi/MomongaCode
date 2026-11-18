@@ -202,7 +202,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
           onExit={onExit}
         />
       </TerminalFrame>,
-      { stdin: inkStdin.stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput), exitOnCtrlC: false, maxFps: MAX_FPS, incrementalRendering: true },
+      { stdin: inkStdin.stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput), exitOnCtrlC: false, maxFps: MAX_FPS, incrementalRendering: true, onRender: () => input.framed() },
     );
     await instance.waitUntilExit();
   } finally {

@@ -9,7 +9,8 @@ const VERSION = 'MomongaCode v1.2.3';
 const WELCOME_TITLE = 'Connect a model to start';
 const TRUST_ROW = '1. Yes, I trust this folder';
 const FIGURE_ROWS = 7;
-const LIST_ROWS = ['1. Continue with ChatGPT', '2. Use an API key', '3. Use a local server', 'esc: go back'];
+const HINT_ROW = 'esc: go back';
+const LIST_ROWS = ['1. Continue with ChatGPT', '2. Use an API key', '3. Use a local server', HINT_ROW];
 
 const rowsOf = (frame: string): string[] => frame.split('\n');
 
@@ -86,7 +87,7 @@ describe('the first screen shows the start screen at the top with the list direc
     for (const frame of shown) {
       const figureRows = rowsOf(frame).filter((row) => /[∩•░┬]|╰─╮/.test(row)).length;
       expect([0, FIGURE_ROWS]).toContain(figureRows);
-      if (frame.includes(WELCOME_TITLE)) for (const row of LIST_ROWS) expect(frame).toContain(row);
+      if (frame.includes(WELCOME_TITLE)) for (const row of LIST_ROWS.filter((row) => row !== HINT_ROW || frame.includes('to choose'))) expect(frame).toContain(row);
     }
     app.unmount();
   });

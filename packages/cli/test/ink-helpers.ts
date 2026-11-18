@@ -7,7 +7,7 @@ import { createInputParser } from '../src/tui/terminal/parser.ts';
 
 export type Instance = ReturnType<typeof render>;
 
-type TypedInto = { emit(event: TerminalEvent): boolean };
+type TypedInto = { emit(event: TerminalEvent): boolean; framed?: () => void };
 
 const LONE_ESCAPE = '\u001b';
 const ESCAPE_KEY = '\u001b[27u';
@@ -31,6 +31,7 @@ export const renderObservable = (element: ReactElement): Instance => {
   }
   const record = instance.stdout.write;
   const write = (frame: string, written?: () => void): void => {
+    terminal?.framed?.();
     if (frame !== '' || written === undefined) {
       record(frame);
       instance.stdout.emit('write', frame);

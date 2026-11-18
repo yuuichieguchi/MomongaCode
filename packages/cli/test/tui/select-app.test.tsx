@@ -257,7 +257,7 @@ describe('a picker is the selection component', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
-    const picker = await untilFrame(app, 'qwen3.8:27b  ·  metered');
+    const picker = await untilFrame(app, (shown) => shown.includes('qwen3.8:27b  ·  metered') && shown.includes('esc: go back'));
     expect(picker).toContain('› 1. scripted-model  ·  metered  ·  current');
     expect(picker).toContain('a change applies from the next run');
     expect(picker).toContain('1-9 or enter to choose · up/down to move · tab: also use at every start · esc: go back');
@@ -281,7 +281,7 @@ describe('the sandbox-off dialog is decided only by enter and starts on the safe
     await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
     await choose(app, 'Continue with ChatGPT');
-    const dialog = await untilFrame(app, 'The sandbox is off');
+    const dialog = await untilFrame(app, (shown) => shown.includes('The sandbox is off') && shown.includes('esc: Cancel'));
     expect(dialog).toContain('› 2. Cancel');
     expect(dialog).toContain('up/down to move · enter to choose · esc: Cancel');
     app.stdin.write('1');

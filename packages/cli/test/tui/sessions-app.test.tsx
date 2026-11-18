@@ -141,7 +141,7 @@ describe('/resume (9.1, 4.3)', () => {
     const { app, backend } = await start({ conversations }, { now: () => NOW });
     await untilFrame(app, 'mode: manual');
     await enter(app, '/resume');
-    const listed = await untilFrame(app, RESUME_PICKER_TITLE);
+    const listed = await untilFrame(app, (frame) => frame.includes(RESUME_PICKER_TITLE) && frame.includes('type to filter'));
     expect(listed.indexOf('fix the login bug · 2h ago · 1 run')).toBeLessThan(listed.indexOf('add tests · 3d ago · 2 runs'));
     expect(listed).toContain('type to filter');
 

@@ -20,7 +20,7 @@ const sessionShown = async (app: Instance): Promise<void> => {
 describe('the welcome screen predicate: no model and no plan account record in any state', () => {
   it('shows the welcome with Continue with ChatGPT first, then Use an API key and Use a local server, and opens no session', async () => {
     const { app, backend } = await startPlan({ models: [], accounts: [] });
-    const frame = await untilFrame(app, 'Use a local server');
+    const frame = await untilFrame(app, (shown) => shown.includes('Use a local server') && shown.includes('esc'));
     expect(rowNumberOf(frame, 'Continue with ChatGPT')).toBe(1);
     expect(rowNumberOf(frame, 'Use an API key')).toBe(2);
     expect(rowNumberOf(frame, 'Use a local server')).toBe(3);

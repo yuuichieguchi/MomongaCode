@@ -13,9 +13,11 @@ export type ScreenInput = {
   push(events: readonly TerminalEvent[]): void;
   claim(priority: ClaimPriority, handler: EventClaim): () => void;
   observe(observer: EventObserver): () => void;
+  framed(): void;
+  observeFrames(listener: () => void): () => void;
 };
 
-export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen' | 'setTitle' | 'bell' | 'enable' | 'disable'> & { input: Pick<ScreenInput, 'claim' | 'observe'> };
+export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen' | 'setTitle' | 'bell' | 'enable' | 'disable'> & { input: Pick<ScreenInput, 'claim' | 'observe' | 'observeFrames'> };
 
 export type ClaimTable = { claim(priority: ClaimPriority, handler: EventClaim): () => void; offer(event: TerminalEvent): boolean };
 
@@ -39,6 +41,7 @@ export const createClaimTable = (): ClaimTable => {
 export const createScreenInput = (): ScreenInput => {
   const claims = createClaimTable();
   const observers = new Set<EventObserver>();
+  const frameListeners = new Set<() => void>();
   return {
     observe: (observer) => {
       observers.add(observer);
@@ -51,6 +54,15 @@ export const createScreenInput = (): ScreenInput => {
       for (const event of events) claims.offer(event);
     },
     claim: claims.claim,
+    framed: () => {
+      for (const listener of [...frameListeners]) listener();
+    },
+    observeFrames: (listener) => {
+      frameListeners.add(listener);
+      return () => {
+        frameListeners.delete(listener);
+      };
+    },
   };
 };
 

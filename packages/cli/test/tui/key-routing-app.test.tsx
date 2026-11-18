@@ -169,8 +169,8 @@ describe('the loading overlay has a key that leaves it and is closed by the flow
   });
 });
 
-describe('a key typed between two lists of one flow reaches the list that opens', () => {
-  it('holds the key while the flow works and gives it to the next list', async () => {
+describe('a key typed between two lists of one flow never acts on the list that opens', () => {
+  it('holds the key while the flow works, applies none to the next list, and keeps typed text for the input', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
     await untilFrame(app, 'mode: manual');
@@ -186,12 +186,11 @@ describe('a key typed between two lists of one flow reaches the list that opens'
     app.stdin.write(KEYS.down);
     app.stdin.write('x');
     held.resolve();
-    await untilFrame(app, '› 1. Continue');
-    expect(app.lastFrame()).toContain('The sandbox is off');
+    await untilFrame(app, (shown) => shown.includes('The sandbox is off') && shown.includes('esc: Cancel'));
+    expect(app.lastFrame()).toContain('› 2. Cancel');
     expect(app.lastFrame()).not.toContain('> x');
     app.stdin.write(KEYS.escape);
-    await untilFrame(app, (shown) => !shown.includes('The sandbox is off'));
-    await untilTypedAfter(app);
+    await untilFrame(app, (shown) => !shown.includes('The sandbox is off') && shown.includes('> x'));
     expect(signInSteps(backend)).toEqual([]);
     app.unmount();
   });

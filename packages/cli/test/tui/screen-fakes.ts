@@ -68,6 +68,7 @@ export const foldChild = (events: readonly PublicRunEvent[], agent: string, stor
 
 export type FakeScreenTerminal = ScreenTerminal & {
   emit(event: TerminalEvent): boolean;
+  framed(): void;
   resize(columns: number, rows: number): void;
   request(request: ScreenRequest): void;
   shrink(tooSmall: boolean): void;
@@ -86,6 +87,7 @@ export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal =>
   const screenListeners = new Set<(request: ScreenRequest) => void>();
   const claims = createClaimTable();
   const observers = new Set<(event: TerminalEvent) => void>();
+  const frameListeners = new Set<() => void>();
   const screens: ScreenMode[] = [];
   const titles: string[] = [];
   const bells: string[] = [];
@@ -143,6 +145,15 @@ export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal =>
         };
       },
       claim: claims.claim,
+      observeFrames: (listener) => {
+        frameListeners.add(listener);
+        return () => {
+          frameListeners.delete(listener);
+        };
+      },
+    },
+    framed: () => {
+      for (const listener of [...frameListeners]) listener();
     },
     emit: (event) => {
       for (const observer of [...observers]) observer(event);
