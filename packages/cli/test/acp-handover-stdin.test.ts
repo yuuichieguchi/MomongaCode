@@ -99,6 +99,7 @@ const serve = (home: string, started: HandoverHost['started']): Served => {
     args: ['acp'],
     started,
     mover: {
+      standing: () => 'cannot-move',
       attach: (surface) => {
         attached = surface;
         return () => undefined;

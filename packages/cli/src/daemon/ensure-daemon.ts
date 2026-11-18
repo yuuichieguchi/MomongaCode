@@ -39,7 +39,7 @@ import { reportVersionInvocation, superviseInvocation } from './launcher.ts';
 import { anotherVersionInstalledText, installedVersionUnreportedText, startFailureText } from './start-failure.ts';
 import type { StartFailure } from './start-failure.ts';
 import type { StopNotice } from './stop-notice.ts';
-import type { OwnGeneration } from '../handover/mover.ts';
+import type { MoveStanding, OwnGeneration } from '../handover/mover.ts';
 
 export class DaemonStartError extends Error {
   readonly logFile: string;
@@ -284,6 +284,11 @@ export const belowFloorMessage = (clientVersion: string, floor: string): string 
   `momonga v${clientVersion} is older than the last daemon version v${floor}; update this program, then run it again.`;
 
 export const reopenSessionMessage = (daemonVersion: string): string => `momonga was updated to v${daemonVersion}; reopen this session.`;
+
+export const moveAtQuietPointMessage = (daemonVersion: string): string => `momonga was updated to v${daemonVersion}; this session restarts into it as soon as nothing is pending on it.`;
+
+export const sessionEndMessage = (daemonVersion: string, standing: MoveStanding): string =>
+  standing === 'moves-at-quiet-point' ? moveAtQuietPointMessage(daemonVersion) : reopenSessionMessage(daemonVersion);
 
 export const olderCommandMessage = (daemonVersion: string): string =>
   `momonga was updated to v${daemonVersion} while this command was running; run it again. Your tasks are not affected.`;
@@ -532,7 +537,7 @@ export const ensureCurrentDaemon = async (ports: DaemonPorts, paths: MomongaPath
   return connection.health;
 };
 
-export type NewerListener = (version: string, own: OwnGeneration) => Promise<void>;
+export type NewerListener = (version: string, own: OwnGeneration) => Promise<MoveStanding>;
 
 export type EnsureSessionOptions = EnsureDaemonOptions & { onNewer?: NewerListener };
 
@@ -551,8 +556,8 @@ export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPath
   const newer = await newerVersionOf(ports, paths, daemonOptions);
   if (newer === undefined) return;
   const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism, scope: await ports.endpointScope(paths) });
-  await onNewer?.(newer, own === undefined ? 'gone' : 'live');
-  if (own === undefined) throw new DaemonStartError(reopenSessionMessage(newer), paths.logFiles.supervisor, notPointingAtLog);
+  const standing = onNewer === undefined ? 'cannot-move' : await onNewer(newer, own === undefined ? 'gone' : 'live');
+  if (own === undefined) throw new DaemonStartError(sessionEndMessage(newer, standing), paths.logFiles.supervisor, notPointingAtLog);
 };
 
 export const restoreDaemon =

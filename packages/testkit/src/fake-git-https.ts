@@ -43,6 +43,7 @@ const runBackend = (env: Readonly<Record<string, string>>, input: Buffer): Promi
     child.stdout.on('data', (chunk: Buffer) => output.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => errors.push(chunk));
     child.once('error', reject);
+    child.stdin.once('error', (error: Error) => errors.push(Buffer.from(`stdin: ${error.message}\n`)));
     child.once('close', (code) => {
       if (code === 0) resolve(Buffer.concat(output));
       else reject(new Error(`git http-backend exited with ${String(code)}: ${Buffer.concat(errors).toString('utf8')}`));

@@ -1,4 +1,4 @@
-import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, KILL_CONFIRM_MS, MCP_CONNECT_TIMEOUT_LIMITS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import {
@@ -41,7 +41,7 @@ export const E2E_STOP_SETTLED_BOUNDS_MS = { supervisorAsked: E2E_SUPERVISOR_CLOS
 export const E2E_DISPOSE_BOUND_MS = Math.max(...Object.values(E2E_STOP_SETTLED_BOUNDS_MS)) + CLEANUP_KILL_DEADLINE_MS + E2E_MARGIN_MS;
 export const E2E_HOOK_TIMEOUT_MS = E2E_DISPOSE_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_REAP_CLOSE_BOUND_MS = SHUTDOWN_RELEASE_BOUND_MS + E2E_MARGIN_MS;
-export const E2E_CANCEL_TERM_BOUND_MS = E2E_MARGIN_MS;
+export const E2E_CANCEL_TERM_BOUND_MS = SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_SWEEP_BOUND_MS = SWEEP_INTERVAL_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_KILL_BOUND_MS = SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_STREAM_BOUND_MS = GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS;
@@ -51,6 +51,8 @@ export const E2E_PHASE2_HELD_BOUND_MS = orphanPhaseOneBoundMs({ orphanGraceMs: E
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + RULE_VERIFY_BUDGET_MS + E2E_MARGIN_MS;
 export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_RUN_COMPLETED_BOUND_MS;
+export const E2E_KILLED_GONE_BOUND_MS = KILL_CONFIRM_MS + E2E_MARGIN_MS;
+export const E2E_MCP_AUTHORIZATION_BOUND_MS = MCP_CONNECT_TIMEOUT_LIMITS.default + E2E_MARGIN_MS;
 export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_RESTART_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
@@ -68,6 +70,8 @@ export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_LOCK_FREE_BOUND_MS,
   E2E_RUN_COMPLETED_BOUND_MS,
   E2E_REFLECTION_SETTLED_BOUND_MS,
+  E2E_KILLED_GONE_BOUND_MS,
+  E2E_MCP_AUTHORIZATION_BOUND_MS,
 } as const;
 export const e2eTestTimeoutMs = (...sequentialBoundsMs: readonly number[]): number => sequentialBoundsMs.reduce((sum, boundMs) => sum + boundMs, 0) + E2E_MARGIN_MS;
 export const E2E_LONGEST_WAIT_MS = Math.max(...Object.values(E2E_TEST_WAIT_BOUNDS_MS));

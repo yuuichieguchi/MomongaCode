@@ -9,6 +9,8 @@ import { handoverFailedText, recordTooLargeText, restartingText } from './texts.
 
 export type OwnGeneration = 'live' | 'gone';
 
+export type MoveStanding = 'moves-at-quiet-point' | 'cannot-move';
+
 export type MoveSurface = {
   surface: Surface;
   kept(): KeptWork;
@@ -37,6 +39,7 @@ export type Mover = {
   learned(version: string, own: OwnGeneration): Promise<void>;
   check(): Promise<void>;
   refuse(version: string, reason: string): void;
+  standing(version: string): MoveStanding;
 };
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -156,6 +159,12 @@ export const createMover = (ports: MoverPorts): Mover => {
     check,
     refuse: (version, reason) => {
       refusals.set(version, reason);
+    },
+    standing: (version) => {
+      const on = surface;
+      if (on === undefined || on.recordFile() === undefined) return 'cannot-move';
+      if (tried.has(version) || refusals.has(version) || orderVersions(ports.version, version) !== 'older') return 'cannot-move';
+      return 'moves-at-quiet-point';
     },
   };
 };

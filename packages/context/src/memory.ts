@@ -29,12 +29,13 @@ const noteOf = (memory: DeepReadonly<MemoryView>): string =>
     '</memory>',
   ].join('');
 
-export type MemoryRendering = { atLeast?: boolean; matchCap?: number | undefined };
+export type MemoryRendering = { atLeast?: boolean; matchCap?: number | undefined; touchedCap?: number | undefined };
 
-export const renderMemories = (memories: readonly DeepReadonly<MemoryView>[], omitted: number, { atLeast = false, matchCap }: MemoryRendering = {}): string =>
+export const renderMemories = (memories: readonly DeepReadonly<MemoryView>[], omitted: number, { atLeast = false, matchCap, touchedCap }: MemoryRendering = {}): string =>
   [
     ...FRAMING,
     ...(matchCap === undefined ? [] : [`Only the newest ${matchCap} saved notes matching the task were considered when choosing the notes shown.`]),
+    ...(touchedCap === undefined ? [] : [`Only the newest ${touchedCap} touched paths were used, with the task, to choose the notes shown; earlier touched paths were not used.`]),
     ...(omitted > 0
       ? [`${atLeast ? 'at least ' : ''}${omitted} more saved ${omitted === 1 ? 'note is' : 'notes are'} not shown; call ${MEMORY_SEARCH_TOOL} to look for them.`]
       : []),
