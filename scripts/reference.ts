@@ -96,7 +96,7 @@ type SettingRow = { readonly key: string; readonly type: string; readonly defaul
 const ENTRY = '<name>';
 
 const DEFAULTS_BY_TEXT: Readonly<Record<SettingDefaultsBy['by'], (key: string, value: string) => string>> = {
-  launcher: (key, value) => `${value} when ${code(key)} is executable`,
+  platform: (key, value) => `${value} on ${key}`,
   event: (key, value) => `${code(key)}: ${value}`,
 };
 

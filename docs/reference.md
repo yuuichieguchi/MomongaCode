@@ -798,7 +798,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `operations` | object |  |  | user |
 | `operations.protectedRefs` | array of string (not empty) |  |  | user |
 | `operations.approval` | map of `"rule"` or `"always"` |  |  | user |
-| `sandbox` | `"seatbelt"` or `"bubblewrap"` or `"none"` | `"seatbelt"` when `/usr/bin/sandbox-exec` is executable; `"bubblewrap"` when `/usr/bin/bwrap` is executable |  | user |
+| `sandbox` | `"seatbelt"` or `"bubblewrap"` or `"none"` | `"seatbelt"` on darwin; `"bubblewrap"` on linux; `"none"` on win32 |  | user |
 | `sandboxNetwork` | `"deny"` or `"ask"` or `"allow"` | `"ask"` |  | user |
 | `sandboxUnixSockets` | object |  |  | user |
 | `sandboxUnixSockets.allow` | array of string (not empty) |  |  | user |

@@ -81,7 +81,7 @@ describe('the settings table of the reference', () => {
     expect(rowOf(reference, 'memory.forgetAfterDays')).toMatch(/\| `90` \| days \|/);
     expect(rowOf(reference, 'sandboxNetwork')).toContain('`"ask"`');
     expect(rowOf(reference, 'context.autoCompact')).toContain('| `true` |');
-    expect(rowOf(reference, 'sandbox')).toContain('`"seatbelt"` when `/usr/bin/sandbox-exec` is executable; `"bubblewrap"` when `/usr/bin/bwrap` is executable');
+    expect(rowOf(reference, 'sandbox')).toContain('`"seatbelt"` on darwin');
     expect(rowOf(reference, 'hooks.<name>[].hooks[].timeout')).toMatch(/\| `600`; `UserPromptSubmit`: `30` \| seconds \|/);
     expect(rowOf(reference, 'limits.maxCostUsd')).toContain('| USD |');
   });

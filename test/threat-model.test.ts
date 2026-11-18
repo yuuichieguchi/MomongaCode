@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SANDBOX_LAUNCHERS } from '@momonga/config';
+import { defaultSandboxSetting } from '@momonga/config';
 import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, CREDENTIAL_PATHS, DEFAULT_SANDBOX_NETWORK, ENDPOINT_TOKEN_FILE, SECRET_PROGRAM_ENV } from '@momonga/foundation';
 import { ATTACHED_FILE_TAG, PERSON_CAPABILITY_HEADER, TOOL_OUTPUT_TAG, USER_SHELL_TAG } from '@momonga/protocol';
 import { PERSON_CAPABILITY_FILE } from '../packages/foundation/src/platform/person-capability.ts';
@@ -18,6 +18,12 @@ const sectionOf = (heading: string): string => {
   const length = lines.slice(start + 1).findIndex((line) => /^## /.test(line));
   return lines.slice(start + 1, length === -1 ? undefined : start + 1 + length).join('\n');
 };
+
+const PLATFORM_WORDS = [
+  ['darwin', 'macOS'],
+  ['linux', 'Linux'],
+  ['win32', 'Windows'],
+] as const;
 
 const serviceRoutes = (): Set<string> => {
   const folder = 'packages/runtime/src/service';
@@ -51,14 +57,14 @@ describe('docs/threat-model.md states only what the product does', () => {
     expect(quoted?.[1]).toBe(DEFAULT_SANDBOX_NETWORK);
   });
 
-  it.for(SANDBOX_LAUNCHERS)('quotes the default of sandbox chosen by the launcher $launcher', ({ kind, launcher }) => {
-    expect(doc).toContain(`\`${kind}\` when \`${launcher}\` is executable`);
+  it.for(PLATFORM_WORDS)('quotes the default of sandbox on %s', ([platform, word]) => {
+    const quoted = new RegExp(`The default of \`sandbox\` is[^.]*\`(\\w+)\` on ${word}`).exec(doc) ?? new RegExp(`\`(\\w+)\` on ${word}`).exec(sectionOf('## Settings this document quotes'));
+    expect(quoted?.[1]).toBe(defaultSandboxSetting(platform));
   });
 
-  it('says that with no launcher a sandboxed run refuses to start, never runs without a sandbox', () => {
-    expect(doc).toContain('when no launcher is executable, a sandboxed run refuses to start and names the launchers it looked for');
+  it('says that a missing launcher on macOS or Linux refuses a sandboxed run, never falls to none', () => {
+    expect(doc).toContain('when it is not, a sandboxed run refuses to start and names the launchers it looked for, and the default never falls to `none`');
   });
-
 
   it('lists every secret location by the name the product denies', () => {
     const section = sectionOf('## Secret locations');

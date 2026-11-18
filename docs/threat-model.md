@@ -25,7 +25,7 @@ With `"sandbox": "none"` the workspace and the network are not restricted, so an
 
 ## Settings this document quotes
 
-The default of `sandboxNetwork` is `ask`. The default of `sandbox` is chosen by the launcher the host can run, in this order: `seatbelt` when `/usr/bin/sandbox-exec` is executable, else `bubblewrap` when `/usr/bin/bwrap` is executable; when no launcher is executable, a sandboxed run refuses to start and names the launchers it looked for. The default is never `none`.
+The default of `sandboxNetwork` is `ask`. The default of `sandbox` is `seatbelt` on macOS, `bubblewrap` on Linux and `none` on Windows. On macOS and Linux the launcher of that sandbox must be executable (`/usr/bin/sandbox-exec`, `/usr/bin/bwrap`); when it is not, a sandboxed run refuses to start and names the launchers it looked for, and the default never falls to `none`.
 
 ## Network access of commands
 

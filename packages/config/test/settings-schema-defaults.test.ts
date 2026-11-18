@@ -134,8 +134,8 @@ describe('the settings schema states the default the product takes and the unit 
     expect(SETTING_DEFAULTS_BY['hooks.<name>[].hooks[].timeout']).toEqual({ by: 'event', values: byEvent });
   });
 
-  it('sandbox has the default of each executable launcher, in the order they are asked, beside the schema', () => {
-    expect(SETTING_DEFAULTS_BY['sandbox']).toEqual({ by: 'launcher', values: { '/usr/bin/sandbox-exec': 'seatbelt', '/usr/bin/bwrap': 'bubblewrap' } });
+  it('sandbox has the default of each OS mechanism, and none where the product has no mechanism, beside the schema', () => {
+    expect(SETTING_DEFAULTS_BY['sandbox']).toEqual({ by: 'platform', values: { darwin: 'seatbelt', linux: 'bubblewrap', win32: 'none' } });
   });
 
   it('names only settings the schema declares, and the schema itself carries no keyword of its own for them', () => {

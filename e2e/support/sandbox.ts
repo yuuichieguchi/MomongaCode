@@ -1,7 +1,7 @@
 import { spawnSync } from '@momonga/testkit/child-process';
 import path from 'node:path';
-import { SANDBOX_LAUNCHERS_LOOKED_FOR, defaultSandboxSetting, executableSandboxLauncher, hostLauncherExecutable } from '@momonga/config';
-import type { LauncherCheck, SandboxSetting } from '@momonga/config';
+import { defaultSandboxSetting } from '@momonga/config';
+import type { SandboxSetting } from '@momonga/config';
 import { nodeFileSystemSync } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, SANDBOX_STOP_BOUND_MS, bwrapProbeArguments } from '@momonga/sandbox';
 import { executableCheckNowOn, resolveBashPathNow } from '@momonga/tools';
@@ -33,9 +33,15 @@ export type SandboxProbeRunner = (file: string, args: readonly string[], timeout
 
 export type SandboxResolution = { kind: ProductSandbox } | { kind: 'none'; sandboxFallback: string } | { kind: 'skip'; reason: string };
 
-export const platformSandbox = (executable: LauncherCheck = hostLauncherExecutable): ProductSandbox => defaultSandboxSetting(executable);
+const noSandboxOn = (platform: NodeJS.Platform): string => `the product has no sandbox on ${platform}`;
 
-export const productSandbox = (): ProductSandbox => platformSandbox();
+export const platformSandbox = (platform: NodeJS.Platform = process.platform): SandboxSetting => defaultSandboxSetting(platform);
+
+export const productSandbox = (platform: NodeJS.Platform = process.platform): ProductSandbox => {
+  const kind = platformSandbox(platform);
+  if (kind === 'none') throw new Error(noSandboxOn(platform));
+  return kind;
+};
 
 export const spawnSandboxProbe: SandboxProbeRunner = (file, args, timeoutMs) => {
   const done = spawnSync(file, [...args], { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', stdio: ['ignore', 'ignore', 'pipe'] });
@@ -56,10 +62,9 @@ const probeLauncher = (kind: ProductSandbox, args: readonly string[], run: Sandb
 const probeProductSandbox = (kind: ProductSandbox, platform: NodeJS.Platform, run: SandboxProbeRunner): SandboxProbe =>
   probeLauncher(kind, kind === 'seatbelt' ? SANDBOX_PROBE_ARGS : bwrapProbeArguments(resolveBashPathNow(platform, { isExecutable: executableCheckNowOn(nodeFileSystemSync), env: process.env })), run);
 
-export const runSandboxProbe = (platform: NodeJS.Platform = process.platform, run: SandboxProbeRunner = spawnSandboxProbe, executable: LauncherCheck = hostLauncherExecutable): SandboxProbe => {
-  const found = executableSandboxLauncher(executable);
-  if (found === undefined) return { usable: false, kind: platformSandbox(executable), stderr: `no sandbox launcher is executable: looked for ${SANDBOX_LAUNCHERS_LOOKED_FOR}` };
-  const { kind } = found;
+export const runSandboxProbe = (platform: NodeJS.Platform = process.platform, run: SandboxProbeRunner = spawnSandboxProbe): SandboxProbe => {
+  const kind = platformSandbox(platform);
+  if (kind === 'none') return { usable: false, kind, stderr: noSandboxOn(platform) };
   try {
     return probeProductSandbox(kind, platform, run);
   } catch (error) {
@@ -94,11 +99,10 @@ export const sandboxProbe = (
   env: Record<string, string | undefined> = process.env,
   run: SandboxProbeRunner = spawnSandboxProbe,
   platform: NodeJS.Platform = process.platform,
-  executable: LauncherCheck = hostLauncherExecutable,
 ): SandboxProbe => {
   const published = env[SANDBOX_ENV];
   if (published !== undefined) return decodeSandboxProbe(published);
-  const probe = runSandboxProbe(platform, run, executable);
+  const probe = runSandboxProbe(platform, run);
   env[SANDBOX_ENV] = encodeSandboxProbe(probe);
   return probe;
 };
