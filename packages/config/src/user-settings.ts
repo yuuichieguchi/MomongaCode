@@ -1,4 +1,4 @@
-import { DEFAULT_STOP_VALUES, answeredLater, canonicalJson, createKeyedSerializer, isTransientErrno, sha256Hex, writeFileAtomically } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, STARTUP_TIMEOUT_MS, answeredLater, canonicalJson, createKeyedSerializer, isTransientErrno, sha256Hex, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem, LayoutEnvironment, PathAsking, Random, StopValues, KernelLockMechanism } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
@@ -320,6 +320,16 @@ export const readUserStopValuesOrDefault = async ({ home, env, signal, files, on
     if (signal.aborted) throw signal.reason;
     onNotice(`the stop values could not be read from the user settings (${messageOf(error)}); the default values were used`);
     return DEFAULT_STOP_VALUES;
+  }
+};
+
+export const readUserStartupStallMsOrDefault = async ({ home, env, signal, files, onNotice }: UserStopValuesOptions): Promise<number> => {
+  try {
+    return (await loadUserSettings({ home, env, signal, ...(files === undefined ? {} : { files }) })).settings.daemon.startupStallMs;
+  } catch (error) {
+    if (signal.aborted) throw signal.reason;
+    onNotice(`the start-up stall limit could not be read from the user settings (${messageOf(error)}); the default value was used`);
+    return STARTUP_TIMEOUT_MS;
   }
 };
 

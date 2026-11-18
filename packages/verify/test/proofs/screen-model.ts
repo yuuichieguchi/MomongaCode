@@ -51,12 +51,12 @@ export const allocateWith = <T>(ops: Ops<T>, height: T, requests: Requests<T>, p
     left = ops.sub(left, given);
     return given;
   };
-  const invitation = panelRows === undefined ? take(requests.invitation) : zero;
-  const waiting = take(requests.waiting);
   const inputExtra = panelRows === undefined ? take(ops.sub(ops.min(requests.inputRows, inputRowsCapOf(ops, height)), ops.lit(1))) : zero;
-  const menu = ops.add(invitation, panelRows === undefined ? take(ops.min(requests.menu, menuRowsCapOf(ops, height))) : zero);
   const subagents = take(ops.min(requests.subagents, subagentRowsCapOf(ops, height)));
   const footerSecond = take(requests.footerSecond);
+  const invitation = panelRows === undefined ? take(requests.invitation) : zero;
+  const waiting = take(requests.waiting);
+  const menu = ops.add(invitation, panelRows === undefined ? take(ops.min(requests.menu, menuRowsCapOf(ops, height))) : zero);
   const lines = panelRows === undefined ? take(requests.lines) : zero;
   return {
     viewport: ops.add(ops.lit(SCREEN_CONSTANTS.VIEWPORT_ROWS), left),

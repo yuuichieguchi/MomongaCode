@@ -1,4 +1,4 @@
-import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS, STARTUP_TIMEOUT_MS } from '@momonga/foundation';
 import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, HOOK_DEFAULT_TIMEOUT_SECONDS, DEFAULT_PERMISSION_MODE, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
 import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
 import { DEFAULT_UPDATE_STALL_TIMEOUT_MS, defaultContextSettings, defaultMemorySettings, defaultToolsSettings, defaultVerificationSettings } from './context-settings.ts';
@@ -16,9 +16,10 @@ export const ISSUE_AUTHOR_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'] as 
 
 export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES, screen: TUI_SCREEN_MODES } as const;
 
+export const SANDBOX_DEFAULT_PLATFORMS = ['darwin', 'linux', 'win32'] as const satisfies readonly NodeJS.Platform[];
+
 export const SETTING_UNITS = { milliseconds: 'milliseconds', seconds: 'seconds', days: 'days', usd: 'USD', usdPerMillionTokens: 'USD per million tokens' } as const;
 
-export const SANDBOX_DEFAULT_PLATFORMS = ['darwin', 'linux', 'win32'] as const satisfies readonly NodeJS.Platform[];
 
 const MEMORY_DEFAULTS = defaultMemorySettings();
 const VERIFICATION_DEFAULTS = defaultVerificationSettings();
@@ -35,6 +36,11 @@ const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } 
 
 export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
 
+const MCP_SERVER_CALL_BOUNDS = {
+  timeoutMs: { type: 'integer', minimum: 1 },
+  idleTimeoutMs: { type: 'integer', minimum: 0 },
+} as const;
+
 export const MCP_SERVER_SCHEMA = {
   oneOf: [
     {
@@ -46,6 +52,7 @@ export const MCP_SERVER_SCHEMA = {
         env: STRING_MAP,
         secretEnv: { type: 'object', propertyNames: { pattern: ENV_NAME_PATTERN }, additionalProperties: { type: 'string', pattern: SECRET_NAME_PATTERN } },
         cwd: { type: 'string' },
+        ...MCP_SERVER_CALL_BOUNDS,
       },
       required: ['command'],
       additionalProperties: false,
@@ -65,6 +72,7 @@ export const MCP_SERVER_SCHEMA = {
           },
           additionalProperties: false,
         },
+        ...MCP_SERVER_CALL_BOUNDS,
       },
       required: ['type', 'url'],
       additionalProperties: false,
@@ -441,6 +449,7 @@ export const SETTING_UNIT_OF: Readonly<Record<string, SettingUnit>> = {
   'tools.search.timeoutMs': SETTING_UNITS.milliseconds,
   'tools.operations.timeoutMs': SETTING_UNITS.milliseconds,
   'update.stallTimeoutMs': SETTING_UNITS.milliseconds,
+  'daemon.startupStallMs': SETTING_UNITS.milliseconds,
   'gateway.closeGraceMs': SETTING_UNITS.milliseconds,
   'gateway.managedServerStopGraceMs': SETTING_UNITS.milliseconds,
   'runtime.drainTimeoutMs': SETTING_UNITS.milliseconds,
@@ -453,6 +462,8 @@ export const SETTING_UNIT_OF: Readonly<Record<string, SettingUnit>> = {
   'ceilings.timeMs': SETTING_UNITS.milliseconds,
   'mandates.<name>.costUsd': SETTING_UNITS.usd,
   'mandates.<name>.timeMs': SETTING_UNITS.milliseconds,
+  'mcpServers.<name>.timeoutMs': SETTING_UNITS.milliseconds,
+  'mcpServers.<name>.idleTimeoutMs': SETTING_UNITS.milliseconds,
   'retention.days': SETTING_UNITS.days,
 };
 
@@ -627,6 +638,7 @@ export const SETTINGS_SCHEMA = {
     },
     autoUpdates: { type: 'boolean', default: DEFAULT_AUTO_UPDATES },
     update: { type: 'object', properties: { stallTimeoutMs: withDefault(POSITIVE_INTEGER, DEFAULT_UPDATE_STALL_TIMEOUT_MS) }, additionalProperties: false },
+    daemon: { type: 'object', properties: { startupStallMs: withDefault(POSITIVE_INTEGER, STARTUP_TIMEOUT_MS) }, additionalProperties: false },
     tui: {
       type: 'object',
       properties: {

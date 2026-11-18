@@ -3,7 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import * as bounds from '../e2e/support/wait.ts';
-import { daemonReadyBoundMs } from '../packages/cli/src/daemon/ensure-daemon.ts';
+import { STARTUP_TIMEOUT_MS } from '@momonga/foundation';
+import { readyBoundOfStallMs } from '../packages/cli/src/daemon/ensure-daemon.ts';
 
 type DerivedBounds = { policyVerifyBoundMs?: () => Promise<number>; E2E_SOLVER_LOAD_ALLOWANCE_MS?: number };
 
@@ -14,7 +15,7 @@ describe('the e2e bound of policy verify', () => {
     const { policyVerifyBoundMs, E2E_SOLVER_LOAD_ALLOWANCE_MS } = bounds as DerivedBounds;
 
     expect(E2E_SOLVER_LOAD_ALLOWANCE_MS).toBeGreaterThan(0);
-    expect(await policyVerifyBoundMs?.()).toBe((await daemonReadyBoundMs()) + (E2E_SOLVER_LOAD_ALLOWANCE_MS as number) + RULE_VERIFY_BUDGET_MS);
+    expect(await policyVerifyBoundMs?.()).toBe((await readyBoundOfStallMs(STARTUP_TIMEOUT_MS)) + (E2E_SOLVER_LOAD_ALLOWANCE_MS as number) + RULE_VERIFY_BUDGET_MS);
   });
 
   it('no longer multiplies a query timeout by a hand-restated property count', () => {

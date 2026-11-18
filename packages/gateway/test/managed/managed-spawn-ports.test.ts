@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
 import type { FileSystemSync, Random } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_UNPROTECTED_LAUNCH, createTempDir, testProcessInspector } from '@momonga/testkit';
-import { createGroupSpawn } from '../../src/managed/fm-processes.ts';
+import { createGroupSpawn } from '../../src/managed/processes.ts';
 import { MINIMAL_PATH } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });

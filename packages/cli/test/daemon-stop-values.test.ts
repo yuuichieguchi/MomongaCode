@@ -97,7 +97,7 @@ describe('daemon stop carries the values it read', () => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining', stopBoundMs: 98_765 });
     const timeout = await timeoutOf(ensureDaemon(ports, paths));
-    expect(timeout.boundMs).toBe(await daemonReadyBoundMs());
+    expect(timeout.boundMs).toBe(await daemonReadyBoundMs(ports, (message) => expect.unreachable(message)));
     expect(timeout.description).toBe('the daemon to become ready');
   });
 

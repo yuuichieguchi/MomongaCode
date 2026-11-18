@@ -430,9 +430,10 @@ describe('agents: background bash', () => {
         const result = await runCli(home, ['status', runId ?? '']);
         return result.stdout.includes('  WAITING_TOOL') ? result : undefined;
       },
-      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'momonga status to show the run waiting on its job' },
+      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'momonga status to show the run waiting on the held job' },
     );
     expect(status.stdout).toBe(`${runId}  WAITING_TOOL\n`);
+    expect((await runCli(home, ['jobs'])).stdout).toBe(`${jobId}  running  run ${runId}  ${command}\n`);
 
     fs.writeFileSync(path.join(home.project, 'release-job'), '');
     const finished = await running.result;

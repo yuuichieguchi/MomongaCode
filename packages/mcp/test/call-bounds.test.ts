@@ -41,7 +41,7 @@ const fakeConnection = (options: { transportKind: 'stdio' | 'network'; call?: Fa
   };
 };
 
-const toolOf = async (connection: McpServerConnection, settings: { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?: number } = {}): Promise<AnyTool> => {
+const toolOf = async (connection: McpServerConnection, settings: { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?: number; serverTimeoutMs?: number; serverIdleTimeoutMs?: number } = {}): Promise<AnyTool> => {
   const [tool] = await createMcpToolSource({ server: 'jobs', connection, ...settings }).list();
   if (tool === undefined) throw new Error('the fake server lists one tool');
   return tool;
@@ -74,6 +74,37 @@ describe('G2 test 8: the defaults are decision 8, from one constants file', () =
     const tool = await toolOf(fakeConnection({ transportKind: 'network' }), { toolIdleTimeoutMs: 0 });
     expect(tool.idleTimeoutMs).toBeUndefined();
     expect(tool.timeoutMs).toBe(MCP_TOOL_TOTAL_TIMEOUT_MS);
+  });
+});
+
+describe('X1: a per-server key replaces the global value for that server only (host-bounds 4.5.2)', () => {
+  it('takes the wall bound from mcpServers.<name>.timeoutMs over mcp.toolTotalTimeoutMs', async () => {
+    const tool = await toolOf(fakeConnection({ transportKind: 'stdio' }), { toolTotalTimeoutMs: 7_200_000, serverTimeoutMs: 600, toolIdleTimeoutMs: 0 });
+    expect(tool.timeoutMs).toBe(600);
+  });
+
+  it('takes the idle window from mcpServers.<name>.idleTimeoutMs over the transport key, and 0 turns it off', async () => {
+    expect((await toolOf(fakeConnection({ transportKind: 'network' }), { toolIdleTimeoutMs: 300_000, serverIdleTimeoutMs: 900_000 })).idleTimeoutMs).toBe(900_000);
+    expect((await toolOf(fakeConnection({ transportKind: 'stdio' }), { serverIdleTimeoutMs: 0 })).idleTimeoutMs).toBeUndefined();
+  });
+
+  it('raises the idle window to a per-server timeoutMs of at least 1000', async () => {
+    const tool = await toolOf(fakeConnection({ transportKind: 'network' }), { serverTimeoutMs: 3_600_000 });
+    expect(tool.idleTimeoutMs).toBe(3_600_000);
+    expect(tool.timeoutMs).toBe(3_600_000);
+  });
+
+  it('never gives an idle window longer than the wall bound of the same call', async () => {
+    const tool = await toolOf(fakeConnection({ transportKind: 'stdio' }), { serverTimeoutMs: 500, serverIdleTimeoutMs: 900_000 });
+    expect(tool.idleTimeoutMs).toBe(500);
+    expect((await toolOf(fakeConnection({ transportKind: 'network' }), { toolTotalTimeoutMs: 60_000 })).idleTimeoutMs).toBe(60_000);
+  });
+
+  it('names the per-server key that set the idle window when it stops a call', async () => {
+    const idleOwn = await toolOf(fakeConnection({ transportKind: 'network' }), { serverIdleTimeoutMs: 120_000 });
+    expect(await idleOwn.stopText?.(stopOf('idle', 120_000))).toContain('To wait longer, raise mcpServers.jobs.idleTimeoutMs.');
+    const raised = await toolOf(fakeConnection({ transportKind: 'network' }), { serverTimeoutMs: 3_600_000 });
+    expect(await raised.stopText?.(stopOf('idle', 3_600_000))).toContain('To wait longer, raise mcpServers.jobs.timeoutMs.');
   });
 });
 

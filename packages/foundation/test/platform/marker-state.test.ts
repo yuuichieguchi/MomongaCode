@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createLockCapability } from '../../src/platform/lock-capability.ts';
 import type { LockCapabilityProbe } from '../../src/platform/lock-capability.ts';
 import { createMarker } from '../../src/platform/marker-file.ts';
-import { createProcessInspector, hostInspectorPorts } from '../../src/platform/process-inspector.ts';
+import { hostProcessInspector, hostInspectorPorts } from '../../src/platform/process-inspector.ts';
 import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
 import { exclusiveProbeIsRefused, fixedCapability, sharedProbeIsRefused, throwingRunner } from '../support/probe-fakes.ts';
 import { testLocks } from '@momonga/testkit';
@@ -22,7 +22,7 @@ const markerDirectory = () => {
   return { proofDir, markerDir };
 };
 
-const lockedInspector = (capability: LockCapabilityProbe) => createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), run: throwingRunner(), capability });
+const lockedInspector = (capability: LockCapabilityProbe) => hostProcessInspector({ ...hostInspectorPorts(testLocks().capability), run: throwingRunner(), capability });
 
 const PROBER = `
 const fs = require('node:fs');

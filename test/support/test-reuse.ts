@@ -2,6 +2,7 @@ import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, sha256Hex } from '../formal/reuse.ts';
+import { DOCUMENT_VARIABLES, documentFolderDigestOf } from '../../packages/testkit/src/document-folders.ts';
 import { OBSERVED_DIR, REUSE_STORE, TEST_REUSE_ENV, testReuseModeOf } from './reuse-observed.ts';
 
 export { OBSERVED_DIR, REUSE_STORE, TEST_REUSE_ENV, observedFileOf, testReuseModeOf } from './reuse-observed.ts';
@@ -172,6 +173,7 @@ export const globalsOf = (harness: Readonly<Record<string, readonly string[]>>, 
   env: Object.fromEntries(
     Object.entries(env)
       .filter((entry): entry is [string, string] => entry[0].startsWith('MOMONGA_') && !IGNORED_ENV.has(entry[0]) && entry[1] !== undefined)
+      .map(([name, value]): [string, string] => ((DOCUMENT_VARIABLES as readonly string[]).includes(name) ? [name, `${value}#${documentFolderDigestOf(value)}`] : [name, value]))
       .sort(([left], [right]) => (left < right ? -1 : 1)),
   ),
 });

@@ -8,7 +8,6 @@ export const EXIT_CODES = {
   usage: { code: 2, meaning: 'usage error' },
   keeperCompilerMissing: { code: 3, meaning: 'the build of a native helper (the Windows keeper, the Linux socket guard) found no compiler' },
   waitingForApproval: { code: 75, meaning: 'headless run waiting for approval' },
-  versionMismatchReserved: { code: 76, meaning: 'reserved: version mismatch' },
   alreadyRunning: { code: 77, meaning: 'daemon already running (lock held)' },
   config: { code: 78, meaning: 'config error or entry usage error' },
   retired: { code: 79, meaning: 'retired generation exited clean' },
@@ -126,6 +125,8 @@ export const MCP_CONNECT_TIMEOUT_LIMITS = { min: 1, max: 3_600_000, default: 30_
 export const MCP_TOOL_IDLE_TIMEOUT_MS: Readonly<Record<'stdio' | 'network', number>> = { network: 5 * 60 * 1000, stdio: 30 * 60 * 1000 };
 
 export const MCP_TOOL_TOTAL_TIMEOUT_MS = 100_000_000;
+
+export const MCP_TOOL_TIMEOUT_FLOOR_MS = 1000;
 
 export const mcpConnectTimeoutProblem = (value: unknown): string | undefined => {
   const { min, max } = MCP_CONNECT_TIMEOUT_LIMITS;

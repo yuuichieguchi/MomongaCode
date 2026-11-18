@@ -36,15 +36,17 @@ const startLayer = () => {
   const requests: ScreenRequest[] = [];
   layer.subscribeScreen((request) => requests.push(request));
   const feed = (text: string): boolean => terminalInput.emit('data', Buffer.from(text, 'utf8'));
+  feed(`${ESC}[?1;2c`);
+  events.length = 0;
   return { layer, written, raw, flow, events, requests, feed };
 };
 
 describe('leaving the screen for a program that takes the terminal', () => {
-  it('restores every mode, stops reading, and on return enters the same modes, reads again and asks for a redraw', () => {
+  it('restores every mode, stops reading, and on return enters the same modes, reads again and asks for a redraw', async () => {
     const { layer, written, raw, flow, events, requests, feed } = startLayer();
     const before = layer.state().enabled;
     const mark = written.length;
-    const returnToScreen = layer.leaveForProgram();
+    const returnToScreen = await layer.leaveForProgram();
     expect(layer.state().enabled).toEqual([]);
     expect(written.slice(mark).join('')).toContain(`${ESC}[?1049l`);
     expect(raw.at(-1)).toBe(false);
@@ -52,7 +54,7 @@ describe('leaving the screen for a program that takes the terminal', () => {
     feed('typed in the program');
     expect(events).toEqual([]);
     const back = written.length;
-    returnToScreen();
+    await returnToScreen();
     expect(layer.state().enabled).toEqual(before);
     expect(written.slice(back).join('')).toContain(`${ESC}[?1049h`);
     expect(raw.at(-1)).toBe(true);
@@ -77,7 +79,7 @@ describe('leaving the screen for a program that takes the terminal', () => {
         };
       },
     });
-    const returnToScreen = layer.leaveForProgram();
+    const returnToScreen = await layer.leaveForProgram();
     const lent = written.length - mark;
     await returnToScreen();
     expect(order).toEqual(['ink suspended after 0 writes', `ink resumed after ${written.length - mark} writes`]);
@@ -86,12 +88,12 @@ describe('leaving the screen for a program that takes the terminal', () => {
     layer.close();
   });
 
-  it('does not re-enter a screen that was closed while the program ran', () => {
+  it('does not re-enter a screen that was closed while the program ran', async () => {
     const { layer, written } = startLayer();
-    const returnToScreen = layer.leaveForProgram();
-    layer.close();
+    const returnToScreen = await layer.leaveForProgram();
+    await layer.close();
     const mark = written.length;
-    returnToScreen();
+    await returnToScreen();
     expect(written.slice(mark)).toEqual([]);
   });
 });

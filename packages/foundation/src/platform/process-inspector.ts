@@ -1,6 +1,11 @@
 import { nodeCommandRunner } from './command-runner.ts';
 import type { CommandRunner } from './command-runner.ts';
-import { createDarwinInspector } from './darwin-inspector.ts';
+import { LSOF_BINARY, PS_BINARY, createDarwinInspector } from './darwin-inspector.ts';
+import { createAsyncCapabilityProbe } from '../capability-probe.ts';
+import type { CapabilityResult } from '../capability-probe.ts';
+import { nodeFileSystem } from '../node-file-system.ts';
+import { isErrno } from './inspector-types.ts';
+import { powershellPath } from './windows-scripts.ts';
 import type { ProcessInspector } from './inspector-types.ts';
 import type { LockCapabilityProbe } from './lock-capability.ts';
 import { createLinuxInspector } from './linux-inspector.ts';
@@ -23,6 +28,7 @@ export type InspectorPorts = {
   capability: LockCapabilityProbe;
   jobs: Pick<KeptGroupControl, 'members' | 'leads'>;
   alive(pid: number): boolean;
+  isExecutable(file: string): Promise<boolean>;
 };
 
 export class UnsupportedPlatformError extends Error {
@@ -36,25 +42,108 @@ export class UnsupportedPlatformError extends Error {
 }
 
 const hostUid = (): number => {
-  if (process.getuid === undefined) throw new UnsupportedPlatformError(process.platform, 'reading the current user id');
+  if (process.getuid === undefined) throw new UnsupportedPlatformError('this host', 'reading the current user id');
   return process.getuid();
 };
 
-export const hostInspectorPorts = (capability: LockCapabilityProbe): InspectorPorts => ({ run: nodeCommandRunner, timing: systemWaitTiming, procfs: nodeProcFs, env: process.env, uid: hostUid, capability, jobs: hostKeptGroups(), alive: (pid) => isProcessAlive(pid) });
-
-export const createProcessInspector = (platform: NodeJS.Platform, ports: InspectorPorts): ProcessInspector => {
-  switch (platform) {
-    case 'darwin':
-      return withMarkerState(createDarwinInspector({ run: ports.run }), ports.capability);
-    case 'linux':
-      return withMarkerState(createLinuxInspector({ procfs: ports.procfs, uid: ports.uid() }), ports.capability);
-    case 'win32':
-      return withMarkerState(createWindowsInspector({ run: ports.run, timing: ports.timing, env: ports.env, groups: ports.jobs, alive: ports.alive }), ports.capability);
-    default:
-      throw new UnsupportedPlatformError(platform, 'process inspection');
+const executableOnHost = async (file: string): Promise<boolean> => {
+  try {
+    await nodeFileSystem.access(file, 'execute');
+    return true;
+  } catch (error) {
+    if (isErrno(error, 'ENOENT', 'ENOTDIR', 'EACCES')) return false;
+    throw error;
   }
 };
 
-export const hostProcessInspector = (ports: InspectorPorts): ProcessInspector => createProcessInspector(process.platform, ports);
+export type InspectorKind = 'procfs' | 'lsof' | 'powershell';
+
+export type InspectorKindProbes = {
+  readText(file: string): Promise<string>;
+  list(directory: string): Promise<string[]>;
+  isExecutable(file: string): Promise<boolean>;
+  env: Readonly<Record<string, string | undefined>>;
+};
+
+const PROC_SELF_STAT = '/proc/self/stat';
+const PROC_SELF_FD = '/proc/self/fd';
+
+const answers = async (ask: () => Promise<unknown>): Promise<boolean> => {
+  try {
+    await ask();
+    return true;
+  } catch (error) {
+    if (isErrno(error, 'ENOENT', 'ENOTDIR')) return false;
+    throw error;
+  }
+};
+
+const powershellOffered = async (probes: InspectorKindProbes): Promise<boolean> => {
+  const systemRoot = probes.env['SystemRoot'];
+  if (systemRoot === undefined || systemRoot === '') return false;
+  return probes.isExecutable(powershellPath(probes.env));
+};
+
+export const inspectorKindOf = async (probes: InspectorKindProbes): Promise<CapabilityResult<InspectorKind>> => {
+  if ((await answers(() => probes.readText(PROC_SELF_STAT))) && (await answers(() => probes.list(PROC_SELF_FD)))) {
+    return { kind: 'supported', value: 'procfs', evidence: `${PROC_SELF_STAT} and ${PROC_SELF_FD} are readable` };
+  }
+  if ((await probes.isExecutable(LSOF_BINARY)) && (await probes.isExecutable(PS_BINARY))) {
+    return { kind: 'supported', value: 'lsof', evidence: `${LSOF_BINARY} and ${PS_BINARY} are executable` };
+  }
+  if (await powershellOffered(probes)) return { kind: 'supported', value: 'powershell', evidence: 'Windows PowerShell under SystemRoot is executable' };
+  return {
+    kind: 'unsupported',
+    evidence: `looked for a readable ${PROC_SELF_STAT} and ${PROC_SELF_FD}, executable ${LSOF_BINARY} and ${PS_BINARY}, and Windows PowerShell under SystemRoot; found none`,
+  };
+};
+
+export const hostInspectorPorts = (capability: LockCapabilityProbe): InspectorPorts => ({
+  run: nodeCommandRunner,
+  timing: systemWaitTiming,
+  procfs: nodeProcFs,
+  env: process.env,
+  uid: hostUid,
+  capability,
+  jobs: hostKeptGroups(),
+  alive: (pid) => isProcessAlive(pid),
+  isExecutable: executableOnHost,
+});
+
+export const createProcessInspector = (kind: InspectorKind, ports: InspectorPorts): ProcessInspector => {
+  switch (kind) {
+    case 'lsof':
+      return withMarkerState(createDarwinInspector({ run: ports.run }), ports.capability);
+    case 'procfs':
+      return withMarkerState(createLinuxInspector({ procfs: ports.procfs, uid: ports.uid() }), ports.capability);
+    case 'powershell':
+      return withMarkerState(createWindowsInspector({ run: ports.run, timing: ports.timing, env: ports.env, groups: ports.jobs, alive: ports.alive }), ports.capability);
+  }
+};
+
+const probedInspectorKind = createAsyncCapabilityProbe<InspectorPorts, InspectorKind>(
+  () => 'host',
+  (ports) => inspectorKindOf({ readText: (file) => ports.procfs.readText(file), list: (directory) => ports.procfs.list(directory), isExecutable: ports.isExecutable, env: ports.env }),
+);
+
+export const hostProcessInspector = (ports: InspectorPorts): ProcessInspector => {
+  let chosen: Promise<ProcessInspector> | undefined;
+  const inspector = (): Promise<ProcessInspector> => {
+    chosen ??= probedInspectorKind(ports).then((result) => {
+      if (result.kind === 'supported') return createProcessInspector(result.value, ports);
+      chosen = undefined;
+      if (result.kind === 'unsupported') throw new UnsupportedPlatformError('this host', `process inspection (${result.evidence})`);
+      throw new Error(`the process inspector of this host could not be chosen: ${result.evidence}`);
+    });
+    return chosen;
+  };
+  return {
+    capability: ports.capability,
+    startTimeOf: async (pid, options) => (await inspector()).startTimeOf(pid, options),
+    holdersOf: async (marker, options, onUninspectable) => (await inspector()).holdersOf(marker, options, onUninspectable),
+    groupsOf: async (pids, candidateGroups, options) => (await inspector()).groupsOf(pids, candidateGroups, options),
+    markerState: async (marker, options) => (await inspector()).markerState(marker, options),
+  };
+};
 
 export const layoutProcessInspector = (capability: LockCapabilityProbe): ProcessInspector => hostProcessInspector(hostInspectorPorts(capability));

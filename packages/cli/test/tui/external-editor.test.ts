@@ -22,7 +22,7 @@ const hostOf = (env: ExternalEditorHost['env'], edit: (text: string) => string =
     remove: async (directory) => {
       steps.push(`remove ${directory}`);
     },
-    leaveScreen: () => {
+    leaveScreen: async () => {
       steps.push('leave the screen');
       return async () => {
         await Promise.resolve();

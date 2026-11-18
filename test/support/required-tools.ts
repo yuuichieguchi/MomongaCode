@@ -115,16 +115,26 @@ export const requires = (name: string, host: ToolHost = HOST): void => {
 export const missingToolsOf = (project: TestProject, host: ToolHost = HOST): RequiredTool[] =>
   REQUIRED_TOOLS.filter((tool) => tool.projects.includes(project) && applies(tool, host) && !tool.present(host));
 
+const refusalOf = (message: string): Error => {
+  const refusal = new Error(message);
+  refusal.stack = `${refusal.name}: ${refusal.message}`;
+  return refusal;
+};
+
 export const checkRequiredTools = (project: TestProject, host: ToolHost = HOST): void => {
   const missing = missingToolsOf(project, host);
-  if (missing.length > 0) throw new Error(missing.map((tool) => missingMessage(tool, host.platform)).join('\n'));
+  if (missing.length > 0) throw refusalOf(missing.map((tool) => missingMessage(tool, host.platform)).join('\n'));
 };
 
 const PROJECTS: readonly TestProject[] = ['unit', 'e2e', 'packaging', 'calibration'];
 
 const isTestProject = (name: string): name is TestProject => PROJECTS.some((project) => project === name);
 
+export const setupWith = (project: { readonly name: string }, host: ToolHost): void => {
+  if (!isTestProject(project.name)) throw refusalOf(`the required tools know no test project named ${project.name}`);
+  checkRequiredTools(project.name, host);
+};
+
 export default function setup(project: { readonly name: string }): void {
-  if (!isTestProject(project.name)) throw new Error(`the required tools know no test project named ${project.name}`);
-  checkRequiredTools(project.name);
+  setupWith(project, HOST);
 }

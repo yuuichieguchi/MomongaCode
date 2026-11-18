@@ -224,6 +224,20 @@ describe('a stored record of another format', () => {
     }
   });
 
+  it('keys a document folder variable by the content of the folder it names, so an edited document is not replayed as green', () => {
+    const dir = createTempDir();
+    try {
+      fs.writeFileSync(path.join(dir, 'a.md'), 'one');
+      const before = globalsOf({}, digestsOf({}), { MOMONGA_CONSTANTS_DOCUMENT: dir }).env['MOMONGA_CONSTANTS_DOCUMENT'];
+      fs.writeFileSync(path.join(dir, 'a.md'), 'two');
+      const after = globalsOf({}, digestsOf({}), { MOMONGA_CONSTANTS_DOCUMENT: dir }).env['MOMONGA_CONSTANTS_DOCUMENT'];
+      expect(before?.startsWith(`${dir}#`)).toBe(true);
+      expect(after).not.toBe(before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('leaves the run CPU budget variable out of the key, since it cannot change a green outcome', () => {
     expect(globalsOf({}, digestsOf({}), { MOMONGA_RUN_CPU_BUDGET_SECONDS: '60', MOMONGA_TLC_TIER: 'deep' }).env).toEqual({ MOMONGA_TLC_TIER: 'deep' });
   });

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ConfigError } from '@momonga/config';
+import { ConfigError, SANDBOX_LAUNCHERS_LOOKED_FOR } from '@momonga/config';
 import { helperCommandLine, nodeFileSystem } from '@momonga/foundation';
 import type { ChildProtection, HelperSelf, KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, DEFAULT_SANDBOX_EXEC_PATH, NETWORK_RELAY_HELPER, SANDBOX_KILL_GRACE_MS, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap } from '@momonga/sandbox';
@@ -36,17 +36,13 @@ export const createSandboxOf =
       if (host.noneProtection.kind === 'unprotected') host.warn(host.noneProtection.reason);
       return unsandboxed;
     }
-    const required = kind === 'seatbelt' ? 'darwin' : 'linux';
-    if (platform !== required) {
-      throw new ConfigError(`sandbox "${kind}" is only available on ${required}; set "sandbox" in ${paths.settingsFile} to "none" to run without a sandbox (Bash will then ask before every command)`);
-    }
     const launcherPath = host.sandboxExecPath ?? (kind === 'seatbelt' ? DEFAULT_SANDBOX_EXEC_PATH : DEFAULT_BWRAP_PATH);
     const launcherName = kind === 'seatbelt' ? 'sandbox-exec' : 'bwrap';
     try {
       await nodeFileSystem.access(launcherPath, 'execute');
     } catch (error) {
       throw new ConfigError(
-        `${launcherName} is not available at ${launcherPath}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
+        `${launcherName} is not available at ${launcherPath}; the sandbox launchers looked for are ${SANDBOX_LAUNCHERS_LOOKED_FOR}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
         { cause: error },
       );
     }

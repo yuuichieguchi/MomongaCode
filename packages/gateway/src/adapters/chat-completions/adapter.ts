@@ -165,7 +165,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       }
 
       watch = watchContent(options.liveness);
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, nonStrict: ledger.nonStrict, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watch.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, signal: ctx.signal, wraps: ledger.wraps, nonStrict: ledger.nonStrict, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watch.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) });
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 
@@ -181,7 +181,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
             opening = undefined;
             for (const event of events) yield event;
           }
-          for (const event of driver.accept(message.data)) {
+          for (const event of await driver.accept(message.data)) {
             ctx.signal.throwIfAborted();
             yield event;
           }
@@ -198,7 +198,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       if (opening !== undefined) {
         throw new StreamFailure('empty_upstream_stream', 'server_error', 'the upstream ended its stream before sending any event');
       }
-      for (const event of driver.end()) {
+      for (const event of await driver.end()) {
         ctx.signal.throwIfAborted();
         yield event;
       }

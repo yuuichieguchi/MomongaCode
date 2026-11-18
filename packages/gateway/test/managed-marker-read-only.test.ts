@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { readMarkerGroup } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
-import { createGroupSpawn } from '../src/managed/fm-processes.ts';
+import { createGroupSpawn } from '../src/managed/processes.ts';
 import { registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, makeHome, until } from './gateway-process-helpers.ts';
 

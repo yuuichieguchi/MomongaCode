@@ -110,7 +110,8 @@ describe('a search that reaches tools.search.timeoutMs keeps the matches so far'
     const first = tools.write('src/first.ts', 'needle\n');
     const second = tools.write('src/second.ts', 'needle\n');
     const live = slowSearch(`${first}\0${second}\0`);
-    const running = tools.run('Grep', { pattern: 'needle' }, { limits: LIMITS, sandbox: live.sandbox, ripgrep: fakeRipgrep });
+    const seen: string[] = [];
+    const running = tools.run('Grep', { pattern: 'needle' }, { limits: LIMITS, sandbox: live.sandbox, ripgrep: fakeRipgrep, formatOutput: ({ output }) => void seen.push(output) });
     await pollUntil(live.searching, { description: 'the search started', boundMs: WAIT_BOUND_MS });
     await pollUntil(() => [...timers.armed.values()].some((timer) => timer.ms === SEARCH_MS), { description: 'the search limit is armed', boundMs: WAIT_BOUND_MS });
     timers.fire(SEARCH_MS);
@@ -118,7 +119,9 @@ describe('a search that reaches tools.search.timeoutMs keeps the matches so far'
     expect(result.status).toBe('completed');
     expect(result.output).toContain('first.ts');
     expect(result.output).toContain('second.ts');
-    expect(result.output).toContain(PARTIAL_NOTE);
+    expect(result.output.endsWith(`\n${PARTIAL_NOTE}`)).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toContain(PARTIAL_NOTE);
   });
 
   it('Glob returns the entries found before the limit with the note', async () => {
@@ -135,13 +138,15 @@ describe('a search that reaches tools.search.timeoutMs keeps the matches so far'
     const tools = await makeBuiltins({ executor: { files: stalling, shellHost: { platform: process.platform, isExecutable: () => true, child: timers.port } } });
     tools.write('a/found.ts', 'x\n');
     tools.write('stalled/hidden.ts', 'x\n');
-    const running = tools.run('Glob', { pattern: '**/*.ts' }, { limits: LIMITS });
+    const seen: string[] = [];
+    const running = tools.run('Glob', { pattern: '**/*.ts' }, { limits: LIMITS, formatOutput: ({ output }) => void seen.push(output) });
     await pollUntil(() => stalled, { description: 'the walk reached the stalled directory', boundMs: WAIT_BOUND_MS });
     timers.fire(SEARCH_MS);
     const result = resultOf(await running);
     expect(result.status).toBe('completed');
     expect(result.output).toContain('found.ts');
     expect(result.output).not.toContain('hidden.ts');
-    expect(result.output).toContain(`Search stopped after ${SEARCH_MS} ms; the entries above are partial. Try a narrower path or pattern.`);
+    expect(result.output.endsWith(`\nSearch stopped after ${SEARCH_MS} ms; the entries above are partial. Try a narrower path or pattern.`)).toBe(true);
+    expect(seen).toEqual([expect.not.stringContaining('Search stopped')]);
   });
 });

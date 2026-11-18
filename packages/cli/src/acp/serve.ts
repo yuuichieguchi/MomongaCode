@@ -2,6 +2,7 @@ import { hostPaths } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import { daemonReadyBoundMs, ensureDaemon, restoreDaemon, ensureSessionDaemon } from '../daemon/ensure-daemon.ts';
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
@@ -25,7 +26,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   const onNewer = newerListenerOf(ports);
   const runtime = connectSessionRuntime(ports, paths, onNewer);
   const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(ports, paths, 'gateway') });
-  const reconnectBoundMs = await daemonReadyBoundMs();
+  const reconnectBoundMs = await daemonReadyBoundMs(ports, stderrStopNotice(ports));
   const bridge = createAcpBridge({
     version: ports.version,
     runtime,

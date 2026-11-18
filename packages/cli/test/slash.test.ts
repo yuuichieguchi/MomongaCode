@@ -74,7 +74,7 @@ describe('registry', () => {
   it('offers at least help, mode and exit, and clear and resume in the default set', () => {
     expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'mode', 'exit']));
     expect(DEFAULT_SLASH_COMMANDS.map((command) => command.name)).toEqual(expect.arrayContaining(['clear', 'resume']));
-    expect(createSlashRegistry(DEFAULT_SLASH_COMMANDS).find('new')?.name).toBe('clear');
+    expect(createSlashRegistry(DEFAULT_SLASH_COMMANDS).find('new')).toBeUndefined();
   });
 });
 

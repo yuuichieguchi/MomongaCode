@@ -1,15 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS, itWithDocuments } from '@momonga/testkit';
 import { ROOT, childOf, identifierName, lineOf, parseSource, parsedProductSource, productSources, relativeOf, sourcesUnder, stringPartsOf } from './support/source-scan.ts';
 import type { ParsedSource } from './support/source-scan.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const DESIGN_DOCUMENTS_VARIABLE = 'MOMONGA_DESIGN_DOCUMENTS';
-
-const DESIGNS = process.env[DESIGN_DOCUMENTS_VARIABLE];
 
 const TEXT_SECTIONS = [
   { design: 'models.md', heading: '## 13. Texts approved under cli-tui DECISION-5' },
@@ -30,8 +28,8 @@ const HAS_WORD = /\p{L}/u;
 
 type ListedText = { readonly design: string; readonly text: string; readonly files: readonly string[]; readonly others: readonly string[] };
 
-const sectionOf = (design: string, heading: string): string => {
-  const text = fs.readFileSync(path.join(DESIGNS ?? '', design), 'utf8');
+const sectionOf = (designs: string, design: string, heading: string): string => {
+  const text = fs.readFileSync(path.join(designs, design), 'utf8');
   const start = text.indexOf(heading);
   if (start < 0) throw new Error(`${design} has no section "${heading}"`);
   const rest = text.slice(start + heading.length);
@@ -69,7 +67,7 @@ const missingOf = (listed: ListedText, read: (file: string) => string = sourceTe
   return fragmentsOf(listed).filter((fragment) => !places.some((file) => read(file).includes(fragment)));
 };
 
-const listedTexts = (): ListedText[] => TEXT_SECTIONS.flatMap(({ design, heading }) => listedTextsOf(design, sectionOf(design, heading)));
+const listedTexts = (designs: string): ListedText[] => TEXT_SECTIONS.flatMap(({ design, heading }) => listedTextsOf(design, sectionOf(designs, design, heading)));
 
 const unbuiltMechanismTexts = (source: ParsedSource): string[] =>
   stringPartsOf(source)
@@ -99,8 +97,8 @@ describe('every text the person reads that was approved without a design text is
     expect(missingOf({ design: 'planted.md', text: 'Wait a minute', files, others: [] }, read)).toEqual(['Wait a minute']);
   });
 
-  it.skipIf(DESIGNS === undefined)(`holds every listed text in the file its bullet names, or in the product when it names none (needs the design folder named by ${DESIGN_DOCUMENTS_VARIABLE}; the release gate sets it)`, () => {
-    const texts = listedTexts();
+  itWithDocuments(DESIGN_DOCUMENTS_VARIABLE, import.meta.dirname, `holds every listed text in the file its bullet names, or in the product when it names none, in the design folder named by ${DESIGN_DOCUMENTS_VARIABLE}`, (designs) => {
+    const texts = listedTexts(designs);
     expect(texts.length).toBeGreaterThan(0);
     const missing = texts.flatMap((listed) => missingOf(listed).map((fragment) => `${listed.design}: ${listed.text} (missing: ${fragment})`));
     expect(missing.filter((line) => !(line in PRESENT_MISMATCHES))).toEqual([]);

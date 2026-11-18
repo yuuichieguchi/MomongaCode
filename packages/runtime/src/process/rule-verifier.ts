@@ -5,6 +5,7 @@ import { ShellNotFoundError, askedBy } from '@momonga/policy';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { createPolicyFilesystem, resolveBashPath } from '@momonga/tools';
 import type { ShellHost } from '@momonga/tools';
+import { RULE_VERIFY_LOAD_ALLOWANCE_MS } from '@momonga/protocol';
 import type { RuleVerification, RuleVerifierPort } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { RULE_VERIFIER_THREAD_CODE } from './rule-verifier-thread-code.generated.ts';
@@ -23,7 +24,7 @@ export type RuleSolverHost = {
 
 export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>, locks: LayoutLocks) => RuleSolverHost;
 
-export const RULE_VERIFY_LOAD_ALLOWANCE_MS = 10_000;
+export { RULE_VERIFY_LOAD_ALLOWANCE_MS } from '@momonga/protocol';
 
 const INSTALLED_SOLVER_CODE: readonly string[] = ['z3-built.js', 'z3-built.wasm'];
 

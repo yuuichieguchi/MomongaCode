@@ -27,10 +27,10 @@ export class OpenResponsesStreamDriver {
     return this.emitter.terminated;
   }
 
-  accept(event: OpenResponsesStreamEvent): StreamEvent[] {
+  async accept(event: OpenResponsesStreamEvent): Promise<StreamEvent[]> {
     if (this.emitter.terminated) return [];
     try {
-      this.apply(event);
+      await this.apply(event);
     } catch (error) {
       if (!this.started || !(error instanceof UpstreamProtocolError || error instanceof MalformedOutputError)) throw error;
       this.emitter.fail(error.code, error.errorType, error.message);
@@ -50,7 +50,7 @@ export class OpenResponsesStreamDriver {
     return this.emitter.take();
   }
 
-  private apply(event: OpenResponsesStreamEvent): void {
+  private async apply(event: OpenResponsesStreamEvent): Promise<void> {
     if (event.type === 'error') throw new StreamFailure(event.code, event.errorType, event.message);
     if (event.type === 'ignored') return;
     if (!this.started) {
@@ -99,7 +99,7 @@ export class OpenResponsesStreamDriver {
         this.finishItem(event.outputIndex, event.item);
         return;
       case 'terminal':
-        this.conclude(event.terminal);
+        await this.conclude(event.terminal);
         return;
     }
   }
@@ -173,9 +173,9 @@ export class OpenResponsesStreamDriver {
     }
   }
 
-  private conclude(terminal: UpstreamTerminal): void {
+  private async conclude(terminal: UpstreamTerminal): Promise<void> {
     if (terminal.status === 'completed') {
-      this.emitter.complete(terminal.usage);
+      await this.emitter.complete(terminal.usage);
       return;
     }
     if (terminal.status === 'failed') {

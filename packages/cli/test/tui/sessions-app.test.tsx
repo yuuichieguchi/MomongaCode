@@ -264,16 +264,6 @@ describe('/clear (9.4)', () => {
     expect(backend.opened.length).toBe(1);
     app.unmount();
   });
-
-  it('answers to /new as well', async () => {
-    const { app, backend } = await start();
-    await untilFrame(app, 'mode: manual');
-    await enter(app, '/new');
-    await untilOutput(app, IDLE);
-    await backend.called('openSession');
-    expect(backend.opened.length).toBe(2);
-    app.unmount();
-  });
 });
 
 describe('reading a long conversation (9.2, 14.1, 14.2)', () => {

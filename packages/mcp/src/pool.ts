@@ -1,4 +1,4 @@
-import type { CredentialRules, McpServerEntry } from '@momonga/config';
+import type { CredentialRules, McpServerConfig, McpServerEntry } from '@momonga/config';
 import type { Clock, FileSystem } from '@momonga/foundation';
 import type { ToolSource } from '@momonga/tools';
 import type { McpRemotePorts } from './remote-ports.ts';
@@ -46,8 +46,9 @@ export type McpAuthorizingPool = McpPool & {
 export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
   const { servers, projectDir, baseEnv, clock, clientVersion } = options;
   const noticesOf = new Map<string, string[]>(servers.map((entry) => [entry.name, []]));
-  const connections = servers.map((entry) =>
-    createManagedConnection({
+  const members = servers.map((entry) => ({
+    entry,
+    connection: createManagedConnection({
       onNotice: (message) => noticesOf.get(entry.name)?.push(message),
       name: entry.name,
       config: entry.config,
@@ -69,23 +70,29 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       ...(options.markers === undefined ? {} : { markers: options.markers }),
       ...(options.closeGraceMs === undefined ? {} : { closeGraceMs: options.closeGraceMs }),
     }),
-  );
+  }));
+  const connections = members.map((member) => member.connection);
   const connectionNamed = (server: string): Promise<(typeof connections)[number]> => {
     const connection = connections.find((candidate) => candidate.name === server);
     return connection === undefined ? Promise.reject(new Error(`no MCP server named "${server}" in this pool`)) : Promise.resolve(connection);
   };
+  const serverBoundsOf = ({ timeoutMs, idleTimeoutMs }: McpServerConfig): { serverTimeoutMs?: number; serverIdleTimeoutMs?: number } => ({
+    ...(timeoutMs === undefined ? {} : { serverTimeoutMs: timeoutMs }),
+    ...(idleTimeoutMs === undefined ? {} : { serverIdleTimeoutMs: idleTimeoutMs }),
+  });
   const idleTimeoutOf = (transport: McpTransportKind): { toolIdleTimeoutMs?: number } => {
     const idle = transport === 'network' ? options.toolIdleTimeoutNetworkMs : options.toolIdleTimeoutStdioMs;
     return idle === undefined ? {} : { toolIdleTimeoutMs: idle };
   };
   return {
-    sources: connections.map((connection) =>
+    sources: members.map(({ entry, connection }) =>
       createMcpToolSource({
         server: connection.name,
         connection,
         takeNotices: () => noticesOf.get(connection.name)?.splice(0) ?? [],
         ...idleTimeoutOf(connection.transportKind),
         ...(options.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: options.toolTotalTimeoutMs }),
+        ...serverBoundsOf(entry.config),
       }),
     ),
     close: async (graceMs) => {

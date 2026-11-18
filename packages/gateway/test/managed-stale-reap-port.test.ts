@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { groupAlive, hostProcessGroupPort } from '@momonga/foundation';
 import type { ProcessGroupPort } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_WAIT_MS, pollUntil, TEST_UNPROTECTED_LAUNCH, killGroupsForCleanup, testProcessInspector } from '@momonga/testkit';
-import { createGroupSpawn, reapStaleGroups } from '../src/managed/fm-processes.ts';
+import { createGroupSpawn, reapStaleGroups } from '../src/managed/processes.ts';
 import { registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, makeHome } from './gateway-process-helpers.ts';
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { itWithDocuments } from '@momonga/testkit';
 import * as memoryConstants from '../src/memory-constants.ts';
 import { hasRow } from '../../../test/support/host-bounds-scan.ts';
 
@@ -39,15 +40,10 @@ describe('the bounds of a memory query are derived from the measured cost of a r
 });
 
 const documentTitle = `writes the derivation of every memory query bound in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
-const constantsDocument = process.env[CONSTANTS_DOCUMENT_VARIABLE];
 
 describe('the constants of the store carry their derivation', () => {
-  if (constantsDocument === undefined) {
-    it(documentTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
-  } else {
-    it(documentTitle, () => {
-      const missing = Object.entries(DOCUMENTED).flatMap(([file, names]) => names.filter((name) => !hasRow(fs.readFileSync(path.join(constantsDocument, file), 'utf8'), name)));
-      expect(missing).toEqual([]);
-    });
-  }
+  itWithDocuments(CONSTANTS_DOCUMENT_VARIABLE, import.meta.dirname, documentTitle, (constantsDocument) => {
+    const missing = Object.entries(DOCUMENTED).flatMap(([file, names]) => names.filter((name) => !hasRow(fs.readFileSync(path.join(constantsDocument, file), 'utf8'), name)));
+    expect(missing).toEqual([]);
+  });
 });

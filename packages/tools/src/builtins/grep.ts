@@ -448,6 +448,7 @@ export const grepTool = defineTool<GrepInput>({
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;
     const partial = found.partial === 'time' ? [partialSearchNote(ctx.limits.search.timeoutMs, 'matches')] : found.partial === 'ceiling' ? [ceilingNote(CAPTURE_MAX_BYTES)] : [];
-    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : []), ...partial, ...notes].join('\n'), backend };
+    const productNotes = [...(found.unreadable ? [UNREADABLE_NOTE] : []), ...partial, ...notes];
+    return { status: 'completed', output: lines.join('\n'), ...(productNotes.length === 0 ? {} : { notes: productNotes }), backend };
   },
 });
