@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Key } from 'ink';
-import { joinHint, selectClick, selectHint, selectKey, selectLayout, selectRowAt, selectStart, selectText, selectWheel, SelectView } from '../../src/tui/select.tsx';
+import { choiceLines, joinHint, selectClick, selectHint, selectKey, selectLayout, selectRowAt, selectStart, selectText, selectWheel, SelectView } from '../../src/tui/select.tsx';
 import type { SelectOutcome, SelectSpec, SelectState } from '../../src/tui/select.tsx';
 import { renderObservable } from '../ink-helpers.ts';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
@@ -298,5 +298,36 @@ describe('the rows as drawn', () => {
     const of = spec({ rows: labels(2) });
     expect(drawn(of, selectStart(of), { sending: true }).split('\n').at(-1)).toBe('sending...');
     expect(drawn(of, selectStart(of), { error: 'the daemon refused' }).split('\n').slice(-2)).toEqual(['the daemon refused', '1-9 or enter to choose · up/down to move · esc: go back']);
+  });
+});
+
+describe('a row keeps its key, its value and its kept text readable at every width', () => {
+  const KEY = '77. Time a starting daemon process may go without reporting progress before it is restarted (ms)';
+
+  it('puts all three on one line when they fit', () => {
+    expect(choiceLines({ key: 'Mouse', value: 'off  user', kept: 'applies now' }, '› ', 60, true)).toEqual(['› Mouse  off  user  applies now']);
+  });
+
+  it('moves the kept text whole to its own line and shortens the key in its middle, keeping its last word, so the value stays whole', () => {
+    const lines = choiceLines({ key: KEY, value: '45000  user', kept: 'applies when the daemon next starts' }, '› ', 36, true);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^› 77\. Time a.*….*\(ms\)  45000  user$/);
+    expect(lines[0]?.length).toBeLessThanOrEqual(36);
+    expect(lines[1]?.trim()).toBe('applies when the daemon next starts');
+  });
+
+  it('puts a value too wide for any key on its own lines under the highlighted row, whole', () => {
+    const value = '/opt/tools/search/bin/ripgrep-from-the-team-share  user';
+    const lines = choiceLines({ key: '21. ripgrep program', value, kept: 'applies now' }, '› ', 36, true);
+    expect(lines[0]).toBe('› 21. ripgrep program');
+    expect(lines.slice(1, -1).join('').replace(/\s+/g, '')).toBe(value.replace(/\s+/g, ''));
+    expect(lines.at(-1)?.trim()).toBe('applies now');
+  });
+
+  it('starts the value early on a row that is not highlighted, with the key at its shortest', () => {
+    const value = '/opt/tools/search/bin/ripgrep-from-the-team-share  user';
+    const [line] = choiceLines({ key: KEY, value }, '  ', 36, false);
+    expect(line?.indexOf(value)).toBeLessThanOrEqual(2 + 12 + 2);
+    expect(line?.slice(2, line.indexOf('  /'))).toMatch(/^77\..*….*\(ms\)$/);
   });
 });

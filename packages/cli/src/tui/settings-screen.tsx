@@ -264,7 +264,7 @@ const APPLIES_LABELS: Readonly<Record<SettingReadPoint, string>> = { operation: 
 
 export const appliesLabelOf = (key: string, table: Readonly<Record<string, SettingReadPoint>>): string => APPLIES_LABELS[settingReadPointOf(key, table)];
 
-export const settingRowLabel = (label: string, value: unknown, source: SettingSource): string => [label, shownValue(value), source].join('  ');
+export const settingRowValue = (value: unknown, source: SettingSource): string => [shownValue(value), source].join('  ');
 
 type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'mandate' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'command'; readonly command: string };
 
@@ -288,7 +288,7 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
     }
     for (const { leaf, presentation } of settings) {
       const { value, source } = currentOf(snapshot, leaf.path);
-      rows.push({ label: settingRowLabel(presentation.label, value, source), ...(written === leaf.key ? { kept: appliesLabelOf(leaf.key, SETTING_READ_POINTS) } : {}) });
+      rows.push({ label: presentation.label, value: settingRowValue(value, source), ...(written === leaf.key ? { kept: appliesLabelOf(leaf.key, SETTING_READ_POINTS) } : {}) });
       listed.push({ kind: 'setting', leaf, presentation });
     }
     if (section === MANDATE_SECTION && mandate !== undefined) {
