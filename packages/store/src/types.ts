@@ -314,6 +314,8 @@ export type ApprovalView = {
   status: Approval['status'];
   options: PermissionOption[];
   createdAt: number;
+  optionId?: string;
+  resolvedAt?: number;
   suggestedRule?: string;
   reason: string;
   shown?: ApprovalShown;

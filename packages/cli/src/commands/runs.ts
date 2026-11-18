@@ -57,6 +57,21 @@ export const pendingLines = (approval: ApprovalView, agent?: string): string =>
     ...approval.options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${escapeTerminalLine(option.name)})`}`),
   ].join('\n');
 
+const answeredWith = (approval: ApprovalView): string => {
+  const option = approval.options.find((candidate) => candidate.optionId === approval.optionId);
+  return option === undefined ? '' : `: ${option.kind}`;
+};
+
+export const settledApprovalText = (approval: ApprovalView): string | undefined =>
+  approval.status === 'pending' ? undefined : `approval ${approval.id} is already ${approval.status}${answeredWith(approval)}; nothing was changed`;
+
+export class ApprovalSettled extends Error {
+  constructor(text: string) {
+    super(text);
+    this.name = 'ApprovalSettled';
+  }
+}
+
 export const approvalLine = (depth: number, approvalId: string, title: string): string => `${'  '.repeat(depth)}approval ${approvalId}  ${escapeTerminalLine(title)}`;
 
 export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: string | undefined, option: string | undefined): Promise<number> => {
@@ -85,6 +100,8 @@ export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: 
       ports.stdout.write(`${pendingLines(approval)}\n`);
       return 0;
     }
+    const settled = settledApprovalText(approval);
+    if (settled !== undefined) throw new ApprovalSettled(settled);
     const offered = approval.options.find((candidate) => candidate.optionId === option || candidate.kind === option);
     if (offered === undefined) throw new UnknownOption(option, approval.options);
     const resolved = await client.resolveApproval(approval.id, offered.optionId);

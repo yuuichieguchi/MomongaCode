@@ -1702,6 +1702,8 @@ export const RUN_API_SCHEMAS = {
         status: storedEnumOf(APPROVAL_STATUSES),
         options: { type: 'array', items: permissionOption },
         createdAt: integer,
+        optionId: string,
+        resolvedAt: integer,
         suggestedRule: string,
         reason: string,
         shown: approvalShown,

@@ -118,6 +118,22 @@ describe('approval resolution', () => {
     expect(again.json.error.message).toContain('resolved');
   });
 
+  it('agrees on every surface: pending in the run listing and the single view until answered, then resolved with the answer given, out of the listing, and refused again', async () => {
+    const env = await startService();
+    const { run, approvals } = await askToWrite(env);
+    const [approval] = approvals;
+    expect(approval.status).toBe('pending');
+    expect((await env.http('GET', `/v1/approvals/${approval.id}`)).json.approval.status).toBe('pending');
+    const optionId = optionOf(approval, 'reject_once');
+    expect((await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId } })).status).toBe(200);
+
+    expect((await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals).toEqual([]);
+    const single = (await env.http('GET', `/v1/approvals/${approval.id}`)).json.approval;
+    expect(single).toMatchObject({ status: 'resolved', optionId });
+    expect(typeof single.resolvedAt).toBe('number');
+    expectError(await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId } }), 409, 'approval_not_pending');
+  });
+
   it('rejects a superseded approval with 409 naming superseded', async () => {
     const env = await startService();
     const session = await env.createSession();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pendingLines } from '../src/commands/runs.ts';
+import { pendingLines, settledApprovalText } from '../src/commands/runs.ts';
 import type { ApprovalView } from '../src/client/views.ts';
 
 const outside: ApprovalView = {
@@ -45,5 +45,13 @@ describe('momonga approve shows why the policy asked', () => {
     expect(pendingLines(edit)).toBe(
       ['ap1  Write /elsewhere/out.txt', '  edit outside the workspace requires approval', '  @@ -2 +2 @@', '  -old', '  +new', '    allow_once  (Allow once)', '    reject_once'].join('\n'),
     );
+  });
+});
+
+describe('momonga approve of an approval that is no longer pending', () => {
+  it('says what ended it and with which answer, and changes nothing', () => {
+    expect(settledApprovalText({ ...outside, status: 'resolved', optionId: 'o2', resolvedAt: 5 })).toBe('approval ap1 is already resolved: reject_once; nothing was changed');
+    expect(settledApprovalText({ ...outside, status: 'expired' })).toBe('approval ap1 is already expired; nothing was changed');
+    expect(settledApprovalText(outside)).toBeUndefined();
   });
 });

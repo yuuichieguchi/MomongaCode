@@ -61,6 +61,8 @@ export type ApprovalView = {
   readonly status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
   readonly options: readonly PermissionOption[];
   readonly createdAt: number;
+  readonly optionId?: string;
+  readonly resolvedAt?: number;
   readonly suggestedRule?: string;
   readonly reason: string;
   readonly shown?: ApprovalShown;

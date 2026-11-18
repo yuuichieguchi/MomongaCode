@@ -1106,6 +1106,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       status: approval.status,
       options: approval.options,
       createdAt: approval.createdAt,
+      ...(approval.optionId === undefined ? {} : { optionId: approval.optionId }),
+      ...(approval.resolvedAt === undefined ? {} : { resolvedAt: approval.resolvedAt }),
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
       reason,
       ...(shown === undefined ? {} : { shown }),

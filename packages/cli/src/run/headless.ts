@@ -1,7 +1,7 @@
 import { EXIT_CONFIG, EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
 import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, attachRunCommand, budgetSentence, fallbackNoticeTextOn, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
+import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
@@ -177,6 +177,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   const open = new Map<string, Ask>();
   const waitingForPerson = new Set<string>();
   const found = new Map<string, string>();
+  const offered = new Map<string, readonly PermissionOption[]>();
   const quiescentListeners: Array<(resolved: QuiescentBehaviour | undefined) => void> = [];
   const unanswerableListeners: Array<() => void> = [];
 
@@ -259,6 +260,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         }
         break;
       case 'tool.permission.requested':
+        offered.set(event.approvalId, event.options);
         note([
           `momonga: waiting for approval ${event.approvalId}${by}: ${titles.get(event.callId) ?? event.callId}`,
           `  ${event.reason}`,
@@ -270,6 +272,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         found.set(event.callId, event.output);
         break;
       case 'tool.unknown.requested': {
+        offered.set(event.approvalId, event.options);
         const calls = unknownCallsOf(event.callIds);
         note([
           `momonga: waiting for approval ${event.approvalId}${by}: ${unknownEffectTitle(calls)}`,
@@ -278,6 +281,16 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         ]);
         break;
       }
+      case 'tool.permission.resolved':
+      case 'tool.unknown.resolved': {
+        const option = offered.get(event.approvalId)?.find((candidate) => candidate.optionId === event.optionId);
+        note([`momonga: approval ${event.approvalId}${by} resolved: ${option === undefined ? event.optionId : `${option.kind}${option.name === option.kind ? '' : ` (${option.name})`}`}; it takes no other answer`]);
+        break;
+      }
+      case 'tool.permission.cancelled':
+      case 'tool.unknown.cancelled':
+        note([`momonga: approval ${event.approvalId}${by} ${event.reason}; it takes no answer`]);
+        break;
       case 'tool.elicitation.requested':
         note(leadWith(`momonga: waiting for input${by} `, describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)));
         break;
@@ -303,10 +316,6 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'model.stream.restarted':
       case 'tool.permission.classifying':
       case 'hook.started':
-      case 'tool.permission.resolved':
-      case 'tool.permission.cancelled':
-      case 'tool.unknown.resolved':
-      case 'tool.unknown.cancelled':
       case 'tool.elicitation.resolved':
       case 'tool.elicitation.cancelled':
       case 'tool.started':
