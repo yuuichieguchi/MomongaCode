@@ -6,6 +6,7 @@ import { isProcessAlive } from '@momonga/foundation';
 import { moduleOf } from './manifest-reader.ts';
 import type { ManifestEntry } from './manifest-reader.ts';
 import { killGroup, trackGroup } from './runner.ts';
+import { withoutComments } from './tla-text.ts';
 import type { TlcFacts } from './verdict.ts';
 
 export const REUSE_ENV = 'MOMONGA_TLC_REUSE';
@@ -21,6 +22,7 @@ export const RAN_REASONS = [
   'record unreadable',
   'record altered',
   'record does not satisfy the manifest entry',
+  'manifest identity differs',
   'inputs changed during the run',
 ] as const;
 
@@ -181,12 +183,19 @@ const readable = async <T>(file: string, read: () => Promise<T>): Promise<T> => 
   }
 };
 
-const digestOfFile = (file: string): Promise<string> =>
-  readable(file, async () => {
-    const hash = createHash('sha256');
-    for await (const chunk of fs.createReadStream(file)) hash.update(chunk as Buffer);
-    return hash.digest('hex');
-  });
+type SpecView = { readonly text: (content: Buffer) => string; readonly digest: (content: Buffer) => string };
+
+const RAW_VIEW: SpecView = {
+  text: (content) => content.toString('utf8'),
+  digest: (content) => sha256Hex(content),
+};
+
+const COMMENT_FREE_VIEW: SpecView = {
+  text: (content) => withoutComments(content.toString('utf8')),
+  digest: (content) => sha256Hex(withoutComments(content.toString('utf8'))),
+};
+
+const digestOfFile = (file: string, view: SpecView = RAW_VIEW): Promise<string> => readable(file, async () => view.digest(await fs.promises.readFile(file)));
 
 const absoluteOf = (repoRoot: string, relative: string): string => path.join(repoRoot, ...relative.split('/'));
 
@@ -230,7 +239,7 @@ const localModuleBytes = async (specDir: string, name: string): Promise<Buffer |
 
 type ModuleClosure = { readonly digests: ReadonlyMap<string, string>; readonly complete: boolean };
 
-const readClosure = async (specDir: string, rootModule: string): Promise<ModuleClosure> => {
+const readClosure = async (specDir: string, rootModule: string, view: SpecView): Promise<ModuleClosure> => {
   const rootFile = moduleFile(specDir, rootModule);
   const digests = new Map<string, string>();
   const visited = new Set<string>([rootModule]);
@@ -239,8 +248,8 @@ const readClosure = async (specDir: string, rootModule: string): Promise<ModuleC
   while (pending.length > 0) {
     const named: string[] = [];
     for (const [name, bytes] of pending) {
-      digests.set(name, sha256Hex(bytes));
-      const reading = namedModulesOf(bytes.toString('utf8'));
+      digests.set(name, view.digest(bytes));
+      const reading = namedModulesOf(view.text(bytes));
       complete &&= reading.complete;
       named.push(...reading.names);
     }
@@ -253,20 +262,20 @@ const readClosure = async (specDir: string, rootModule: string): Promise<ModuleC
 };
 
 export const closureOf = async (specDir: string, rootModule: string): Promise<{ modules: readonly string[]; complete: boolean }> => {
-  const closure = await readClosure(specDir, rootModule);
+  const closure = await readClosure(specDir, rootModule, RAW_VIEW);
   return { modules: [...closure.digests.keys()].sort(), complete: closure.complete };
 };
 
 const MODULE_SUFFIX = '.tla';
 
-const everyModuleDigest = async (specDir: string): Promise<ReadonlyMap<string, string>> => {
+const everyModuleDigest = async (specDir: string, view: SpecView): Promise<ReadonlyMap<string, string>> => {
   const names = (await readable(specDir, () => fs.promises.readdir(specDir))).filter((file) => file.endsWith(MODULE_SUFFIX)).map((file) => file.slice(0, -MODULE_SUFFIX.length));
-  return new Map(await Promise.all(names.map(async (name) => [name, await digestOfFile(moduleFile(specDir, name))] as const)));
+  return new Map(await Promise.all(names.map(async (name) => [name, await digestOfFile(moduleFile(specDir, name), view)] as const)));
 };
 
-const moduleDigests = async (specDir: string, rootModule: string): Promise<(readonly [string, string])[]> => {
-  const closure = await readClosure(specDir, rootModule);
-  const digests = closure.complete ? closure.digests : await everyModuleDigest(specDir);
+const moduleDigests = async (specDir: string, rootModule: string, view: SpecView): Promise<(readonly [string, string])[]> => {
+  const closure = await readClosure(specDir, rootModule, view);
+  const digests = closure.complete ? closure.digests : await everyModuleDigest(specDir, view);
   return [...digests.entries()].sort(([left], [right]) => (left < right ? -1 : 1));
 };
 
@@ -281,17 +290,24 @@ const inputDigests = async (specDir: string): Promise<(readonly [string, string]
 
 export type KeyRequest = { readonly repoRoot: string; readonly entry: ManifestEntry; readonly args: readonly string[]; readonly workers: number; readonly java: JavaIdentity };
 
-export const keyPartsOf = async ({ repoRoot, entry, args, workers, java }: KeyRequest): Promise<KeyParts | { unreadable: string }> => {
+export type SpecParts = { readonly config: string; readonly args: readonly string[]; readonly cfg: string; readonly modules: readonly (readonly [string, string])[]; readonly inputs: readonly (readonly [string, string])[] };
+
+const specPartsOf = async (repoRoot: string, config: string, args: readonly string[], view: SpecView): Promise<SpecParts> => {
   const specDir = absoluteOf(repoRoot, SPEC_DIR);
+  const [cfg, modules, inputs] = await Promise.all([digestOfFile(path.join(specDir, `${config}.cfg`), view), moduleDigests(specDir, moduleOf(config), view), inputDigests(specDir)]);
+  return { config, args: [...args], cfg, modules, inputs };
+};
+
+export const IDENTITY_FORMAT = 'momonga-tla-identity/2';
+
+export const specIdentityOf = async (repoRoot: string, entry: Pick<ManifestEntry, 'config' | 'args'>): Promise<string> =>
+  sha256Hex(canonicalJson({ format: IDENTITY_FORMAT, ...(await specPartsOf(repoRoot, entry.config, entry.args, COMMENT_FREE_VIEW)) }));
+
+export const keyPartsOf = async ({ repoRoot, entry, args, workers, java }: KeyRequest): Promise<KeyParts | { unreadable: string }> => {
   try {
-    const [jar, cfg, modules, inputs] = await Promise.all([
-      jarDigest(repoRoot),
-      digestOfFile(path.join(specDir, `${entry.config}.cfg`)),
-      moduleDigests(specDir, moduleOf(entry.config)),
-      inputDigests(specDir),
-    ]);
+    const [jar, spec] = await Promise.all([jarDigest(repoRoot), specPartsOf(repoRoot, entry.config, args, RAW_VIEW)]);
     const invocationWorkers = entry.expect === 'holds' ? null : workers;
-    return { format: KEY_FORMAT, config: entry.config, jar, java, workers: invocationWorkers, args: [...args], cfg, modules, inputs };
+    return { format: KEY_FORMAT, jar, java, workers: invocationWorkers, ...spec };
   } catch (error) {
     if (error instanceof UnreadableInput) return { unreadable: path.relative(repoRoot, error.file).split(path.sep).join('/') };
     throw error;

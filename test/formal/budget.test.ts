@@ -16,6 +16,7 @@ const entry = (config: string, tier: ManifestEntry['tier'], measuredSeconds: num
   measuredSeconds,
   measuredCpuSeconds: 1,
   budgetCpuSeconds: 5,
+  identity: '0'.repeat(64),
 });
 
 const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[]): Manifest => ({ format: MANIFEST_FORMAT, modules: [], unitSuiteSeconds, startupCpuSeconds: 3, entries });

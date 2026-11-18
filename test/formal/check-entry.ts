@@ -1,7 +1,9 @@
 import { systemWaitTiming, waitForGroupGone } from '@momonga/foundation';
 import type { ProcessGroupPort, Timing } from '@momonga/foundation';
-import type { ManifestEntry, Tier, TlcRun } from './manifest-reader.ts';
-import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord } from './reuse.ts';
+import type { ManifestEntry, Tier, TlcRun, TlcRunOptions } from './manifest-reader.ts';
+import { distinctStatesOfRun, measurementOfRun } from './record.ts';
+import type { Measurement } from './record.ts';
+import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord, specIdentityOf } from './reuse.ts';
 import type { JavaIdentity, RanReason, ResultStore, StoredFacts } from './reuse.ts';
 import { TLC_WORKERS, runTlc } from './runner.ts';
 import { factsOf, problemsOf, verdictProblems } from './verdict.ts';
@@ -18,28 +20,42 @@ export type CheckRequest = {
   now: () => Date;
   groupPort?: ProcessGroupPort;
   timing?: Timing;
+  record: boolean;
+  loadAverage: () => number;
+  run?: (options: TlcRunOptions) => Promise<TlcRun>;
 };
 
 export type CheckOutcome =
   | { outcome: 'reused'; producedAt: string }
-  | { outcome: 'ran'; reason: RanReason; problems: readonly string[]; stored: 'stored' | 'not eligible' | { notStored: string } };
+  | { outcome: 'ran'; reason: RanReason; problems: readonly string[]; stored: 'stored' | 'not eligible' | { notStored: string }; measurement?: Measurement; loadAtStart?: number };
 
 const FIXED_FINGERPRINT_ARGS = ['-fp', '0'] as const;
 
-type FinishedRun = { readonly run: TlcRun; readonly problems: readonly string[] };
+type FinishedRun = { readonly run: TlcRun; readonly problems: readonly string[]; readonly wallSeconds: number; readonly loadAtStart: number };
+
+const judgedEntryOf = (request: CheckRequest, run: TlcRun): ManifestEntry => {
+  const distinct = request.record ? distinctStatesOfRun(run) : undefined;
+  return distinct === undefined ? request.entry : { ...request.entry, distinctStates: distinct };
+};
 
 const runAndJudge = async (request: CheckRequest, args: readonly string[]): Promise<FinishedRun> => {
   const { entry } = request;
   const timing = request.timing ?? systemWaitTiming;
-  const deadline = timing.monotonicMs() + request.limitMs;
-  const run = await runTlc({ script: request.script, config: entry.config, args, budgetCpuSeconds: entry.budgetCpuSeconds });
+  const loadAtStart = request.loadAverage();
+  const started = timing.monotonicMs();
+  const deadline = started + request.limitMs;
+  const run = await (request.run ?? runTlc)({ script: request.script, config: entry.config, args, budgetCpuSeconds: entry.budgetCpuSeconds });
+  const wallSeconds = (timing.monotonicMs() - started) / 1000;
   const groupGone = await waitForGroupGone(run.pid, deadline, request.groupPort, timing);
-  return { run, problems: [...verdictProblems(entry, run), ...(groupGone ? [] : [`${entry.config}: process group ${run.pid} still has members after the run`])] };
+  return { run, wallSeconds, loadAtStart, problems: [...verdictProblems(judgedEntryOf(request, run), run), ...(groupGone ? [] : [`${entry.config}: process group ${run.pid} still has members after the run`])] };
 };
 
+const measuredOf = (request: CheckRequest, finished: FinishedRun): Pick<Extract<CheckOutcome, { outcome: 'ran' }>, 'measurement' | 'loadAtStart'> =>
+  request.record && finished.problems.length === 0 ? { measurement: measurementOfRun(finished.run, finished.wallSeconds), loadAtStart: finished.loadAtStart } : {};
+
 const runFresh = async (request: CheckRequest, reason: RanReason): Promise<CheckOutcome> => {
-  const { problems } = await runAndJudge(request, request.entry.args);
-  return { outcome: 'ran', reason, problems, stored: 'not eligible' };
+  const finished = await runAndJudge(request, request.entry.args);
+  return { outcome: 'ran', reason, problems: finished.problems, stored: 'not eligible', ...measuredOf(request, finished) };
 };
 
 const storedFactsOf = (run: TlcRun): StoredFacts | undefined => {
@@ -51,7 +67,7 @@ const storedFactsOf = (run: TlcRun): StoredFacts | undefined => {
 
 type KeyedRead = { readonly unkeyed: RanReason } | { readonly key: string };
 
-const keyOfRun = async (request: CheckRequest, args: readonly string[]): Promise<KeyedRead> => {
+const keyOfRun = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode' | 'env' | 'java' | 'limitMs'>, args: readonly string[]): Promise<KeyedRead> => {
   if (request.mode === 'off') return { unkeyed: 'reuse off' };
   const refusal = refusalOf(request.env);
   if (refusal !== undefined) return { unkeyed: refusal };
@@ -61,21 +77,38 @@ const keyOfRun = async (request: CheckRequest, args: readonly string[]): Promise
   return 'unreadable' in parts ? { unkeyed: 'input not readable' } : { key: keyOf(parts) };
 };
 
+const identityStaleOf = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'record'>): Promise<boolean> =>
+  request.record && request.entry.identity !== (await specIdentityOf(request.repoRoot, request.entry));
+
+export const reusableOf = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode' | 'env' | 'store' | 'java' | 'limitMs' | 'record'>): Promise<boolean> => {
+  if (request.mode === 'off' || (await identityStaleOf(request))) return false;
+  const keyed = await keyOfRun(request, [...request.entry.args, ...FIXED_FINGERPRINT_ARGS]);
+  if ('unkeyed' in keyed) return false;
+  const found = await request.store.read(request.entry.config, keyed.key);
+  return found.kind === 'hit' && problemsOf(request.entry, found.record.facts).length === 0;
+};
+
+const runAndStore = async (request: CheckRequest, key: string, args: readonly string[], reason: RanReason): Promise<CheckOutcome> => {
+  const { entry, store } = request;
+  const finished = await runAndJudge(request, args);
+  const { run, problems } = finished;
+  const facts = storedFactsOf(run);
+  if (problems.length > 0 || facts === undefined) return { outcome: 'ran', reason, problems, stored: 'not eligible', ...measuredOf(request, finished) };
+  const keyedAfter = await keyOfRun(request, args);
+  if ('unkeyed' in keyedAfter || keyedAfter.key !== key) return { outcome: 'ran', reason: 'inputs changed during the run', problems, stored: 'not eligible' };
+  const written = await store.write(sealedRecord({ format: RECORD_FORMAT, key, config: entry.config, facts, producedAt: request.now().toISOString() }));
+  return { outcome: 'ran', reason, problems, stored: written.stored ? 'stored' : { notStored: written.reason }, ...measuredOf(request, finished) };
+};
+
 export const checkEntry = async (request: CheckRequest): Promise<CheckOutcome> => {
   const { entry, store } = request;
   const args = [...entry.args, ...FIXED_FINGERPRINT_ARGS];
   const keyed = await keyOfRun(request, args);
   if ('unkeyed' in keyed) return runFresh(request, keyed.unkeyed);
+  if (await identityStaleOf(request)) return runAndStore(request, keyed.key, args, 'manifest identity differs');
   const found = await store.read(entry.config, keyed.key);
   if (found.kind === 'hit' && problemsOf(entry, found.record.facts).length === 0) return { outcome: 'reused', producedAt: found.record.producedAt };
-  const reason: RanReason = found.kind === 'hit' ? 'record does not satisfy the manifest entry' : found.reason;
-  const { run, problems } = await runAndJudge(request, args);
-  const facts = storedFactsOf(run);
-  if (problems.length > 0 || facts === undefined) return { outcome: 'ran', reason, problems, stored: 'not eligible' };
-  const keyedAfter = await keyOfRun(request, args);
-  if ('unkeyed' in keyedAfter || keyedAfter.key !== keyed.key) return { outcome: 'ran', reason: 'inputs changed during the run', problems, stored: 'not eligible' };
-  const written = await store.write(sealedRecord({ format: RECORD_FORMAT, key: keyed.key, config: entry.config, facts, producedAt: request.now().toISOString() }));
-  return { outcome: 'ran', reason, problems, stored: written.stored ? 'stored' : { notStored: written.reason } };
+  return runAndStore(request, keyed.key, args, found.kind === 'hit' ? 'record does not satisfy the manifest entry' : found.reason);
 };
 
 type TierReport = {
