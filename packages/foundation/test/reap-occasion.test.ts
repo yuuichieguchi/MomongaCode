@@ -2,7 +2,7 @@ import { createTempDir, sleepDrivenTiming } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { reapMarkerDirectory } from '@momonga/foundation';
+import { probeFailed, reapMarkerDirectory } from '@momonga/foundation';
 import type { ProcessInspector, SignalSender } from '@momonga/foundation';
 
 const SURVIVOR_PID = 4242;
@@ -119,5 +119,36 @@ describe('a marker record is told apart from a spent one, and a reap that ends w
     const { dir } = markerDirectoryWith('r00000\n');
     await reapMarkerDirectory({ dir, occasion: 'sweep', killGraceMs: KILL_GRACE_MS, label: 'daemon', onWarning: (message: string) => world.warnings.push(message), kill: world.kill, timing: world.timing, inspector, signal: new AbortController().signal } as ReapOptions);
     expect(world.warnings).toEqual([`daemon marker ${path.join(dir, MARKER_NAME)} kept: no process holds it, but its state reads unknown rather than free`]);
+  });
+});
+
+describe('a pass that could not read the state it needs does not spend a chance; only a stop that left the process alive does', () => {
+  const unparseable = () => probeFailed({ kind: 'unparseable', detail: 'the reader printed nothing' });
+  const unreadWorlds: ReadonlyArray<[string, Partial<Record<keyof ProcessInspector, unknown>>]> = [
+    ['the listing', { holdersOf: async () => unparseable() }],
+    ['the group read', { groupsOf: async () => unparseable() }],
+    ['the marker-state read', { holdersOf: async () => ({ kind: 'value', value: [] }), markerState: async () => 'unknown' }],
+  ];
+
+  it.each(unreadWorlds)('a pass whose %s cannot be made leaves the sweep chance unspent, says no retries are used up, and the next pass stops the process', async (_read, failing) => {
+    const world = survivingWorld();
+    const { dir, marker } = markerDirectoryWith('r00000\n');
+    const unread = { ...world, inspector: { ...world.inspector, ...failing } as unknown as ProcessInspector };
+    await reapAt(dir, 'sweep', unread, 'daemon');
+    expect(fs.readFileSync(marker, 'utf8').slice(0, 7)).toBe('r00000\n');
+    expect(unread.warnings.filter((warning) => warning.includes('will not try again'))).toEqual([]);
+    world.sent.length = 0;
+    await reapAt(dir, 'sweep', world, 'daemon');
+    expect(world.sent.length).toBeGreaterThan(0);
+    expect(fs.readFileSync(marker, 'utf8').slice(0, 7)).toBe('r01000\n');
+  });
+
+  it('a pass whose last chance meets an unreadable listing keeps the chance and does not tell the person the retries are used up', async () => {
+    const world = survivingWorld();
+    const { dir, marker } = markerDirectoryWith('r10110\n');
+    const unread = { ...world, inspector: { ...world.inspector, holdersOf: async () => unparseable() } as unknown as ProcessInspector };
+    await reapAt(dir, 'sweep', unread, 'daemon');
+    expect(fs.readFileSync(marker, 'utf8').slice(0, 7)).toBe('r10110\n');
+    expect(unread.warnings.filter((warning) => warning.includes('will not try again'))).toEqual([]);
   });
 });

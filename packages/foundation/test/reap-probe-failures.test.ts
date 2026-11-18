@@ -100,7 +100,7 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       inspector: inspectorReporting([ssh]),
       uninspectable: aliveRegistry(),
     });
-    expect(result).toEqual({ removed: false, stopped: false, uninspectable: [ssh] });
+    expect(result).toEqual({ removed: false, stopped: false, unread: true, uninspectable: [ssh] });
     expect(fs.existsSync(file)).toBe(true);
     expect(warnings).toEqual([`mcp marker ${file}: process 77 (ssh-agent) could not be inspected, so it was left alone`]);
   });
@@ -122,7 +122,7 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       inspector: inspectorReporting([otherSsh]),
       uninspectable: aliveRegistry(),
     });
-    expect(result).toEqual({ removed: false, stopped: false, uninspectable: [otherSsh] });
+    expect(result).toEqual({ removed: false, stopped: false, unread: true, uninspectable: [otherSsh] });
     expect(fs.existsSync(file)).toBe(true);
     expect(warnings).toEqual([`mcp marker ${file}: process 77 (ssh-agent) could not be inspected, so it was left alone`]);
   });
@@ -179,7 +179,7 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       timing: timing(),
       inspector: inspectorReporting([]),
     });
-    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [] });
+    expect(result).toEqual({ removed: true, stopped: false, unread: false, uninspectable: [] });
     expect(warnings).toEqual([]);
   });
 });
