@@ -26,7 +26,8 @@ import { createFoundServers } from './models/context.ts';
 import { notConfiguredAnyMoreText } from './models/texts.ts';
 import { createPlanFlows } from './plan-flows.ts';
 import type { PlanFlows } from './plan-flows.ts';
-import { bannerRows } from './startup.tsx';
+import { bannerRows, figureDrawn } from './startup.tsx';
+import { TailPoseContext, useTailWag } from './screen/tail-wag.ts';
 import type { BannerModel, StartupBanner, StartupConfig } from './startup.tsx';
 import { pickConversation } from './commands/resume.ts';
 import { skillCommands } from './commands/skills.ts';
@@ -1630,6 +1631,7 @@ export function App(props: AppProps) {
   useEffect(() => {
     syncBanner();
   }, [sessionModel, notices, unconnected, beforeConversation, displays, figureFits]);
+  const tailPose = useTailWag(!a11y.reducedMotion && !a11y.screenReader && props.reopen === undefined && props.adoption === undefined && onlyEntry?.kind === 'banner' && figureDrawn(onlyEntry.banner, transcriptWidth), timers);
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const view = useTranscriptView({
     store,
@@ -1758,47 +1760,49 @@ export function App(props: AppProps) {
       : undefined;
 
   return (
-    <Screen
-      view={switching || erased || terminalState.tooSmall ? 'blank' : terminalState.screen}
-      columns={columns}
-      rows={rows}
-      allocation={allocation}
-      panel={panel ?? (fullscreen || !toolView.shown ? undefined : toolView.view)}
-      panelFollows={followRows}
-      onPanelRows={setPanelRows}
-      regions={{
-        transcript: fullscreen && toolView.shown ? (
-          toolView.view
-        ) : fullscreen ? (
-          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
-        ) : (
-          <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
-        ),
-        menu: !menuShown ? null : invitationText.length > 0 ? <InvitationLine rows={fullscreen ? invitationText.slice(0, allocation.menu) : invitationText} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
-        waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
-        lines: inputShown ? (
-          <>
-            <AttachmentLines attachments={shownAttachments} keys={keys} />
-            {waitingLines.map((line, index) => (
-              <Text key={index} dimColor wrap="truncate">
-                {line}
-              </Text>
-            ))}
-          </>
-        ) : null,
-        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledAt).length, rowRequests))} /> : null,
-        footer: (
-          <>
-            <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />
-            {busyHintRow === undefined || busyHintRows === 0 ? null : (
-              <Text dimColor wrap="truncate">
-                {busyHintRow}
-              </Text>
-            )}
-          </>
-        ),
-        subagents: <SubagentRows subagents={a11y.screenReader ? [] : transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} timers={timers} />,
-      }}
-    />
+    <TailPoseContext value={tailPose}>
+      <Screen
+        view={switching || erased || terminalState.tooSmall ? 'blank' : terminalState.screen}
+        columns={columns}
+        rows={rows}
+        allocation={allocation}
+        panel={panel ?? (fullscreen || !toolView.shown ? undefined : toolView.view)}
+        panelFollows={followRows}
+        onPanelRows={setPanelRows}
+        regions={{
+          transcript: fullscreen && toolView.shown ? (
+            toolView.view
+          ) : fullscreen ? (
+            <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
+          ) : (
+            <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
+          ),
+          menu: !menuShown ? null : invitationText.length > 0 ? <InvitationLine rows={fullscreen ? invitationText.slice(0, allocation.menu) : invitationText} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
+          waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
+          lines: inputShown ? (
+            <>
+              <AttachmentLines attachments={shownAttachments} keys={keys} />
+              {waitingLines.map((line, index) => (
+                <Text key={index} dimColor wrap="truncate">
+                  {line}
+                </Text>
+              ))}
+            </>
+          ) : null,
+          input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledAt).length, rowRequests))} /> : null,
+          footer: (
+            <>
+              <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />
+              {busyHintRow === undefined || busyHintRows === 0 ? null : (
+                <Text dimColor wrap="truncate">
+                  {busyHintRow}
+                </Text>
+              )}
+            </>
+          ),
+          subagents: <SubagentRows subagents={a11y.screenReader ? [] : transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} timers={timers} />,
+        }}
+      />
+    </TailPoseContext>
   );
 }
