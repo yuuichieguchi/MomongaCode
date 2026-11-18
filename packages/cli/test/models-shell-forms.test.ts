@@ -292,7 +292,7 @@ describe.each(WRITING)('momonga models $form', (entry) => {
     expect(bytesOf(at.settingsFile)).toBe(before);
   });
 
-  it('writes with --yes, prints one summary line per operation and exits 0', async (context) => {
+  it('writes with --yes, prints only one summary line per operation and no question, and exits 0', async (context) => {
     const at = homeWith(context, entry.settings);
     const harness = shellOf(at, entry.fakes);
     const given = withDialectsFile(context, entry.input);
@@ -300,7 +300,8 @@ describe.each(WRITING)('momonga models $form', (entry) => {
     const code = await runModelsForm(harness.shell, entry.form, { ...given, options: { ...given.options, yes: true } });
 
     expect(harness.err()).toBe('');
-    expect(harness.out().split('\n').slice(1)).toEqual([...entry.summaries, '']);
+    expect(harness.out().split('\n')).toEqual([...entry.summaries, '']);
+    expect(harness.out().split('\n').filter((line) => line.endsWith('?'))).toEqual([]);
     expect(code).toBe(0);
     entry.written(documentOf(at.settingsFile) as Written);
   });
@@ -343,7 +344,7 @@ describe('momonga models set and set-server take only the fields of the writer',
     const code = await runModelsForm(harness.shell, 'set', input(['qwen3.8:27b', 'id', 'qwen3.9:27b'], { yes: true }));
     expect(harness.err()).toBe('');
     expect(code).toBe(0);
-    expect(harness.out().split('\n')).toEqual(['Rename qwen3.8:27b to qwen3.9:27b?', 'Renamed qwen3.8:27b to qwen3.9:27b.', '']);
+    expect(harness.out().split('\n')).toEqual(['Renamed qwen3.8:27b to qwen3.9:27b.', '']);
     const document = documentOf(at.settingsFile) as Written;
     expect(document.models.connections[0]?.models[1]?.['id']).toBe('qwen3.9:27b');
     expect(document.models['start']).toBe('ollama/qwen3.9:27b');

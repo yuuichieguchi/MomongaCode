@@ -842,8 +842,9 @@ export const plannedOf = (edit: ModelsEdit, proposal: ModelsProposal): string =>
 };
 
 const proposeAndWrite = async (shell: ModelsShell, edit: ModelsEdit, proposal: ModelsProposal, yes: boolean): Promise<number> => {
-  print(shell.stdout, [plannedOf(edit, proposal)]);
+  const question = plannedOf(edit, proposal);
   if (!yes) {
+    print(shell.stdout, [question]);
     print(shell.stderr, [RUN_AGAIN_WITH_YES_TEXT]);
     return EXIT_USAGE;
   }
