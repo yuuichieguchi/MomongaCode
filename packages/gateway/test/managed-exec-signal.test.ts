@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { createExecFn } from '../src/managed/fm-processes.ts';
+import { createExecFn } from '../src/managed/processes.ts';
 import { registerCleanup } from './gateway-helpers.ts';
 import { isAlive, makeHome, until } from './gateway-process-helpers.ts';
 

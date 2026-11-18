@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { momongaPaths, nodeFileSystem, nodeFileSystemSync, personCapabilityOf, ruleEnforcementOf, systemRandom } from '@momonga/foundation';
 import type { ChildLaunch } from '@momonga/foundation';
-import { createGroupSpawn } from '../../../gateway/src/managed/fm-processes.ts';
+import { createGroupSpawn } from '../../../gateway/src/managed/processes.ts';
 import { createStdioTransport } from '@momonga/mcp';
 import { DEFAULT_BWRAP_PATH, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxSetting } from '@momonga/sandbox';

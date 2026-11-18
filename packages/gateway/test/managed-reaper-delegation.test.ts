@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const source = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'managed', 'fm-processes.ts'), 'utf8');
+const source = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'managed', 'processes.ts'), 'utf8');
 
 describe('managed server reaper delegation to foundation (design-managed-servers section 18, item 1)', () => {
   it('no longer defines a private reapMarkedGroup', () => {
