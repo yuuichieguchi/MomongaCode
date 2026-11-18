@@ -25,8 +25,23 @@ const completed = (extra: Record<string, unknown> = {}): RunEvent => at(3, { typ
 
 const reconciled = (outcome: string, output = 'ok'): RunEvent => at(3, { type: 'tool.reconciled', callId: 'c', outcome, output });
 
+const SESSION_BOUNDARY = 'f'.repeat(32);
+
+const inheritedUserMessage = (text: string): RunEvent =>
+  at(1, {
+    type: 'context.inherited',
+    fromRunId: 'parent',
+    fromLastSeq: 1,
+    history: [{ seq: 1, item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }],
+    nextItemSeq: 2,
+    evicted: [],
+    closures: [],
+    markers: [],
+    digest: 'digest',
+  });
+
 const attestedBy = (events: readonly RunEvent[], claim: 'executed' | 'any' = 'executed'): boolean => {
-  const fold = createFidelityFold([{ token: TOKEN, claim }], '/work', 'f'.repeat(32), () => {
+  const fold = createFidelityFold([{ token: TOKEN, claim }], '/work', SESSION_BOUNDARY, () => {
     throw new Error('the scenario holds no reference event');
   });
   for (const event of events) fold.add(event);
@@ -47,6 +62,8 @@ const BEHAVIOUR = {
   reconciledOutputUnknown: true,
   userMessageExecutedClaim: false,
   userMessageAnyClaim: true,
+  inheritedShellOutputExecutedClaim: true,
+  inheritedTypedTextExecutedClaim: false,
 };
 
 const behaviourNow = () => ({
@@ -62,6 +79,8 @@ const behaviourNow = () => ({
   reconciledOutputUnknown: attestedBy([call({ command: 'ls' }), started, reconciled('unknown', TOKEN)]),
   userMessageExecutedClaim: attestedBy([at(1, { type: 'user.message', text: TOKEN })]),
   userMessageAnyClaim: attestedBy([at(1, { type: 'user.message', text: TOKEN })], 'any'),
+  inheritedShellOutputExecutedClaim: attestedBy([inheritedUserMessage(protocol.userShellText({ command: 'make', exitCode: 0, output: TOKEN }, SESSION_BOUNDARY))]),
+  inheritedTypedTextExecutedClaim: attestedBy([inheritedUserMessage(TOKEN)]),
 });
 
 describe('the fidelity fold and the models of specs/tla/FidelityMemo.tla cannot drift apart (AGENTS.md step 2)', () => {
@@ -81,7 +100,7 @@ describe('the fidelity fold and the models of specs/tla/FidelityMemo.tla cannot 
   });
 
   it('FIDELITY_FOLD_VERSION is bumped whenever the table above changes', () => {
-    expect(FIDELITY_FOLD_VERSION).toBe(1);
+    expect(FIDELITY_FOLD_VERSION).toBe(2);
   });
 
   it('the digest of the behaviour table is recorded for the current FIDELITY_FOLD_VERSION, so a behaviour change without a new version fails', () => {
