@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { itWithDocuments } from '@momonga/testkit';
 import { CONCEPTS, MESSAGE_KEYS, NOT_RUN_REASONS, SURFACES, STOP_REASONS, VOCABULARY, WORDS, attachRunCommand, bannedVariantsIn, budgetSentence, messageOf, notRunWord, reopenSessionCommand, shellQuote, stopWord, withBillingRemedy, withSignInRemedy } from '../src/index.ts';
 import type { BudgetExhausted, VocabularyRow } from '../src/index.ts';
 
@@ -34,40 +35,31 @@ describe('the one vocabulary table (ruling 2026-11-11, cli-commands DECISION-10)
 });
 
 const DESIGN_DOCUMENTS_VARIABLE = 'MOMONGA_DESIGN_DOCUMENTS';
-const RULING = 'ruling-2026-11-11.md cli-commands DECISION-10';
-const RULING_ONLY = ['product', 'command', 'session', 'run', 'folder'];
 const DESIGN_CITATION = /^design\/([a-z-]+\.md) sections? (\d+(?:\.\d+)*)(?: to (\d+(?:\.\d+)*))?$/;
 
 const citationsOf = (concept: (typeof CONCEPTS)[number]): string[] => rowOf(concept).fixedBy.split('; ');
 
-const designCitations = CONCEPTS.flatMap((concept) => citationsOf(concept).filter((citation) => citation !== RULING).map((citation) => ({ concept, citation })));
+const designCitations = CONCEPTS.flatMap((concept) => citationsOf(concept).map((citation) => ({ concept, citation })));
 
 describe('every fixedBy names a section of a permanent design document (design/protocol-schema.md B7)', () => {
-  it('cites each design as design/<area>.md section <n>, and the ruling only beside the concepts it alone fixes', () => {
+  it('cites for every concept a design as design/<area>.md section <n>, and nothing else', () => {
     expect(designCitations.filter(({ citation }) => !DESIGN_CITATION.test(citation))).toEqual([]);
-    expect(CONCEPTS.filter((concept) => citationsOf(concept).every((citation) => citation === RULING))).toEqual(RULING_ONLY);
     expect(CONCEPTS.flatMap((concept) => rowOf(concept).banned.flatMap((banned) => ('keptFor' in banned ? [banned.keptFor] : []))).filter((note) => /design-[a-z-]+(?:-\d{4}-\d{2}-\d{2})?\.md/.test(note))).toEqual([]);
   });
 
-  const folder = process.env[DESIGN_DOCUMENTS_VARIABLE];
-  const title = `finds the file and the section of every design citation in the design folder named by ${DESIGN_DOCUMENTS_VARIABLE}`;
-  if (folder === undefined) {
-    it(title, (context) => context.skip(`${DESIGN_DOCUMENTS_VARIABLE} names no folder in this run; the release gate sets it`));
-  } else {
-    it(title, () => {
-      const missing = designCitations.flatMap(({ concept, citation }) => {
-        const [, file, ...sections] = DESIGN_CITATION.exec(citation) ?? [];
-        const target = path.join(folder, file as string);
-        if (!fs.existsSync(target)) return [`${concept}: ${citation}: no file ${target}`];
-        const text = fs.readFileSync(target, 'utf8');
-        return sections
-          .filter((section): section is string => section !== undefined)
-          .filter((section) => !new RegExp(`^(?:#+ )?${section.replaceAll('.', '\\.')}[. ]`, 'm').test(text))
-          .map((section) => `${concept}: ${citation}: no section ${section} in ${file}`);
-      });
-      expect(missing).toEqual([]);
+  itWithDocuments(DESIGN_DOCUMENTS_VARIABLE, import.meta.dirname, `finds the file and the section of every design citation in the design folder named by ${DESIGN_DOCUMENTS_VARIABLE}`, (folder) => {
+    const missing = designCitations.flatMap(({ concept, citation }) => {
+      const [, file, ...sections] = DESIGN_CITATION.exec(citation) ?? [];
+      const target = path.join(folder, file as string);
+      if (!fs.existsSync(target)) return [`${concept}: ${citation}: no file ${target}`];
+      const text = fs.readFileSync(target, 'utf8');
+      return sections
+        .filter((section): section is string => section !== undefined)
+        .filter((section) => !new RegExp(`^(?:#+ )?${section.replaceAll('.', '\\.')}[. ]`, 'm').test(text))
+        .map((section) => `${concept}: ${citation}: no section ${section} in ${file}`);
     });
-  }
+    expect(missing).toEqual([]);
+  });
 });
 
 describe('messageOf: one builder per message, which names the command of the surface it is shown on', () => {

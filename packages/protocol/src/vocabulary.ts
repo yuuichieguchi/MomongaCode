@@ -19,7 +19,7 @@ export type VocabularyRow = {
   readonly fixedBy: string;
 };
 
-const RULED = 'ruling-2026-11-11.md cli-commands DECISION-10';
+const PRODUCT_WORDS = 'design/protocol-schema.md section 12';
 const MODELS = 'design/models.md';
 const RELIABILITY = 'design/reliability.md sections 2 to 4';
 
@@ -28,13 +28,13 @@ export const VOCABULARY = {
     concept: 'the product, in prose',
     word: 'MomongaCode',
     banned: [{ variant: 'Momonga Code', pattern: 'Momonga Code' }],
-    fixedBy: RULED,
+    fixedBy: PRODUCT_WORDS,
   },
   command: {
     concept: 'the product, as the command a person types',
     word: 'momonga',
     banned: [],
-    fixedBy: RULED,
+    fixedBy: PRODUCT_WORDS,
   },
   model: {
     concept: 'a model reached through a connection',
@@ -68,19 +68,19 @@ export const VOCABULARY = {
     concept: 'a model server the product starts or finds',
     word: 'server',
     banned: [{ variant: 'gateway', pattern: 'gateways?', keptFor: 'the Model Gateway, the process of the product that routes requests to the models' }],
-    fixedBy: `${RULED}; ${MODELS} section 3.1`,
+    fixedBy: `${MODELS} section 3.1`,
   },
   session: {
     concept: 'a stored unit of work that can be reopened',
     word: 'session',
     banned: [{ variant: 'conversation', pattern: 'conversations?', keptFor: 'what a session shows on the screen (design/cli-tui.md section 2)' }],
-    fixedBy: RULED,
+    fixedBy: PRODUCT_WORDS,
   },
   run: {
     concept: 'one execution of a session',
     word: 'run',
     banned: [{ variant: 'task', pattern: 'tasks?', keptFor: 'a task of the fixed bench task set' }],
-    fixedBy: RULED,
+    fixedBy: PRODUCT_WORDS,
   },
   folder: {
     concept: 'the folder of a session',
@@ -89,7 +89,7 @@ export const VOCABULARY = {
       { variant: 'directory', pattern: 'director(?:y|ies)', keptFor: 'a directory of the file system that is not the folder of a session' },
       { variant: 'project', pattern: 'projects?', keptFor: 'the project layer of the settings and the project check' },
     ],
-    fixedBy: RULED,
+    fixedBy: PRODUCT_WORDS,
   },
   role: {
     concept: 'the job slot of a model (the settings key models.roles)',
