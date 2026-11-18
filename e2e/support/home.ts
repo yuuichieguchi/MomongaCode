@@ -118,7 +118,8 @@ export type E2eStopBounds = { readonly supervisorAsked: number; readonly orphane
 
 const LOG_TAIL_BYTES = 16 * 1024;
 const JOURNAL_TAIL_ROWS = 40;
-const JOURNAL_TAIL_SQL = `SELECT run_id, seq, type FROM events ORDER BY id DESC LIMIT ${JOURNAL_TAIL_ROWS}`;
+const JOURNAL_PAYLOAD_CHARS = 240;
+const JOURNAL_TAIL_SQL = `SELECT run_id, seq, type, created_at, substr(payload_json, 1, ${JOURNAL_PAYLOAD_CHARS}) AS payload FROM events ORDER BY id DESC LIMIT ${JOURNAL_TAIL_ROWS}`;
 
 const liveSupervisorsOf = (home: E2eHome): number[] => home.ledger.entries().filter((entry) => entry.source === 'supervisor' && groupSignalable(entry.pgid)).map((entry) => entry.pgid);
 
@@ -169,7 +170,7 @@ const journalTailOf = (home: E2eHome): string => {
   try {
     return readDb(database, JOURNAL_TAIL_SQL)
       .reverse()
-      .map((row) => `${String(row['run_id'])} #${String(row['seq'])} ${String(row['type'])}`)
+      .map((row) => `${String(row['run_id'])} #${String(row['seq'])} ${new Date(Number(row['created_at'])).toISOString()} ${String(row['type'])} ${String(row['payload'])}`)
       .join('\n');
   } catch (error) {
     return `the journal could not be read: ${error instanceof Error ? error.message : String(error)}`;
