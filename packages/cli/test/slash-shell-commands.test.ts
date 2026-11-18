@@ -4,7 +4,7 @@ import type { EntryIo } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
 import { createShellPort } from '../src/program.ts';
 import { DEFAULT_SLASH_COMMANDS } from '../src/tui/commands/index.ts';
-import { SHELL_SLASH_COMMANDS } from '../src/tui/commands/shell-commands.ts';
+import { SCREEN_COMMAND_NAMES, SHELL_SLASH_COMMANDS } from '../src/tui/commands/shell-commands.ts';
 import { createSlashRegistry } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
@@ -226,6 +226,44 @@ describe('the shell commands that have a slash form', () => {
     expect(backgrounds).toEqual([]);
     expect(infos.join('\n')).toContain('usage: /auth status [--json] | logout <account>');
     expect(infos.join('\n')).toContain('/login');
+  });
+
+  it.each(SHELL_SLASH_COMMANDS.filter((command) => command.subcommands !== undefined && !SCREEN_COMMAND_NAMES.includes(command.name)).map((command) => command.name))('/%s with no subcommand lists its subcommands with what each does, runs nothing and reports no failure', async (name) => {
+    const seen: string[][] = [];
+    const { context, infos, backgrounds } = slashContext();
+    const shell = { run: async (argv: readonly string[]) => (seen.push([...argv]), 2) };
+    await run(`/${name}`, { ...context, shell } as unknown as SlashContext);
+    const entry = SHELL_SLASH_COMMANDS.find((command) => command.name === name);
+    const shown = infos.join('\n');
+    expect(seen).toEqual([]);
+    expect(backgrounds).toEqual([]);
+    expect(shown).toContain(`/${name} has these subcommands:`);
+    for (const subcommand of entry?.subcommands ?? []) expect(shown).toMatch(new RegExp(`/${name} ${subcommand.name} +${subcommand.description.replace(/[()]/g, '\\$&')}`));
+    expect(shown).not.toContain('exited with code');
+    expect(shown).not.toContain('Usage:');
+  });
+
+  it('/context with no subcommand shows improve and guideline with their descriptions', async () => {
+    const { context, infos } = slashContext();
+    await run('/context', context);
+    expect(infos.join('\n')).toBe(
+      [
+        '/context has these subcommands:',
+        '  /context improve    improve how the context is compacted, from the failures a bench shows',
+        '  /context guideline  inspect, adopt and roll back the compaction guideline',
+        'usage: /context improve --dataset <file> --model <model> --token-cap <n> --outcome <file> | guideline adopt <file> | guideline list | guideline rollback <version>',
+      ].join('\n'),
+    );
+  });
+
+  it('an unknown subcommand is reported as unknown with the valid ones, and runs nothing', async () => {
+    const seen: string[][] = [];
+    const { context, infos } = slashContext();
+    const shell = { run: async (argv: readonly string[]) => (seen.push([...argv]), 0) };
+    await run('/gateway nope', { ...context, shell } as unknown as SlashContext);
+    expect(seen).toEqual([]);
+    expect(infos.join('\n')).toContain('/gateway has no subcommand nope; it has these subcommands:');
+    expect(infos.join('\n')).toContain('  /gateway probe  ');
   });
 
   it('reports a non-zero exit code', async () => {
