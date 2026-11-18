@@ -127,9 +127,42 @@ export const ensureSeaNode = async (cacheDir: string, targetName: SeaTargetName 
     }
     fs.renameSync(partial, archive);
   }
-  const extracted = path.join(cacheDir, archiveStemOf(target));
-  fs.rmSync(extracted, { recursive: true, force: true });
-  const { file, args } = extractCommand(target, archive, cacheDir, process.platform, process.env);
-  execFileSync(file, [...args]);
-  return path.join(extracted, ...target.nodeRelativePath);
+  return ensureExtracted({
+    cacheDir,
+    stem: archiveStemOf(target),
+    nodeRelativePath: target.nodeRelativePath,
+    valid: (binary) => fs.existsSync(binary) && (!runsOnThisHost(target) || reportedVersionOf(binary) === `v${SEA_NODE_VERSION}`),
+    extract: (into) => {
+      const { file, args } = extractCommand(target, archive, into, process.platform, process.env);
+      execFileSync(file, [...args]);
+    },
+  });
+};
+
+const runsOnThisHost = (target: SeaTarget): boolean => target.name === `${process.platform}-${process.arch}`;
+
+const reportedVersionOf = (binary: string): string => execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim();
+
+export type ExtractRequest = {
+  readonly cacheDir: string;
+  readonly stem: string;
+  readonly nodeRelativePath: readonly string[];
+  readonly valid: (binary: string) => boolean;
+  readonly extract: (into: string) => void;
+};
+
+export const ensureExtracted = async ({ cacheDir, stem, nodeRelativePath, valid, extract }: ExtractRequest): Promise<string> => {
+  const extracted = path.join(cacheDir, stem);
+  const binary = path.join(extracted, ...nodeRelativePath);
+  if (valid(binary)) return binary;
+  const staging = fs.mkdtempSync(path.join(cacheDir, `.${stem}.staging-`));
+  try {
+    extract(staging);
+    const retired = fs.existsSync(extracted) ? path.join(staging, '.retired') : undefined;
+    if (retired !== undefined) fs.renameSync(extracted, retired);
+    fs.renameSync(path.join(staging, stem), extracted);
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+  return binary;
 };
