@@ -17,6 +17,8 @@ export const OPEN_FILE_ROW = 'Open the file';
 export const RESET_ALL_ROW = 'Reset all to the defaults';
 export const RESET_ONE_LABEL = 'reset to the defaults';
 export const REPLACE_ROWS = ['Replace', 'Cancel'] as const;
+export const RESET_ROWS = ['Reset', 'Cancel'] as const;
+export const RESET_ALL_QUESTION = 'Reset every key binding to the defaults?';
 export const SAVING_KEYS = 'saving the key bindings';
 export const NO_KEY = 'no key';
 export const CHANGED_MARK = '(changed)';
@@ -24,6 +26,8 @@ export const MAY_NOT_REPORT = '(this terminal may not report it)';
 export const REJECTED_HEADING = 'entries of the file that were ignored';
 
 export const replaceQuestion = (key: KeySpec, action: string): string => `${shownKey(key)} is used by ${action}. Replace it?`;
+
+export const resetOneQuestion = (action: string): string => `Reset ${action} to the defaults?`;
 
 export const rejectedLine = (entry: BindingEntry): string => `${entry.context}: ${entry.key} -> ${entry.action ?? 'null'}  rejected: ${entry.rejected ?? ''}`;
 
@@ -67,6 +71,12 @@ const rejectionOf = (report: BindingReport, row: ActionRow, spec: KeySpec): stri
 
 const save = async (context: SlashContext, edit: KeyEdit): Promise<void> => {
   await context.background(SAVING_KEYS, () => context.keyBindings.store.change(edit));
+};
+
+const resetConfirmed = async (context: SlashContext, title: string): Promise<boolean> => {
+  const cancel = RESET_ROWS.indexOf('Cancel');
+  const answer = await context.keyBindings.choose({ title, rows: RESET_ROWS.map((label) => ({ label })), initial: cancel, decideOn: 'enter', escape: cancel, filter: false });
+  return answer?.index === RESET_ROWS.indexOf('Reset');
 };
 
 const bind = async (context: SlashContext, row: ActionRow, spec: KeySpec): Promise<void> => {
@@ -139,12 +149,13 @@ export const keybindingsCommand: SlashCommand = {
         continue;
       }
       if (chosen.kind === 'reset-all') {
-        if (!choice.alt) await save(context, withAllDefaults);
+        if (!choice.alt && (await resetConfirmed(context, RESET_ALL_QUESTION))) await save(context, withAllDefaults);
         continue;
       }
       const { row } = chosen;
-      if (choice.alt) await save(context, (document) => withDefaultsOf(document, { ...row, default: defaultsOf(row) }));
-      else await rebind(context, row);
+      if (choice.alt) {
+        if (await resetConfirmed(context, resetOneQuestion(row.id))) await save(context, (document) => withDefaultsOf(document, { ...row, default: defaultsOf(row) }));
+      } else await rebind(context, row);
     }
   },
 };
