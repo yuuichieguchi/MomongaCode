@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { GLOB_TOOL_NAME } from '@momonga/protocol';
-import picomatch from 'picomatch';
-import { mapAsync } from '@momonga/foundation';
+import { compileGlob, mapAsync } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { statIfExists } from './files.ts';
@@ -22,7 +21,7 @@ export const sortByMtimeThenPath = async (host: Pick<FileSystem, 'stat'>, files:
 export const globTool = defineTool<GlobInput>({
   name: GLOB_TOOL_NAME,
   tier: 'essential',
-  description: `Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path is a directory, defaults to the working directory, and a relative path is resolved against the working directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns paths relative to the working directory when inside it and absolute otherwise, newest first, at most ${MAX_GLOB_RESULTS}.`,
+  description: `Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path is a directory, defaults to the working directory, and a relative path is resolved against the working directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns paths relative to the working directory when inside it and absolute otherwise, newest first, at most ${MAX_GLOB_RESULTS}. Supported syntax: *, **, ?, [...] and {a,b}; extglob groups, parentheses, | and a leading ! are refused.`,
   conciseDescription: `Finds files by glob pattern, for example "**/*.ts", under path. A relative path is resolved against the working directory, which is also the default. Respects .gitignore, includes dotfiles. Newest first, at most ${MAX_GLOB_RESULTS}.`,
   conciseParameterDescriptions: {
     pattern: 'Glob pattern',
@@ -51,12 +50,13 @@ export const globTool = defineTool<GlobInput>({
   }),
   execute: async (input, ctx) => {
     if (path.isAbsolute(input.pattern)) throw new ToolExecutionError(`The pattern ${input.pattern} is absolute; use a pattern relative to the search root, and name the root with path.`);
+    const glob = compileGlob(input.pattern);
+    if (glob.kind === 'refused') throw new ToolExecutionError(`The pattern ${input.pattern} uses ${glob.unsupported}, which Glob does not support; use plain globs: *, **, ?, [...], {a,b}.`);
     const root = await canonicalPathOf(ctx, 'path', input.path ?? '.');
     const shown = await shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
     const stat = await statIfExists(ctx.files, root);
     if (stat === undefined) throw new ToolExecutionError(`Directory does not exist: ${shown}`);
     if (!stat.isDirectory()) throw new ToolExecutionError(`${shown} is not a directory`);
-    const isMatch = picomatch(input.pattern, { dot: true });
     const matches: string[] = [];
     const walking = AbortSignal.any([ctx.signal, ctx.expired]);
     const entries = walkFiles({
@@ -85,7 +85,7 @@ export const globTool = defineTool<GlobInput>({
         break;
       }
       if (next.done === true) break;
-      if (isMatch(next.value.relative)) matches.push(path.join(root, next.value.relative));
+      if (glob.matches(next.value.relative)) matches.push(path.join(root, next.value.relative));
     }
     ctx.signal.throwIfAborted();
     const partial = ctx.expired.aborted ? [partialSearchNote(ctx.limits.search.timeoutMs, 'entries')] : [];

@@ -1,3 +1,4 @@
+import { compileGlob } from '@momonga/foundation';
 import { credentialEnvNames } from './models.ts';
 import type { ResolvedModels } from './models.ts';
 
@@ -26,7 +27,10 @@ export const forgeCredentialNamesOf = (settings: Pick<CredentialNaming, 'forges'
 
 export const credentialNamesOf = (settings: CredentialNaming): string[] => [...new Set([...credentialEnvNames(settings.models), ...forgeCredentialNamesOf(settings)])].sort();
 
-const globOf = (glob: string): RegExp => new RegExp(`^${glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
+const nameMatcherOf = (pattern: string): ((name: string) => boolean) => {
+  const compiled = compileGlob(pattern, 'name');
+  return (name) => compiled.matches(name);
+};
 
 export const stripCredentialEnv = (
   env: Readonly<Record<string, string>>,
@@ -34,10 +38,10 @@ export const stripCredentialEnv = (
   credentials: CredentialRules = {},
 ): { env: Record<string, string>; removed: string[] } => {
   const declaredExact = new Set(declaredNames);
-  const declaredGlobs = (credentials.env ?? []).map(globOf);
+  const declaredGlobs = (credentials.env ?? []).map(nameMatcherOf);
   const valuePatterns = (credentials.valuePatterns ?? []).map((pattern) => new RegExp(pattern));
   const kept = new Set(credentials.keep ?? []);
-  const isDeclared = (name: string): boolean => declaredExact.has(name) || declaredGlobs.some((glob) => glob.test(name));
+  const isDeclared = (name: string): boolean => declaredExact.has(name) || declaredGlobs.some((matches) => matches(name));
   const isWithheldDirectly = (name: string, value: string): boolean =>
     isDeclared(name) || (!kept.has(name) && (URL_WITH_PASSWORD.test(value) || valuePatterns.some((pattern) => pattern.test(value)) || looksLikeCredentialName(name)));
   const entries = Object.entries(env);

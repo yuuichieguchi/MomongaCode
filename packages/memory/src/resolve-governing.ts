@@ -1,5 +1,5 @@
 import path from 'node:path';
-import picomatch from 'picomatch';
+import { compileGlob } from '@momonga/foundation';
 import type { GoverningFactView } from '@momonga/protocol';
 
 export type ResolveGoverningOptions = {
@@ -22,7 +22,8 @@ export const isLiveFact = (fact: GoverningFactView, now: number): boolean =>
 export type PathScopeMatcher = (touched: string) => boolean;
 
 export const pathScopeMatcherOf = (project: string, globs: readonly string[]): PathScopeMatcher => {
-  const matches = picomatch([...globs], { dot: true });
+  const compiled = globs.map((glob) => compileGlob(glob)).flatMap((glob) => (glob.kind === 'compiled' ? [glob] : []));
+  const matches = (relative: string): boolean => compiled.some((glob) => glob.matches(relative));
   return (touched) => {
     const relative = path.relative(project, touched);
     return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative) && matches(relative.split(path.sep).join('/'));

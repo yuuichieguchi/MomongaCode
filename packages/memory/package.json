@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "@momonga/foundation": "*",
-    "@momonga/protocol": "*",
-    "picomatch": "4.0.7"
+    "@momonga/protocol": "*"
   }
 }

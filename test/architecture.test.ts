@@ -267,7 +267,7 @@ describe('architecture: memory package', () => {
     };
     expect(manifest.name).toBe('@momonga/memory');
     expect(manifest.exports).toEqual({ '.': './src/index.ts' });
-    expect(manifest.dependencies).toEqual({ '@momonga/foundation': '*', '@momonga/protocol': '*', picomatch: '4.0.7' });
+    expect(manifest.dependencies).toEqual({ '@momonga/foundation': '*', '@momonga/protocol': '*' });
   });
 
   it('is imported by no context source and is no dependency of context', () => {
