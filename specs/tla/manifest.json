@@ -2391,10 +2391,11 @@
         "Ink writes no mode sequence (packages/cli/src/tui/terminal/frame.tsx (TerminalFrame)); the external editor and a suspended shell are one other reader of the terminal",
         "a handover by exec hands the terminal over while the layer is still hooked; a handover by relay releases the layer and then spawns the new process; both are one Release step and one Handover step, and a signal between the release and the relayed spawn is not modelled",
         "an uncaught error restores the modes through the uncaughtExceptionMonitor hook and ends the process: packages/cli/src installs no uncaughtException or unhandledRejection handler that would keep it running",
-        "the state space is bounded by the constants of its configurations; the base row TerminalModes sets AnswerSets = {{\"kitty\", \"1006\", \"osc11\", \"da1\"}, {\"1049\", \"1006\", \"da1\"}}, AltReplies = {\"refused\"}, Screens = {\"fullscreen\"}, MaxFocus = 1, Variant = \"correct\": the kitty terminal, the terminal that gets modify-other-keys and refuses the alternate screen; the scrollback start is the state after Switch(\"scrollback\"), and a terminal that never replies (design cli-tui 15.1 check.noReply) is every behaviour of the row before its first reply, so neither has a row of its own"
+        "the state space is bounded by the constants of its configurations; the base row TerminalModes sets AnswerSets = {{\"kitty\", \"1006\", \"osc11\", \"da1\"}, {\"1049\", \"1006\", \"da1\"}, {\"kitty\"}}, AltReplies = {\"refused\"}, Screens = {\"fullscreen\"}, MaxFocus = 1, Variant = \"correct\": the kitty terminal, the terminal that gets modify-other-keys and refuses the alternate screen, and a terminal that never answers da1 (its drain ends at the bound); the scrollback start is the state after Switch(\"scrollback\"), and a terminal that never replies (design cli-tui 15.1 check.noReply) is every behaviour of the row before its first reply, so neither has a row of its own",
+        "the drain: on every leave path (suspend, the external editor, finish, failure, a signal) the layer keeps reading and discards replies until every query it wrote is answered (each query write ends with a da1 query, the focus-in query included) or the drain's bound ends; a terminal that answers da1 answers within the bound, so the bound ends (DrainBound) only for a terminal that does not answer da1; the bound's length is not modelled; TerminalModes.replyToOther is the leave without the drain"
       ],
       "notProved": [
-        "that no other reader takes a reply as typed input: a reply still outstanding when the layer stops reading (a suspend, the external editor, an exit) goes to the next reader of the terminal, which TerminalModes.replyToOther shows (NoReplyLeftForOthers is violated under the correct variant); design cli-tui 2.3 has nothing wait for a reply",
+        "replies that arrive after the drain's bound: a terminal that never answers da1 is drained until the bound and then left, and a reply it sends later reaches whatever reads the terminal next, which no program can prevent (NoReplyLeftForOthers holds except after the bound or after a last-resort exit, the uncaught-error and exit hooks, which cannot run the event loop to drain)",
         "what a real terminal shows and what it does with a mode it does not know",
         "a SIGKILL or a crash that runs no hook",
         "behaviour beyond the constants of its configurations",
@@ -11065,13 +11066,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 98850,
-      "measuredSeconds": 2.36,
+      "distinctStates": 64499,
+      "measuredSeconds": 2.3,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 6.17,
-      "budgetCpuSeconds": 16,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.55 at start)",
-      "identity": "b57b36395cb24d27760c9c908c1d88be35483dd826a1e3167c811f2503e646a8"
+      "measuredCpuSeconds": 5.29,
+      "budgetCpuSeconds": 14,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.08 at start)",
+      "identity": "f4178ef600d0faabb02e748c5110034a261a903c1c39beefcedf1408186c205e"
     },
     {
       "config": "TerminalModes.hintOnUnknown",
@@ -11083,12 +11084,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 2,
-      "measuredSeconds": 1.33,
+      "measuredSeconds": 1.37,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.18,
+      "measuredCpuSeconds": 1.05,
       "budgetCpuSeconds": 6,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.55 at start)",
-      "identity": "9e506b6c94f8ee0b4575adb445421210ef7ac458d85c3199e2a88c59ed73efb9"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 16.08 at start)",
+      "identity": "3d69c401572d8e31927d93fb8b67f4e0020d4159338a027d132e35623dc57dad"
     },
     {
       "config": "TerminalModes.leaveUnknown",
@@ -11100,12 +11101,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 19,
-      "measuredSeconds": 1.36,
+      "measuredSeconds": 1.32,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 0.97,
+      "measuredCpuSeconds": 0.99,
       "budgetCpuSeconds": 5,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
-      "identity": "f6bcc8bb53cf29839f747271469a89c816c9c964057cee3d51cd3b87da1f9297"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.84 at start)",
+      "identity": "1ac62177defde0c20deeb8c54495c2a5edabc7f68cb3c0118a20988d4e384723"
     },
     {
       "config": "TerminalModes.mouseAtStart",
@@ -11117,12 +11118,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 2,
-      "measuredSeconds": 1.18,
+      "measuredSeconds": 1.12,
       "measuredReuse": "off",
       "measuredCpuSeconds": 1.14,
       "budgetCpuSeconds": 6,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
-      "identity": "7f9f122ec3b10c526110c21b90d1a78e8601aff90bf9d36e42cc9541c399d63e"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.84 at start)",
+      "identity": "0f8aa9b2e7522d731266ae016c438c38e458a6947cfcef7b8b7bc3bd488e7920"
     },
     {
       "config": "TerminalModes.replyAsKey",
@@ -11134,12 +11135,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3,
-      "measuredSeconds": 1.19,
+      "measuredSeconds": 1.14,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.2,
+      "measuredCpuSeconds": 1.16,
       "budgetCpuSeconds": 6,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
-      "identity": "401541b4e263b0e9be3f407311d8a44b4e17c69807172025adafb2f0b319f296"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.84 at start)",
+      "identity": "4b1dd6b8a4e7b692a1d82a4a491ab493be9379a0db30af12af3fedcb7e889682"
     },
     {
       "config": "TerminalModes.replyToOther",
@@ -11150,13 +11151,13 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 101,
-      "measuredSeconds": 1.19,
+      "distinctStates": 112,
+      "measuredSeconds": 1.15,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.31,
+      "measuredCpuSeconds": 1.28,
       "budgetCpuSeconds": 6,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
-      "identity": "c054e6385f998f21345751d29430f0af0c35818509be10ceb0a7066f92af05e4"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.84 at start)",
+      "identity": "627db57977570a606db6aabe79f132b0895662ae41298b54b42677856f29f81e"
     },
     {
       "config": "TerminalModes.skipRestoreOnFail",
@@ -11168,12 +11169,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 36,
-      "measuredSeconds": 1.18,
+      "measuredSeconds": 1.15,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.21,
+      "measuredCpuSeconds": 1.19,
       "budgetCpuSeconds": 6,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
-      "identity": "e9fe410fa68daa839fd8e929b0d0d60995fbf379762f3038457801784ec6c2fb"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.84 at start)",
+      "identity": "878822f3607c5316443f604e3f97e2a2cf9d530af97b98c1eb1b6e90332dca77"
     },
     {
       "config": "TerminalModes.waitForDa1",
@@ -11185,12 +11186,12 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 2,
-      "measuredSeconds": 1.15,
+      "measuredSeconds": 1.12,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 1.23,
+      "measuredCpuSeconds": 1.19,
       "budgetCpuSeconds": 6,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.50 at start)",
-      "identity": "247e540a9733d2ff8052d32a273a5ba6659c64a73fec4bd6008b7f89cc2df5dc"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.84 at start)",
+      "identity": "3bbd927f5afbb0b5b843d8fb6ca235e3038d92a35ef8473f567e5d139e685a89"
     }
   ]
 }

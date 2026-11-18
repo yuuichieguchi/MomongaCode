@@ -3,7 +3,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANTS AnswerSets, AltReplies, Screens, MaxFocus, Variant
 
-ASSUME Variant \in {"correct", "skipRestoreOnFail", "hintOnUnknown", "mouseAtStart", "waitForDa1", "replyAsKey", "leaveUnknown"}
+ASSUME Variant \in {"correct", "skipRestoreOnFail", "hintOnUnknown", "mouseAtStart", "waitForDa1", "replyAsKey", "leaveUnknown", "replyToOther"}
 ASSUME MaxFocus \in Nat
 
 Modes == {"alt-screen", "mouse", "bracketed-paste", "focus", "kitty-keys", "modify-other-keys", "title"}
@@ -20,13 +20,16 @@ Forward(cur, cand) == IF NegIndex(cand) > NegIndex(cur) THEN cand ELSE cur
 
 Hint(n) == IF n \in {"kitty", "proven"} \/ (Variant = "hintOnUnknown" /\ n = "unknown") THEN "shift+enter" ELSE "ctrl+j"
 
-Phases == {"before", "running", "suspended", "lent", "released", "handover", "gone"}
+Phases == {"before", "running", "draining", "suspended", "lent", "released", "handover", "gone"}
 
 VARIABLES phase, term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered,
-          ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave
+          ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave,
+          leaving, boundEnded, lastResort
+
+DrainVars == <<leaving, boundEnded, lastResort>>
 
 vars == <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered,
-          ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+          ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 TypeOK ==
     /\ phase \in Phases
@@ -49,6 +52,9 @@ TypeOK ==
     /\ appTyped \in BOOLEAN
     /\ othersTyped \in BOOLEAN
     /\ badLeave \in BOOLEAN
+    /\ leaving \in {"none", "suspend", "lend", "exit"}
+    /\ boundEnded \in BOOLEAN
+    /\ lastResort \in BOOLEAN
 
 Init ==
     /\ phase = "before"
@@ -71,6 +77,9 @@ Init ==
     /\ appTyped = FALSE
     /\ othersTyped = FALSE
     /\ badLeave = FALSE
+    /\ leaving = "none"
+    /\ boundEnded = FALSE
+    /\ lastResort = FALSE
 
 MouseAllowed(s, answeredMouse) == s = "fullscreen" /\ answeredMouse
 
@@ -87,7 +96,7 @@ Start ==
     /\ raw' = TRUE
     /\ inputOn' = (Variant # "waitForDa1")
     /\ pending' = Answered(QueryBatch)
-    /\ UNCHANGED <<saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 Restore ==
     LET left == IF Variant = "leaveUnknown" THEN Modes ELSE enabled
@@ -124,55 +133,55 @@ ReplyToApp ==
     /\ Absorb(Head(pending))
     /\ pending' = Tail(pending)
     /\ appTyped' = (appTyped \/ Variant = "replyAsKey")
-    /\ UNCHANGED <<phase, raw, saved, answers, altReply, hooked, focusQueries, othersTyped, badLeave>>
+    /\ UNCHANGED <<phase, raw, saved, answers, altReply, hooked, focusQueries, othersTyped, badLeave, DrainVars>>
 
 ReplyToSuccessor ==
     /\ pending # <<>>
     /\ phase = "handover"
     /\ pending' = Tail(pending)
-    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 ReplyToOther ==
     /\ pending # <<>>
     /\ phase \in {"suspended", "lent", "gone"}
     /\ pending' = Tail(pending)
     /\ othersTyped' = TRUE
-    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, badLeave>>
+    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, badLeave, DrainVars>>
 
 Proof ==
     /\ phase = "running"
     /\ inputOn
     /\ neg' = Forward(neg, "proven")
-    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 EnableFocus ==
     /\ phase = "running"
     /\ "focus" \notin enabled
     /\ enabled' = enabled \cup {"focus"}
     /\ term' = term \cup {"focus"}
-    /\ UNCHANGED <<phase, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<phase, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 DisableFocus ==
     /\ phase = "running"
     /\ "focus" \in enabled
     /\ enabled' = enabled \ {"focus"}
     /\ term' = term \ {"focus"}
-    /\ UNCHANGED <<phase, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<phase, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 FocusIn ==
     /\ phase = "running"
     /\ "focus" \in enabled
     /\ focusQueries < MaxFocus
     /\ focusQueries' = focusQueries + 1
-    /\ pending' = IF "osc11" \in answers THEN Append(pending, "osc11") ELSE pending
-    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, appTyped, othersTyped, badLeave>>
+    /\ pending' = pending \o Answered(<<"osc11", "da1">>)
+    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, appTyped, othersTyped, badLeave, DrainVars>>
 
 SetTitle ==
     /\ phase = "running"
     /\ "title" \notin enabled
     /\ enabled' = enabled \cup {"title"}
     /\ term' = term \cup {"title"}
-    /\ UNCHANGED <<phase, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<phase, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 Switch(s) ==
     /\ phase = "running"
@@ -184,14 +193,41 @@ Switch(s) ==
           ELSE LET add == {"alt-screen"} \cup (IF MouseAllowed(s, mouseAnswered) THEN {"mouse"} ELSE {})
                IN /\ enabled' = enabled \cup add
                   /\ term' = term \cup add
-    /\ UNCHANGED <<phase, raw, saved, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<phase, raw, saved, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
+
+LeaveReady(kind) ==
+    \/ phase = "running" /\ (pending = <<>> \/ Variant = "replyToOther")
+    \/ phase = "draining" /\ leaving = kind /\ (pending = <<>> \/ boundEnded)
+
+Drain(kind) ==
+    /\ phase = "running"
+    /\ hooked
+    /\ Variant # "replyToOther"
+    /\ pending # <<>>
+    /\ phase' = "draining"
+    /\ leaving' = kind
+    /\ UNCHANGED <<term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, boundEnded, lastResort>>
+
+ReplyDrained ==
+    /\ phase = "draining"
+    /\ pending # <<>>
+    /\ pending' = Tail(pending)
+    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
+
+DrainBound ==
+    /\ phase = "draining"
+    /\ "da1" \notin answers
+    /\ ~boundEnded
+    /\ boundEnded' = TRUE
+    /\ UNCHANGED <<phase, term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, leaving, lastResort>>
 
 Suspend ==
-    /\ phase = "running"
+    /\ LeaveReady("suspend")
     /\ saved' = enabled
     /\ Restore
     /\ phase' = "suspended"
-    /\ UNCHANGED <<screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped>>
+    /\ leaving' = "none"
+    /\ UNCHANGED <<screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, boundEnded, lastResort>>
 
 Continue ==
     /\ phase = "suspended"
@@ -199,14 +235,15 @@ Continue ==
     /\ term' = term \cup saved
     /\ raw' = TRUE
     /\ phase' = "running"
-    /\ UNCHANGED <<saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 Lend ==
-    /\ phase = "running"
+    /\ LeaveReady("lend")
     /\ saved' = enabled
     /\ Restore
     /\ phase' = "lent"
-    /\ UNCHANGED <<screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped>>
+    /\ leaving' = "none"
+    /\ UNCHANGED <<screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, boundEnded, lastResort>>
 
 TakeBack ==
     /\ phase = "lent"
@@ -215,18 +252,18 @@ TakeBack ==
     /\ term' = term \cup saved
     /\ raw' = TRUE
     /\ phase' = "running"
-    /\ UNCHANGED <<saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 Release ==
     /\ phase = "running"
     /\ phase' = "released"
     /\ hooked' = FALSE
-    /\ UNCHANGED <<term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 Handover ==
     /\ phase = "released"
     /\ phase' = "handover"
-    /\ UNCHANGED <<term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, hooked, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
 Adopt ==
     /\ phase = "released"
@@ -234,33 +271,35 @@ Adopt ==
     /\ hooked' = TRUE
     /\ raw' = TRUE
     /\ mouseAnswered' = ("mouse" \in enabled)
-    /\ UNCHANGED <<term, enabled, saved, screen, neg, answers, altReply, pending, answered, ended, refusalApplied, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+    /\ UNCHANGED <<term, enabled, saved, screen, neg, answers, altReply, pending, answered, ended, refusalApplied, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
-ExitWithRestore(from) ==
+ExitWithRestore(ready, resort) ==
     /\ hooked
-    /\ phase \in from
+    /\ ready
     /\ Restore
     /\ phase' = "gone"
     /\ hooked' = FALSE
-    /\ UNCHANGED <<saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, inputOn, focusQueries, appTyped, othersTyped>>
+    /\ leaving' = "none"
+    /\ lastResort' = (lastResort \/ resort)
+    /\ UNCHANGED <<saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, inputOn, focusQueries, appTyped, othersTyped, boundEnded>>
 
-Finish == ExitWithRestore({"running"})
+Finish == ExitWithRestore(LeaveReady("exit"), FALSE)
 
 Fail ==
     \/ /\ Variant # "skipRestoreOnFail"
-       /\ ExitWithRestore({"running", "lent"})
+       /\ ExitWithRestore(LeaveReady("exit") \/ phase = "lent", FALSE)
     \/ /\ Variant = "skipRestoreOnFail"
        /\ hooked
        /\ phase \in {"running", "lent"}
        /\ phase' = "gone"
        /\ hooked' = FALSE
-       /\ UNCHANGED <<term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, inputOn, focusQueries, appTyped, othersTyped, badLeave>>
+       /\ UNCHANGED <<term, enabled, raw, saved, screen, neg, answers, altReply, pending, answered, ended, mouseAnswered, refusalApplied, inputOn, focusQueries, appTyped, othersTyped, badLeave, DrainVars>>
 
-Signal == ExitWithRestore({"running", "suspended", "lent"})
+Signal == ExitWithRestore(LeaveReady("exit") \/ phase \in {"suspended", "lent"}, FALSE)
 
-Uncaught == ExitWithRestore({"running", "lent"})
+Uncaught == ExitWithRestore(phase \in {"running", "lent", "draining"}, TRUE)
 
-ExitHook == ExitWithRestore({"running", "suspended", "lent"})
+ExitHook == ExitWithRestore(phase \in {"running", "suspended", "lent", "draining"}, TRUE)
 
 Next ==
     \/ Start
@@ -274,6 +313,11 @@ Next ==
     \/ SetTitle
     \/ Switch("scrollback")
     \/ Switch("fullscreen")
+    \/ Drain("suspend")
+    \/ Drain("lend")
+    \/ Drain("exit")
+    \/ ReplyDrained
+    \/ DrainBound
     \/ Suspend
     \/ Continue
     \/ Lend
@@ -307,5 +351,5 @@ RestoreIdempotent == ~badLeave
 
 ReplyNeverKey == ~appTyped
 
-NoReplyLeftForOthers == ~othersTyped
+NoReplyLeftForOthers == othersTyped => (lastResort \/ boundEnded)
 =============================================================================

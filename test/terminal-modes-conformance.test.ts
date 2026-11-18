@@ -153,6 +153,13 @@ describe('TerminalModes.tla names what packages/cli/src/tui/terminal names', () 
     for (const state of NEGOTIATION_STATES) expect(NEWLINE_HINT[state], state).toBe(shiftStates.includes(state) ? 'shift+enter' : 'ctrl+j');
   });
 
+  it('every leave path drains: Suspend, Lend and the exit paths wait for LeaveReady, the drain discards replies until the last is read or the bound ends, and the focus-in query is followed by a da1 query so its drain has an end', () => {
+    for (const name of ['Drain', 'ReplyDrained', 'DrainBound', 'LeaveReady']) expect(spec, name).toMatch(new RegExp(`^${name}(\\([^)]*\\))? ==`, 'm'));
+    for (const name of ['Suspend', 'Lend']) expect(spec).toContain(`${name} ==\n    /\\ LeaveReady("${name.toLowerCase()}")`);
+    expect(definitionOf('Finish')).toBe('ExitWithRestore(LeaveReady("exit"), FALSE)');
+    expect(spec).toContain(`pending' = pending \\o Answered(<<"osc11", "da1">>)`);
+  });
+
   it('QueryBatch is the start batch of the code in its order, the da1 query last', () => {
     expect(QUERIES.map((query) => QUERY_TEXT[query]).join('')).toBe(QUERY_BATCH);
     expect(QUERIES.at(-1)).toBe('da1');
