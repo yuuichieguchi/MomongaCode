@@ -1,4 +1,4 @@
-export const SETTING_READ_POINT_KINDS = ['operation', 'start'] as const;
+export const SETTING_READ_POINT_KINDS = ['operation', 'start', 'daemon-start'] as const;
 
 export type SettingReadPoint = (typeof SETTING_READ_POINT_KINDS)[number];
 
@@ -35,7 +35,7 @@ export const SETTING_READ_POINTS: Readonly<Record<string, SettingReadPoint>> = {
   operations: 'operation',
   autoUpdates: 'operation',
   update: 'operation',
-  daemon: 'operation',
+  daemon: 'daemon-start',
   gateway: 'operation',
   runtime: 'operation',
   'tui.theme': 'operation',

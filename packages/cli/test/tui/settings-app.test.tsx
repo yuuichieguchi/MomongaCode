@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
+import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_DAEMON_START, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ExternalEditorPort } from '../../src/tui/external-editor.ts';
 import { KEYS, TUI_TEST_TIMEOUT_MS, untilOutput } from '../ink-helpers.ts';
@@ -99,6 +99,17 @@ describe('/config, the settings screen', () => {
     await press(started, `${CLEAR}30`, '> 30');
     await press(started, KEYS.enter, `Forget after (days)  30  user  ${APPLIES_NOW}`);
     expect(stored(place.userFile)).toEqual({ memory: { forgetAfterDays: 30 } });
+    started.app.unmount();
+  });
+
+  it('labels a setting a running daemon keeps as applying when the daemon next starts', async () => {
+    const place = freshPlace();
+    const started = await startAt(place);
+    await open(started);
+    await openRow(started, 'daemon', 'a whole number from 1');
+    await press(started, `${CLEAR}90000`, '> 90000');
+    await press(started, KEYS.enter, `90000  user  ${APPLIES_NEXT_DAEMON_START.slice(0, 'applies when'.length)}`);
+    expect(stored(place.userFile)).toEqual({ daemon: { startupStallMs: 90000 } });
     started.app.unmount();
   });
 
