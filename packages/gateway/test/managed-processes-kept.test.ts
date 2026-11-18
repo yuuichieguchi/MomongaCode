@@ -8,7 +8,7 @@ import { createKeptGroupControl, createProcessGroupPort, nodeCommandRunner } fro
 import type { GroupLaunchHost } from '@momonga/foundation';
 import { createTempDir, TEST_UNPROTECTED_LAUNCH, testProcessInspector } from '@momonga/testkit';
 import { answeringMembers, fakeKeeperHost, settle } from '../../foundation/test/support/fake-keeper.ts';
-import { createGroupSpawn } from '../src/managed/fm-processes.ts';
+import { createGroupSpawn } from '../src/managed/processes.ts';
 
 const KEEPER_PID = 100;
 const COMMAND_PID = 200;

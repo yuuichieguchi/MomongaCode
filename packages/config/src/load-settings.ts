@@ -1,7 +1,7 @@
 import { approvalDigest } from './settings.ts';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, answeredLater, askedPaths } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, STARTUP_TIMEOUT_MS, answeredLater, askedPaths } from '@momonga/foundation';
 import type { FileSystem, LayoutEnvironment, PathAsking } from '@momonga/foundation';
 import { askerOf } from './asker.ts';
 import { acceptedCheckOf } from './declared-checks.ts';
@@ -60,6 +60,7 @@ export type ResolvedSettings = {
   models: ResolvedModels;
   autoUpdates: boolean;
   update: { stallTimeoutMs: number };
+  daemon: { startupStallMs: number };
   tui: ResolvedTuiSettings;
   gateway: GatewayStopValues;
   runtime: RuntimeSettings;
@@ -246,6 +247,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     models,
     autoUpdates: DEFAULT_AUTO_UPDATES,
     update: { stallTimeoutMs: DEFAULT_UPDATE_STALL_TIMEOUT_MS },
+    daemon: { startupStallMs: STARTUP_TIMEOUT_MS },
     tui: defaultTuiSettings(),
     gateway: { closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs, managedServerStopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs },
     runtime: {},
@@ -281,6 +283,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       mcp,
       autoUpdates,
       update,
+      daemon,
       tui,
       gateway,
       runtime,
@@ -342,6 +345,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     Object.assign(merged.mcp, mcp);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
     if (update !== undefined) merged.update = { ...merged.update, ...update };
+    if (daemon !== undefined) merged.daemon = { ...merged.daemon, ...daemon };
     if (tui !== undefined) merged.tui = { ...merged.tui, ...tui };
     if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (runtime !== undefined) merged.runtime = { ...merged.runtime, ...runtime };

@@ -15,7 +15,7 @@ export { ProbeTimeoutError, speedStepBound } from './probe/client.ts';
 export type { MeasurementProgress, ProbePorts, ProbeTimers, StepBound } from './probe/client.ts';
 export { runProbe } from './probe/run-probe.ts';
 export { noneSandboxLaunchOf } from '@momonga/sandbox';
-export { UnreadableProbeKeyError, managedCurrencyOf, listManagedModel, managedKeyReader, measureManagedServer, probeManagedFm } from './probe/probe-fm.ts';
+export { UnreadableProbeKeyError, managedCurrencyOf, listManagedModel, managedKeyReader, measureManagedServer, probeManagedFm } from './probe/probe-managed.ts';
 export { createInstanceProbe, unreadableKeyNotice } from './probe/instance-probe.ts';
 export type { InstanceProbe, InstanceProbeEnsured, InstanceProbeOptions } from './probe/instance-probe.ts';
 export { ProbeInProgressError, ProbeKeyChangedError, acquireProbeLock, createAutoProbe, probeLockPath, probingOf, recordProbe, targetProbingError } from './probe/auto-probe.ts';
@@ -23,7 +23,7 @@ export type { AutoProbe, MeasureProbe, MeasuringAsk, PreconditionVerdict, ProbeP
 export { PERSON_TRAFFIC, createRequestGate } from './probe/request-gate.ts';
 export type { MeasurementTurn, RequestGate } from './probe/request-gate.ts';
 export { endpointLockKeyOf } from './probe/endpoint-record.ts';
-export type { MeasureManagedServerOptions, ProbeManagedOptions, ProbeManagedResult } from './probe/probe-fm.ts';
+export type { MeasureManagedServerOptions, ProbeManagedOptions, ProbeManagedResult } from './probe/probe-managed.ts';
 export type { ProbeOptions } from './probe/run-probe.ts';
 export { MANAGED_SERVER_BEHAVIOUR, ManagedServerError, createManagedServer } from './managed/server.ts';
 export { PreconditionFailedError } from './adapters/shared/failures.ts';

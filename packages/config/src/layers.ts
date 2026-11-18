@@ -90,6 +90,7 @@ const USER_ONLY_KEYS = [
   'autoUpdates',
   'gateway',
   'runtime',
+  'daemon',
   'autoMode',
 ] as const satisfies readonly (keyof Settings)[];
 

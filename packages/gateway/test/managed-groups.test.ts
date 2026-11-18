@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createManagedServer } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
-import { createGroupSpawn } from '../src/managed/fm-processes.ts';
+import { createGroupSpawn } from '../src/managed/processes.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
 import { REAL_FM_STOP_GRACE_MS, registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, isAlive, makeHome, until } from './gateway-process-helpers.ts';

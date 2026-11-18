@@ -1,4 +1,4 @@
-import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS, STARTUP_TIMEOUT_MS } from '@momonga/foundation';
 import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, HOOK_DEFAULT_TIMEOUT_SECONDS, DEFAULT_PERMISSION_MODE, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
 import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
 import { DEFAULT_UPDATE_STALL_TIMEOUT_MS, defaultContextSettings, defaultMemorySettings, defaultToolsSettings, defaultVerificationSettings } from './context-settings.ts';
@@ -441,6 +441,7 @@ export const SETTING_UNIT_OF: Readonly<Record<string, SettingUnit>> = {
   'tools.search.timeoutMs': SETTING_UNITS.milliseconds,
   'tools.operations.timeoutMs': SETTING_UNITS.milliseconds,
   'update.stallTimeoutMs': SETTING_UNITS.milliseconds,
+  'daemon.startupStallMs': SETTING_UNITS.milliseconds,
   'gateway.closeGraceMs': SETTING_UNITS.milliseconds,
   'gateway.managedServerStopGraceMs': SETTING_UNITS.milliseconds,
   'runtime.drainTimeoutMs': SETTING_UNITS.milliseconds,
@@ -627,6 +628,7 @@ export const SETTINGS_SCHEMA = {
     },
     autoUpdates: { type: 'boolean', default: DEFAULT_AUTO_UPDATES },
     update: { type: 'object', properties: { stallTimeoutMs: withDefault(POSITIVE_INTEGER, DEFAULT_UPDATE_STALL_TIMEOUT_MS) }, additionalProperties: false },
+    daemon: { type: 'object', properties: { startupStallMs: withDefault(POSITIVE_INTEGER, STARTUP_TIMEOUT_MS) }, additionalProperties: false },
     tui: {
       type: 'object',
       properties: {

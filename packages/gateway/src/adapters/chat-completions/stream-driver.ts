@@ -5,9 +5,9 @@ import { parseUpstreamChunk } from './upstream-chunk.ts';
 import type { ToolCallFragment } from './upstream-chunk.ts';
 
 export type ContentSink = {
-  text(text: string): void;
+  text(text: string): Promise<void>;
   toolCall(fragment: ToolCallFragment): void;
-  finish(outcome: 'complete' | 'truncated'): void;
+  finish(outcome: 'complete' | 'truncated'): Promise<void>;
 };
 
 export class StreamDriver {
@@ -31,20 +31,20 @@ export class StreamDriver {
     return this.emitter.take();
   }
 
-  accept(data: string): StreamEvent[] {
+  async accept(data: string): Promise<StreamEvent[]> {
     if (this.emitter.terminated) return [];
     try {
-      this.apply(data);
+      await this.apply(data);
     } catch (error) {
       this.failWith(error);
     }
     return this.emitter.take();
   }
 
-  end(): StreamEvent[] {
+  async end(): Promise<StreamEvent[]> {
     if (this.emitter.terminated) return this.emitter.take();
     try {
-      this.conclude();
+      await this.conclude();
     } catch (error) {
       this.failWith(error);
     }
@@ -61,7 +61,7 @@ export class StreamDriver {
     this.emitter.fail(error.code, error.errorType, error.message);
   }
 
-  private apply(data: string): void {
+  private async apply(data: string): Promise<void> {
     const chunk = parseUpstreamChunk(data);
     const hasContent =
       chunk.reasoning !== undefined ||
@@ -74,7 +74,7 @@ export class StreamDriver {
     if (chunk.reasoning !== undefined) this.acceptReasoning(chunk.reasoning.field, chunk.reasoning.text);
     if (chunk.content !== undefined && chunk.content !== '') {
       this.reasoningField = undefined;
-      this.sink.text(chunk.content);
+      await this.sink.text(chunk.content);
     }
     if (chunk.refusal !== undefined && chunk.refusal !== '') this.emitter.appendRefusal(chunk.refusal);
     if (chunk.toolCalls.length > 0) this.reasoningField = undefined;
@@ -92,21 +92,21 @@ export class StreamDriver {
     this.emitter.streamReasoning(text, field);
   }
 
-  private conclude(): void {
+  private async conclude(): Promise<void> {
     switch (this.finishReason) {
       case undefined:
         throw new UpstreamProtocolError('the upstream stream ended without a finish_reason');
       case 'stop':
       case 'tool_calls':
-        this.sink.finish('complete');
-        this.emitter.complete(this.usage);
+        await this.sink.finish('complete');
+        await this.emitter.complete(this.usage);
         return;
       case 'length':
-        this.sink.finish('truncated');
+        await this.sink.finish('truncated');
         this.emitter.incomplete('max_output_tokens', this.usage);
         return;
       case 'content_filter':
-        this.sink.finish('truncated');
+        await this.sink.finish('truncated');
         this.emitter.incomplete('content_filter', this.usage);
         return;
       default:

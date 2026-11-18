@@ -112,7 +112,7 @@ afterEach(async () => {
   if (errors.length > 0) throw errors[0];
 });
 
-export const inertMemoryPort: MemoryPort = { load: async () => ({ prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, tools: [] }) };
+export const inertMemoryPort: MemoryPort = { load: async () => ({ prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, touchedCap: () => undefined, tools: [] }) };
 
 export const inertHistoryPort: HistoryPort = { load: async () => ({ tools: [] }) };
 

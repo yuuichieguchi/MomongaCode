@@ -18,7 +18,7 @@ const VIEW_RECORD: WrapRecord = { tool: 'view', wrapped: [{ at: [], property: 'p
 
 const emitterWith = (wraps: ReadonlyMap<string, WrapRecord> | undefined) => {
   const request: AdapterRequest = { model: 'm', input: [] };
-  const emitter = new ResponseEmitter({ clock: createFakeClock(START_MS), model: 'm', request, ...(wraps === undefined ? {} : { wraps }) });
+  const emitter = new ResponseEmitter({ clock: createFakeClock(START_MS), model: 'm', request, signal: new AbortController().signal, ...(wraps === undefined ? {} : { wraps }) });
   emitter.start();
   emitter.take();
   return emitter;
@@ -33,14 +33,14 @@ const doneArguments = (events: readonly StreamEvent[]): string[] =>
 const doneItemArguments = (events: readonly StreamEvent[]): string[] =>
   events.flatMap((event) => (event.type === 'response.output_item.done' && event.item.type === 'function_call' ? [event.item.arguments] : []));
 
-const streamCall = (emitter: ResponseEmitter, name: string, fragments: readonly string[]) => {
+const streamCall = async (emitter: ResponseEmitter, name: string, fragments: readonly string[]) => {
   emitter.beginCall(0, 'call_1', name);
   const whileOpen: StreamEvent[] = [...emitter.take()];
   for (const fragment of fragments) {
     emitter.appendCallArguments(0, fragment);
     whileOpen.push(...emitter.take());
   }
-  emitter.completeCall(0);
+  await emitter.completeCall(0);
   return { whileOpen, atClose: emitter.take() };
 };
 
@@ -50,49 +50,49 @@ describe('the reply stage in ResponseEmitter', () => {
     ['view', VIEW_RECORD],
   ]);
 
-  it('holds the deltas of a call whose name has a record and emits one inverted delta at close', () => {
-    const { whileOpen, atClose } = streamCall(emitterWith(wraps), 'edit', ['{"path":"a.txt",', '"note":null}']);
+  it('holds the deltas of a call whose name has a record and emits one inverted delta at close', async () => {
+    const { whileOpen, atClose } = await streamCall(emitterWith(wraps), 'edit', ['{"path":"a.txt",', '"note":null}']);
     expect(argumentDeltas(whileOpen)).toEqual([]);
     expect(argumentDeltas(atClose)).toEqual(['{"path":"a.txt"}']);
     expect(doneArguments(atClose)).toEqual(['{"path":"a.txt"}']);
     expect(doneItemArguments(atClose)).toEqual(['{"path":"a.txt"}']);
   });
 
-  it('never emits a delta carrying the recorded null', () => {
-    const { whileOpen, atClose } = streamCall(emitterWith(wraps), 'edit', ['{"note":', 'null', ',"path":"b"}']);
+  it('never emits a delta carrying the recorded null', async () => {
+    const { whileOpen, atClose } = await streamCall(emitterWith(wraps), 'edit', ['{"note":', 'null', ',"path":"b"}']);
     expect([...argumentDeltas(whileOpen), ...argumentDeltas(atClose)].join('')).not.toContain('null');
     expect(JSON.parse(doneArguments(atClose)[0] as string)).toEqual({ path: 'b' });
   });
 
-  it('inverts by the record of the call name, so another tool with the same property name keeps its null', () => {
-    const viewCall = streamCall(emitterWith(wraps), 'view', ['{"path":null,"note":null}']);
+  it('inverts by the record of the call name, so another tool with the same property name keeps its null', async () => {
+    const viewCall = await streamCall(emitterWith(wraps), 'view', ['{"path":null,"note":null}']);
     expect(JSON.parse(doneArguments(viewCall.atClose)[0] as string)).toEqual({ note: null });
-    const editCall = streamCall(emitterWith(wraps), 'edit', ['{"path":null,"note":null}']);
+    const editCall = await streamCall(emitterWith(wraps), 'edit', ['{"path":null,"note":null}']);
     expect(JSON.parse(doneArguments(editCall.atClose)[0] as string)).toEqual({ path: null });
   });
 
-  it('passes a recorded call byte for byte when the recorded property is absent or not null', () => {
-    const absent = streamCall(emitterWith(wraps), 'edit', ['{ "path" : "a.txt" }']);
+  it('passes a recorded call byte for byte when the recorded property is absent or not null', async () => {
+    const absent = await streamCall(emitterWith(wraps), 'edit', ['{ "path" : "a.txt" }']);
     expect(doneArguments(absent.atClose)).toEqual(['{ "path" : "a.txt" }']);
-    const present = streamCall(emitterWith(wraps), 'edit', ['{ "path" : "a.txt", "note" : "n" }']);
+    const present = await streamCall(emitterWith(wraps), 'edit', ['{ "path" : "a.txt", "note" : "n" }']);
     expect(doneArguments(present.atClose)).toEqual(['{ "path" : "a.txt", "note" : "n" }']);
   });
 
-  it('passes text that is not an object through unchanged', () => {
-    const array = streamCall(emitterWith(wraps), 'edit', ['[1,', '2]']);
+  it('passes text that is not an object through unchanged', async () => {
+    const array = await streamCall(emitterWith(wraps), 'edit', ['[1,', '2]']);
     expect(doneArguments(array.atClose)).toEqual(['[1,2]']);
-    const broken = streamCall(emitterWith(wraps), 'edit', ['{"note":nu']);
+    const broken = await streamCall(emitterWith(wraps), 'edit', ['{"note":nu']);
     expect(doneArguments(broken.atClose)).toEqual(['{"note":nu']);
   });
 
-  it('streams a call whose name has no record as today, byte for byte', () => {
-    const { whileOpen, atClose } = streamCall(emitterWith(wraps), 'search', ['{"q":', 'null}']);
+  it('streams a call whose name has no record as today, byte for byte', async () => {
+    const { whileOpen, atClose } = await streamCall(emitterWith(wraps), 'search', ['{"q":', 'null}']);
     expect(argumentDeltas(whileOpen)).toEqual(['{"q":', 'null}']);
     expect(doneArguments(atClose)).toEqual(['{"q":null}']);
   });
 
-  it('changes nothing without a table', () => {
-    const { whileOpen, atClose } = streamCall(emitterWith(undefined), 'edit', ['{"note":null}']);
+  it('changes nothing without a table', async () => {
+    const { whileOpen, atClose } = await streamCall(emitterWith(undefined), 'edit', ['{"note":null}']);
     expect(argumentDeltas(whileOpen)).toEqual(['{"note":null}']);
     expect(doneArguments(atClose)).toEqual(['{"note":null}']);
   });

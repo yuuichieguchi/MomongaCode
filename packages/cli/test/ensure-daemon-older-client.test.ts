@@ -121,7 +121,7 @@ describe('a client older than the installed program, with no daemon serving (16.
     const { paths, ports, spawned } = await setupGenerations(context, '1.2.3', '1.2.4');
     const moved: string[] = [];
 
-    const failure = await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS, onNewer: async (version) => void moved.push(version) }));
+    const failure = await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS, onNewer: async (version) => { moved.push(version); return 'cannot-move' as const; } }));
 
     expect(moved).toEqual(['1.2.4']);
     expect(spawned).toEqual([]);
@@ -134,7 +134,7 @@ describe('a client older than the installed program, with no daemon serving (16.
     const moved: string[] = [];
 
     expect(((await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS }))) as Error).message).toBe(REOPEN);
-    expect(((await failureOf(restoreDaemon(ports, paths, async (version) => void moved.push(version))(undefined))) as Error).message).toBe(REOPEN);
+    expect(((await failureOf(restoreDaemon(ports, paths, async (version) => { moved.push(version); return 'cannot-move' as const; })(undefined))) as Error).message).toBe(REOPEN);
     expect(moved).toEqual(['1.2.4']);
     expect(spawned).toEqual([]);
   });

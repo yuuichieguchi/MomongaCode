@@ -82,10 +82,10 @@ export class AnthropicStreamDriver {
     return addUsage(this.carriedUsage, this.segmentUsage);
   }
 
-  accept(event: AnthropicStreamEvent): StreamEvent[] {
+  async accept(event: AnthropicStreamEvent): Promise<StreamEvent[]> {
     if (this.emitter.terminated) return [];
     try {
-      this.apply(event);
+      await this.apply(event);
     } catch (error) {
       if (!this.hasStarted || !(error instanceof UpstreamProtocolError || error instanceof MalformedOutputError)) throw error;
       this.emitter.fail(error.code, error.errorType, error.message);
@@ -105,7 +105,7 @@ export class AnthropicStreamDriver {
     return this.emitter.take();
   }
 
-  private apply(event: AnthropicStreamEvent): void {
+  private async apply(event: AnthropicStreamEvent): Promise<void> {
     if (event.type === 'error') throw streamErrorOf(event.errorType, event.message);
     if (!this.segmentStarted) {
       if (event.type === 'ping' || event.type === 'unknown') return;
@@ -135,7 +135,7 @@ export class AnthropicStreamDriver {
         this.segmentUsage = { ...this.segmentUsage, ...event.usage };
         return;
       case 'message_stop':
-        this.conclude();
+        await this.conclude();
         return;
     }
   }
@@ -197,7 +197,7 @@ export class AnthropicStreamDriver {
     this.recorder.stop(index);
   }
 
-  private conclude(): void {
+  private async conclude(): Promise<void> {
     const accumulated = this.accumulatedUsage();
     const usage = usageOf(accumulated);
     const cacheWrite = accumulated.cache_creation_input_tokens;
@@ -207,7 +207,7 @@ export class AnthropicStreamDriver {
       case 'end_turn':
       case 'stop_sequence':
       case 'tool_use':
-        this.emitter.complete(usage, this.firstInputTokens, cacheWrite);
+        await this.emitter.complete(usage, this.firstInputTokens, cacheWrite);
         return;
       case 'pause_turn':
         if (this.recorder.unfinished > 0) throw new UpstreamProtocolError('the upstream paused the turn with a content block still open');

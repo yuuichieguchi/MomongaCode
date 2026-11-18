@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { bsdFileLock, createLockCapability, lockPathNameOf, sqliteFileLock } from '@momonga/foundation';
+import { REAP_KILL_GRACE_MS, bsdFileLock, createLockCapability, lockPathNameOf, sqliteFileLock } from '@momonga/foundation';
 import type { HeldKernelLock, KernelLockMechanism, LockCapabilityProbe } from '@momonga/foundation';
 import { treeCpuSeconds } from './cpu-budget.ts';
 
@@ -75,14 +75,19 @@ const DESCRIPTION_FORMAT = 'momonga-run-lock/1';
 const COMMAND_MAX_CHARACTERS = 300;
 const HEAVY_NAME = 'heavy';
 const LIGHT_NAME = /^light\.[0-9a-f]{16}$/;
-const HEAVY_WAITER_NAME = /^heavy-waiting\.[0-9a-f]{16}$/;
+const WAITER_NAME = /^waiting\.(\d{16})\.(heavy|light)\.([0-9a-f]{16})$/;
+const ARRIVAL_NAME = 'arrival';
+const ARRIVAL_NEXT_FILE = 'arrival.next';
+const ARRIVAL_DIGITS = 16;
+const ARRIVAL_RETRY_MS = 10;
+const ARRIVAL_BOUND_MS = 10_000;
 const TOKEN = /^(heavy|light)\.([0-9a-f]{16})$/;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
 const heavyPathOf = (dir: string): string => path.join(dir, HEAVY_NAME);
 const lightPathOf = (dir: string, hex: string): string => path.join(dir, `light.${hex}`);
-const heavyWaiterPathOf = (dir: string, hex: string): string => path.join(dir, `heavy-waiting.${hex}`);
+const waiterPathOf = (dir: string, arrival: number, runClass: RunClass, hex: string): string => path.join(dir, `waiting.${String(arrival).padStart(ARRIVAL_DIGITS, '0')}.${runClass}.${hex}`);
 const infoPathOf = (lockPath: string): string => `${lockPath}.info`;
 
 const describedBy = (parsed: unknown, token: string, runClass: RunClass): HolderDescription | undefined => {
@@ -131,8 +136,10 @@ export type RunLockRequest = {
   mechanism?: KernelLockMechanism;
   capability?: Pick<LockCapabilityProbe, 'of'>;
   progressOf?: (pid: number) => Promise<number>;
-  endHolder?: (pid: number) => void | Promise<void>;
+  endHolder?: (pid: number, signal: HolderSignal) => void | Promise<void>;
 };
+
+export type HolderSignal = 'SIGTERM' | 'SIGKILL';
 
 export type RunLockOutcome =
   | { kind: 'acquired'; token: string; mechanism: 'file-lock' | 'sqlite-lock'; release: () => Promise<void> }
@@ -144,10 +151,13 @@ export type RunLockOutcome =
 
 class LockUnusableError extends Error {}
 
+class SamplerFailure extends Error {}
+
 const lockWork = async <T>(work: () => Promise<T>): Promise<T> => {
   try {
     return await work();
   } catch (error) {
+    if (error instanceof SamplerFailure) throw error;
     throw new LockUnusableError(causeOf(error));
   }
 };
@@ -171,10 +181,13 @@ const mechanismFor = async (request: RunLockRequest): Promise<KernelLockMechanis
   return capability === 'proved' ? bsdFileLock : sqliteFileLock;
 };
 
+type Arrival = { seq: number; hex: string | undefined };
+
 type AttemptContext = {
   readonly request: RunLockRequest;
   readonly mechanism: KernelLockMechanism;
   readonly now: () => Date;
+  readonly arrival: Arrival;
 };
 
 type Holding = { readonly kind: 'holding'; readonly lock: HeldKernelLock; readonly lockPath: string; readonly hex: string };
@@ -244,26 +257,33 @@ const liveHolderClause = async (mechanism: KernelLockMechanism, lockPath: string
   return undefined;
 };
 
-const waitingHeavyClause = async (mechanism: KernelLockMechanism, waiterPath: string): Promise<string> =>
-  `waiting ${await clauseOfHeld(waiterPath, 'heavy', mechanism)}`;
 
 const lockUnitsNamed = async ({ request, mechanism }: AttemptContext, pattern: RegExp): Promise<string[]> => {
   const units = (await fs.promises.readdir(request.dir)).map((name) => lockPathNameOf(mechanism, name)).filter((name) => pattern.test(name));
   return [...new Set(units)].sort();
 };
 
+const earlierWaiters = async (context: AttemptContext, classes: readonly RunClass[]): Promise<string[]> => {
+  const { request, mechanism, arrival } = context;
+  const clauses: string[] = [];
+  for (const name of await lockUnitsNamed(context, WAITER_NAME)) {
+    const [, seq, waiterClass, hex] = WAITER_NAME.exec(name) ?? [];
+    if (seq === undefined || waiterClass === undefined || hex === arrival.hex) continue;
+    const runClass: RunClass = waiterClass === 'heavy' ? 'heavy' : 'light';
+    const waiterPath = path.join(request.dir, name);
+    const clause = await liveHolderClause(mechanism, waiterPath, async () => `waiting ${await clauseOfHeld(waiterPath, runClass, mechanism)}`);
+    if (clause !== undefined && Number(seq) < arrival.seq && classes.includes(runClass)) clauses.push(clause);
+  }
+  return clauses;
+};
+
+const busyWith = (clauses: readonly string[]): Busy | undefined => (clauses.length === 0 ? undefined : { kind: 'busy', clauses, lights: [] });
+
 const checkHeavy = async (context: AttemptContext): Promise<Busy | undefined> => {
   const { request, mechanism } = context;
   const heavyPath = heavyPathOf(request.dir);
   if (await mechanism.isHeld(heavyPath)) return { kind: 'busy', clauses: [await clauseOfHeld(heavyPath, 'heavy', mechanism)], lights: [] };
-  const waiterNames = await lockUnitsNamed(context, HEAVY_WAITER_NAME);
-  const waiters: string[] = [];
-  for (const name of waiterNames) {
-    const waiterPath = path.join(request.dir, name);
-    const clause = await liveHolderClause(mechanism, waiterPath, () => waitingHeavyClause(mechanism, waiterPath));
-    if (clause !== undefined) waiters.push(clause);
-  }
-  return waiters.length === 0 ? undefined : { kind: 'busy', clauses: waiters, lights: [] };
+  return busyWith(await earlierWaiters(context, ['heavy']));
 };
 
 const lightAttempt = async (context: AttemptContext): Promise<Attempt> => {
@@ -308,6 +328,8 @@ const decide = async (context: AttemptContext, heavy: Claimed, lightHolders: rea
 };
 
 const heavyAttempt = async (context: AttemptContext): Promise<Attempt> => {
+  const ahead = busyWith(await earlierWaiters(context, ['heavy', 'light']));
+  if (ahead !== undefined) return ahead;
   const heavy = await claimHeavy(context);
   if ('kind' in heavy) return heavy;
   return disposedOnFailure(heavy.lock, async () => {
@@ -351,19 +373,54 @@ const acquiredFrom = ({ request, mechanism }: AttemptContext, holding: Holding):
   };
 };
 
-type HeavyWaiter = { readonly release: () => Promise<void> };
+type Waiter = { readonly release: () => Promise<void> };
 
-const recordHeavyWaiter = async (context: AttemptContext): Promise<HeavyWaiter> => {
+const withArrivalUnit = async <T>(context: AttemptContext, work: () => Promise<T>): Promise<T> => {
+  const arrivalPath = path.join(context.request.dir, ARRIVAL_NAME);
+  const started = performance.now();
+  for (;;) {
+    const outcome = await context.mechanism.claim(arrivalPath);
+    if (outcome.kind === 'claimed') {
+      try {
+        return await work();
+      } finally {
+        outcome.lock.dispose();
+      }
+    }
+    if (performance.now() - started >= ARRIVAL_BOUND_MS) throw new Error(`the arrival unit ${arrivalPath} stayed held for ${ARRIVAL_BOUND_MS / 1000} s`);
+    await delay(ARRIVAL_RETRY_MS);
+  }
+};
+
+const takeArrival = (context: AttemptContext): Promise<number> =>
+  withArrivalUnit(context, async () => {
+    const nextPath = path.join(context.request.dir, ARRIVAL_NEXT_FILE);
+    const text = await fs.promises.readFile(nextPath, 'utf8').catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '1';
+      throw error;
+    });
+    const arrival = Number(text);
+    if (!Number.isSafeInteger(arrival) || arrival < 1) throw new Error(`${nextPath} holds no arrival number: "${text}"`);
+    const temporary = `${nextPath}.${context.request.pid}.tmp`;
+    await fs.promises.writeFile(temporary, String(arrival + 1), { mode: PRIVATE_FILE_MODE });
+    await fs.promises.rename(temporary, nextPath);
+    return arrival;
+  });
+
+const recordWaiter = async (context: AttemptContext): Promise<Waiter> => {
+  const seq = await takeArrival(context);
   const hex = newTokenHex();
-  const waiterPath = heavyWaiterPathOf(context.request.dir, hex);
+  const waiterPath = waiterPathOf(context.request.dir, seq, context.request.runClass, hex);
   const lock = await claimNamed(context.mechanism, waiterPath, hex);
-  if (lock === undefined) throw new Error(`the heavy waiter lock ${waiterPath} is held by another run`);
+  if (lock === undefined) throw new Error(`the waiter lock ${waiterPath} is held by another run`);
   try {
     await writeDescription(context, waiterPath, hex, context.now().toISOString());
   } catch (error) {
     lock.dispose();
     throw error;
   }
+  context.arrival.seq = seq;
+  context.arrival.hex = hex;
   return {
     release: async () => {
       try {
@@ -381,7 +438,7 @@ const defaultSleep = async (ms: number, signal: AbortSignal): Promise<void> => {
 
 const acquireOrWait = async (request: RunLockRequest): Promise<RunLockOutcome> => {
   const { runClass, waitSeconds, signal, say } = request;
-  const context: AttemptContext = { request, mechanism: await lockWork(() => mechanismFor(request)), now: request.now ?? ((): Date => new Date()) };
+  const context: AttemptContext = { request, mechanism: await lockWork(() => mechanismFor(request)), now: request.now ?? ((): Date => new Date()), arrival: { seq: Number.POSITIVE_INFINITY, hex: undefined } };
 
   const inherited = await lockWork(() => liveTokenClass(context));
   if (inherited === 'light' && runClass === 'heavy') return { kind: 'refused', message: NESTED_HEAVY_MESSAGE };
@@ -395,8 +452,7 @@ const acquireOrWait = async (request: RunLockRequest): Promise<RunLockOutcome> =
   }
 
   say(`run-lock: ${runClass} run waits up to ${waitSeconds} s for ${first.clauses.join('; ')}`);
-  if (runClass === 'light') return waitForLock(context, first);
-  const waiter = await lockWork(() => recordHeavyWaiter(context));
+  const waiter = await lockWork(() => recordWaiter(context));
   try {
     return await waitForLock(context, first);
   } finally {
@@ -404,31 +460,44 @@ const acquireOrWait = async (request: RunLockRequest): Promise<RunLockOutcome> =
   }
 };
 
-const endByTerm = (pid: number): void => {
+const endBySignal = (pid: number, signal: HolderSignal): void => {
   try {
-    process.kill(pid, 'SIGTERM');
+    process.kill(pid, signal);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
   }
 };
 
-type Progress = { readonly cpuSeconds: number; readonly sinceMs: number };
+type Progress = { readonly cpuSeconds: number; readonly sinceMs: number; readonly termAtMs: number | undefined };
 
-const stalledLightWatch = (request: RunLockRequest, monotonic: () => number) => {
+const sampled = async (progressOf: (pid: number) => Promise<number>, pid: number, clause: string): Promise<number> => {
+  try {
+    return await progressOf(pid);
+  } catch (error) {
+    throw new SamplerFailure(`run-lock: cannot read the CPU time of the processes of ${clause}: ${causeOf(error)}`);
+  }
+};
+
+const stalledLightWatch = (request: RunLockRequest, monotonic: () => number): ((lights: readonly LightHolder[]) => Promise<void>) => {
   const progressOf = request.progressOf ?? treeCpuSeconds;
-  const endHolder = request.endHolder ?? endByTerm;
+  const endHolder = request.endHolder ?? endBySignal;
   const seen = new Map<number, Progress>();
-  return async (lights: readonly LightHolder[]): Promise<void> => {
+  return async (lights) => {
     for (const { pid, clause } of lights) {
-      const cpuSeconds = await progressOf(pid);
+      const cpuSeconds = await sampled(progressOf, pid, clause);
       const nowMs = monotonic();
       const last = seen.get(pid);
       if (last === undefined || cpuSeconds > last.cpuSeconds) {
-        seen.set(pid, { cpuSeconds, sinceMs: nowMs });
+        seen.set(pid, { cpuSeconds, sinceMs: nowMs, termAtMs: undefined });
+      } else if (last.termAtMs !== undefined) {
+        if (nowMs - last.termAtMs < REAP_KILL_GRACE_MS) continue;
+        request.say(`run-lock: ${request.runClass} run kills ${clause}: it outlived SIGTERM by ${Math.floor((nowMs - last.termAtMs) / 1000)} s`);
+        seen.delete(pid);
+        await endHolder(pid, 'SIGKILL');
       } else if (nowMs - last.sinceMs >= LIGHT_HOLDER_STALL_MS) {
         request.say(`run-lock: ${request.runClass} run ends ${clause}: its processes used no CPU time for ${Math.floor((nowMs - last.sinceMs) / 1000)} s`);
-        seen.delete(pid);
-        await endHolder(pid);
+        seen.set(pid, { ...last, termAtMs: nowMs });
+        await endHolder(pid, 'SIGTERM');
       }
     }
   };
@@ -470,6 +539,7 @@ export const acquireRunLock = async (request: RunLockRequest): Promise<RunLockOu
     return await acquireOrWait(request);
   } catch (error) {
     if (error instanceof LockUnusableError) return { kind: 'unusable', message: unusableMessage(request.dir, error.message) };
+    if (error instanceof SamplerFailure) return { kind: 'unusable', message: error.message };
     throw error;
   }
 };
