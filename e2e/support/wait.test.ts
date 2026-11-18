@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, RULE_VERIFY_LOAD_ALLOWANCE_MS } from '@momonga/protocol';
 import { REFLECTION_PICKUP_BOUND_MS } from '@momonga/runtime';
 import * as waits from './wait.ts';
 import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
@@ -183,7 +183,16 @@ describe('the bounds a test waits on', () => {
     expect(waits.E2E_REFLECTION_SETTLED_BOUND_MS).toBeLessThan(waits.E2E_TEST_TIMEOUT_MS);
   });
 
-  it('give a run that verifies its rules the rule verify budget', () => {
-    expect(waits.E2E_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RECOVERY_BOUND_MS + RULE_VERIFY_BUDGET_MS + waits.E2E_MARGIN_MS);
+  it('give one verification of rules the time the product allows its solver thread to load and its budget', () => {
+    expect(waits.E2E_RULE_VERIFICATION_BOUND_MS).toBe(RULE_VERIFY_LOAD_ALLOWANCE_MS + RULE_VERIFY_BUDGET_MS);
+  });
+
+  it('give a run that verifies its rules at its start one verification', () => {
+    expect(waits.E2E_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RECOVERY_BOUND_MS + waits.E2E_RULE_VERIFICATION_BOUND_MS + waits.E2E_MARGIN_MS);
+  });
+
+  it('give a run created under a mandate a second verification, the one its creation waits for, and fit it in the test timeout', () => {
+    expect(waits.E2E_MANDATE_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RULE_VERIFICATION_BOUND_MS + waits.E2E_RUN_COMPLETED_BOUND_MS);
+    expect(waits.E2E_MANDATE_RUN_COMPLETED_BOUND_MS).toBeLessThan(waits.E2E_TEST_TIMEOUT_MS);
   });
 });

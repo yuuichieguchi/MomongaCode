@@ -1,6 +1,6 @@
 import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
-import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, RULE_VERIFY_LOAD_ALLOWANCE_MS } from '@momonga/protocol';
 import {
   LOCK_WATCH_INTERVAL_MS,
   ORPHAN_POLL_MS,
@@ -49,7 +49,9 @@ export const E2E_ORPHAN_GRACE_MS = 3000;
 export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({});
 export const E2E_PHASE2_REACHED_BOUND_MS = orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
-export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + RULE_VERIFY_BUDGET_MS + E2E_MARGIN_MS;
+export const E2E_RULE_VERIFICATION_BOUND_MS = RULE_VERIFY_LOAD_ALLOWANCE_MS + RULE_VERIFY_BUDGET_MS;
+export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_RULE_VERIFICATION_BOUND_MS + E2E_MARGIN_MS;
+export const E2E_MANDATE_RUN_COMPLETED_BOUND_MS = E2E_RULE_VERIFICATION_BOUND_MS + E2E_RUN_COMPLETED_BOUND_MS;
 export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_RUN_COMPLETED_BOUND_MS;
 export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_RESTART_BOUND_MS,
@@ -66,7 +68,9 @@ export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_REAP_TO_RUNNING_BOUND_MS,
   E2E_PHASE2_REACHED_BOUND_MS,
   E2E_LOCK_FREE_BOUND_MS,
+  E2E_RULE_VERIFICATION_BOUND_MS,
   E2E_RUN_COMPLETED_BOUND_MS,
+  E2E_MANDATE_RUN_COMPLETED_BOUND_MS,
   E2E_REFLECTION_SETTLED_BOUND_MS,
 } as const;
 export const e2eTestTimeoutMs = (...sequentialBoundsMs: readonly number[]): number => sequentialBoundsMs.reduce((sum, boundMs) => sum + boundMs, 0) + E2E_MARGIN_MS;

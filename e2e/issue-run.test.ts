@@ -15,7 +15,7 @@ import { createRuntimeClient } from './support/runtime-client.ts';
 import { sandboxOrSkip } from './support/sandbox.ts';
 import { baseSettings, sandboxChoiceOf, startStack, withUpstreamConnection } from './support/stack.ts';
 import { textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { E2E_MANDATE_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const FORGE_SECRET = `forge-issue-run-${process.pid}`;
 const FORGE_CREDENTIAL = 'e2e-forge-credential-7d2e41b9';
@@ -95,7 +95,7 @@ describe('issue: one run from an issue, end to end', () => {
     await trustProject(home);
     const issueUrl = `https://${forge.host}/acme/widgets/issues/7`;
 
-    const result = await runCli(home, ['--issue', issueUrl, '--mandate', 'fix']);
+    const result = await runCli(home, ['--issue', issueUrl, '--mandate', 'fix'], { boundMs: E2E_MANDATE_RUN_COMPLETED_BOUND_MS });
 
     const notes = result.stderr.trimEnd().split('\n');
     expect(notes).toContain(`momonga: ${issueComment.report.replace('{input.number}', '7')}`);
