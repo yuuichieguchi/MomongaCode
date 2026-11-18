@@ -373,7 +373,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     }
   };
   const omittedOf = (kept: number, total: number): number => Math.max(moreMemories ? 1 : 0, total - kept);
-  const renderingOptions = { atLeast: moreMemories, matchCap: sources.memoryMatchCap };
+  const renderingOptions = { atLeast: moreMemories, matchCap: sources.memoryMatchCap, touchedCap: sources.memoryTouchedCap };
   if (input.pinnedMemoryIds !== undefined && rankedMemories.length > 0) {
     memoryCount = memoryCandidates.length;
     memoriesDropped(memoryCount, rankedMemories.length);
@@ -517,7 +517,7 @@ const pinnedMemoryMessageOf = (input: BuildContextInput): MessageInputItem | und
   return {
     type: 'message',
     role: 'user',
-    content: renderMemories(chosen, Math.max(more ? 1 : 0, ranked.length - chosen.length), { atLeast: more, matchCap: input.sources.memoryMatchCap }),
+    content: renderMemories(chosen, Math.max(more ? 1 : 0, ranked.length - chosen.length), { atLeast: more, matchCap: input.sources.memoryMatchCap, touchedCap: input.sources.memoryTouchedCap }),
   };
 };
 

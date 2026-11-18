@@ -179,3 +179,12 @@ describe('recalled memories', () => {
     expect(crowded.notices.map((notice) => notice.code)).not.toContain('instructions_dropped');
   });
 });
+
+describe('the touched-path bound of the recall', () => {
+  it('is stated in the memory block the model sees', async () => {
+    const capabilities = capabilitiesFor(200000);
+    const { ports } = harness(capabilities);
+    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ memories: [memoryOf(1)], memoryTouchedCap: 4 }) }), ports);
+    expect(String(memoryMessageOf(result.input)?.content)).toContain('Only the newest 4 touched paths were used, with the task, to choose the notes shown');
+  });
+});

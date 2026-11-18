@@ -111,8 +111,9 @@ export const createMemoryPort = ({ platform, store, settings, evidenceRun, evide
     let pinnedOutside: MemoryView[] = [];
     let more = false;
     let capped = false;
+    let touchedBound: number | undefined;
     return {
-      prepare: async ({ query, capacity, pinnedIds = [] }) => {
+      prepare: async ({ query, capacity, pinnedIds = [], touchedCap }) => {
         const budget = recallPrefixBudgetOf(capacity);
         const terms = termsOfQuery(query);
         const read: MemoryView[] = [];
@@ -146,10 +147,12 @@ export const createMemoryPort = ({ platform, store, settings, evidenceRun, evide
         prefix = read;
         more = hasMore;
         capped = matchCapped;
+        touchedBound = touchedCap;
       },
       ranked: () => [...prefix, ...pinnedOutside],
       hasMore: () => more,
       matchCap: () => (capped ? MEMORY_MATCH_LIMIT : undefined),
+      touchedCap: () => touchedBound,
       tools: createMemoryTools({ port: toolPort, trusted }),
     };
   },
