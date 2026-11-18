@@ -70,6 +70,28 @@ describe('the screen proofs of packages/verify/test/proofs describe the code of 
     }
   });
 
+  it('computes the context percent as the integer form footer-percent states, floor((200 t + w) / (2 w)), for every window up to 4000', () => {
+    const broken: string[] = [];
+    for (let window = 1; window <= 4000; window += 1) {
+      for (let tokens = 0; tokens <= window; tokens += 1) {
+        const exact = Number((200n * BigInt(tokens) + BigInt(window)) / (2n * BigInt(window)));
+        const percent = contextPercentOf(tokens, window);
+        if (percent !== exact) broken.push(`${tokens}/${window}: ${String(percent)} not ${exact}`);
+      }
+    }
+    expect(broken.slice(0, 10)).toEqual([]);
+    for (const [tokens, window] of [[2 ** 53 - 1, 2 ** 53 - 1], [2 ** 52 + 1, 2 ** 53 - 1], [1, 2 ** 53 - 1]] as const) {
+      expect(contextPercentOf(tokens, window)).toBe(Number((200n * BigInt(tokens) + BigInt(window)) / (2n * BigInt(window))));
+    }
+  });
+
+  it('keeps the input box where it is when only the waiting row or the menu change (H = 6, one subagent asked, the waiting row from 0 to 1)', () => {
+    const requests = { waiting: 0, inputRows: 1, invitation: 0, menu: 0, subagents: 1, footerSecond: 0, lines: 0, panel: undefined };
+    const before = allocate(6, requests);
+    const after = allocate(6, { ...requests, waiting: 1 });
+    expect([after.input, after.footer, after.subagents]).toEqual([before.input, before.footer, before.subagents]);
+  });
+
   it('writes an OSC 52 payload of the length copy-bounds states', () => {
     for (const size of [0, 1, 2, 3, 4, 100, OSC52_MAX_RAW_BYTES]) {
       const sequence = osc52Of('a'.repeat(size));
