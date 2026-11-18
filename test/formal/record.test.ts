@@ -1,7 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { CleanupContext } from '@momonga/testkit';
+import { withTempDir } from '@momonga/testkit';
 import { actionPropertyViolationOutput, completedOutput, holdsEntry, invariantEntry, invariantViolationOutput } from './fixtures.ts';
 import { createManifestRowWriter, measurementOf, recordProblems, recordedRow } from './record.ts';
 import { specIdentityOf } from './reuse.ts';
@@ -74,22 +75,22 @@ describe('the row a recorded run writes', () => {
 });
 
 describe('the manifest rows written as each row finishes', () => {
-  const manifestWith = (): { dir: string; manifestPath: string } => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-rows-'));
+  const manifestWith = (context: CleanupContext): { dir: string; manifestPath: string } => {
+    const dir = withTempDir(context);
     const manifestPath = path.join(dir, 'manifest.json');
     fs.writeFileSync(manifestPath, `${JSON.stringify({ format: 'momonga-tla-manifest/2', entries: [{ config: 'A', distinctStates: 1 }, { config: 'B', distinctStates: 1 }] }, null, 2)}\n`);
     return { dir, manifestPath };
   };
 
-  it('has written a row to the manifest when its write has settled', async () => {
-    const { manifestPath } = manifestWith();
+  it('has written a row to the manifest when its write has settled', async (context) => {
+    const { manifestPath } = manifestWith(context);
     const write = createManifestRowWriter(manifestPath);
     await write({ config: 'A', distinctStates: 9 });
     expect(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).entries[0]).toEqual({ config: 'A', distinctStates: 9 });
   });
 
-  it('keeps every row when rows finish at the same time', async () => {
-    const { manifestPath } = manifestWith();
+  it('keeps every row when rows finish at the same time', async (context) => {
+    const { manifestPath } = manifestWith(context);
     const write = createManifestRowWriter(manifestPath);
     await Promise.all([write({ config: 'A', distinctStates: 9 }), write({ config: 'B', distinctStates: 8 })]);
     expect(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).entries).toEqual([{ config: 'A', distinctStates: 9 }, { config: 'B', distinctStates: 8 }]);
