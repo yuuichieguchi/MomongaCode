@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { underivedE2eWaits, underivedWaitsOf } from './support/e2e-wait-scan.ts';
+import { underivedE2eWaits, underivedWaitsOf, waitParametersOf } from './support/e2e-wait-scan.ts';
 import { ROOT, parseSource } from './support/source-scan.ts';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
 
@@ -22,9 +22,23 @@ const countsOf = (files: readonly string[]): Record<string, number> => {
   return counts;
 };
 
-const boundsIn = (text: string): string[] => underivedWaitsOf(parseSource(path.join(ROOT, 'e2e', 'sample.test.ts'), text)).map((wait) => wait.bound);
+const HELPERS = [
+  'export type Stream = { toEnd(deadlineMs: number): Promise<void>; until(match: () => boolean, deadlineMs: number): Promise<void> };',
+  'export type Client = { untilChild: (role: string, match: () => boolean, deadlineMs: number) => Promise<void> };',
+  'export const withinBound = <T>(promise: Promise<T>, boundMs: number, describe: string): Promise<T> => promise;',
+  'export function untilStatus(id: string, status: string, statusDeadlineMs: number): void {}',
+  'export const restartWith = (baseMs: number, idleTimeoutMs: number): void => undefined;',
+].join('\n');
+
+const parameters = waitParametersOf([{ file: path.join(ROOT, 'e2e', 'support', 'sample.ts'), text: HELPERS }]);
+
+const boundsIn = (text: string): string[] => underivedWaitsOf(parseSource(path.join(ROOT, 'e2e', 'sample.test.ts'), text), parameters).map((wait) => wait.bound);
 
 describe('every wait of the e2e project is bounded by a bound derived from the product', () => {
+  it('takes every parameter of a helper named as a deadline, a bound or a timeout as the bound of a wait, and no other', () => {
+    expect(Object.fromEntries([...parameters].map(([name, indexes]) => [name, [...indexes]]))).toEqual({ toEnd: [0], until: [1], untilChild: [2], withinBound: [1], untilStatus: [2] });
+  });
+
   it('finds a number or a slack constant standing alone as the bound of a wait', () => {
     const text = [
       "import { STARTUP_TIMEOUT_MS } from '@momonga/supervisor';",
@@ -39,10 +53,15 @@ describe('every wait of the e2e project is bounded by a bound derived from the p
       'await stream.until(match, MARGIN_MS);',
       'await client.untilChild(role, match, 1000);',
       "await withinBound(work, MARGIN_MS, 'd');",
+      "untilStatus(id, 'COMPLETED', 3000);",
+      "await fake.waitForRequest({ timeoutMs: MARGIN_MS, description: 'g' });",
+      'restartWith(200, 100);',
       "await untilProcessesEnded(pids, { deadlineMs: CLEANUP_KILL_DEADLINE_MS, description: 'f' });",
       'const helper = async (deadlineMs: number) => until(check, { deadlineMs, description: "e" });',
+      'const extended = (extraBoundMs = 0) => until(check, { deadlineMs: DERIVED_MS + extraBoundMs, description: "h" });',
+      'const defaulted = async (id: string, deadlineMs = MARGIN_MS) => until(check, { deadlineMs, description: id });',
     ].join('\n');
-    expect(boundsIn(text)).toEqual(['MARGIN_MS', '2 * MARGIN_MS', '5000', 'MARGIN_MS', '1000', 'MARGIN_MS', 'CLEANUP_KILL_DEADLINE_MS']);
+    expect(boundsIn(text)).toEqual(['MARGIN_MS', '2 * MARGIN_MS', '5000', 'MARGIN_MS', '1000', 'MARGIN_MS', '3000', 'MARGIN_MS', 'CLEANUP_KILL_DEADLINE_MS', 'MARGIN_MS']);
   });
 
   it('holds in every file of the e2e project but the self-tests of the wait helpers, whose subject is the bound itself', () => {

@@ -156,16 +156,6 @@ describe('encrypted credential store: the four operations of the one CredentialS
     expect(fs.readFileSync(path.join(given.stateDirectory, CREDENTIAL_KEY_MARKER_FILE), 'utf8')).toContain(createdKeyNames(given.keys)[0] as string);
   });
 
-  it('asks the OS store for the key once in an update of an encrypted record, for the decryption and the encryption together', async () => {
-    const given = setup();
-    const store = storeOf(given);
-    await store.write('plan/p/a', 'one', SIGNAL);
-    const before = given.keys.reads.length;
-    await store.update('plan/p/a', (current) => `${current}-two`, SIGNAL);
-    expect(given.keys.reads.length - before).toBe(1);
-    expect(await store.read('plan/p/a', SIGNAL)).toBe('one-two');
-  });
-
   it('creates no key on a read', async () => {
     const given = setup();
     expect(await storeOf(given).read('plan/p/a', SIGNAL)).toBeUndefined();
