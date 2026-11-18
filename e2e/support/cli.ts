@@ -9,7 +9,7 @@ import type { OpenerCall } from '@momonga/testkit';
 import { describeVerification } from '../../packages/cli/src/policy-messages.ts';
 import { SESSION_PATH } from './runtime-client.ts';
 import { baseSettings, sandboxChoiceOf, writeSettingsFile } from './stack.ts';
-import { isAlive } from './process.ts';
+import { processRunning } from './process.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, withinBound } from './wait.ts';
 
 export { CLI_BUNDLE, CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './cli-bundles.ts';
@@ -145,7 +145,7 @@ export type DaemonStopped = { readonly stdout: string; readonly code: number | n
 export const stopDaemonCli = async (home: E2eHome, supervisorPids: readonly number[], options: { withFakes?: boolean } = {}): Promise<DaemonStopped> => {
   const run = options.withFakes === true ? runCliWithFakes : runCli;
   const { stdout, code } = await run(home, ['daemon', 'stop'], { boundMs: E2E_SUPERVISOR_CLOSE_BOUND_MS });
-  const alive = supervisorPids.filter((pid) => isAlive(pid));
+  const alive = supervisorPids.filter((pid) => processRunning(pid));
   if (alive.length > 0) throw new Error(`momonga daemon stop returned (exit ${String(code)}) while the supervisor processes ${alive.join(', ')} were still running\nstdout:\n${stdout}`);
   return { stdout, code };
 };

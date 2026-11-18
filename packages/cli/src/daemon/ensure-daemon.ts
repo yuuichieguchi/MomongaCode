@@ -132,7 +132,7 @@ const exitDescription = (exit: DetachedExit): string => (exit.code === null ? `s
 type StoppingGeneration = { generation: number; pid: number };
 
 const generationGone = async (ports: Pick<DaemonPorts, 'process'>, paths: MomongaPaths, stopping: StoppingGeneration, lock: KernelLockMechanism): Promise<boolean> =>
-  !(await lockReadsHeld(supervisorLockOf(paths, stopping.generation), { lock })) && !isProcessAlive(stopping.pid, ports.process.kill);
+  !(await lockReadsHeld(supervisorLockOf(paths, stopping.generation), { lock })) && !isProcessAlive(stopping.pid, ports.process.kill, ports.process.runState);
 
 export const waitForGenerationsGone = async (
   ports: Pick<DaemonPorts, 'clock' | 'process'>,

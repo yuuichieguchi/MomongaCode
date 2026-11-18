@@ -73,6 +73,7 @@ const ESRCH = (): Error => Object.assign(new Error('kill ESRCH'), { code: 'ESRCH
 export const fakeSupervisorProcesses = (supervisors: () => readonly FakeSupervisor[]): ProcessPort => ({
   pid: process.pid,
   uid: () => undefined,
+  runState: null,
   kill: (pid, signal) => {
     if (signal !== 0) throw new Error(`the fake supervisor processes take only signal 0, not ${signal}`);
     if (!supervisors().some((supervisor) => supervisor.pid === pid && !supervisor.exited)) throw ESRCH();
