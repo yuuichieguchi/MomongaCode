@@ -731,7 +731,11 @@ const reapOnOccasion = async (marker: string, occasion: RetryKind, label: string
   try {
     reaped = await reap(marker);
   } catch (error) {
-    await returnRetry(marker, occasion);
+    const returned = await returnRetry(marker, occasion).then(
+      () => undefined,
+      (failure: unknown) => failure,
+    );
+    if (returned !== undefined) throw new AggregateError([error, returned], `the reap of ${marker} failed and its ${occasion} chance could not be returned`);
     throw error;
   }
   if (reaped.unread) {
