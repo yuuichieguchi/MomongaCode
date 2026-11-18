@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SHUTDOWN_SETTING_LIMITS, STARTUP_TIMEOUT_MS } from '@momonga/foundation';
 import { HOOK_DEFAULT_TIMEOUT_SECONDS } from '@momonga/protocol';
 import {
   DEFAULT_RETENTION_DAYS,
@@ -61,6 +61,7 @@ const DEFAULTS: readonly [string, unknown][] = [
   ['retention.days', DEFAULT_RETENTION_DAYS],
   ...Object.entries(defaultTuiSettings()).map(([key, value]): [string, unknown] => [`tui.${key}`, value]),
   ['update.stallTimeoutMs', DEFAULT_UPDATE_STALL_TIMEOUT_MS],
+  ['daemon.startupStallMs', STARTUP_TIMEOUT_MS],
   ['models.headersTimeoutMs', FIVE_MINUTES_MS],
   ['models.idleTimeoutMs', FIVE_MINUTES_MS],
   ['mcp.toolIdleTimeoutNetworkMs', MCP_TOOL_IDLE_TIMEOUT_MS.network],
@@ -85,6 +86,7 @@ const UNITS: readonly [string, string][] = [
   ['tools.search.timeoutMs', 'milliseconds'],
   ['tools.operations.timeoutMs', 'milliseconds'],
   ['update.stallTimeoutMs', 'milliseconds'],
+  ['daemon.startupStallMs', 'milliseconds'],
   ['mcp.toolIdleTimeoutNetworkMs', 'milliseconds'],
   ['mcp.toolIdleTimeoutStdioMs', 'milliseconds'],
   ['mcp.toolTotalTimeoutMs', 'milliseconds'],
