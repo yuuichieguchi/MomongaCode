@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ReapMarkerDirectoryOptions, ReapMarkerDirectoryResult } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { afterMicrotasks, withTempDir } from '@momonga/testkit';
 import { holdReapOfDirectory } from './reap-hold.ts';
 
 const RESULT: ReapMarkerDirectoryResult = { reaped: 1, kept: 0, unreaped: [] };
@@ -21,7 +21,7 @@ const settledSoon = async (promise: Promise<unknown>): Promise<boolean> => {
   void promise.then(() => {
     settled = true;
   });
-  await new Promise((resolve) => setImmediate(resolve));
+  await afterMicrotasks();
   return settled;
 };
 

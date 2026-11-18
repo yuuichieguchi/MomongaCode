@@ -638,7 +638,7 @@ export const SETTINGS_SCHEMA = {
     },
     autoUpdates: { type: 'boolean', default: DEFAULT_AUTO_UPDATES },
     update: { type: 'object', properties: { stallTimeoutMs: withDefault(POSITIVE_INTEGER, DEFAULT_UPDATE_STALL_TIMEOUT_MS) }, additionalProperties: false },
-    daemon: { type: 'object', properties: { startupStallMs: withDefault(POSITIVE_INTEGER, STARTUP_TIMEOUT_MS) }, additionalProperties: false },
+    daemon: { type: 'object', properties: { startupStallMs: { ...POSITIVE_INTEGER, default: STARTUP_TIMEOUT_MS } }, additionalProperties: false },
     tui: {
       type: 'object',
       properties: {

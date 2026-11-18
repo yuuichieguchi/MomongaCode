@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createTempDir } from '@momonga/testkit';
 import { spawnSync } from '@momonga/testkit/child-process';
 import { REUSE_RECORD_FORMAT, createRepoDigests, globalsOf, harnessOf, readRecord, fileFiltersOf, projectsOf, replayedSelected, inputsOf, isReplayable, recordFor, replayedLine, testReuseModeOf } from './support/test-reuse.ts';
 import type { ReuseGlobals } from './support/test-reuse.ts';
+
+vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const GLOBALS: ReuseGlobals = { node: 'v24.0.0', platform: 'darwin', arch: 'arm64', harness: { unit: { 'package-lock.json': 'lock' }, e2e: { 'package-lock.json': 'lock' } }, env: {} };
 
@@ -303,7 +305,6 @@ describe('the files the main process loaded for a project', () => {
       edit('product/loaded.ts');
       expect(run()).toContain('Replayed 0 test files');
     },
-    REAL_PROCESS_TEST_TIMEOUT_MS * 4,
   );
   const twoProjects = (): void => {
     root = createTempDir();
@@ -342,6 +343,5 @@ describe('the files the main process loaded for a project', () => {
       expect(output).toContain('first/first.test.ts');
       expect(output).not.toContain('second/second.test.ts');
     },
-    REAL_PROCESS_TEST_TIMEOUT_MS * 4,
   );
 });
