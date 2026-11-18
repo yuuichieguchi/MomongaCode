@@ -133,3 +133,11 @@ export function InputBox({ editor, columns, rows, top, framed, mark }: InputBoxP
     </Box>
   );
 }
+
+export const KEPT_DRAFT_LABEL = 'your input, kept while this is open: ';
+
+export const keptDraftLine = (text: string): string | undefined => {
+  if (text === '') return undefined;
+  const [first = ''] = text.split('\n');
+  return `${KEPT_DRAFT_LABEL}${inertText(first)}${text.includes('\n') ? ' …' : ''}`;
+};

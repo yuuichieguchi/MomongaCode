@@ -58,7 +58,7 @@ export const allocateWith = <T>(ops: Ops<T>, height: T, requests: Requests<T>, p
   const invitation = panelRows === undefined ? take(requests.invitation) : zero;
   const waiting = take(requests.waiting);
   const menu = ops.add(invitation, panelRows === undefined ? take(ops.min(requests.menu, menuRowsCapOf(ops, height))) : zero);
-  const lines = panelRows === undefined ? take(requests.lines) : zero;
+  const lines = take(requests.lines);
   return {
     header,
     viewport: ops.add(ops.lit(SCREEN_CONSTANTS.VIEWPORT_ROWS), left),

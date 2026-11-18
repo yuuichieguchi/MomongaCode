@@ -36,7 +36,7 @@ export const allocate = (height: number, requests: RowRequests): RowAllocation =
   const invitation = panel === undefined ? take(requests.invitation) : 0;
   const waiting = take(requests.waiting);
   const menu = invitation + (panel === undefined ? take(Math.min(requests.menu, menuRowsCap(height))) : 0);
-  const lines = panel === undefined ? take(requests.lines) : 0;
+  const lines = take(requests.lines);
   return { header, viewport: VIEWPORT_ROWS + left, menu, waiting, lines, input: reservedInput + inputExtra, footer: FOOTER_ROWS + footerSecond, subagents };
 };
 

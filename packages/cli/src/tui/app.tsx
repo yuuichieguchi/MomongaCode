@@ -54,7 +54,7 @@ import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen
 import { formatTokens } from '../format-tokens.ts';
 import { HistoryView, useBackgroundAnswered } from './screen/history-view.tsx';
 import type { ViewSource } from './screen/viewport.ts';
-import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
+import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf, keptDraftLine } from './screen/input-box.tsx';
 import { untilNextKey } from './screen/input.ts';
 import type { ScreenTerminal } from './screen/input.ts';
 import type { RowRequests } from './screen/layout.ts';
@@ -1685,6 +1685,7 @@ export function App(props: AppProps) {
   const menuShown = inputShown && (invitationShown || completionOpen);
   const shownAttachments = heldAttachments(attachments, editor.pastes);
   const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
+  const keptDraft = !inputShown && panel !== undefined ? keptDraftLine(editor.text) : undefined;
   const busyHintRow = !inputShown || phase.kind !== 'ready' ? undefined : shellDraft ? shellHint(keys) : !busy ? undefined : slashMenu.open || atMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
   const invitationText = invitationInMenu && prompts.invitation !== undefined ? invitationRows(prompts.invitation, keys, columns) : [];
@@ -1712,7 +1713,7 @@ export function App(props: AppProps) {
     menu: !menuShown || invitationInMenu ? 0 : atMenu.open ? atMenu.rows : slashMenu.rows,
     subagents: agentListRequest({ ...listBase, focus: listFocus === undefined ? undefined : 0 }),
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
-    lines: inputShown ? shownAttachments.length + waitingLines.length : 0,
+    lines: inputShown ? shownAttachments.length + waitingLines.length : keptDraft === undefined ? 0 : 1,
     panel: panel === undefined ? undefined : (panelRows ?? 0),
   };
   const allocation = allocate(rows, rowRequests);
@@ -1932,7 +1933,11 @@ export function App(props: AppProps) {
                 </Text>
               ))}
             </>
-          ) : null,
+          ) : keptDraft === undefined ? null : (
+            <Text dimColor wrap="truncate">
+              {keptDraft}
+            </Text>
+          ),
           input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(shownFeed.live(view.source, viewed.settledAt).length, rowRequests))} /> : null,
           footer: (
             <>

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { KEPT_DRAFT_LABEL } from '../../src/tui/screen/input-box.tsx';
 import { UNDER_HANDS_LINE, UNDER_HANDS_PAUSE_LINE } from '../../src/tui/screen/prompt-settle.ts';
 import { KEY_SETTLE_MS } from '../../src/tui/terminal/constants.ts';
 import type { FakeBackend } from '../fake-backend.ts';
@@ -60,7 +61,9 @@ describe('keys that arrive before an approval is on the screen never answer it',
       await renderedAfter(app, backend);
       expect(approvals(backend)).toEqual([]);
       expect(app.lastFrame()).toContain(PANEL);
+      if (draft !== '') expect(app.lastFrame()).toContain(`${KEPT_DRAFT_LABEL}${draft}`);
       if (draft === '') {
+        expect(app.lastFrame()).not.toContain(KEPT_DRAFT_LABEL);
         app.stdin.write('2');
         await backend.called('approve:ap1:o3');
         return app.unmount();
@@ -98,7 +101,7 @@ describe('text typed at an approval that is on the screen is kept for the input 
     app.stdin.write(KEYS.enter);
     clock.advance(KEY_SETTLE_MS * 2);
     app.stdin.write(KEYS.enter);
-    const shown = await untilFrame(app, UNDER_HANDS_LINE);
+    const shown = await untilFrame(app, (frame) => frame.includes(UNDER_HANDS_LINE) && frame.includes(`${KEPT_DRAFT_LABEL}/exit`));
     expect(shown).toContain(PANEL);
     await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual([]);
