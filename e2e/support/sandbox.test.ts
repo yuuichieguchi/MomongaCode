@@ -23,6 +23,11 @@ import type { SandboxProbe, SandboxProbeRunner } from './sandbox.ts';
 
 const E2E_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+const only =
+  (...launchers: string[]) =>
+  (file: string): boolean =>
+    launchers.includes(file);
+
 const BWRAP_PROC_DENIED = "bwrap: Can't mount proc on /newroot/proc: Operation not permitted";
 
 const recordingRunner = (outcome: 'ok' | { stderr: string } | Error) => {
@@ -42,42 +47,45 @@ const registeredTitlesIn = (source: string): string[] =>
 describe('sandbox probe', () => {
   it('on darwin it probes seatbelt: the allow-default profile once through sandbox-exec', () => {
     const { runner, calls } = recordingRunner('ok');
-    expect(runSandboxProbe('darwin', runner)).toEqual({ usable: true, kind: 'seatbelt' });
+    expect(runSandboxProbe('darwin', runner, only(SANDBOX_EXEC_PATH))).toEqual({ usable: true, kind: 'seatbelt' });
     expect(calls).toEqual([{ file: SANDBOX_EXEC_PATH, args: SANDBOX_PROBE_ARGS }]);
     expect(SANDBOX_PROBE_ARGS).toEqual(['-p', '(version 1)(allow default)', '/usr/bin/true']);
   });
 
   it('on darwin it reports seatbelt unusable with the stderr of the failure', () => {
     const { runner } = recordingRunner({ stderr: 'sandbox_apply: Operation not permitted' });
-    expect(runSandboxProbe('darwin', runner)).toEqual({ usable: false, kind: 'seatbelt', stderr: 'sandbox_apply: Operation not permitted' });
+    expect(runSandboxProbe('darwin', runner, only(SANDBOX_EXEC_PATH))).toEqual({ usable: false, kind: 'seatbelt', stderr: 'sandbox_apply: Operation not permitted' });
   });
 
   it('on linux it probes bubblewrap once with the product probe arguments and the product shell', () => {
     const { runner, calls } = recordingRunner('ok');
-    expect(runSandboxProbe('linux', runner)).toEqual({ usable: true, kind: 'bubblewrap' });
+    expect(runSandboxProbe('linux', runner, only(DEFAULT_BWRAP_PATH))).toEqual({ usable: true, kind: 'bubblewrap' });
     expect(calls).toEqual([{ file: DEFAULT_BWRAP_PATH, args: bwrapProbeArguments(resolveBashPathNow('linux', { isExecutable: executableCheckNowOn(nodeFileSystemSync), env: process.env })) }]);
   });
 
   it('on linux it reports bubblewrap unusable with the stderr of bwrap', () => {
     const { runner } = recordingRunner({ stderr: BWRAP_PROC_DENIED });
-    expect(runSandboxProbe('linux', runner)).toEqual({ usable: false, kind: 'bubblewrap', stderr: BWRAP_PROC_DENIED });
+    expect(runSandboxProbe('linux', runner, only(DEFAULT_BWRAP_PATH))).toEqual({ usable: false, kind: 'bubblewrap', stderr: BWRAP_PROC_DENIED });
   });
 
   it('reports the launcher unusable when it cannot be started', () => {
     const { runner } = recordingRunner(Object.assign(new Error('spawnSync /usr/bin/bwrap ENOENT'), { code: 'ENOENT' }));
-    expect(runSandboxProbe('linux', runner)).toEqual({ usable: false, kind: 'bubblewrap', stderr: 'spawnSync /usr/bin/bwrap ENOENT' });
+    expect(runSandboxProbe('linux', runner, only(DEFAULT_BWRAP_PATH))).toEqual({ usable: false, kind: 'bubblewrap', stderr: 'spawnSync /usr/bin/bwrap ENOENT' });
   });
 
-  it('on a platform without a product sandbox it probes nothing and reports why', () => {
+  it('on a host with no executable launcher it probes nothing and names the launchers it looked for', () => {
     const { runner, calls } = recordingRunner('ok');
-    expect(runSandboxProbe('win32', runner)).toEqual({ usable: false, kind: 'none', stderr: 'the product has no sandbox on win32' });
+    expect(runSandboxProbe('win32', runner, only())).toEqual({
+      usable: false,
+      kind: 'bubblewrap',
+      stderr: 'no sandbox launcher is executable: looked for /usr/bin/sandbox-exec (seatbelt) and /usr/bin/bwrap (bubblewrap)',
+    });
     expect(calls).toEqual([]);
   });
 
-  it('platformSandbox is the sandbox the product selects for the platform', () => {
-    expect(platformSandbox('darwin')).toBe('seatbelt');
-    expect(platformSandbox('linux')).toBe('bubblewrap');
-    expect(platformSandbox('win32')).toBe('none');
+  it('platformSandbox is the sandbox the product selects by the executable launchers', () => {
+    expect(platformSandbox(only(SANDBOX_EXEC_PATH, DEFAULT_BWRAP_PATH))).toBe('seatbelt');
+    expect(platformSandbox(only(DEFAULT_BWRAP_PATH))).toBe('bubblewrap');
     expect(LAUNCHER_PATH).toEqual({ seatbelt: SANDBOX_EXEC_PATH, bubblewrap: DEFAULT_BWRAP_PATH });
   });
 
@@ -91,8 +99,8 @@ describe('sandbox probe', () => {
   it('sandboxProbe probes once and publishes the result when nothing was published', () => {
     const { runner, calls } = recordingRunner({ stderr: BWRAP_PROC_DENIED });
     const env: Record<string, string | undefined> = {};
-    const first = sandboxProbe(env, runner, 'linux');
-    const second = sandboxProbe(env, runner, 'linux');
+    const first = sandboxProbe(env, runner, 'linux', only(DEFAULT_BWRAP_PATH));
+    const second = sandboxProbe(env, runner, 'linux', only(DEFAULT_BWRAP_PATH));
     expect(env['MOMONGA_E2E_SANDBOX']).toBe(`unusable:bubblewrap:${BWRAP_PROC_DENIED}`);
     expect(first).toEqual({ usable: false, kind: 'bubblewrap', stderr: BWRAP_PROC_DENIED });
     expect(second).toEqual(first);

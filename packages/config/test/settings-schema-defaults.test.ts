@@ -8,7 +8,6 @@ import {
   SETTING_UNIT_OF,
   defaultContextSettings,
   defaultMemorySettings,
-  defaultSandboxSetting,
   defaultToolsSettings,
   defaultVerificationSettings,
   DEFAULT_UPDATE_STALL_TIMEOUT_MS,
@@ -21,13 +20,20 @@ type Node = Readonly<Record<string, unknown>>;
 
 const isNode = (value: unknown): value is Node => typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const propertyOf = (node: Node, step: string): unknown => {
+  if (isNode(node['properties'])) return node['properties'][step];
+  const branches = Array.isArray(node['oneOf']) ? node['oneOf'].filter(isNode) : [];
+  const found = branches.map((branch) => (isNode(branch['properties']) ? branch['properties'][step] : undefined)).filter(isNode);
+  return found.length === branches.length && found.length > 0 ? found[0] : undefined;
+};
+
 const nodeAt = (path: readonly string[]): Node => {
   let node: unknown = SETTINGS_SCHEMA;
   for (const step of path) {
     if (!isNode(node)) throw new Error(`no schema at ${path.join('.')}`);
     if (step === '[]') node = node['items'];
     else if (step === '<name>') node = node['additionalProperties'];
-    else node = isNode(node['properties']) ? node['properties'][step] : undefined;
+    else node = propertyOf(node, step);
   }
   if (!isNode(node)) throw new Error(`no schema at ${path.join('.')}`);
   return node;
@@ -97,6 +103,8 @@ const UNITS: readonly [string, string][] = [
   ['runtime.drainTimeoutMs', 'milliseconds'],
   ['ceilings.timeMs', 'milliseconds'],
   ['mandates.<name>.timeMs', 'milliseconds'],
+  ['mcpServers.<name>.timeoutMs', 'milliseconds'],
+  ['mcpServers.<name>.idleTimeoutMs', 'milliseconds'],
   ['limits.maxCostUsd', 'USD'],
   ['ceilings.costUsd', 'USD'],
   ['mandates.<name>.costUsd', 'USD'],
@@ -126,9 +134,8 @@ describe('the settings schema states the default the product takes and the unit 
     expect(SETTING_DEFAULTS_BY['hooks.<name>[].hooks[].timeout']).toEqual({ by: 'event', values: byEvent });
   });
 
-  it('sandbox has the default of each platform the product chooses, beside the schema', () => {
-    const platforms = ['darwin', 'linux', 'win32'] as const;
-    expect(SETTING_DEFAULTS_BY['sandbox']).toEqual({ by: 'platform', values: Object.fromEntries(platforms.map((platform) => [platform, defaultSandboxSetting(platform)])) });
+  it('sandbox has the default of each executable launcher, in the order they are asked, beside the schema', () => {
+    expect(SETTING_DEFAULTS_BY['sandbox']).toEqual({ by: 'launcher', values: { '/usr/bin/sandbox-exec': 'seatbelt', '/usr/bin/bwrap': 'bubblewrap' } });
   });
 
   it('names only settings the schema declares, and the schema itself carries no keyword of its own for them', () => {

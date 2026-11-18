@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SETTINGS_SCHEMA, defaultSandboxSetting, loadSettings, loadUserSettings } from '@momonga/config';
+import { SANDBOX_LAUNCHERS, SETTINGS_SCHEMA, defaultSandboxSetting, loadSettings, loadUserSettings } from '@momonga/config';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 describe('sandbox setting', () => {
@@ -8,12 +8,23 @@ describe('sandbox setting', () => {
     expect(properties['sandbox']).toEqual({ enum: ['seatbelt', 'bubblewrap', 'none'] });
   });
 
+  it('asks the launchers in one ordered table: sandbox-exec for seatbelt, then bwrap for bubblewrap', () => {
+    expect(SANDBOX_LAUNCHERS).toEqual([
+      { kind: 'seatbelt', launcher: '/usr/bin/sandbox-exec' },
+      { kind: 'bubblewrap', launcher: '/usr/bin/bwrap' },
+    ]);
+  });
+
   it.each([
-    ['darwin', 'seatbelt'],
-    ['linux', 'bubblewrap'],
-    ['win32', 'none'],
-  ] as const)('defaults to %s -> %s by platform', (platform, expected) => {
-    expect(defaultSandboxSetting(platform)).toBe(expected);
+    [['/usr/bin/sandbox-exec', '/usr/bin/bwrap'], 'seatbelt'],
+    [['/usr/bin/sandbox-exec'], 'seatbelt'],
+    [['/usr/bin/bwrap'], 'bubblewrap'],
+  ] as const)('defaults by the executable launchers %j to %s, never by the platform name', (executable, expected) => {
+    expect(defaultSandboxSetting((file) => executable.includes(file as never))).toBe(expected);
+  });
+
+  it('never defaults to none: with no launcher the default is a sandbox whose start refuses and names what was looked for', () => {
+    expect(defaultSandboxSetting(() => false)).not.toBe('none');
   });
 
   it('defaults to the platform sandbox for user settings', async () => {
