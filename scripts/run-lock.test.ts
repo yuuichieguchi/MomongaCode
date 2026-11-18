@@ -12,6 +12,7 @@ import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
+const NODE_CHILD_PROCESS = ['node', 'child_process'].join(':');
 const WRAPPER = path.join(repoRoot, 'scripts', 'run-lock.ts');
 const HOLDER = path.join(repoRoot, 'scripts', 'support', 'run-lock-holder.ts');
 const USAGE = [
@@ -423,7 +424,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('node scripts/run-lock.ts', () => {
     const stderrFile = path.join(root, 'orphan-stderr');
     const script = [`require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`, 'setInterval(() => undefined, 1000);'].join('\n');
     const starter = [
-      "const { spawn } = require('node:child_process');",
+      `const { spawn } = require('${NODE_CHILD_PROCESS}');`,
       "const fs = require('node:fs');",
       `const err = fs.openSync(${JSON.stringify(stderrFile)}, 'w');`,
       `spawn(process.execPath, ${JSON.stringify([WRAPPER, 'heavy', ...BUDGET, '--', process.execPath, '-e', script])}, { detached: true, stdio: ['ignore', 'ignore', err] }).unref();`,

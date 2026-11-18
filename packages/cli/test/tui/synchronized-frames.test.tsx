@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { Text, render } from 'ink';
 import { describe, expect, it } from 'vitest';
+import { waitFor } from '@momonga/testkit';
 import { BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE, synchronizedFramesOf } from '../../src/tui/terminal/synchronized.ts';
 
 const fakeTty = () => {
@@ -43,13 +44,12 @@ describe('synchronized output follows the terminal answer to 2026 (2.3)', () => 
     expect(wrapped.isTTY).toBe(true);
     expect(wrapped.columns).toBe(80);
     const instance = render(<Text>first</Text>, { stdout: wrapped, interactive: true, patchConsole: false });
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(writes.join('')).toContain('first');
+    await waitFor(() => writes.join('').includes('first'), { description: 'the first frame is drawn' });
     expect(writes.join('')).not.toContain(BEGIN_SYNCHRONIZED_UPDATE);
     reported = true;
     writes.length = 0;
     instance.rerender(<Text>second</Text>);
-    for (let waited = 0; !writes.join('').includes('second') && waited < 200; waited += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitFor(() => writes.join('').includes('second'), { description: 'the second frame is drawn' });
     const drawn = writes.join('');
     expect(drawn.indexOf(BEGIN_SYNCHRONIZED_UPDATE)).toBeGreaterThanOrEqual(0);
     expect(drawn.indexOf(BEGIN_SYNCHRONIZED_UPDATE)).toBeLessThan(drawn.indexOf('second'));

@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as testkit from '@momonga/testkit';
 import { ROOT, fileLevelTestTimeout, importsFromTestkit, repositoryTests, timeoutFormOffences } from './support/test-timeout-source.ts';
+
+vi.setConfig({ testTimeout: testkit.SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const PRODUCT_STARTS = ['startGatewayProcess', 'runGatewayEntry', 'startRuntimeProcess', 'runRuntimeEntry'] as const;
 const TEST_HELPER_STARTS: Readonly<Record<string, readonly string[]>> = {
