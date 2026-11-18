@@ -27,6 +27,10 @@ const FIXTURE = [
   '| `stopWaitBoundMs([5000, 9000])` (`packages/foundation/src/process-contract.ts`) | 9000 ms | a call with a JSON argument |',
   '| `UNREADABLE_CODES` (`packages/skills/src/file-system.ts`) | `EACCES`, `EPERM`, `ELOOP`, `ENAMETOOLONG` | a set read as a list |',
   '| `DEFAULT_PROBE_STEP_SECONDS` | 120 s | a constant in seconds |',
+  '| `updateSourceDefines({})` (`scripts/bundle.ts`) | 1 | a call of a script function |',
+  '| `stopWaitBoundMs(daemonStopBoundMs)` (`packages/foundation/src/process-contract.ts`) | 1 | a function as an argument |',
+  '| `managedServerStopBoundMs(KILL_WAIT_MS)` (`packages/foundation/src/process-contract.ts`, `packages/cli/src/daemon/generations.ts`) | 1 | a private constant as an argument |',
+  '| `E2E_READY_DEADLINE_MS` (`e2e/support/wait.ts`) | 1 | a test constant that calls a function of its own file |',
   '',
   '| Path | Form |',
   '|---|---|',
@@ -50,6 +54,10 @@ describe('the value of every constants row is the value of the code', () => {
       'stopWaitBoundMs([5000, 9000])',
       'UNREADABLE_CODES',
       'DEFAULT_PROBE_STEP_SECONDS',
+      'updateSourceDefines({})',
+      'stopWaitBoundMs(daemonStopBoundMs)',
+      'managedServerStopBoundMs(KILL_WAIT_MS)',
+      'E2E_READY_DEADLINE_MS',
     ]);
   });
 
@@ -80,6 +88,10 @@ describe('the value of every constants row is the value of the code', () => {
       ['NO_SUCH_CONSTANT_ANYWHERE', 'NO_SUCH_CONSTANT_ANYWHERE is declared at the top level of no product module'],
       ['LOCK_FD', 'the value "five" is not a checkable value; write the value, or mark the row `unchecked: <reason>`'],
       ['KILL_WAIT_MS', 'KILL_WAIT_MS is a constant of packages/cli/src/daemon/generations.ts (not exported) only: name that file in the row'],
+      ['updateSourceDefines({})', 'updateSourceDefines of scripts/bundle.ts is not exported by a product package (packages/*/src), so it is not called'],
+      ['stopWaitBoundMs(daemonStopBoundMs)', 'the argument daemonStopBoundMs is a function; an argument is a literal or an exported constant'],
+      ['managedServerStopBoundMs(KILL_WAIT_MS)', 'KILL_WAIT_MS of packages/cli/src/daemon/generations.ts is not exported by a product package (packages/*/src), so it is not used as an argument'],
+      ['E2E_READY_DEADLINE_MS', 'the value of E2E_READY_DEADLINE_MS in e2e/support/wait.ts calls a function that is not exported by a product package; it is not run'],
     ]);
   });
 

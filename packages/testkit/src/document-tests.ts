@@ -1,5 +1,5 @@
 import { it } from 'vitest';
-import { DOCUMENTS_FOLDER_NAME, documentFolderOf, unnamedDocumentsMessage } from './document-folders.ts';
+import { DOCUMENTS_FOLDER_NAME, documentFolderOf, refusedDocumentsMessage, unnamedDocumentsMessage } from './document-folders.ts';
 import type { DocumentVariable } from './document-folders.ts';
 
 export const itWithDocuments = (variable: DocumentVariable, start: string, title: string, check: (folder: string) => void | Promise<void>): void => {
@@ -13,6 +13,6 @@ export const itWithDocuments = (variable: DocumentVariable, start: string, title
     return;
   }
   it(title, () => {
-    throw new Error(unnamedDocumentsMessage(variable, found.expected));
+    throw new Error(found.kind === 'refused' ? refusedDocumentsMessage(found.folder, found.reason) : unnamedDocumentsMessage(variable, found.expected));
   });
 };

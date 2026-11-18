@@ -142,7 +142,7 @@ const codeFiles = (): string[] => [
 
 const importable = (file: string): boolean => {
   const parts = path.relative(ROOT, file).split(path.sep);
-  return ((parts[0] === 'packages' && parts[2] === 'src') || parts[0] === 'scripts') && !/\.test\.tsx?$/.test(file);
+  return parts[0] === 'packages' && parts[2] === 'src' && !/\.test\.tsx?$/.test(file);
 };
 
 type Declaration = { readonly file: string; readonly exported: boolean };
@@ -253,8 +253,29 @@ const identifierIn = async (file: string, name: string, row: ConstantRow): Promi
     if (imported.imported === '*') throw new Unresolved(`${name} in ${path.relative(ROOT, file)} is a namespace of a test module`);
     return identifierIn(imported.source, imported.imported, row);
   }
+  if (!fromProduct(imported)) throw new Unresolved(`${name} in ${path.relative(ROOT, file)} is imported from ${imported.specifier}, which is not a product package; the value check loads product packages only`);
   const module = await moduleAt(imported.specifier);
   return imported.imported === '*' ? module : module[imported.imported];
+};
+
+const fromProduct = (imported: { readonly specifier: string; readonly source?: string }): boolean =>
+  imported.source === undefined ? imported.specifier.startsWith('@momonga/') : importable(imported.source);
+
+const CALLABLE_GLOBALS = new Set(['Object', 'Number', 'String']);
+
+const rootIdentifierOf = (node: Node): string | undefined => {
+  if (node.type === 'Identifier') return String(node['name']);
+  if (node.type === 'MemberExpression') return rootIdentifierOf(node['object'] as Node);
+  return undefined;
+};
+
+const productCallee = (file: string, callee: Node): boolean => {
+  const root = rootIdentifierOf(callee);
+  if (root === undefined) return false;
+  if (declaredInit(file, root) !== undefined) return false;
+  if (CALLABLE_GLOBALS.has(root)) return true;
+  const imported = importOf(file, root);
+  return imported !== undefined && fromProduct(imported);
 };
 
 const argumentsOf = async (file: string, nodes: readonly Node[], row: ConstantRow): Promise<unknown[]> => {
@@ -307,6 +328,7 @@ const evaluate = async (file: string, node: Node, row: ConstantRow): Promise<unk
         if (operation === undefined) break;
         return operation(...((await argumentsOf(file, node['arguments'] as Node[], row)) as number[]));
       }
+      if (!productCallee(file, callee)) throw new Unresolved(`the value of ${row.name} in ${path.relative(ROOT, file)} calls a function that is not exported by a product package; it is not run`);
       const fn = await evaluate(file, callee, row);
       if (typeof fn !== 'function') break;
       return (fn as (...args: unknown[]) => unknown)(...(await argumentsOf(file, node['arguments'] as Node[], row)));
@@ -334,25 +356,36 @@ const evaluate = async (file: string, node: Node, row: ConstantRow): Promise<unk
   throw new Unresolved(`the value of ${row.name} in ${path.relative(ROOT, file)} is not a constant expression (${node.type})`);
 };
 
-const exportOf = async (name: string, row: ConstantRow): Promise<unknown> => {
-  const [head, ...rest] = name.split('.');
-  const found = declarationsOf().get(head as string) ?? [];
+const declarationFor = (head: string, row: ConstantRow): Declaration => {
+  const found = declarationsOf().get(head) ?? [];
   if (found.length === 0) throw new Unresolved(`${head} is declared at the top level of no product module`);
   const named = found.filter((declaration) => mentions(row, declaration.file));
   const exported = found.filter((declaration) => declaration.exported);
-  const product = exported.filter((entry) => path.relative(PACKAGES, entry.file).split(path.sep)[1] === 'src');
-  const chosen = named.length === 1 ? named : named.length > 1 ? [] : exported.length === 1 ? exported : product.length === 1 ? product : [];
+  const chosen = named.length === 1 ? named : named.length > 1 ? [] : exported.length === 1 ? exported : [];
   const declaration = chosen[0];
   if (declaration === undefined) {
     const where = found.map((entry) => `${path.relative(ROOT, entry.file)}${entry.exported ? '' : ' (not exported)'}`).join(', ');
     throw new Unresolved(found.length === 1 ? `${head} is a constant of ${where} only: name that file in the row` : `${head} is declared in ${found.length} modules (${where}); name its file in the row`);
   }
+  return declaration;
+};
+
+const exportOf = async (name: string, row: ConstantRow): Promise<unknown> => {
+  const [head, ...rest] = name.split('.');
+  const declaration = declarationFor(head as string, row);
   let value: unknown = declaration.exported ? (await moduleAt(pathToFileURL(declaration.file).href))[head as string] : await identifierIn(declaration.file, head as string, row);
   for (const key of rest) {
     if (value === null || typeof value !== 'object' || !(key in value)) throw new Unresolved(`${name} does not resolve: ${key} is not a property`);
     value = (value as Record<string, unknown>)[key];
   }
   return value;
+};
+
+const productExportOf = async (name: string, row: ConstantRow, what: string): Promise<unknown> => {
+  const head = name.split('.')[0] as string;
+  const declaration = declarationFor(head, row);
+  if (!declaration.exported) throw new Unresolved(`${head} of ${path.relative(ROOT, declaration.file)} is not exported by a product package (packages/*/src), so it is not ${what}`);
+  return exportOf(name, row);
 };
 
 const argumentOf = async (text: string, row: ConstantRow): Promise<unknown> => {
@@ -367,8 +400,12 @@ const argumentOf = async (text: string, row: ConstantRow): Promise<unknown> => {
       throw new Unresolved(`the argument ${text} is not JSON`);
     }
   }
-  if (IDENTIFIER.test(text)) return exportOf(text, row);
-  throw new Unresolved(`the argument ${text} is neither a number nor an exported name`);
+  if (IDENTIFIER.test(text)) {
+    const value = await productExportOf(text, row, 'used as an argument');
+    if (typeof value === 'function') throw new Unresolved(`the argument ${text} is a function; an argument is a literal or an exported constant`);
+    return value;
+  }
+  throw new Unresolved(`the argument ${text} is neither a literal nor an exported constant`);
 };
 
 const topLevelParts = (text: string): string[] => {
@@ -389,7 +426,7 @@ const topLevelParts = (text: string): string[] => {
 const codeValueOf = async (row: ConstantRow): Promise<unknown> => {
   const call = CALL.exec(row.name);
   if (call !== null) {
-    const fn = await exportOf(call[1] as string, row);
+    const fn = await productExportOf(call[1] as string, row, 'called');
     if (typeof fn !== 'function') throw new Unresolved(`${call[1]} is not a function`);
     const text = (call[2] as string).trim();
     const args = text === '' ? [] : await Promise.all(topLevelParts(text).map((part) => argumentOf(part.trim(), row)));
