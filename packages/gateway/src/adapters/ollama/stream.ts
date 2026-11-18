@@ -18,6 +18,7 @@ export type OllamaStreamOptions = {
   jsonReply?: JsonReplyPath | undefined;
   onOutput?: () => void;
   outputCeiling?: number | undefined;
+  signal: AbortSignal;
 };
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed chunk: ${what}`);
@@ -58,7 +59,7 @@ class OllamaStreamDriver {
   private finished = false;
 
   constructor(options: OllamaStreamOptions) {
-    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.nonStrict === undefined ? {} : { nonStrict: options.nonStrict }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }), ...(options.onOutput === undefined ? {} : { onOutput: options.onOutput }), outputCeiling: options.outputCeiling });
+    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.nonStrict === undefined ? {} : { nonStrict: options.nonStrict }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }), ...(options.onOutput === undefined ? {} : { onOutput: options.onOutput }), outputCeiling: options.outputCeiling, signal: options.signal });
     this.toolsAllowed = !forbidsTools(options.request.tool_choice);
     this.clock = options.clock;
   }
@@ -71,10 +72,10 @@ class OllamaStreamDriver {
     return this.emitter.terminated;
   }
 
-  accept(line: string): StreamEvent[] {
+  async accept(line: string): Promise<StreamEvent[]> {
     if (this.emitter.terminated) return [];
     try {
-      this.apply(line);
+      await this.apply(line);
     } catch (error) {
       if (!this.started || !(error instanceof StreamFailure)) throw error;
       this.emitter.fail(error.code, error.errorType, error.message);
@@ -95,7 +96,7 @@ class OllamaStreamDriver {
     return this.emitter.take();
   }
 
-  private apply(line: string): void {
+  private async apply(line: string): Promise<void> {
     const parsed = parseUpstreamJson(line, invalid);
     if (!isRecord(parsed)) throw invalid('it is not a JSON object');
     if (!this.started) {
@@ -114,17 +115,17 @@ class OllamaStreamDriver {
     const calls = message['tool_calls'];
     if (calls !== undefined && calls !== null) {
       if (!Array.isArray(calls)) throw invalid('message.tool_calls must be an array');
-      for (const call of calls) this.acceptCall(call);
+      for (const call of calls) await this.acceptCall(call);
     }
     const done = parsed['done'];
     if (typeof done !== 'boolean') throw invalid('done must be a boolean');
     if (done) {
       this.finished = true;
-      this.conclude(parsed);
+      await this.conclude(parsed);
     }
   }
 
-  private acceptCall(call: unknown): void {
+  private async acceptCall(call: unknown): Promise<void> {
     if (!this.toolsAllowed) throw new UpstreamProtocolError('the upstream sent a tool call although the request set tool_choice none');
     if (!isRecord(call)) throw invalid('a tool_calls entry must be an object');
     if (this.emitter.callCount >= MAX_TOOL_CALLS) throw new UpstreamProtocolError(`the upstream sent more than ${MAX_TOOL_CALLS} tool calls`);
@@ -139,15 +140,15 @@ class OllamaStreamDriver {
     this.emitter.endMessage();
     this.emitter.beginCall(key, typeof upstreamId === 'string' && upstreamId !== '' ? upstreamId : newCallId(this.clock), name);
     this.emitter.appendCallArguments(key, JSON.stringify(args));
-    this.emitter.completeCall(key);
+    await this.emitter.completeCall(key);
   }
 
-  private conclude(done: Record<string, unknown>): void {
+  private async conclude(done: Record<string, unknown>): Promise<void> {
     const reason = done['done_reason'];
     if (typeof reason !== 'string') throw new UpstreamProtocolError('the upstream\'s done chunk lacks done_reason');
     const usage = usageOf(done);
     if (reason === 'stop') {
-      this.emitter.complete(usage);
+      await this.emitter.complete(usage);
       return;
     }
     if (reason === 'length') {
@@ -196,7 +197,7 @@ export async function* ollamaEventsOf(body: AsyncIterable<Uint8Array>, options: 
   const driver = new OllamaStreamDriver(options);
   try {
     for await (const line of linesOf(body)) {
-      for (const event of driver.accept(line)) yield event;
+      for (const event of await driver.accept(line)) yield event;
       if (driver.terminated) return;
     }
   } catch (error) {

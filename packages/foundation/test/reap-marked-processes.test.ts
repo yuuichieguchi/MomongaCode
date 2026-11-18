@@ -831,7 +831,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       if (options.signal?.aborted === true) throw Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' });
       return { exitCode: 1, stdout: '', stderr: '' };
     };
-    const inspector = createProcessInspector('darwin', { ...hostInspectorPorts(testLocks().capability), run: slowListing });
+    const inspector = createProcessInspector('lsof', { ...hostInspectorPorts(testLocks().capability), run: slowListing });
     const { signals, kill } = signalRecorder(fake);
     const warnings: string[] = [];
     const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, inspector });

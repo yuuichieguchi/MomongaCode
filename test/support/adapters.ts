@@ -1,4 +1,4 @@
-export type AdapterScan = 'host-uses' | 'synchronous-file-calls' | 'synchronous-paths' | 'platform-name';
+export type AdapterScan = 'host-uses' | 'clock-reads' | 'synchronous-file-calls' | 'synchronous-paths' | 'platform-name';
 
 export type Adapter = {
   readonly name: string;
@@ -9,7 +9,7 @@ export type Adapter = {
 };
 
 export const ADAPTER_TABLE: readonly Adapter[] = [
-  { name: 'Timing', file: 'packages/foundation/src/system-timing.ts', owner: 'foundation', scans: ['host-uses'], reason: 'the one production Timing adapter over the host timers and clocks: systemTiming, whose timers never hold the process open, and systemWaitTiming, whose timers hold it open until the wait ends' },
+  { name: 'Timing', file: 'packages/foundation/src/system-timing.ts', owner: 'foundation', scans: ['host-uses', 'clock-reads'], reason: 'the one production Timing adapter over the host timers and clocks: systemTiming, whose timers never hold the process open, and systemWaitTiming, whose timers hold it open until the wait ends' },
   { name: 'Random', file: 'packages/foundation/src/system-random.ts', owner: 'foundation', scans: ['host-uses'], reason: 'the one production Random adapter over node:crypto' },
   { name: 'FileSystem', file: 'packages/foundation/src/node-file-system.ts', owner: 'foundation', scans: ['host-uses', 'synchronous-file-calls'], reason: 'the one production FileSystem adapter over node:fs' },
   { name: 'command runner', file: 'packages/foundation/src/platform/command-runner.ts', owner: 'foundation', scans: ['host-uses'], reason: 'the one production adapter that runs a host command' },
@@ -28,6 +28,8 @@ export const ADAPTER_TABLE: readonly Adapter[] = [
   { name: 'synchronous paths', file: 'packages/foundation/src/sync-paths.ts', owner: 'foundation', scans: ['synchronous-file-calls', 'synchronous-paths'], reason: 'the synchronous driver of the one path resolution algorithm' },
   { name: 'foundation exports', file: 'packages/foundation/src/index.ts', owner: 'foundation', scans: ['synchronous-paths'], reason: 'exports the synchronous driver of the one path resolution algorithm' },
   { name: 'supervisor start', file: 'packages/supervisor/src/start-supervisor.ts', owner: 'supervisor-update-packaging', scans: ['synchronous-paths', 'platform-name'], reason: 'the real path of the secret program, checked for its owners when the store is chosen once at start; passes the OS to the B15 layout conventions' },
+  { name: 'B8 sandbox mechanism', file: 'packages/config/src/setting-defaults.ts', owner: 'config', scans: ['platform-name'], reason: 'which sandbox mechanism an OS has is an OS convention: seatbelt on macOS, bubblewrap on Linux, none where the product has no mechanism; whether its launcher is executable is probed when the sandbox starts (B8)' },
+  { name: 'B15 endpoint kind', file: 'packages/foundation/src/socket-path.ts', owner: 'foundation', scans: ['platform-name'], reason: 'the kind of socket a host offers, a unix socket or a named pipe, is an OS convention (B15)' },
   { name: 'B15 paths', file: 'packages/foundation/src/momonga-paths.ts', owner: 'foundation', scans: ['platform-name'], reason: 'OS conventions for where files live and the kind of socket (B15)' },
   { name: 'B15 layout', file: 'packages/config/src/layout.ts', owner: 'config', scans: ['platform-name'], reason: 'passes the OS to the B15 layout conventions' },
   { name: 'runtime entry', file: 'packages/runtime/src/process/entry.ts', owner: 'runtime-service', scans: ['platform-name'], reason: 'passes the OS to the B15 layout conventions' },

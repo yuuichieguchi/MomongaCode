@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testKernelLock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, testProbes, NEVER_CANCELLED, testKernelLock, HOST_SANDBOX_KIND } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
-import { HOST_RULE_ENFORCEMENT, ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
+import { ensureSessionTmpDir, momongaLayout, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { MomongaPaths, SessionScratch } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
@@ -103,7 +103,7 @@ describe('policyFor (system timers, none used)', () => {
     expect(policy.sandboxPolicy).toEqual(
       await buildSandboxPolicy({
         layout: momongaLayout(temp.home, process.platform, process.env),
-        fileRules: await computeFileRules([], [temp.project, extra], tmpDir, HOST_RULE_ENFORCEMENT, testProbes()),
+        fileRules: await computeFileRules([], [temp.project, extra], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
         protectedSet,
         roots: [temp.project, extra],
         home: temp.home,

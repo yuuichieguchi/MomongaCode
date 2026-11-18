@@ -6,7 +6,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FM_SERVER } from '@momonga/protocol';
 import { withTempDir, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
-import { measureManagedServer } from '../src/probe/probe-fm.ts';
+import { measureManagedServer } from '../src/probe/probe-managed.ts';
 import { systemTiming } from '@momonga/foundation';
 
 const FILE_GRACE_MS = 70;

@@ -1,7 +1,7 @@
 import type { ScreenTimers } from '../screen/timers.ts';
-import { KEY_SETTLE_MS, MIN_COLUMNS, MIN_ROWS, NO_FULLSCREEN_NOTICE, PASTE_TOO_LARGE_NOTICE } from './constants.ts';
+import { KEY_SETTLE_MS, MIN_COLUMNS, NEGOTIATION_DRAIN_MS, MIN_ROWS, NO_FULLSCREEN_NOTICE, PASTE_TOO_LARGE_NOTICE } from './constants.ts';
 import type { TerminalEvent } from './events.ts';
-import { BACKGROUND_QUERY, enterSequenceOf, inTableOrder, LEAVE_EVERY_MODE, leaveSequenceOf, QUERY_BATCH } from './modes.ts';
+import { BACKGROUND_QUERY, DEVICE_ATTRIBUTES_QUERY, enterSequenceOf, inTableOrder, LEAVE_EVERY_MODE, leaveSequenceOf, QUERY_BATCH } from './modes.ts';
 import type { ScreenMode, TerminalModeName } from './modes.ts';
 import { advance, fullscreenRefused, modifyOtherKeysSent, modifyOtherKeysWanted, mouseReported, negotiationFrom, synchronizedOutputReported } from './negotiation.ts';
 import type { NegotiationState } from './negotiation.ts';
@@ -74,10 +74,10 @@ export type TerminalLayer = {
   adopt(terminal: HandoverTerminal, negotiation: NegotiationState): void;
   leaveEveryMode(): void;
   restore(): void;
-  close(): void;
+  close(): Promise<void>;
   release(): void;
   suspend(): void;
-  leaveForProgram(): () => Promise<void>;
+  leaveForProgram(): Promise<() => Promise<void>>;
   attachInk(ink: InkTerminal): () => void;
   enable(mode: TerminalModeName): void;
   disable(mode: TerminalModeName): void;
@@ -109,6 +109,31 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   let stopResizeListening: (() => void) | undefined;
   let hooked = false;
   let title: string | undefined;
+  let repliesOwed = 0;
+  let leavesWaiting: Array<() => void> = [];
+  let drainBound: unknown;
+
+  const leaveNow = (): void => {
+    if (drainBound !== undefined) timers.clearTimeout(drainBound);
+    drainBound = undefined;
+    const waiting = leavesWaiting;
+    leavesWaiting = [];
+    for (const leaveAction of waiting) leaveAction();
+  };
+
+  const whenRepliesRead = (leaveAction: () => void): void => {
+    if (repliesOwed === 0) {
+      leaveAction();
+      return;
+    }
+    leavesWaiting.push(leaveAction);
+    drainBound ??= timers.setTimeout(() => {
+      drainBound = undefined;
+      repliesOwed = 0;
+      leaveNow();
+    }, NEGOTIATION_DRAIN_MS);
+  };
+
 
   const snapshotOf = (): TerminalState => ({
     screen,
@@ -168,8 +193,10 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   const signalHandlers = EXIT_SIGNALS.filter((signal) => host.deliverable(signal)).map((signal) => ({
     signal,
     handler: (): void => {
-      close();
-      host.kill(signal);
+      whenRepliesRead(() => {
+        closeNow();
+        host.kill(signal);
+      });
     },
   }));
 
@@ -194,8 +221,18 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
 
   const canStop = (): boolean => host.deliverable('SIGSTOP') && host.deliverable('SIGCONT');
 
+  let suspending = false;
+
   const suspend = (): void => {
-    if (!canStop()) return;
+    if (!canStop() || suspending) return;
+    suspending = true;
+    whenRepliesRead(() => {
+      suspending = false;
+      stopNow();
+    });
+  };
+
+  const stopNow = (): void => {
     const held = holdInk();
     const saved = inTableOrder(enabled);
     restore();
@@ -225,6 +262,9 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   };
 
   const absorb = (event: TerminalEvent): void => {
+    if (event.type === 'report' && event.kind === 'device-attributes' && repliesOwed > 0) {
+      repliesOwed -= 1;
+    }
     const before = negotiation;
     negotiation = advance(negotiation, event);
     if (negotiation === before) return;
@@ -240,7 +280,11 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     const delivered: TerminalEvent[] = [];
     for (const event of events) {
       absorb(event);
-      if (event.type === 'focus' && event.direction === 'in' && enabled.has('focus')) output.writeSync(BACKGROUND_QUERY);
+      if (repliesOwed === 0 && leavesWaiting.length > 0) leaveNow();
+      if (event.type === 'focus' && event.direction === 'in' && enabled.has('focus')) {
+        output.writeSync(`${BACKGROUND_QUERY}${DEVICE_ATTRIBUTES_QUERY}`);
+        repliesOwed += 1;
+      }
       if (isTooSmall(size) && !isCtrl(event, 'c')) continue;
       if (event.type === 'paste' && event.overflow) request({ type: 'notice', text: PASTE_TOO_LARGE_NOTICE });
       else if (isCtrl(event, 'z')) suspend();
@@ -274,7 +318,9 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     publish();
   };
 
-  const leaveForProgram = (): (() => Promise<void>) => {
+  const leaveForProgram = (): Promise<() => Promise<void>> => new Promise((resolve) => whenRepliesRead(() => resolve(lendNow())));
+
+  const lendNow = (): (() => Promise<void>) => {
     const held = holdInk();
     const saved = inTableOrder(enabled);
     restore();
@@ -317,9 +363,18 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     input.pause();
   };
 
-  function close(): void {
+  function closeNow(): void {
     restore();
     unhook();
+  }
+
+  function close(): Promise<void> {
+    return new Promise((resolve) => {
+      whenRepliesRead(() => {
+        closeNow();
+        resolve();
+      });
+    });
   }
 
   const start = (): void => {
@@ -327,6 +382,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     setRaw(true);
     const first: TerminalModeName[] = screen === 'fullscreen' ? ['alt-screen', 'bracketed-paste'] : ['bracketed-paste'];
     output.writeSync(`${enterSequenceOf(first)}${QUERY_BATCH}`);
+    repliesOwed += 1;
     for (const name of [...first, 'kitty-keys'] as const) enabled.add(name);
     publish();
   };

@@ -244,3 +244,56 @@ describe('a move that fails (16.4, M4)', () => {
     expect(said).toEqual([handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'the installed program is still v1.2.3', kept: KEPT })]);
   });
 });
+
+describe('whether a session that learned of a newer generation moves by itself (ruling 6)', () => {
+  it('moves at its quiet point while something is pending on an open session', async () => {
+    const { mover, state } = setup();
+    state.quiet = false;
+    await mover.learned('1.2.4', 'gone');
+    expect(mover.standing('1.2.4')).toBe('moves-at-quiet-point');
+  });
+
+  it('cannot move before a session is open', async () => {
+    const { mover, state } = setup();
+    state.file = undefined;
+    await mover.learned('1.2.4', 'gone');
+    expect(mover.standing('1.2.4')).toBe('cannot-move');
+  });
+
+  it('cannot move with no surface attached', async () => {
+    const mover = createMover({
+      version: '1.2.3',
+      parties: async () => ({ writer: 1, reader: 1, namespace: 'single' }),
+      write: () => undefined,
+      remove: () => undefined,
+      handOver: () => undefined,
+      target: () => ({ file: '/opt/momonga', args: [], env: {} }),
+      replace: () => new Promise(() => undefined),
+    });
+    await mover.learned('1.2.4', 'gone');
+    expect(mover.standing('1.2.4')).toBe('cannot-move');
+  });
+
+  it('cannot move once the exec for that version failed', async () => {
+    const { mover } = setup({ replace: new Error('execve EACCES') });
+    await mover.learned('1.2.4', 'gone');
+    expect(mover.standing('1.2.4')).toBe('cannot-move');
+  });
+
+  it('cannot move to a version the installed program refused', async () => {
+    const { mover } = setup();
+    mover.refuse('1.2.4', 'the installed program is still v1.2.3');
+    await mover.learned('1.2.4', 'gone');
+    expect(mover.standing('1.2.4')).toBe('cannot-move');
+  });
+
+  it('still moves after a record write failure or a record too large, at the next quiet point', async () => {
+    const failing = setup({ write: new Error('disk full') });
+    await failing.mover.learned('1.2.4', 'gone');
+    expect(failing.mover.standing('1.2.4')).toBe('moves-at-quiet-point');
+    const large = setup();
+    large.state.padding = 'x'.repeat(HANDOVER_RECORD_MAX_BYTES);
+    await large.mover.learned('1.2.4', 'gone');
+    expect(large.mover.standing('1.2.4')).toBe('moves-at-quiet-point');
+  });
+});

@@ -7,7 +7,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, nodeFileSystem, nodeFileSystemSync, systemRandom, BUSY_WAIT_LIMIT_MS } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket, momongaLayout, momongaPaths, nodeFileSystem, nodeFileSystemSync, systemRandom, BUSY_WAIT_LIMIT_MS, ruleEnforcementOf } from '@momonga/foundation';
 import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -19,7 +19,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
-import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes, testProcessInspector, testKernelLock, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, pollUntil, removeTempDir, testProbes, testProcessInspector, testKernelLock, TEST_UNPROTECTED_LAUNCH, HOST_SANDBOX_KIND } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -862,7 +862,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({
       roots: [target.cwd],
-      sandboxPolicy: { ...sandboxPolicy, fileRules: await computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir, HOST_RULE_ENFORCEMENT, testProbes()) },
+      sandboxPolicy: { ...sandboxPolicy, fileRules: await computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()) },
       tmpDir: sessionTmpDir,
       env: policyOptions?.env ?? target.env,
     }),

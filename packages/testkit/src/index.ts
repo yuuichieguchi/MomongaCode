@@ -316,3 +316,4 @@ export type { FakeGitHttps, FakeGitHttpsOptions, FakeGitHttpsRequest } from './f
 export { DOCUMENT_FOLDERS, DOCUMENT_VARIABLES, documentEnvironmentOf, documentFolderDigestOf, documentFolderOf, siblingDocumentsOf, unnamedDocumentsMessage } from './document-folders.ts';
 export type { DocumentFolder, DocumentVariable } from './document-folders.ts';
 export { itWithDocuments } from './document-tests.ts';
+export { HOST_SANDBOX_KIND } from './host-sandbox-kind.ts';

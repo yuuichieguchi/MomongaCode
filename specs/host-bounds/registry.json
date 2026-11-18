@@ -21,11 +21,13 @@
     {"name":"RECONNECT_FIRST_RETRY_MS","file":"packages/cli/src/constants.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"RECONNECT_MAX_INTERVAL_MS","file":"packages/cli/src/constants.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"KILL_WAIT_MS","file":"packages/cli/src/daemon/generations.ts","kind":"P","owner":"cli","row":"cli.md"},
+    {"name":"KEEPER_BUILD_BOUND_MS","file":"packages/cli/src/node-ports.ts","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"LARGEST_HOST_TIMER_SECONDS","file":"packages/cli/src/program.ts","kind":"P","owner":"cli","row":"gateway-config.md"},
     {"name":"BACKGROUND_ANSWER_WAIT_MS","file":"packages/cli/src/tui/screen/history-view.tsx","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"NEXT_TURN_MS","file":"packages/cli/src/tui/screen/history-view.tsx","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"HIGHLIGHT_MAX_BYTES","file":"packages/cli/src/tui/screen/markdown.ts","kind":"stated","owner":"cli","row":"cli.md"},
     {"name":"FOCUS_REPORT_WAIT_MS","file":"packages/cli/src/tui/screen/notify.ts","kind":"P","owner":"cli","row":"cli.md"},
+    {"name":"NEGOTIATION_DRAIN_MS","file":"packages/cli/src/tui/terminal/constants.ts","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"CANDIDATE_CHECK_TIMEOUT_MS","file":"packages/cli/src/update/install.ts","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"BACKGROUND_CHECK_INTERVAL_MS","file":"packages/cli/src/update/state.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"DEFAULT_BASH_BACKGROUND_TIMEOUT_MS","file":"packages/config/src/context-settings.ts","kind":"P","owner":"tools","row":"recovery.md"},
@@ -135,6 +137,7 @@
     {"name":"WORKING_FACT_TEXT_CHARS","file":"packages/protocol/src/budget-constants.ts","kind":"stated","owner":"protocol","row":"context.md"},
     {"name":"DEFAULT_PROBE_STEP_SECONDS","file":"packages/protocol/src/probe.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
     {"name":"MAX_TOOL_NAME_CHARS","file":"packages/protocol/src/reference-kinds.ts","kind":"stated","owner":"protocol","row":"context.md"},
+    {"name":"RULE_VERIFY_LOAD_ALLOWANCE_MS","file":"packages/protocol/src/rule-verdict.ts","kind":"P","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"MAX_APPROVAL_TTL_MS","file":"packages/protocol/src/run-api.ts","kind":"C","owner":"protocol","row":"runtime-store.md"},
     {"name":"MAX_MANDATE_TIME_MS","file":"packages/protocol/src/run-api.ts","kind":"C","owner":"protocol","row":"runtime-store.md"},
     {"name":"MAX_RUN_TIMEOUT_MS","file":"packages/protocol/src/run-api.ts","kind":"C","owner":"protocol","row":"runtime-store.md"},
@@ -165,7 +168,6 @@
     {"name":"SESSION_TMP_SWEEP_MS","file":"packages/runtime/src/process/constants.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"STORE_IDENTITY_CHECK_MS","file":"packages/runtime/src/process/constants.ts","kind":"P","owner":"runtime","row":"runtime-store.md"},
     {"name":"TOOL_MARKER_SWEEP_MS","file":"packages/runtime/src/process/constants.ts","kind":"C","owner":"runtime","row":"foundation-supervisor-packaging.md"},
-    {"name":"RULE_VERIFY_LOAD_ALLOWANCE_MS","file":"packages/runtime/src/process/rule-verifier.ts","kind":"P","owner":"policy-verify-sandbox","row":"verify.md"},
     {"name":"DEFAULT_LEASE_MS","file":"packages/runtime/src/process/start-runtime-process.ts","kind":"P","owner":"runtime","row":"runtime-store.md"},
     {"name":"DEFAULT_IDLE_POLL_MS","file":"packages/runtime/src/worker/worker.ts","kind":"C","owner":"runtime","row":"runtime-store.md"},
     {"name":"KERNEL_ARGUMENT_BYTES","file":"packages/sandbox/src/bubblewrap.ts","kind":"stated","owner":"policy-verify-sandbox","row":"linux-sandbox.md"},
@@ -260,6 +262,7 @@
       {"name":"ABORT_SETTLE_LIMIT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"ENTRY_HARD_EXIT_MARGIN_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"MCP_TOOL_IDLE_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
+      {"name":"MCP_TOOL_TIMEOUT_FLOOR_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"MCP_TOOL_TOTAL_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
       {"name":"SANDBOX_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","lacks":["kind","row"]},
@@ -367,11 +370,6 @@
       "packages/gateway/src/probe/client.ts": 1,
       "packages/gateway/src/process.ts": 2
     },
-    "synchronousChildWaits": {
-      "packages/cli/src/node-ports.ts": {
-        "count": 1,
-        "fixedBy": "A5 (ruling-input-design-mismatches-2026-11-18): bound the keeper build or make it asynchronous with the asker's signal"
-      }
-    }
+    "synchronousChildWaits": {}
   }
 }

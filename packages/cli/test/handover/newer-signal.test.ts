@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon, ensureSessionDaemon, restoreDaemon } from '../../src/daemon/ensure-daemon.ts';
 import { endSessionWhenMovedAway } from '../../src/daemon/generations.ts';
 import { setupGenerations } from '../generations-harness.ts';
+import type { MoveStanding } from '../../src/handover/mover.ts';
 
 const BOUNDS = { readyMs: 500, stopMs: 500 };
 const REOPEN = 'momonga was updated to v1.2.4; reopen this session.';
+const MOVES = 'momonga was updated to v1.2.4; this session restarts into it as soon as nothing is pending on it.';
 
 const failureOf = async (pending: Promise<unknown>): Promise<unknown> =>
   pending.then(
@@ -12,9 +14,15 @@ const failureOf = async (pending: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-const learner = () => {
+const learner = (standing: MoveStanding = 'cannot-move') => {
   const learned: string[] = [];
-  return { learned, onNewer: async (version: string) => void learned.push(version) };
+  return {
+    learned,
+    onNewer: async (version: string): Promise<MoveStanding> => {
+      learned.push(version);
+      return standing;
+    },
+  };
 };
 
 describe('a session client learns that a newer generation is current (6.2, 16.8, red test 20)', () => {
@@ -60,5 +68,15 @@ describe('a session client learns that a newer generation is current (6.2, 16.8,
     const failure = await failureOf(endSessionWhenMovedAway(paths, '1.2.3', onNewer)());
     expect(learned).toEqual(['1.2.4']);
     expect((failure as Error).message).toBe(REOPEN);
+  });
+});
+
+describe('a session whose own generation is gone and that moves at its quiet point is not told to reopen (ruling 6)', () => {
+  it('says that it restarts by itself, at start of a request and on a moved answer', async (context) => {
+    const { paths, start, ports } = await setupGenerations(context, '1.2.3');
+    await start({ version: '1.2.4' });
+    const { onNewer } = learner('moves-at-quiet-point');
+    expect(((await failureOf(restoreDaemon(ports, paths, onNewer)(undefined))) as Error).message).toBe(MOVES);
+    expect(((await failureOf(endSessionWhenMovedAway(paths, '1.2.3', onNewer)())) as Error).message).toBe(MOVES);
   });
 });

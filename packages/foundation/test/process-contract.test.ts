@@ -66,9 +66,10 @@ describe('exit codes', () => {
     expect([EXIT_OK, EXIT_FAILURE, EXIT_CONFIG]).toEqual([0, 1, 78]);
   });
 
-  it('EXIT_ALREADY_RUNNING is 77: 75 is the headless run waiting for approval and 76 is reserved for a version mismatch', () => {
+  it('EXIT_ALREADY_RUNNING is 77: 75 is the headless run waiting for approval and no code is held for a version mismatch', () => {
     expect(EXIT_ALREADY_RUNNING).toBe(77);
-    expect([EXIT_CODES.waitingForApproval.code, EXIT_CODES.versionMismatchReserved.code]).toEqual([75, 76]);
+    expect(EXIT_CODES.waitingForApproval.code).toBe(75);
+    expect(Object.values(EXIT_CODES).map((entry) => entry.code)).not.toContain(76);
   });
 
   it('gives every meaning of the table its own code, apart from the Windows keeper failure names', () => {

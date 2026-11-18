@@ -166,7 +166,13 @@ describe('cli: momonga -p', () => {
     expect(approvalId).not.toBe('');
     expect(listed.stdout).toContain('allow_once');
 
-    const status = await runCli(home, ['status']);
+    const status = await until(
+      async () => {
+        const result = await runCli(home, ['status']);
+        return /^\S+  WAITING_TOOL\n/.test(result.stdout) ? result : undefined;
+      },
+      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'momonga status to show the parent run waiting on its held child' },
+    );
     expect(status.code).toBe(0);
     const lines = status.stdout.split('\n');
     expect(lines[0]).toMatch(/^\S+  WAITING_TOOL$/);

@@ -11,7 +11,7 @@ import { transportUrlProblem } from '@momonga/foundation';
 import type { KeptLayers, LayerOptions, LoadedLayers } from './layers.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import type { TrustOracle, UserLayer } from './layers.ts';
-import { assertMcpServer, assertMcpServersFile } from './settings.ts';
+import { MCP_SERVER_CALL_BOUND_KEYS, assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
 import { mcpServerNameProblem } from './mcp-server-rules.ts';
 import { DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS } from './setting-defaults.ts';
@@ -174,6 +174,8 @@ const evaluateProjectServer = (
     if ('secretEnv' in config && config.secretEnv !== undefined) {
       return { kind: 'skipped', warning: `${mcpJson}: skipped MCP server ${JSON.stringify(name)}: secretEnv names an entry of the person's secret store and is only honored in user settings` };
     }
+    const userOnlyBound = userOnlyCallBoundOf(config);
+    if (userOnlyBound !== undefined) return { kind: 'skipped', warning: `${mcpJson}: skipped MCP server ${JSON.stringify(name)}: ${userOnlyBound}` };
     const digest = approvalDigestOf(config);
     if (!isApproved(digest)) return { kind: 'ok', config, raw: config, digest, approved: false };
     return { kind: 'ok', config: expandServer(config, env, name, mcpJson, refuse), raw: config, digest, approved: true };
@@ -219,12 +221,20 @@ const readProjectServers = async (
 
 const SESSION_SOURCE = 'the MCP servers passed with the session';
 
+const userOnlyCallBoundOf = (config: McpServerConfig): string | undefined => {
+  const key = MCP_SERVER_CALL_BOUND_KEYS.find((bound) => config[bound] !== undefined);
+  return key === undefined ? undefined : `${key} is only honored in user settings`;
+};
+
 export const assertSessionMcpServers = (value: unknown): Record<string, McpServerConfig> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${SESSION_SOURCE} must be an object`);
   return Object.fromEntries(
     Object.entries(value).map(([name, config]) => {
       assertServerName(name, SESSION_SOURCE);
-      return [name, assertMcpServer(config, SESSION_SOURCE, name)];
+      const server = assertMcpServer(config, SESSION_SOURCE, name);
+      const userOnlyBound = userOnlyCallBoundOf(server);
+      if (userOnlyBound !== undefined) throw new Error(`${SESSION_SOURCE}: MCP server ${JSON.stringify(name)}: ${userOnlyBound}`);
+      return [name, server];
     }),
   );
 };

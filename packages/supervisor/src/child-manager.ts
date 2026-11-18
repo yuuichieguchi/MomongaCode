@@ -44,7 +44,7 @@ import {
   settingsWarning,
   writeEvent,
 } from './log-events.ts';
-import type { SupervisorLogEvent } from './log-events.ts';
+import type { StartupProgressSeen, SupervisorLogEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { openDaemonMarker, reapDaemonMarker } from './orphans.ts';
 import type { DaemonMarker, MarkerPorts } from './orphans.ts';
@@ -196,6 +196,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const capabilityHolders = new Set<Life>();
   let readyAt: number | undefined;
   let progressAt: number | undefined;
+  let progressStep: string | undefined;
   let heldReason: string | undefined;
   let lastLoggedHeldReason: string | undefined;
   let nextAttemptAt: number | undefined;
@@ -423,6 +424,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
   };
 
+  const lastProgressSeen = (): StartupProgressSeen => (progressAt === undefined || progressStep === undefined ? { lastProgressStep: null, lastProgressAt: null } : { lastProgressStep: progressStep, lastProgressAt: isoOf(progressAt) });
+
   const armStartupTimer = (life: Life): void => {
     clearLifeTimer(life, 'startup');
     life.timers.startup = schedule('startup-timer', options.startupTimeoutMs, () => {
@@ -458,6 +461,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       if (progress.service !== role || progress.pid !== life.commandPid) return false;
       armStartupTimer(life);
       progressAt = clock.now();
+      progressStep = progress.step;
       options.onProgress();
       log(childProgress({ child: role, childPid: progress.pid, startupStep: progress.step }));
       return true;
@@ -712,6 +716,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     });
     armStartupTimer(life);
     progressAt = undefined;
+    progressStep = undefined;
     log(childSpawn({ child: role, childPid: life.commandPid ?? null, restarts: Math.max(0, launches - 1), reason }));
   };
 
@@ -829,7 +834,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     clearLifeTimer(life, 'startup');
     clearLifeTimer(life, 'stable');
     setState('stopping');
-    log(childStop({ child: role, childPid: life.commandPid ?? null, stop: reason, mode }));
+    log(childStop({ child: role, childPid: life.commandPid ?? null, stop: reason, mode, ...(reason === 'startup-timeout' ? lastProgressSeen() : {}) }));
     generation += 1;
     if (life.processPid !== undefined) {
       const stopValues = values ?? stopValuesReader.read();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SETTINGS_SCHEMA, defaultSandboxSetting, loadSettings, loadUserSettings } from '@momonga/config';
+import { SANDBOX_LAUNCHERS, SANDBOX_MECHANISM_OF_OS, SETTINGS_SCHEMA, defaultSandboxSetting, loadSettings, loadUserSettings } from '@momonga/config';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 describe('sandbox setting', () => {
@@ -14,6 +14,14 @@ describe('sandbox setting', () => {
     ['win32', 'none'],
   ] as const)('defaults to %s -> %s by platform', (platform, expected) => {
     expect(defaultSandboxSetting(platform)).toBe(expected);
+  });
+
+  it('takes the mechanism from one table of OS conventions, and asks one launcher per mechanism', () => {
+    expect(SANDBOX_MECHANISM_OF_OS).toEqual({ darwin: 'seatbelt', linux: 'bubblewrap' });
+    expect(SANDBOX_LAUNCHERS).toEqual([
+      { kind: 'seatbelt', launcher: '/usr/bin/sandbox-exec' },
+      { kind: 'bubblewrap', launcher: '/usr/bin/bwrap' },
+    ]);
   });
 
   it('defaults to the platform sandbox for user settings', async () => {

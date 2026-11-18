@@ -1,3 +1,4 @@
+import { synchronizedFramesOf } from './terminal/synchronized.ts';
 import { render } from 'ink';
 import path from 'node:path';
 import { resolveLayoutLocks } from '@momonga/foundation';
@@ -201,12 +202,12 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
           onExit={onExit}
         />
       </TerminalFrame>,
-      { stdin: inkStdin.stream, stdout: terminal.stdout, exitOnCtrlC: false, maxFps: MAX_FPS, incrementalRendering: true },
+      { stdin: inkStdin.stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput), exitOnCtrlC: false, maxFps: MAX_FPS, incrementalRendering: true },
     );
     await instance.waitUntilExit();
   } finally {
     moving.detach();
-    layer.close();
+    await layer.close();
   }
   const [moveFailure] = moveFailures;
   if (moveFailure !== undefined) throw moveFailure;
@@ -229,7 +230,7 @@ const repairedStart = async (ports: CliPorts, terminal: Terminal, output: Termin
       <TerminalFrame layer={layer}>
         <RepairFlow first={first} input={input} keys={DEFAULT_KEY_TABLE} open={editor.open} reread={reread} done={outcome.resolve} failed={outcome.reject} />
       </TerminalFrame>,
-      { stdin: createInkStdin().stream, stdout: terminal.stdout, exitOnCtrlC: false, maxFps: MAX_FPS },
+      { stdin: createInkStdin().stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput), exitOnCtrlC: false, maxFps: MAX_FPS },
     );
     const answer = await outcome.promise;
     instance.unmount();
@@ -238,7 +239,7 @@ const repairedStart = async (ports: CliPorts, terminal: Terminal, output: Termin
     if (failure !== undefined) throw failure;
     return answer.kind === 'loaded' ? answer.start : undefined;
   } finally {
-    layer.close();
+    await layer.close();
   }
 };
 

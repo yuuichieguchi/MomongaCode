@@ -42,4 +42,6 @@ const decrqm = (mode: number): string => `${ESC}[?${mode}$p`;
 
 export const BACKGROUND_QUERY = `${ESC}]11;?${ESC}\\`;
 
-export const QUERY_BATCH = [`${ESC}[?u`, enterSequenceOf(['kitty-keys']), decrqm(DECRQM_ALT_SCREEN), decrqm(DECRQM_SGR_MOUSE), decrqm(DECRQM_BRACKETED_PASTE), decrqm(DECRQM_SYNCHRONIZED_OUTPUT), BACKGROUND_QUERY, `${ESC}[c`].join('');
+export const DEVICE_ATTRIBUTES_QUERY = `${ESC}[c`;
+
+export const QUERY_BATCH = [`${ESC}[?u`, enterSequenceOf(['kitty-keys']), decrqm(DECRQM_ALT_SCREEN), decrqm(DECRQM_SGR_MOUSE), decrqm(DECRQM_BRACKETED_PASTE), decrqm(DECRQM_SYNCHRONIZED_OUTPUT), BACKGROUND_QUERY, DEVICE_ATTRIBUTES_QUERY].join('');

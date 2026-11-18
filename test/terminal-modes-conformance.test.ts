@@ -114,6 +114,7 @@ const terminalOf = (screen: ScreenMode) => {
     badLeaves,
     delivered,
     kills,
+    reading: () => stdin.listenerCount('data') > 0,
     reply: (query: string) => stdin.emit('data', Buffer.from(REPLY_TEXT[query] as string, 'utf8')),
     feed: (text: string) => stdin.emit('data', Buffer.from(text, 'utf8')),
     raise: (event: ProcessEvent) => {
@@ -178,6 +179,7 @@ describe('the terminal layer follows the actions of TerminalModes.tla (term deco
     t.layer.enable('focus');
     t.feed(`${ESC}[I`);
     t.reply('osc11');
+    t.reply('da1');
     expect(t.enabled()).toEqual(t.term());
     t.layer.setScreen('scrollback');
     expect(t.term()).not.toContain('mouse');
@@ -236,12 +238,35 @@ describe('the terminal layer follows the actions of TerminalModes.tla (term deco
     t.layer.start();
     everyReply(t, QUERIES);
     const before = t.term();
-    const takeBack = t.layer.leaveForProgram();
+    const takeBack = await t.layer.leaveForProgram();
     expectRestored(t);
     await takeBack();
     expect(t.term()).toEqual(before);
     t.raise('uncaughtExceptionMonitor');
     expectRestored(t);
+  });
+
+  it('NoReplyLeftForOthers: Ctrl+Z, the editor or an exit while queries are unanswered leaves only after the layer has read every reply, so none reaches the next reader', async () => {
+    const leavePaths: ReadonlyArray<readonly [string, (t: Terminal) => Promise<unknown> | void, (t: Terminal) => boolean]> = [
+      ['suspend', (t) => t.feed('\u001a'), (t) => t.kills.includes('SIGSTOP')],
+      ['lend', (t) => t.layer.leaveForProgram(), (t) => !t.reading()],
+      ['finish', (t) => t.layer.close(), (t) => !t.reading()],
+      ['signal', (t) => t.raise('SIGTERM'), (t) => t.kills.includes('SIGTERM')],
+    ];
+    for (const [name, leave, left] of leavePaths) {
+      const t = terminalOf('fullscreen');
+      t.layer.start();
+      const leaving = leave(t);
+      for (const query of QUERIES) {
+        expect(left(t), `${name} before the ${query} reply`).toBe(false);
+        expect(t.reading(), name).toBe(true);
+        t.reply(query);
+      }
+      await leaving;
+      expect(left(t), name).toBe(true);
+      expect(t.delivered.filter((event) => event.type === 'key'), name).toEqual([]);
+      expectRestored(t);
+    }
   });
 
   it('Release keeps the modes and raw mode for the successor (HandoverKeeps) and Adopt takes them back', () => {
