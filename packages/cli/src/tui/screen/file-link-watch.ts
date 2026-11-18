@@ -9,7 +9,7 @@ export type ResolveFileLinks = (candidates: readonly string[], signal: AbortSign
 
 export const fileLinkTextOf = (entry: Entry): string | undefined => {
   if (entry.kind === 'assistant') return entry.open ? undefined : entry.text;
-  if (entry.kind === 'tool') return isSettled(entry) ? entry.title : undefined;
+  if (entry.kind === 'tool') return isSettled(entry) ? [entry.title, ...(entry.diff === undefined ? [] : [entry.diff.path])].join('\n') : undefined;
   return undefined;
 };
 
@@ -18,7 +18,7 @@ type Job = { id: number; epoch: number; text: string; candidates: readonly strin
 const withLinks = (entry: Entry, text: string, found: FileLinks): Entry => {
   if ((entry.kind !== 'assistant' && entry.kind !== 'tool') || fileLinkTextOf(entry) !== text) return entry;
   const before = entry.fileLinks;
-  if (before !== undefined && [...found].every(([name, url]) => before.get(name) === url)) return entry;
+  if ([...found].every(([name, url]) => before?.get(name) === url)) return entry;
   return { ...entry, fileLinks: new Map([...(before ?? []), ...found]) };
 };
 
@@ -69,6 +69,7 @@ export const watchFileLinks = (store: TranscriptStore, resolve: ResolveFileLinks
 
   const runChanged = (): void => {
     const now = runEnded();
+    if (!now && ended) missed.clear();
     if (now && !ended) {
       const again = [...missed.values()].filter((job) => job.epoch === store.epoch());
       missed.clear();

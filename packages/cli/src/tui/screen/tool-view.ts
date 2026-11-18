@@ -10,6 +10,8 @@ import type { ToolResultPage } from '@momonga/protocol';
 import { STATIC_MARK } from './a11y.ts';
 import type { A11y } from './a11y.ts';
 import { WHEEL_ROWS } from './constants.ts';
+import { fileLinksIn, NO_FILE_LINKS } from './file-links.ts';
+import type { FileLinks } from './file-links.ts';
 import { BLOCK_INDENT, DIFF_PREVIEW_ROWS, diffHeader, diffLines, diffRowCount, omittedText } from './diff.ts';
 import type { ViewLine } from './diff.ts';
 import type { ScreenTerminal } from './input.ts';
@@ -59,6 +61,11 @@ const cutRow = (line: ViewLine, width: number): Row => {
   return { text, spans: line.token === undefined ? [] : [[0, text.length, line.token]], wrapped: false, prefixCols: Math.min(width, displayWidth(line.prefix)) };
 };
 
+const linkedRow = (row: Row, files: FileLinks): Row => {
+  const links = fileLinksIn(row.text, files, [], []);
+  return links.length === 0 ? row : { ...row, links };
+};
+
 const dimLine = (text: string): ViewLine => ({ prefix: BLOCK_INDENT, text, token: 'dim' });
 
 const tailRows = (tail: OutputTail, width: number, keys: KeyTable): Row[] => [...(tail.hidden > 0 ? [dimLine(expandRowText(tail.hidden, keys))] : []), ...tail.lines.map(dimLine)].map((line) => cutRow(line, width));
@@ -81,7 +88,10 @@ const diffRows = (diff: NonNullable<ToolEntry['diff']>, width: number, keys: Key
 
 export const toolBlockRows = (entry: ToolEntry, width: number, keys: KeyTable): Row[] => {
   if (entry.denial !== undefined) return [];
-  if (entry.diff !== undefined) return diffRows(entry.diff, width, keys);
+  if (entry.diff !== undefined) {
+    const [header, ...rest] = diffRows(entry.diff, width, keys);
+    return header === undefined ? rest : [linkedRow(header, entry.fileLinks ?? NO_FILE_LINKS), ...rest];
+  }
   return entry.tail === undefined ? [] : tailRows(entry.tail, width, keys);
 };
 

@@ -158,6 +158,13 @@ describe('P-C7: the opener starts the program, never waits for it, and reports a
     expect(calls).toEqual([]);
   });
 
+  it('opens a file with the program on PATH even when BROWSER names a browser', async () => {
+    const bin = binDirWith('open', 'browser');
+    const { launch, launches } = scriptedLaunch(never);
+    createBrowserOpener({ env: { PATH: bin, BROWSER: path.join(bin, 'browser') }, launch, files: nodeFileSystem })(new URL('file:///work/a.html'), new AbortController().signal, () => undefined, 'file');
+    await vi.waitFor(() => expect(launches.map(({ file }) => file)).toEqual([path.join(bin, 'open')]));
+  });
+
   it.each(['https://example.com/x', 'file://host.example/share/x', 'javascript:alert(1)'])('refuses %s as a file: only file addresses of this machine are opened as files', async (address) => {
     const bin = binDirWith('open');
     const { launch, launches } = scriptedLaunch(never);

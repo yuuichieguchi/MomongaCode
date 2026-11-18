@@ -8,7 +8,7 @@ export type FileLinks = ReadonlyMap<string, string>;
 
 export const NO_FILE_LINKS: FileLinks = new Map();
 
-export const FILE_LINK_CANDIDATES_MAX = 64;
+export const FILE_LINK_CANDIDATES_MAX = 4096;
 
 export const FILE_LINK_NAME_MAX = 1024;
 

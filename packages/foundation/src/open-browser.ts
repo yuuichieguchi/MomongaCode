@@ -50,6 +50,12 @@ export const openCommandFor = async (url: URL, env: SearchEnv, files: ProgramSea
   throw new Error(`no program to open a URL was found on PATH; looked for ${URL_OPENER_PROGRAMS.join(', ')}, and BROWSER is not set`);
 };
 
+const fileOpenCommandFor = async (url: URL, env: SearchEnv, files: ProgramSearchFiles): Promise<OpenCommand> => {
+  const found = await openerOnPath(env, files);
+  if (found !== undefined) return { file: found.file, args: found.opener.argsFor(url) };
+  throw new Error(`no program to open a file was found on PATH; looked for ${URL_OPENER_PROGRAMS.join(', ')}`);
+};
+
 export type ProgramEnd = { readonly exitCode: number | null; readonly signal: NodeJS.Signals | null };
 
 export type LaunchProgram = (file: string, args: readonly string[]) => Promise<ProgramEnd>;
@@ -68,7 +74,7 @@ const unsuccessfulEndOf = (file: string, end: ProgramEnd): string | undefined =>
 const launched = async (ports: BrowserOpenerPorts, url: URL, watch: AbortSignal, kind: OpenKind): Promise<string | undefined> => {
   const refusal = refusalOf(url, kind);
   if (refusal !== undefined) return refusal;
-  const { file, args } = await openCommandFor(url, ports.env, ports.files);
+  const { file, args } = kind === 'file' ? await fileOpenCommandFor(url, ports.env, ports.files) : await openCommandFor(url, ports.env, ports.files);
   if (watch.aborted) return undefined;
   const end = await ports.launch(file, args).catch((error: unknown) => {
     throw new Error(`${file} could not be started: ${messageOf(error)}`);

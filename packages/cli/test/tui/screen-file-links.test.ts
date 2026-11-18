@@ -94,6 +94,11 @@ describe('the one function that decides a file link', () => {
     expect(new URL(url ?? '').host).toBe('');
   });
 
+  it('a file named at the end of a long answer is still asked', () => {
+    const words = Array.from({ length: 2000 }, (_, index) => `word${index}`).join(' ');
+    expect(fileLinkCandidates(`${words} see gomoku.html:12`)).toContain('gomoku.html:12');
+  });
+
   it('takes the candidates from inline code and from whitespace tokens, without surrounding punctuation', () => {
     expect(fileLinkCandidates('I wrote `gomoku.html` and (src/test_logic.js:12), see **notes.md**.')).toEqual(['gomoku.html', 'I', 'wrote', 'and', 'src/test_logic.js:12', 'see', 'notes.md']);
   });
@@ -142,6 +147,12 @@ describe('file links in the rows', () => {
     expect(linksOf(rowsOf(tool).slice(0, 1))).toEqual([{ text: 'gomoku.html', url: GOMOKU, kind: 'file' }]);
   });
 
+  it('the diff header of an edit names its file as a link once it is known', () => {
+    const tool: Entry = { kind: 'tool', callId: 'c', name: 'edit', title: 'Edit', toolKind: 'edit', rawInput: undefined, status: 'completed', calledAt: 0, shownAt: 0, diff: { path: 'gomoku.html', omitted: 'too large' }, fileLinks: known };
+    const header = rowsOf(tool).find((row) => row.text.includes('Edited'));
+    expect(linksOf(header === undefined ? [] : [header])).toEqual([{ text: 'gomoku.html', url: GOMOKU, kind: 'file' }]);
+  });
+
   it('the row cache draws the links again when they become known for an answer it already holds', () => {
     const store = createTranscriptStore();
     store.append(assistant('Open `gomoku.html`.'), 'a');
@@ -177,12 +188,17 @@ describe('resolving file links when an entry is complete', () => {
   it('a file the turn creates after naming it becomes a link when the run ends', async () => {
     const store = createTranscriptStore();
     const existing = new Set<string>();
-    watchFileLinks(store, async (candidates) => new Map(candidates.filter((name) => existing.has(name)).map((name) => [name, `file:///w/${name}`])), new AbortController().signal, (error) => {
+    let asks = 0;
+    watchFileLinks(store, async (candidates) => {
+      asks += 1;
+      return new Map(candidates.filter((name) => existing.has(name)).map((name) => [name, `file:///w/${name}`]));
+    }, new AbortController().signal, (error) => {
       throw error;
     });
     store.update({ runStatus: 'RUNNING' });
     store.append(assistant('I will write `gomoku.html`.'), 'a');
-    await vi.waitFor(() => expect(answerOf(store, 0)).toMatchObject({ fileLinks: new Map() }));
+    await vi.waitFor(() => expect(asks).toBe(1));
+    expect(answerOf(store, 0)).not.toHaveProperty('fileLinks');
     existing.add('gomoku.html');
     store.update({ runStatus: 'COMPLETED' });
     await vi.waitFor(() => expect(answerOf(store, 0)).toMatchObject({ fileLinks: new Map([['gomoku.html', 'file:///w/gomoku.html']]) }));
