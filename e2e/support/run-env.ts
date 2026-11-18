@@ -7,6 +7,7 @@ export const E2E_RUN_ENV = 'MOMONGA_E2E_RUN';
 export const E2E_RUN_PATTERN = /^[0-9a-f]{4}$/;
 export const E2E_DIR_PREFIX = 'mme-';
 export const PIDS_FILE_SUFFIX = 'pids';
+export const CLAIM_FILE_SUFFIX = 'claim';
 export const KEPT_HOME_FILE_NAME = 'kept-by-failed-test';
 export const PRIVATE_ROOT_MODE = 0o700;
 export const HARNESS_FILE_MODE = 0o600;
