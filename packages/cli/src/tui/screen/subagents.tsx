@@ -45,21 +45,31 @@ export const chosenIndexOf = (targets: readonly ViewTarget[], focus: ViewTarget 
 const hintOf = (keys: KeyTable, chosen: boolean): string =>
   chosen ? `${keys.keyHint('agents.previous')} or ${keys.keyHint('agents.next')}: move · ${keys.keyHint('agents.open')}: open · typing returns to the input` : `${keys.keyHint('editor.down')} on an empty input: choose a view · ${keys.keyHint('agents.open')}: open`;
 
+export const viewTargetsOf = (subagents: readonly Subagent[]): ViewTarget[] => [{ kind: 'main' }, ...subagents.map((subagent): ViewTarget => ({ kind: 'agent', runId: subagent.runId }))];
+
+const windowOf = (total: number, rows: number, focus: number): { start: number; end: number } => {
+  if (focus < rows - 1) return { start: 0, end: rows - 1 };
+  if (focus >= total - (rows - 1)) return { start: total - (rows - 1), end: total };
+  return { start: focus - (rows - 3), end: focus + 1 };
+};
+
 export const agentListLines = ({ subagents, shown, focus, keys, screenReader, columns, now, rows }: AgentListFacts): AgentListLine[] => {
   if (rows <= 0 || !agentListDrawn(subagents, shown)) return [];
-  const row = (label: string, target: ViewTarget, isShown: boolean, index: number): AgentListLine => ({
-    text: screenReader ? `${label}${isShown ? ' (shown)' : ''}${focus === index ? ' (chosen)' : ''}` : `${isShown ? SHOWN_MARK : NO_MARK}${label}`,
-    target,
-    chosen: focus === index,
+  const all = viewTargetsOf(subagents).map((target, index): AgentListLine => {
+    const subagent = subagents[index - 1];
+    const label = subagent === undefined ? MAIN_LABEL : doingOf(subagent, now, screenReader);
+    const isShown = target.kind === 'main' ? shown === undefined : shown === target.runId;
+    return { text: screenReader ? `${label}${isShown ? ' (shown)' : ''}${focus === index ? ' (chosen)' : ''}` : `${isShown ? SHOWN_MARK : NO_MARK}${label}`, target, chosen: focus === index };
   });
-  const main = row(MAIN_LABEL, { kind: 'main' }, shown === undefined, 0);
-  const fits = subagents.length + 1 <= rows;
-  const listed = fits ? subagents : subagents.slice(0, Math.max(0, rows - 2));
-  const agents = listed.map((subagent, index) => row(doingOf(subagent, now, screenReader), { kind: 'agent', runId: subagent.runId }, shown === subagent.runId, index + 1));
-  if (!fits) return rows === 1 ? [main] : [main, ...agents, { text: `and ${subagents.length - listed.length} more`, target: undefined, chosen: false }];
-  const hintText = hintOf(keys, focus !== undefined);
-  const hint = subagents.length > 0 && rows > subagents.length + 1 && displayWidth(hintText) <= columns ? [{ text: hintText, target: undefined, chosen: false }] : [];
-  return [main, ...agents, ...hint];
+  const note = (text: string): AgentListLine => ({ text, target: undefined, chosen: false });
+  if (all.length <= rows) {
+    const hintText = hintOf(keys, focus !== undefined);
+    return subagents.length > 0 && rows > all.length && displayWidth(hintText) <= columns ? [...all, note(hintText)] : all;
+  }
+  if (rows === 1) return all.slice(0, 1);
+  if (focus === undefined || rows < 3) return [...all.slice(0, rows - 1), note(`and ${all.length - (rows - 1)} more`)];
+  const { start, end } = windowOf(all.length, rows, focus);
+  return [...(start > 0 ? [note(`↑ ${start} more above`)] : []), ...all.slice(start, end), ...(end < all.length ? [note(`↓ ${all.length - end} more below`)] : [])];
 };
 
 export const agentListRequest = (facts: Omit<AgentListFacts, 'now' | 'rows'>): number => agentListLines({ ...facts, now: 0, rows: Number.MAX_SAFE_INTEGER }).length;

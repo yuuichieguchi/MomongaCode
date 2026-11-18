@@ -33,7 +33,7 @@ const clientOf = (streams: Streams, failing: ReadonlySet<string> = new Set(), ch
       if (failing.has(runId)) throw new Error(`stream of ${runId} is broken`);
       for (const frame of streams[runId] ?? []) yield frame;
     },
-    getRun: async (runId: string) => runView({ id: runId, status: 'COMPLETED' }),
+    getRun: async (runId: string) => runView({ id: runId, status: 'COMPLETED', lastSeq: (streams[runId] ?? []).at(-1)?.id ?? 0 }),
     childRuns: async (runId: string) => children.filter((child) => child.parentRunId === runId),
   } as unknown as RuntimeClient;
   return { client, opened };
@@ -166,6 +166,13 @@ describe('followRun tells the caller which subagents are running (design-screens
     const failures: unknown[] = [];
     await expect(followRun(optionsOf(broken.client, { onChildEvent: () => undefined, onChildEnded: (_agent, _runId, end) => failures.push(end.kind) }))).rejects.toThrow('stream of child is broken');
     expect(failures).toEqual(['failed']);
+  });
+
+  it('tells onChildStarted the sequence the child run had reached when its stream was opened, so the caller knows when its backlog is in', async () => {
+    const { client } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer')], child: [text('child', 1), text('child', 2)] });
+    const backlogs: number[] = [];
+    await followRun(optionsOf(client, { onChildEvent: () => undefined, onChildStarted: (_agent, _runId, backlog) => backlogs.push(backlog) }));
+    expect(backlogs).toEqual([2]);
   });
 
   it('reports a grandchild that the child waits on, started and ended inside the child', async () => {

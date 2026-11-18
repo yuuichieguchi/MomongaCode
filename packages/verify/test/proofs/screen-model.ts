@@ -29,11 +29,11 @@ export const NUMBER_OPS: Ops<number> = {
   floorDiv: (value, divisor) => Math.floor(value / divisor),
 };
 
-export type Requests<T> = { waiting: T; inputRows: T; invitation: T; menu: T; subagents: T; footerSecond: T; lines: T };
+export type Requests<T> = { header: T; waiting: T; inputRows: T; invitation: T; menu: T; subagents: T; footerSecond: T; lines: T };
 
-export type Allocation<T> = { viewport: T; menu: T; waiting: T; lines: T; input: T; footer: T; subagents: T };
+export type Allocation<T> = { header: T; viewport: T; menu: T; waiting: T; lines: T; input: T; footer: T; subagents: T };
 
-export const ALLOCATION_REGIONS = ['viewport', 'menu', 'waiting', 'lines', 'input', 'footer', 'subagents'] as const;
+export const ALLOCATION_REGIONS = ['header', 'viewport', 'menu', 'waiting', 'lines', 'input', 'footer', 'subagents'] as const;
 
 export const inputRowsCapOf = <T>(ops: Ops<T>, height: T): T => ops.max(ops.lit(1), ops.floorDiv(height, 3));
 
@@ -54,11 +54,13 @@ export const allocateWith = <T>(ops: Ops<T>, height: T, requests: Requests<T>, p
   const inputExtra = panelRows === undefined ? take(ops.sub(ops.min(requests.inputRows, inputRowsCapOf(ops, height)), ops.lit(1))) : zero;
   const subagents = take(ops.min(requests.subagents, subagentRowsCapOf(ops, height)));
   const footerSecond = take(requests.footerSecond);
+  const header = take(requests.header);
   const invitation = panelRows === undefined ? take(requests.invitation) : zero;
   const waiting = take(requests.waiting);
   const menu = ops.add(invitation, panelRows === undefined ? take(ops.min(requests.menu, menuRowsCapOf(ops, height))) : zero);
   const lines = panelRows === undefined ? take(requests.lines) : zero;
   return {
+    header,
     viewport: ops.add(ops.lit(SCREEN_CONSTANTS.VIEWPORT_ROWS), left),
     menu,
     waiting,

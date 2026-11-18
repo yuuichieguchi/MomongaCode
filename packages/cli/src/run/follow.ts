@@ -141,7 +141,7 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
 
 export type ChildFrameHandler = (frame: RunEventFrame, agent: string) => void;
 
-export type ChildLifeHandler = (agent: string, runId: string) => void;
+export type ChildStartHandler = (agent: string, runId: string, backlog: number) => void;
 
 export type ChildEnd = { readonly kind: 'finished'; readonly run: RunView } | { readonly kind: 'failed'; readonly error: unknown };
 
@@ -158,7 +158,7 @@ export type FollowOptions = {
   onSeenEvent?(frame: RunEventFrame): void;
   onEvent(frame: RunEventFrame): void;
   onChildEvent?: ChildFrameHandler;
-  onChildStarted?: ChildLifeHandler;
+  onChildStarted?: ChildStartHandler;
   onChildEnded?: ChildEndHandler;
   onReconnecting?(attempt: number): void;
   onDaemonStopping(): void;
@@ -185,9 +185,12 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
   const followChild = (childRunId: string, agent: string, handler: ChildFrameHandler): void => {
     if (followed.has(childRunId)) return;
     followed.add(childRunId);
-    options.onChildStarted?.(agent, childRunId);
-    children.push(
-      followRun({
+    let started = false;
+    const opened = async (): Promise<RunView> => {
+      const { lastSeq } = await client.getRun(childRunId);
+      started = true;
+      options.onChildStarted?.(agent, childRunId, lastSeq);
+      return followRun({
         client,
         clock: options.clock,
         random: options.random,
@@ -201,14 +204,17 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
         ...(options.onReconnecting === undefined ? {} : { onReconnecting: options.onReconnecting }),
         onDaemonStopping: stopping,
         signal,
-      }).then(
+      });
+    };
+    children.push(
+      opened().then(
         (run) => {
           options.onChildEnded?.(agent, childRunId, { kind: 'finished', run });
         },
         (error: unknown) => {
           childFailure ??= { error };
           stop.abort();
-          options.onChildEnded?.(agent, childRunId, { kind: 'failed', error });
+          if (started) options.onChildEnded?.(agent, childRunId, { kind: 'failed', error });
         },
       ),
     );

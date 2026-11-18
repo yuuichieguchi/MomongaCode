@@ -6,6 +6,7 @@ import { VIEWPORT_ROWS, panelRowsCap } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
 
 export type ScreenRegions = {
+  header: ReactNode;
   transcript: ReactNode;
   menu: ReactNode;
   waiting: ReactNode;
@@ -58,6 +59,7 @@ export function Screen({ view, columns, rows, allocation, regions, panel, panelF
   if (view === 'scrollback') {
     return (
       <Box flexDirection="column">
+        {regions.header}
         {regions.transcript}
         {regions.menu}
         {regions.waiting}
@@ -70,6 +72,7 @@ export function Screen({ view, columns, rows, allocation, regions, panel, panelF
   }
   return (
     <Box flexDirection="column" width={columns} height={rows} overflow="hidden">
+      <Region rows={allocation.header}>{regions.header}</Region>
       {panel === undefined ? <Region rows={allocation.viewport}>{regions.transcript}</Region> : panelFollows === undefined ? <NewestRows>{regions.transcript}</NewestRows> : <Region rows={panelFollows}>{regions.transcript}</Region>}
       <Region rows={allocation.menu}>{regions.menu}</Region>
       <Region rows={allocation.waiting}>{regions.waiting}</Region>

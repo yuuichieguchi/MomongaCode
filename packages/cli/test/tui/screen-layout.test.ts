@@ -12,22 +12,22 @@ vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const footerRow = (facts: Parameters<typeof footerRowWith>[0], width: number) => footerRowWith(facts, width, DEFAULT_KEY_TABLE);
 
-const none: RowRequests = { waiting: 0, inputRows: 1, invitation: 0, menu: 0, subagents: 0, footerSecond: 0, lines: 0, panel: undefined };
+const none: RowRequests = { header: 0, waiting: 0, inputRows: 1, invitation: 0, menu: 0, subagents: 0, footerSecond: 0, lines: 0, panel: undefined };
 
-const sumOf = (rows: ReturnType<typeof allocate>): number => rows.viewport + rows.menu + rows.waiting + rows.lines + rows.input + rows.footer + rows.subagents;
+const sumOf = (rows: ReturnType<typeof allocate>): number => rows.header + rows.viewport + rows.menu + rows.waiting + rows.lines + rows.input + rows.footer + rows.subagents;
 
 describe('row allocation', () => {
   it('gives the input three rows, the footer one and the rest to the viewport when nothing else asks', () => {
-    expect(allocate(24, none)).toEqual({ viewport: 20, menu: 0, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
-    expect(allocate(MIN_ROWS, none)).toEqual({ viewport: 2, menu: 0, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
+    expect(allocate(24, none)).toEqual({ header: 0, viewport: 20, menu: 0, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
+    expect(allocate(MIN_ROWS, none)).toEqual({ header: 0, viewport: 2, menu: 0, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
   });
 
   it('serves the rows at and below the input first (input rows, subagents, second footer row), then the rows above it (waiting row, menu, lines)', () => {
-    const asked: RowRequests = { waiting: 1, inputRows: 9, invitation: 0, menu: 9, subagents: 9, footerSecond: 1, lines: 9, panel: undefined };
-    expect(allocate(6, asked)).toEqual({ viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 0 });
-    expect(allocate(7, asked)).toEqual({ viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 1 });
-    expect(allocate(30, asked)).toEqual({ viewport: 1, menu: 9, waiting: 1, lines: 1, input: 11, footer: 2, subagents: 5 });
-    expect(allocate(60, asked)).toEqual({ viewport: 23, menu: 9, waiting: 1, lines: 9, input: 11, footer: 2, subagents: 5 });
+    const asked: RowRequests = { header: 0, waiting: 1, inputRows: 9, invitation: 0, menu: 9, subagents: 9, footerSecond: 1, lines: 9, panel: undefined };
+    expect(allocate(6, asked)).toEqual({ header: 0, viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 0 });
+    expect(allocate(7, asked)).toEqual({ header: 0, viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 1 });
+    expect(allocate(30, asked)).toEqual({ header: 0, viewport: 1, menu: 9, waiting: 1, lines: 1, input: 11, footer: 2, subagents: 5 });
+    expect(allocate(60, asked)).toEqual({ header: 0, viewport: 23, menu: 9, waiting: 1, lines: 9, input: 11, footer: 2, subagents: 5 });
   });
 
   it('caps the input rows and the menu at a third of the height and the subagent rows at five or a sixth', () => {
@@ -40,7 +40,7 @@ describe('row allocation', () => {
   });
 
   it('gives a prompt panel the place of the input and the menu, at most the height less four', () => {
-    expect(allocate(24, { ...none, panel: 9, menu: 5, inputRows: 4 })).toEqual({ viewport: 14, menu: 0, waiting: 0, lines: 0, input: 9, footer: 1, subagents: 0 });
+    expect(allocate(24, { ...none, panel: 9, menu: 5, inputRows: 4 })).toEqual({ header: 0, viewport: 14, menu: 0, waiting: 0, lines: 0, input: 9, footer: 1, subagents: 0 });
     expect(allocate(24, { ...none, panel: 90, waiting: 1 }).input).toBe(20);
     expect(allocate(24, { ...none, panel: 90, waiting: 1 }).viewport).toBe(2);
   });
@@ -50,6 +50,7 @@ describe('row allocation', () => {
     for (let round = 0; round < 2000; round += 1) {
       const height = MIN_ROWS + Math.floor(random() * 80);
       const asked: RowRequests = {
+        header: Math.floor(random() * 2),
         waiting: Math.floor(random() * 2),
         inputRows: 1 + Math.floor(random() * 30),
         invitation: Math.floor(random() * 2),
@@ -62,6 +63,7 @@ describe('row allocation', () => {
       const rows = allocate(height, asked);
       expect(sumOf(rows)).toBe(height);
       expect(rows.viewport).toBeGreaterThanOrEqual(1);
+      expect(rows.header).toBeLessThanOrEqual(asked.header);
       expect(rows.waiting).toBeLessThanOrEqual(asked.waiting);
       expect(rows.menu).toBeLessThanOrEqual(asked.invitation + asked.menu);
       if (asked.panel === undefined && (rows.waiting > 0 || rows.lines > 0)) expect(rows.menu).toBeGreaterThanOrEqual(asked.invitation);
@@ -75,10 +77,10 @@ describe('row allocation', () => {
   });
 
   it('gives the line of an open invitation its row before the other rows above the input, at 15 rows and at the smallest height', () => {
-    const crowded: RowRequests = { waiting: 1, inputRows: 9, invitation: 1, menu: 0, subagents: 9, footerSecond: 1, lines: 9, panel: undefined };
+    const crowded: RowRequests = { header: 0, waiting: 1, inputRows: 9, invitation: 1, menu: 0, subagents: 9, footerSecond: 1, lines: 9, panel: undefined };
     expect(allocate(15, crowded).menu).toBe(1);
-    expect(allocate(MIN_ROWS, crowded)).toEqual({ viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 0 });
-    expect(allocate(MIN_ROWS, { ...crowded, inputRows: 1, subagents: 0, footerSecond: 0 })).toEqual({ viewport: 1, menu: 1, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
+    expect(allocate(MIN_ROWS, crowded)).toEqual({ header: 0, viewport: 1, menu: 0, waiting: 0, lines: 0, input: 4, footer: 1, subagents: 0 });
+    expect(allocate(MIN_ROWS, { ...crowded, inputRows: 1, subagents: 0, footerSecond: 0 })).toEqual({ header: 0, viewport: 1, menu: 1, waiting: 0, lines: 0, input: 3, footer: 1, subagents: 0 });
     expect(allocate(MIN_ROWS, { ...crowded, inputRows: 1, subagents: 0, footerSecond: 0, menu: 9 }).menu).toBe(1);
     expect(allocate(24, { ...crowded, panel: 5 }).menu).toBe(0);
   });
@@ -87,8 +89,18 @@ describe('row allocation', () => {
     const rows = allocate(24, { ...none, waiting: 1, menu: 2, lines: 1 });
     expect(inputTopOf(rows)).toBe(rows.viewport + 4);
     expect(regionAt(rows, inputTopOf(rows) + 1)).toEqual({ region: 'input', row: 0 });
-    expect(inputTopOf(naturalRows(7, { waiting: 1, invitation: 1, menu: 0, lines: 2 }))).toBe(11);
-    expect(inputTopOf(naturalRows(0, { waiting: 0, invitation: 0, menu: 30, lines: 0 }))).toBe(30);
+    expect(inputTopOf(naturalRows(7, { header: 0, waiting: 1, invitation: 1, menu: 0, lines: 2 }))).toBe(11);
+    expect(inputTopOf(naturalRows(0, { header: 0, waiting: 0, invitation: 0, menu: 30, lines: 0 }))).toBe(30);
+  });
+
+  it('pins the header row above the transcript, from the rows above the input, and moves the transcript and the input top down by it', () => {
+    const rows = allocate(24, { ...none, header: 1, waiting: 1 });
+    expect(rows).toEqual({ header: 1, viewport: 18, menu: 0, waiting: 1, lines: 0, input: 3, footer: 1, subagents: 0 });
+    expect(regionAt(rows, 1)).toEqual({ region: 'header', row: 0 });
+    expect(regionAt(rows, 2)).toEqual({ region: 'viewport', row: 0 });
+    expect(inputTopOf(rows)).toBe(20);
+    expect(allocate(24, { ...none, header: 1 }).input).toBe(allocate(24, none).input);
+    expect(inputTopOf(naturalRows(7, { header: 1, waiting: 0, invitation: 0, menu: 0, lines: 0 }))).toBe(8);
   });
 
   it('names the region of a screen row from the allocation, top to bottom', () => {

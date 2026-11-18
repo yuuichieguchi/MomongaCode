@@ -9,6 +9,10 @@ import type { KeyName, TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { runView } from '../fake-backend.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
+import { realpathSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createTempDir } from '@momonga/testkit';
 
 const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName): TerminalEvent => ({ type: 'key', name, ...plain });
@@ -28,12 +32,12 @@ const running = async (size = SIZE) => {
   backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: 'main says hello' }));
   await untilFrame(app, 'main says hello');
   const follow = backend.following();
-  follow.onChildStarted('reviewer', 'child-1');
+  follow.onChildStarted('reviewer', 'child-1', 0);
   follow.onChildEvent(childFrame('child-1', { type: 'user.message', text: 'review the change' }), 'reviewer');
   follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'child one looks' }), 'reviewer');
   follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c2', text: 'child two checks' }), 'reviewer');
   now = 4000;
-  follow.onChildStarted('tester', 'child-2');
+  follow.onChildStarted('tester', 'child-2', 0);
   await untilFrame(app, 'tester · starting · 0s');
   return { ...started, follow, setNow: (value: number) => (now = value) };
 };
@@ -123,7 +127,7 @@ describe('the list of the running subagents (design cli-tui 3.3)', () => {
     const { app, backend, terminal } = started;
     await untilFrame(app, (shown) => shown.includes('>'));
     await runStarted(backend, app, 'go');
-    backend.following().onChildStarted('reviewer', 'child-1');
+    backend.following().onChildStarted('reviewer', 'child-1', 0);
     backend.following().onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'child one looks' }), 'reviewer');
     await untilFrame(app, 'reviewer · starting');
     now = 9000;
@@ -258,7 +262,7 @@ describe('the rows of the list', () => {
     expect(agentListRequest({ ...base, subagents, shown: undefined, columns: 40 })).toBe(3);
     expect(agentListRequest({ ...base, subagents: [], shown: 'child-1', columns: 100 })).toBe(1);
     expect(agentListRequest({ ...base, subagents: [], shown: undefined, columns: 100 })).toBe(0);
-    const requests: RowRequests = { waiting: 1, inputRows: 1, invitation: 0, menu: 0, subagents: agentListRequest({ ...base, subagents, shown: undefined, columns: 100 }), footerSecond: 1, lines: 0, panel: undefined };
+    const requests: RowRequests = { header: 0, waiting: 1, inputRows: 1, invitation: 0, menu: 0, subagents: agentListRequest({ ...base, subagents, shown: undefined, columns: 100 }), footerSecond: 1, lines: 0, panel: undefined };
     expect(allocate(40, requests)).toMatchObject({ subagents: 4, footer: 2, input: 3, viewport: 30 });
     expect(allocate(24, requests)).toMatchObject({ subagents: 4, footer: 2, input: 3, viewport: 14 });
   });
@@ -308,8 +312,8 @@ describe('the conversations kept for the views', () => {
 
   it('keeps one per running subagent and the one finished view being shown, and drops it when the view is left', () => {
     const views = createAgentViews();
-    views.started('reviewer', 'child-1');
-    views.started('tester', 'child-2');
+    views.started('reviewer', 'child-1', 0);
+    views.started('tester', 'child-2', 0);
     views.ended('child-2', finished('child-2'));
     expect(views.kept()).toBe(1);
     views.open('child-1');
@@ -318,5 +322,92 @@ describe('the conversations kept for the views', () => {
     expect(views.shown()?.runId).toBe('child-1');
     views.open(undefined);
     expect(views.kept()).toBe(0);
+  });
+});
+
+describe('the parts of a subagent view (design cli-tui 3.3, 2.6)', () => {
+  it('links a file a subagent names exactly as in the main conversation', async () => {
+    const cwd = realpathSync(createTempDir());
+    writeFileSync(path.join(cwd, 'gomoku.html'), '<html></html>');
+    const started = await start({ session: { cwd }, fileLinksIn: { home: cwd } }, {}, SIZE);
+    const { app, backend, terminal } = started;
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    const follow = backend.following();
+    follow.onChildStarted('reviewer', 'child-1', 0);
+    follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'Open `gomoku.html` now' }), 'reviewer');
+    follow.onChildEvent(childFrame('child-1', { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }), 'reviewer');
+    await untilFrame(app, 'reviewer · starting');
+    terminal.emit(named('down'));
+    terminal.emit(named('down'));
+    terminal.emit(named('enter'));
+    await untilFrame(app, `\u001b]8;;${pathToFileURL(path.join(cwd, 'gomoku.html')).href}\u0007gomoku.html\u001b]8;;\u0007`);
+    app.unmount();
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('holds a view whose backlog is still arriving, shows the loading row, and shows the whole conversation in one frame once it is reached', async () => {
+    const { app, backend, terminal } = await start({}, {}, SIZE);
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    const follow = backend.following();
+    follow.onChildStarted('reviewer', 'child-1', 3);
+    follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', seq: 1, attempt: 0, itemId: 'c1', text: 'backlog one' }), 'reviewer');
+    await untilFrame(app, 'reviewer · starting');
+    terminal.emit(named('down'));
+    terminal.emit(named('down'));
+    terminal.emit(named('enter'));
+    const loading = await untilFrame(app, 'loading the conversation 1 of 3 events');
+    expect(linesOf(loading)[0]).toContain('Subagent reviewer');
+    expect(loading).not.toContain('backlog one');
+    const before = app.frames.length;
+    follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', seq: 2, attempt: 0, itemId: 'c2', text: 'backlog two' }), 'reviewer');
+    follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', seq: 3, attempt: 0, itemId: 'c3', text: 'backlog three' }), 'reviewer');
+    await untilFrame(app, 'backlog three');
+    const first = app.frames.slice(before).find((output) => output.includes('backlog one'));
+    expect(first).toContain('backlog three');
+    expect(app.lastFrame()).not.toContain('loading the conversation');
+    app.unmount();
+  });
+
+  it('pins one header row naming the shown subagent and its state above a long conversation', async () => {
+    const started = await running();
+    const { app, follow } = started;
+    for (let index = 0; index < 60; index += 1) follow.onChildEvent(childFrame('child-1', { type: 'notice', level: 'info', message: `child line ${index}` }), 'reviewer');
+    await openWithKeys(started, 2);
+    const shown = await untilFrame(app, 'child line 59');
+    expect(linesOf(shown)[0]).toBe('Subagent reviewer · running');
+    follow.onChildEvent(childFrame('child-1', { type: 'tool.call', callId: 'k1', providerCallId: 'p-k1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: {} }), 'reviewer');
+    follow.onChildEvent(childFrame('child-1', { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'k1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'Bash ls', input: {} } }), 'reviewer');
+    await untilFrame(app, (now) => linesOf(now)[0] === 'Subagent reviewer · waiting for approval');
+    follow.onChildEnded('reviewer', 'child-1', { kind: 'finished', run: runView({ id: 'child-1', status: 'CANCELLED' }) });
+    await untilFrame(app, (now) => linesOf(now)[0] === 'Subagent reviewer · CANCELLED');
+    app.unmount();
+  });
+
+  it('draws no header row while the main view is shown', async () => {
+    const { app } = await running();
+    expect(linesOf(app.lastFrame())[0]).not.toContain('Subagent');
+    app.unmount();
+  });
+
+  it('scrolls the list with the chosen row so every subagent can be opened, with markers for the rows above and below', async () => {
+    const { app, backend, terminal } = await start({}, {}, SIZE);
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    const follow = backend.following();
+    for (let index = 1; index <= 7; index += 1) follow.onChildStarted(`agent${index}`, `child-${index}`, 0);
+    const idle = await untilFrame(app, 'and 4 more');
+    expect(linesOf(idle).slice(35)).toEqual(['● main', '  agent1 · starting · 0s', '  agent2 · starting · 0s', '  agent3 · starting · 0s', 'and 4 more']);
+    for (let index = 0; index < 8; index += 1) terminal.emit(named('down'));
+    const scrolled = await untilFrame(app, 'agent7 ·');
+    expect(linesOf(scrolled).slice(35)).toEqual(['↑ 4 more above', '  agent4 · starting · 0s', '  agent5 · starting · 0s', '  agent6 · starting · 0s', '  agent7 · starting · 0s']);
+    for (let index = 0; index < 4; index += 1) terminal.emit(named('up'));
+    const top = await untilFrame(app, '↓ 4 more below');
+    expect(linesOf(top).slice(35)).toEqual(['● main', '  agent1 · starting · 0s', '  agent2 · starting · 0s', '  agent3 · starting · 0s', '↓ 4 more below']);
+    for (let index = 0; index < 4; index += 1) terminal.emit(named('down'));
+    terminal.emit(named('enter'));
+    await untilFrame(app, 'Subagent agent7 · running');
+    app.unmount();
   });
 });

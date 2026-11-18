@@ -420,3 +420,27 @@ describe('the scrollback output across the move (16.6, red test 8)', () => {
     fresh.app.unmount();
   });
 });
+
+describe('a handover while a subagent view is shown (cli-tui 3.3)', () => {
+  it('records the main view at its end, and the new process shows the main conversation, never the child view', async () => {
+    const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID } });
+    await untilFrame(old.app, 'Found two files, now checking');
+    const follow = old.backend.following();
+    follow.onChildStarted('reviewer', 'child-1', 0);
+    follow.onChildEvent({ id: 1, event: 'agent.message.delta', data: { runId: 'child-1', sessionId: SESSION_ID, step: 1, createdAt: 1000, id: 1, seq: 1, type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'child words' } as PublicRunEvent }, 'reviewer');
+    await untilFrame(old.app, 'reviewer · starting');
+    old.terminal.emit({ type: 'key', name: 'down', ...plain });
+    old.terminal.emit({ type: 'key', name: 'down', ...plain });
+    old.terminal.emit({ type: 'key', name: 'enter', ...plain });
+    await untilFrame(old.app, 'child words');
+    const snapshot = old.move.surface().snapshot();
+    old.app.unmount();
+    expect(snapshot).toMatchObject({ view: { following: true } });
+    const fresh = await adopt({ conversations: [STREAMING] }, recordOf(snapshot));
+    await fresh.attached;
+    const shown = await untilFrame(fresh.app, 'Found two files, now checking');
+    expect(shown).not.toContain('child words');
+    expect(shown).not.toContain('Subagent reviewer');
+    fresh.app.unmount();
+  });
+});

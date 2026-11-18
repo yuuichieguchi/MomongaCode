@@ -2,7 +2,7 @@ import { askTrustItems } from './project-items.ts';
 import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, escapeTerminalLine, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -64,16 +64,17 @@ import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
 import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
+import type { TranscriptStore } from './screen/store.ts';
 import { watchFileLinks } from './screen/file-link-watch.ts';
-import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf } from './screen/subagents.tsx';
+import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf, viewTargetsOf } from './screen/subagents.tsx';
 import type { ViewTarget } from './screen/subagents.tsx';
-import { createAgentViews } from './screen/agent-views.ts';
+import { agentHeader, createAgentViews, endStateOf } from './screen/agent-views.ts';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
-import { DAEMON_STOPPING_TEXT, commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
+import { DAEMON_STOPPING_TEXT, commandPhaseText, loadingText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, modeToastText, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, SelectedText, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
@@ -793,9 +794,9 @@ export function App(props: AppProps) {
           views.event(event);
           if (key !== undefined) replay?.notes?.after(key);
         }),
-      onChildStarted: (agent, childRunId) =>
+      onChildStarted: (agent, childRunId, backlog) =>
         deliver(() => {
-          views.started(agent, childRunId);
+          views.started(agent, childRunId, backlog);
           subagentStarted(store, agent, childRunId, now());
         }),
       onChildEnded: (_agent, childRunId, end) =>
@@ -1298,12 +1299,15 @@ export function App(props: AppProps) {
   const fileLinksFailed = useEffectEvent((error: unknown): void => reportError(error));
   useEffect(() => {
     const watching = new AbortController();
-    const unwatch = watchFileLinks(store, (candidates, signal) => backend.fileLinks(candidates, signal), watching.signal, (error) => fileLinksFailed(error));
+    const watchStore = (watched: TranscriptStore): (() => void) => watchFileLinks(watched, (candidates, signal) => backend.fileLinks(candidates, signal), watching.signal, (error) => fileLinksFailed(error));
+    const unwatchMain = watchStore(store);
+    const unwatchAgents = agents.watch(watchStore);
     return () => {
       watching.abort();
-      unwatch();
+      unwatchMain();
+      unwatchAgents();
     };
-  }, [store, backend]);
+  }, [store, backend, agents]);
 
   const inboxChanged = useEffectEvent((): void => {
     refreshInbox().catch(reportError);
@@ -1691,7 +1695,13 @@ export function App(props: AppProps) {
     loading: phase.kind === 'ready' ? loading : undefined,
   });
   const listBase = { subagents: transcript.subagents, shown: shownAgent?.runId, keys, screenReader: a11y.screenReader, columns };
+  const awaitingApproval = transcript.subagents.some((subagent) => subagent.runId === shownAgent?.runId && subagent.awaitingApproval);
+  const headerText =
+    shownAgent === undefined
+      ? undefined
+      : `${agentHeader(shownAgent.agent)} · ${shownAgent.loading !== undefined ? loadingText(shownAgent.loading.applied, shownAgent.loading.backlog) : shownAgent.end !== undefined ? endStateOf(shownAgent.end) : awaitingApproval ? 'waiting for approval' : 'running'}`;
   const rowRequests: RowRequests = {
+    header: headerText === undefined ? 0 : 1,
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(editor, columns),
     invitation: invitationText.length,
@@ -1703,9 +1713,9 @@ export function App(props: AppProps) {
   };
   const allocation = allocate(rows, rowRequests);
   const listFacts = { ...listBase, rows: fullscreen ? allocation.subagents : rowRequests.subagents };
-  const listLines = agentListLines({ ...listFacts, focus: undefined, now: 0 });
-  const listTargets = listLines.flatMap((line) => (line.target === undefined ? [] : [line.target]));
+  const listTargets = agentListDrawn(transcript.subagents, shownAgent?.runId) ? viewTargetsOf(transcript.subagents) : [];
   const shownFocus = listFocus === undefined || listTargets.length === 0 ? undefined : chosenIndexOf(listTargets, listFocus);
+  const listLines = agentListLines({ ...listFacts, focus: shownFocus, now: 0 });
   const agentFeed = useMemo(() => createHistoryFeed(), [shownAgent, historyGeneration]);
   const shownFeed = shownAgent === undefined ? feed : agentFeed;
   const transcriptAllocation = panel === undefined ? allocation : allocate(rows, { ...rowRequests, panel: 0 });
@@ -1885,6 +1895,12 @@ export function App(props: AppProps) {
         panelFollows={followRows}
         onPanelRows={setPanelRows}
         regions={{
+          header:
+            headerText === undefined ? null : (
+              <Text bold wrap="truncate">
+                {escapeTerminalLine(headerText)}
+              </Text>
+            ),
           transcript: fullscreen && toolView.shown ? (
             toolView.view
           ) : fullscreen ? (

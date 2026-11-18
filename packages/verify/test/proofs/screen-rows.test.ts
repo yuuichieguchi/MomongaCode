@@ -6,7 +6,7 @@ import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 import { ALLOCATION_REGIONS, SCREEN_CONSTANTS, allocateWith, inputRowsCapOf, menuRowsCapOf, proofOps, subagentRowsCapOf } from './screen-model.ts';
 import type { Allocation, Requests } from './screen-model.ts';
 
-const REQUEST_NAMES = ['waiting', 'inputRows', 'invitation', 'menu', 'subagents', 'footerSecond', 'lines'] as const;
+const REQUEST_NAMES = ['header', 'waiting', 'inputRows', 'invitation', 'menu', 'subagents', 'footerSecond', 'lines'] as const;
 
 const requestsOf = (arith: ProofArith, prefix: string): Requests<ProofInt> => {
   const entries = REQUEST_NAMES.map((name) => {
@@ -23,7 +23,7 @@ const heightOf = (arith: ProofArith): ProofInt => {
   return height;
 };
 
-const total = (allocation: Allocation<ProofInt>): ProofInt => ALLOCATION_REGIONS.slice(1).reduce((sum, region) => sum.add(allocation[region]), allocation.viewport);
+const total = (allocation: Allocation<ProofInt>): ProofInt => ALLOCATION_REGIONS.filter((region) => region !== 'viewport').reduce((sum, region) => sum.add(allocation[region]), allocation.viewport);
 
 describe('screen rows (design/cli-tui.md sections 3.1 and 15.4): the allocation of allocate(H, requests), tied to packages/cli/src/tui/screen/layout.ts by test/screen-proofs-drift.test.ts', () => {
   const z3 = useZ3();
@@ -45,6 +45,7 @@ describe('screen rows (design/cli-tui.md sections 3.1 and 15.4): the allocation 
           allocation.viewport.ge(1),
           total(allocation).eq(height),
           ...ALLOCATION_REGIONS.map((region) => allocation[region].ge(0)),
+          allocation.header.le(requests.header),
           allocation.waiting.le(requests.waiting),
           allocation.subagents.le(arith.min(requests.subagents, subagentRowsCapOf(ops, height))),
           allocation.footer.le(requests.footerSecond.add(SCREEN_CONSTANTS.FOOTER_ROWS)),

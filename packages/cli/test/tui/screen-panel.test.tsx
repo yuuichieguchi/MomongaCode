@@ -9,7 +9,7 @@ import { Screen } from '../../src/tui/screen/screen.tsx';
 const ROWS = 14;
 const COLUMNS = 30;
 
-const none: RowRequests = { waiting: 0, inputRows: 1, invitation: 0, menu: 0, subagents: 0, footerSecond: 0, lines: 0, panel: undefined };
+const none: RowRequests = { header: 0, waiting: 0, inputRows: 1, invitation: 0, menu: 0, subagents: 0, footerSecond: 0, lines: 0, panel: undefined };
 
 const rowsOf = (name: string, count: number): ReactNode[] => Array.from({ length: count }, (_, index) => <Text key={index}>{`${name} ${index + 1}`}</Text>);
 
@@ -30,7 +30,7 @@ const screenOf = (allocation: RowAllocation, panel: ReactNode | undefined, repor
     allocation={allocation}
     panel={panel}
     onPanelRows={(rows) => reported.push(rows)}
-    regions={{ transcript: transcriptOf(transcriptRows), menu: null, waiting: null, lines: null, input: <Text>the input</Text>, footer: <Text>the footer</Text>, subagents: null }}
+    regions={{ header: null, transcript: transcriptOf(transcriptRows), menu: null, waiting: null, lines: null, input: <Text>the input</Text>, footer: <Text>the footer</Text>, subagents: null }}
   />
 );
 
