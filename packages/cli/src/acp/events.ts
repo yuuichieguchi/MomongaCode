@@ -1,6 +1,6 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { isRecord, jsonValueOrText } from '@momonga/foundation';
-import { approvalShownLines, callInputTracker, heldEndOf, isOpaqueEvent, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import { approvalShownLines, callInputTracker, fallbackNoticeTextOn, heldEndOf, isOpaqueEvent, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import type { ElicitationRequestView, PublicRunEvent, PublicStreamEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, describeVerification, hookLevel, verificationLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
@@ -290,7 +290,7 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
           ]
         : [];
     case 'notice':
-      return phase === 'live' ? liveNotice(features, event.runId, event.seq, event.level, event.message) : [];
+      return phase === 'live' ? liveNotice(features, event.runId, event.seq, event.level, event.fallback === undefined ? event.message : fallbackNoticeTextOn(event.fallback, 'acp')) : [];
     case 'mcp.authorization.required':
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, 'warning', `MCP server ${event.server} needs authorization`) : [];
     case 'tool.waiting':

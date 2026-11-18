@@ -6,7 +6,7 @@ import { displayWidth } from './wrap.ts';
 
 export type FooterFacts = { mode: string; tokens: number; contextPercent: number | undefined; imageInput: boolean; answer: string | undefined; newline: string | undefined };
 
-export const contextPercentOf = (contextTokens: number, contextWindow: number | undefined): number | undefined => (contextWindow === undefined ? undefined : Math.round((contextTokens / contextWindow) * 100));
+export const contextPercentOf = (contextTokens: number, contextWindow: number | undefined): number | undefined => (contextWindow === undefined ? undefined : Number((200n * BigInt(contextTokens) + BigInt(contextWindow)) / (2n * BigInt(contextWindow))));
 
 export const newlineHintText = (hint: string): string | undefined => (hint === '' ? undefined : `${hint}: new line`);
 

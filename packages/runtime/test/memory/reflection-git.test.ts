@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
-import { HOST_RULE_ENFORCEMENT, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { MemoryRecord } from '@momonga/protocol';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';

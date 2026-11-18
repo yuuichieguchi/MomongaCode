@@ -16,7 +16,7 @@ import { systemWaitTiming } from './system-timing.ts';
 import { sleep } from './timing.ts';
 import type { Timing } from './timing.ts';
 import { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
-import { RETRY_KINDS, claimRetry, nodeRecordFiles, parseRecordedGroup, parseRecordedGroupName, readAttemptRecord, readMarkerGroup } from './platform/marker-record.ts';
+import { RETRY_KINDS, claimRetry, isMalformedRecord, nodeRecordFiles, parseAttemptRecord, parseRecordedGroup, parseRecordedGroupName, readMarkerGroup, readRecordText } from './platform/marker-record.ts';
 import type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 
 const asyncSenderOf = (kill: SignalSender | undefined): AsyncSignalSender =>
@@ -599,7 +599,11 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
     return ended(stopped, [...unsettled.values()]);
   }
   if (unsettled.size > 0) return ended(stopped, [...unsettled.values()]);
-  if ((await inspector.markerState(marker, { signal: stop, mode: markerMode })) !== 'free') return ended(stopped, []);
+  const state = await inspector.markerState(marker, { signal: stop, mode: markerMode });
+  if (state !== 'free') {
+    if (!stop.aborted) onWarning(`${label} marker ${marker} kept: no process holds it, but its state reads ${state} rather than free`);
+    return ended(stopped, []);
+  }
   await nodeFileSystem.rm(marker);
   return { removed: true, stopped, uninspectable: [] };
 };
@@ -694,18 +698,26 @@ const allRetriesSpent = (record: AttemptRecord): boolean => RETRY_KINDS.every((k
 
 type MarkerReap = (marker: string) => Promise<{ removed: boolean }>;
 
-const readRecordIfPresent = async (marker: string): Promise<AttemptRecord | undefined> => {
+const readTextIfPresent = async (marker: string): Promise<string | undefined> => {
   try {
-    return await readAttemptRecord(marker);
+    return await readRecordText(marker);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
 };
 
+export const malformedRecordNotice = (label: string, marker: string): string =>
+  `a ${label} process (marker ${path.basename(marker)}) may still be running. The attempt record of its marker is malformed, so MomongaCode does not try to stop it. ${markerRemedyText({ name: path.basename(marker), group: undefined, addressed: 'person' })}`;
+
 const reapOnOccasion = async (marker: string, occasion: RetryKind, label: string, onWarning: (message: string) => void, signal: AbortSignal, reap: MarkerReap): Promise<{ removed: boolean }> => {
-  const record = await readRecordIfPresent(marker);
-  if (record === undefined) return { removed: true };
+  const text = await readTextIfPresent(marker);
+  if (text === undefined) return { removed: true };
+  if (isMalformedRecord(text)) {
+    onWarning(malformedRecordNotice(label, marker));
+    return { removed: false };
+  }
+  const record = parseAttemptRecord(text);
   if (record.ignored) return { removed: false };
   const tellPerson = async (): Promise<void> => onWarning(survivorNoticeText(label, path.basename(marker), await readMarkerGroup(marker)));
   if (record.spent[occasion]) {

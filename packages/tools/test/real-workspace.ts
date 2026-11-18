@@ -2,11 +2,11 @@ import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, parseRule, prepareGlobs, settleGlobs, askedBy } from '@momonga/policy';
 import type { Decision, GlobTable, PermissionRule, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { createTempDir, isWritableFor, NEVER_CANCELLED, TEST_SEARCH_PATH, testProbes, testSecretLocations } from '@momonga/testkit';
+import { createTempDir, isWritableFor, NEVER_CANCELLED, TEST_SEARCH_PATH, testProbes, testSecretLocations, HOST_SANDBOX_KIND } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 
 export const REAL_BASH = '/bin/bash';
@@ -71,7 +71,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
       roots,
       home,
       cwd: options.cwd ?? project,
-      fileRules: await computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT, testProbes()),
+      fileRules: await computeFileRules(rules, roots, null, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
       protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)),
       fs: settleGlobs(filesystem, globs, NEVER_CANCELLED),
       searchPath: options.searchPath ?? TEST_SEARCH_PATH,
@@ -118,7 +118,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
         roots,
         home,
         cwd: options.cwd ?? project,
-        fileRules: await computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT, testProbes()),
+        fileRules: await computeFileRules(rules, roots, null, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes()),
         protectedSet: await protectedSetFor(roots, askedBy(filesystem, NEVER_CANCELLED)),
         fs: settleGlobs(filesystem, EMPTY_GLOB_TABLE, NEVER_CANCELLED),
         searchPath: TEST_SEARCH_PATH,

@@ -871,7 +871,6 @@ The layer column names the settings files that may set the key: the user file `~
 | 2 | usage error |
 | 3 | the build of a native helper (the Windows keeper, the Linux socket guard) found no compiler |
 | 75 | headless run waiting for approval |
-| 76 | reserved: version mismatch |
 | 77 | daemon already running (lock held) |
 | 78 | config error or entry usage error |
 | 79 | retired generation exited clean |

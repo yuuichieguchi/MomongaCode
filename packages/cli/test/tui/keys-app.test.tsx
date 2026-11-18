@@ -386,14 +386,52 @@ describe('/keybindings', () => {
     app.unmount();
   });
 
-  it('resets one action with the second key of the list, and all with the row', async () => {
-    const { app, content } = await opened(file(['chat', { 'ctrl+s': 'history.search', 'ctrl+r': null, 'ctrl+b': 'editor.left' }]));
+  it('asks before resetting one action with the second key of the list, and resets it only on Reset', async () => {
+    const changed = file(['chat', { 'ctrl+s': 'history.search', 'ctrl+r': null, 'ctrl+b': 'editor.left' }]);
+    const { app, written, content } = await opened(changed);
     await choose(app, 'history.search', 'history.search  ctrl+s  search the history (changed)');
     app.stdin.write(PRESS.tab);
+    const asked = await untilFrame(app, 'Reset history.search to the defaults?');
+    expect(asked).toContain('  1. Reset');
+    expect(asked).toContain('› 2. Cancel');
+    expect(written).toEqual([]);
+    app.stdin.write(PRESS.enter);
+    await untilFrame(app, 'history.search  ctrl+s  search the history (changed)');
+    expect(written).toEqual([]);
+    app.stdin.write(PRESS.tab);
+    await untilFrame(app, 'Reset history.search to the defaults?');
+    app.stdin.write(PRESS.escape);
+    await untilFrame(app, 'history.search  ctrl+s  search the history (changed)');
+    expect(written).toEqual([]);
+    app.stdin.write(PRESS.tab);
+    await untilFrame(app, 'Reset history.search to the defaults?');
+    app.stdin.write(PRESS.up);
+    await untilFrame(app, '› 1. Reset');
+    app.stdin.write(PRESS.enter);
     await untilFrame(app, 'history.search  ctrl+r  search the history');
     expect(content()).toEqual(file(['chat', { 'ctrl+b': 'editor.left' }]));
-    for (let erased = 0; erased < 'history.search'.length; erased += 1) app.stdin.write(PRESS.backspace);
+    app.unmount();
+  });
+
+  it('asks before resetting all with the row, keeps every binding on Cancel, and resets all only on Reset', async () => {
+    const { app, written, content } = await opened(file(['chat', { 'ctrl+s': 'history.search', 'ctrl+b': 'editor.left' }]));
     await choose(app, 'Reset all', 'Reset all to the defaults');
+    app.stdin.write(PRESS.enter);
+    const asked = await untilFrame(app, 'Reset every key binding to the defaults?');
+    expect(asked).toContain('  1. Reset');
+    expect(asked).toContain('› 2. Cancel');
+    app.stdin.write(PRESS.enter);
+    await untilFrame(app, 'Key bindings');
+    expect(written).toEqual([]);
+    app.stdin.write(PRESS.enter);
+    await untilFrame(app, 'Reset every key binding to the defaults?');
+    app.stdin.write(PRESS.escape);
+    await untilFrame(app, 'Key bindings');
+    expect(written).toEqual([]);
+    app.stdin.write(PRESS.enter);
+    await untilFrame(app, 'Reset every key binding to the defaults?');
+    app.stdin.write(PRESS.up);
+    await untilFrame(app, '› 1. Reset');
     app.stdin.write(PRESS.enter);
     await untilFrame(app, (now) => now.includes('Key bindings') && !now.includes('(changed)') && now.includes('editor.left  left  one character left'));
     expect(content()).toEqual(file());

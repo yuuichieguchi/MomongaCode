@@ -575,6 +575,7 @@ export const createContextHosts = (
   const openCase = async (entry: ExpandedCase): Promise<ContextCaseHost> => {
     const home = await homes.open({
       label: `case ${entry.id}`,
+      repository: true,
       settings: caseSettingsFor(base, { compaction: entry.compaction, ...(options.policy === undefined ? {} : { policy: options.policy }) }),
       ...(entry.files === undefined ? {} : { files: entry.files }),
     });

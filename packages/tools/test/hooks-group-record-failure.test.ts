@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, createProcessInspector, hostInspectorPorts, POLL_INTERVAL_MS, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, hostProcessInspector, hostInspectorPorts, POLL_INTERVAL_MS, systemWaitTiming, waitUntil as foundationWaitUntil } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
@@ -78,7 +78,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('a
       drainIdleMs: 1000,
       started: () => undefined,
       report: (execution: HookExecution) => void executions.push(execution),
-      inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), capability: notProved } as never),
+      inspector: hostProcessInspector({ ...hostInspectorPorts(testLocks().capability), capability: notProved } as never),
     } as HookRunContext;
 
     await createToolHooks(context).preToolUse({ callId: 'c1', toolName: 'Bash', input: { command: 'ls' } });

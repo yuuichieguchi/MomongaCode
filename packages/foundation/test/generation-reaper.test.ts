@@ -282,6 +282,28 @@ describe('T-L2-5 (14.5 step 3, 20.62): markers before removal, and a process tha
     expect(fs.existsSync(layout.dir)).toBe(false);
   });
 
+  it('a marker whose sweep chance alone is spent is told as the one try of the dead-generation cleanup, never as all retries used', async () => {
+    const s = setup();
+    s.prepare(1);
+    const marker = path.join(generationMarkerDirectories(s.paths, 1).daemons, 'runtime-1');
+    touch(marker, 'r01000\n');
+    const warnings: string[] = [];
+    await expect(passOf(s.paths, warnings, { lock: createFakeKernelLock({ inheritable: false }) })).resolves.toEqual({ removed: [], kept: [1], busy: false });
+    expect(warnings).toEqual([
+      'a daemon process (marker runtime-1) may still be running. The cleanup of dead generations tried once to stop it and will not try again. Stop the process that holds it, or, if it can stay running, run /markers ignore runtime-1 in an interactive session.',
+    ]);
+  });
+
+  it('a marker with a malformed attempt record is kept and told as malformed', async () => {
+    const s = setup();
+    s.prepare(1);
+    const marker = path.join(generationMarkerDirectories(s.paths, 1).daemons, 'runtime-1');
+    touch(marker, 'garbage');
+    const warnings: string[] = [];
+    await expect(passOf(s.paths, warnings, { lock: createFakeKernelLock({ inheritable: false }) })).resolves.toEqual({ removed: [], kept: [1], busy: false });
+    expect(warnings).toEqual([`leftover cleanup kept ${marker}: its attempt record is malformed`]);
+  });
+
   it('keeps the directory without the final notice while a remaining marker still has its sweep chance', async () => {
     const s = setup();
     const layout = s.prepare(1);

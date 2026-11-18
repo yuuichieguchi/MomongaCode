@@ -249,6 +249,12 @@ describe('notices', () => {
     ]);
   });
 
+  it('adds the command line remedy to a fallback notice from its structured cause', () => {
+    expect(map({ type: 'notice', level: 'warning', code: 'fallback_target', message: 'The model call was answered by the fallback model secondary. Did not fall back to metered: billing from plan to metered is not allowed.', fallback: { target: 'secondary', causes: [{ target: 'metered', name: 'metered', code: null, message: 'billing refused', reason: 'billing_change_refused', fromBilling: 'plan', toBilling: 'metered' }] } }, { features: ALL })).toEqual([
+      { kind: 'update', update: { sessionUpdate: 'notice', severity: 'warning', title: 'The model call was answered by the fallback model secondary. Did not fall back to metered: billing from plan to metered is not allowed. Run momonga models billing allow plan metered.' } },
+    ]);
+  });
+
   it('shows the notice as agent text to a client that did not advertise notices', () => {
     expect(map({ type: 'notice', level: 'error', message: 'boom' }, { features: NONE, seq: 7 })).toEqual([
       { kind: 'update', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'momonga error: boom\n' }, messageId: 'run-1/notice/7' } },

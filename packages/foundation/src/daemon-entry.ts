@@ -1,5 +1,6 @@
 import os from 'node:os';
-import { systemClock } from './system-timing.ts';
+import { systemTiming } from './system-timing.ts';
+import type { Timing } from './timing.ts';
 import type { Clock } from './clock.ts';
 import { EntryUsageError, parseFlags } from './entry-flags.ts';
 import type { FlagSpec, ParsedFlags } from './entry-flags.ts';
@@ -488,13 +489,13 @@ const flushed = (stream: NodeJS.WriteStream): Promise<void> =>
     stream.write('', () => resolve());
   });
 
-export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStandardStreams = guardStandardStreams(host)): EntryIo => {
+export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStandardStreams = guardStandardStreams(host), timing: Pick<Timing, 'now' | 'monotonicMs'> = systemTiming): EntryIo => {
   const openLogFiles = new Set<RotatingLogFile>();
   const lastReportAt = new Map<string, number>();
-  const withinInterval = (key: string, now: number): boolean => {
+  const withinInterval = (key: string, monotonicMs: number): boolean => {
     const last = lastReportAt.get(key);
-    if (last !== undefined && now - last < WRITE_FAILURE_INTERVAL_MS) return true;
-    lastReportAt.set(key, now);
+    if (last !== undefined && monotonicMs - last < WRITE_FAILURE_INTERVAL_MS) return true;
+    lastReportAt.set(key, monotonicMs);
     return false;
   };
   const recordLine = (now: number, level: 'warn' | 'error', msg: string, fields: Readonly<Record<string, unknown>>): string =>
@@ -503,8 +504,8 @@ export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStan
     streams.stderr.write(line);
   };
   const reportWriteFailure = (error: Error): void => {
-    const now = Date.now();
-    if (withinInterval('log', now)) return;
+    const now = timing.now();
+    if (withinInterval('log', timing.monotonicMs())) return;
     writeToStderr(recordLine(now, 'error', 'logs.write_failed', { err: { name: error.name, message: error.message } }));
   };
   const recordStreamFailure = (stream: StandardStream, line: string): void => {
@@ -512,12 +513,12 @@ export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStan
     if (stream !== 'stderr') writeToStderr(line);
   };
   const onStreamError = (stream: StandardStream, error: NodeJS.ErrnoException, kind: 'closed' | 'failed'): void => {
-    const now = Date.now();
+    const now = timing.now();
     if (kind === 'closed') {
       recordStreamFailure(stream, recordLine(now, 'warn', 'stdio.closed', { stream, code: error.code }));
       return;
     }
-    if (withinInterval(`${stream}:${String(error.code)}`, now)) return;
+    if (withinInterval(`${stream}:${String(error.code)}`, timing.monotonicMs())) return;
     recordStreamFailure(stream, recordLine(now, 'error', 'logs.write_failed', { stream, code: error.code, message: error.message }));
   };
   streams.observe({ closed: (stream, error) => onStreamError(stream, error, 'closed'), failed: (stream, error) => onStreamError(stream, error, 'failed') });
@@ -528,7 +529,7 @@ export const nodeEntryIo = (host: NodeJS.Process = process, streams: GuardedStan
     home: host.env['HOME'] ?? os.homedir(),
     stdout: streams.stdout,
     stderr: streams.stderr,
-    clock: systemClock,
+    clock: { now: timing.now },
     timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
     onSignal: (signal, handler) => {
       host.on(signal, handler);

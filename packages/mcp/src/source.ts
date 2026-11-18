@@ -8,8 +8,7 @@ import { parseElicitationAnswer } from './input-requests.ts';
 import { authorizationRequiredFor, isTransientRemoteFailure } from './remote-errors.ts';
 import { mcpToolIdentity } from './tool-identity.ts';
 import { McpInputSuspension, parseCheckpoint } from './suspension.ts';
-import { MCP_IDLE_SETTING_KEYS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, durationText } from './call-bounds.ts';
-import type { McpTransportKind } from './call-bounds.ts';
+import { MCP_IDLE_SETTING_KEYS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TIMEOUT_FLOOR_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, MCP_TOTAL_SETTING_KEY, durationText } from './call-bounds.ts';
 import { pollCeilingMs } from './tasks.ts';
 import type { McpResume } from './suspension.ts';
 import type { McpServerConnection } from './connection.ts';
@@ -28,25 +27,35 @@ export type McpToolSourceOptions = {
   connection: McpServerConnection;
   toolIdleTimeoutMs?: number;
   toolTotalTimeoutMs?: number;
+  serverTimeoutMs?: number;
+  serverIdleTimeoutMs?: number;
   takeNotices?: () => string[];
 };
 
-type CallBounds = { idleMs: number | undefined; totalMs: number };
+type CallBounds = { idleMs: number | undefined; totalMs: number; idleKey: string };
 
 const boundsOf = (options: McpToolSourceOptions): CallBounds => {
-  const idle = options.toolIdleTimeoutMs ?? MCP_TOOL_IDLE_TIMEOUT_MS[options.connection.transportKind];
-  return { idleMs: idle === 0 ? undefined : idle, totalMs: options.toolTotalTimeoutMs ?? MCP_TOOL_TOTAL_TIMEOUT_MS };
+  const transport = options.connection.transportKind;
+  const serverTimeout = options.serverTimeoutMs;
+  const serverKey = (key: string): string => `mcpServers.${options.server}.${key}`;
+  const totalMs = serverTimeout ?? options.toolTotalTimeoutMs ?? MCP_TOOL_TOTAL_TIMEOUT_MS;
+  const totalKey = serverTimeout === undefined ? MCP_TOTAL_SETTING_KEY : serverKey('timeoutMs');
+  const idle = options.serverIdleTimeoutMs ?? options.toolIdleTimeoutMs ?? MCP_TOOL_IDLE_TIMEOUT_MS[transport];
+  const idleKey = options.serverIdleTimeoutMs === undefined ? MCP_IDLE_SETTING_KEYS[transport] : serverKey('idleTimeoutMs');
+  if (idle === 0) return { idleMs: undefined, totalMs, idleKey };
+  if (serverTimeout !== undefined && serverTimeout >= MCP_TOOL_TIMEOUT_FLOOR_MS && serverTimeout > idle) return { idleMs: serverTimeout, totalMs, idleKey: totalKey };
+  return idle > totalMs ? { idleMs: totalMs, totalMs, idleKey: totalKey } : { idleMs: idle, totalMs, idleKey };
 };
 
 const UNKNOWN_RUN = 'The server may have run it; check before repeating it.';
 
-const STOP_SENTENCES: Record<ToolStop['bound'], (server: string, tool: string, duration: string, transport: McpTransportKind) => string> = {
-  idle: (server, tool, duration, transport) => `MCP server "${server}" sent no response or progress for ${duration}, so the call to ${tool} was stopped. ${UNKNOWN_RUN} To wait longer, raise ${MCP_IDLE_SETTING_KEYS[transport]}.`,
+const STOP_SENTENCES: Record<ToolStop['bound'], (server: string, tool: string, duration: string, idleKey: string) => string> = {
+  idle: (server, tool, duration, idleKey) => `MCP server "${server}" sent no response or progress for ${duration}, so the call to ${tool} was stopped. ${UNKNOWN_RUN} To wait longer, raise ${idleKey}.`,
   total: (server, tool, duration) => `The call to ${tool} on MCP server "${server}" reached the overall limit of ${duration} and was stopped. ${UNKNOWN_RUN}`,
   deadline: (server, tool, duration) => `The call to ${tool} on MCP server "${server}" reached the run deadline after ${duration} and was stopped. ${UNKNOWN_RUN}`,
 };
 
-const stopSentence = (server: string, tool: string, stop: ToolStop, transport: McpTransportKind): string => STOP_SENTENCES[stop.bound](server, tool, durationText(stop.ms), transport);
+const stopSentence = (server: string, tool: string, stop: ToolStop, idleKey: string): string => STOP_SENTENCES[stop.bound](server, tool, durationText(stop.ms), idleKey);
 
 const cancelSentence = (cancelled: boolean): string =>
   cancelled ? 'The task was cancelled on the server.' : 'The task could not be cancelled and may still be running on the server.';
@@ -140,7 +149,7 @@ const buildTool = (
     timeoutMs: bounds.totalMs,
     ...(bounds.idleMs === undefined ? {} : { idleTimeoutMs: bounds.idleMs }),
     stopText: async (stop) => {
-      const sentence = connection.redact(stopSentence(server, tool.name, stop, connection.transportKind));
+      const sentence = connection.redact(stopSentence(server, tool.name, stop, bounds.idleKey));
       const taskId = taskIdOf(stop.checkpoint);
       const cancelled = taskId === undefined ? undefined : connection.cancelOutcome(taskId);
       return cancelled === undefined ? sentence : `${sentence} ${cancelSentence(await cancelled)}`;
