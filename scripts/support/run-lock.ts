@@ -333,6 +333,8 @@ const checkHeavy = async (context: AttemptContext): Promise<Busy | undefined> =>
 };
 
 const lightAttempt = async (context: AttemptContext): Promise<Attempt> => {
+  const ahead = busyWith(await earlierWaiters(context, ['heavy']));
+  if (ahead !== undefined) return ahead;
   const own = await claimOwn(context);
   if ('kind' in own) return own;
   return disposedOnFailure(own.lock, async () => {
