@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { FIRST_GENERATION, systemTiming, acquireProcessLock, formatStartRecord, generationLayout, publishCurrentGeneration } from '@momonga/foundation';
-import type { HostExec, HostExecAnswer, MomongaPaths, ProcessLock } from '@momonga/foundation';
+import type { HostExec, HostExecAnswer, MomongaPaths, ProcessLock, ProcessPort } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
@@ -16,6 +16,7 @@ export type FakeSupervisorOptions = {
   unresponsiveShutdown?: { onRequest(): void };
   stopBoundMs?: number;
   keepsLock?: boolean;
+  outlivesLock?: boolean;
   pid?: number;
   generation?: number;
   work?: FakeWork;
@@ -60,14 +61,32 @@ export type FakeSupervisor = {
   readonly shutdowns: number;
   readonly shutdownBodies: readonly string[];
   readonly healthRequests: number;
+  readonly pid: number;
+  readonly exited: boolean;
   becomeReady(): Promise<void>;
   stop(): Promise<void>;
+  exit(): void;
 };
+
+const ESRCH = (): Error => Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+
+export const fakeSupervisorProcesses = (supervisors: () => readonly FakeSupervisor[]): ProcessPort => ({
+  pid: process.pid,
+  uid: () => undefined,
+  runState: null,
+  kill: (pid, signal) => {
+    if (signal !== 0) throw new Error(`the fake supervisor processes take only signal 0, not ${signal}`);
+    if (!supervisors().some((supervisor) => supervisor.pid === pid && !supervisor.exited)) throw ESRCH();
+  },
+});
 
 export const startFakeSupervisor = (options: FakeSupervisorOptions): Promise<FakeSupervisor> => (options.work ?? untracked).track(serveFakeSupervisor(options));
 
+let nextFakePid = 4_000_000;
+
 const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<FakeSupervisor> => {
   const { paths } = options;
+  const pid = options.pid ?? nextFakePid++;
   const work = options.work ?? untracked;
   const generation = options.generation ?? FIRST_GENERATION;
   const layout = generationLayout(path.dirname(paths.root), generation);
@@ -86,7 +105,7 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
       const health: SupervisorHealth = {
         status: 'ok',
         version: options.version,
-        pid: options.pid ?? process.pid,
+        pid,
         startedAt: '2026-01-01T00:00:00.000Z',
         phase,
         env: 'frozen at supervisor start',
@@ -135,11 +154,13 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
   const startPublish = publishWhenServing();
   if (options.publishGate === undefined) await startPublish;
   let stopping: Promise<void> | undefined;
+  let exited = false;
   const stop = (): Promise<void> => {
     stopping ??= new Promise<void>((resolve) => {
       server.close(() => {
         kernelLock?.release();
         fs.rmSync(layout.locks.supervisor, { force: true });
+        if (options.outlivesLock !== true) exited = true;
         resolve();
       });
       server.closeAllConnections();
@@ -155,6 +176,13 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
     },
     get healthRequests() {
       return healthRequests;
+    },
+    pid,
+    get exited() {
+      return exited;
+    },
+    exit: () => {
+      exited = true;
     },
     becomeReady: async () => {
       children = readyChildren();

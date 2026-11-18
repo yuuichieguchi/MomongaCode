@@ -81,7 +81,7 @@ const runDir = (context: CleanupContext): string => {
 
 const startServer = async (
   context: CleanupContext,
-  health: () => SupervisorHealth = () => SAMPLE_HEALTH,
+  health: () => Promise<SupervisorHealth> = async () => SAMPLE_HEALTH,
   credential: ControlHandlerOptions['credential'] = async () => ({ kind: 'refused' }),
 ) => {
   const socketPath = path.join(runDir(context), 'supervisor.sock');
@@ -239,7 +239,7 @@ describe('startControlServer', () => {
       mechanism: testKernelLock(),
       socketPath,
       timers: createFakeTimers(clock),
-      health: () => SAMPLE_HEALTH,
+      health: async () => SAMPLE_HEALTH,
       credential: async () => ({ kind: 'refused' }),
       onShutdownRequested: () => undefined,
       onError: () => undefined,

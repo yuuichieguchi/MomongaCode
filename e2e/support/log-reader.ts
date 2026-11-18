@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { rotatedLogPath } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { processRunning } from './process.ts';
+import { until } from './wait.ts';
 
 export type LogRecord = { readonly ts: string; readonly level: string; readonly service: string; readonly pid: number; readonly msg: string } & Readonly<Record<string, unknown>>;
 
@@ -46,5 +48,33 @@ export const supervisorPidsOf = (paths: MomongaPaths): number[] => [
   ...new Set([...readLog(rotatedLogPath(paths.logFiles.supervisor, 1)), ...readLog(paths.logFiles.supervisor)].map((record) => Number(record.pid))),
 ];
 
-export const supervisorLog = (paths: MomongaPaths, supervisorPid: number): LogRecord[] =>
+const recordsOf = (paths: MomongaPaths, supervisorPid: number): LogRecord[] =>
   [...readLog(rotatedLogPath(paths.logFiles.supervisor, 1)), ...readLog(paths.logFiles.supervisor)].filter((record) => record.pid === supervisorPid);
+
+export const supervisorLog = (paths: MomongaPaths, supervisorPid: number, running: (pid: number) => boolean = processRunning): LogRecord[] => {
+  if (running(supervisorPid)) throw new Error(`supervisor ${supervisorPid} still runs, so its log may not hold a record of what was seen yet; wait for the record with untilRecord`);
+  return recordsOf(paths, supervisorPid);
+};
+
+export type RecordMatch = (record: LogRecord) => boolean;
+
+export const recordNamed =
+  (msg: string, fields: Readonly<Record<string, unknown>> = {}): RecordMatch =>
+  (record) =>
+    record.msg === msg && Object.entries(fields).every(([key, value]) => record[key] === value);
+
+export const untilRecord = (
+  paths: MomongaPaths,
+  supervisorPid: number,
+  awaited: RecordMatch | readonly RecordMatch[],
+  options: { deadlineMs: number; description: string },
+): Promise<LogRecord[]> => {
+  const matches = typeof awaited === 'function' ? [awaited] : awaited;
+  return until(
+    () => {
+      const records = recordsOf(paths, supervisorPid);
+      return matches.every((match) => records.some(match)) ? records : undefined;
+    },
+    { deadlineMs: options.deadlineMs, description: `supervisor ${supervisorPid} to log ${options.description}` },
+  );
+};

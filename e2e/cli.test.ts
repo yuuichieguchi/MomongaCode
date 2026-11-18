@@ -7,25 +7,17 @@ import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { stoppingText } from '../packages/cli/src/commands/daemon.ts';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
-import { CLI_FAKES_BUNDLE, E2E_CHECK_PASSED_TEXT, decideProjectFolderWithCheck, runCli, runCliWithFakes, setFakeCliVersion, startCli } from './support/cli.ts';
+import { CLI_FAKES_BUNDLE, E2E_CHECK_PASSED_TEXT, decideProjectFolderWithCheck, runCli, runCliWithFakes, setFakeCliVersion, startCli, stopDaemonCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
-import { supervisorLog, supervisorPidsOf } from './support/log-reader.ts';
+import { processRunning } from './support/process.ts';
+import { recordNamed, supervisorLog, supervisorPidsOf, untilRecord } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-
-const processAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 import { baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { pidOf } from './support/supervisor-client.ts';
-import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, newerClientRunBoundMs, until } from './support/wait.ts';
+import { E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, newerClientRunBoundMs, until } from './support/wait.ts';
 
 const NEWER_CLIENT_RUN_BOUND_MS = await newerClientRunBoundMs();
 
@@ -274,7 +266,8 @@ describe('cli: momonga -p', () => {
     expect([first.stdout, second.stdout].sort()).toEqual(['one\n', 'two\n']);
     const supervisorPid = Number(/pid (\d+)/.exec((await runCli(home, ['daemon', 'status'])).stdout)?.[1]);
     expect(supervisorPidsOf(home.paths), 'every supervisor this home ever had').toEqual([supervisorPid]);
-    const spawns = supervisorLog(home.paths, supervisorPid).filter((record) => record.msg === 'child.spawn');
+    const records = await untilRecord(home.paths, supervisorPid, [recordNamed('child.spawn', { child: 'gateway' }), recordNamed('child.spawn', { child: 'runtime' })], { deadlineMs: E2E_READY_DEADLINE_MS, description: 'both spawns' });
+    const spawns = records.filter((record) => record.msg === 'child.spawn');
     expect(spawns.map((record) => record['child']).sort()).toEqual(['gateway', 'runtime']);
   });
 
@@ -291,10 +284,8 @@ describe('cli: momonga -p', () => {
     expect(running.stdout).toMatch(/momonga daemon running: pid \d+, version 0\.0\.0, phase running/);
     const pid = Number(/pid (\d+)/.exec(running.stdout)?.[1]);
 
-    const stopped = await runCli(home, ['daemon', 'stop']);
-    expect(stopped.stdout).toBe('momonga daemon stopped\n');
-    expect((await runCli(home, ['daemon', 'stop'])).stdout).toBe('momonga daemon is not running\n');
-    expect(() => process.kill(pid, 0)).toThrow();
+    expect(await stopDaemonCli(home, [pid])).toEqual({ stdout: 'momonga daemon stopped\n', code: 0 });
+    expect(await stopDaemonCli(home, [])).toEqual({ stdout: 'momonga daemon is not running\n', code: 0 });
 
     expect((await runCli(home, ['-p', 'two'])).stdout).toBe('second\n');
     const again = await runCli(home, ['daemon', 'status']);
@@ -338,7 +329,7 @@ describe('cli: momonga -p', () => {
     expect(another.code).toBe(0);
     expect(another.stdout).toBe('another run\n');
     expect(heldStatus()).not.toBe('COMPLETED');
-    expect(process.kill(oldPid, 0)).toBe(true);
+    expect(processRunning(oldPid)).toBe(true);
     const status = await runCliWithFakes(home, ['daemon', 'status']);
     expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 2\.0\.0, phase running/);
     expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
@@ -369,7 +360,7 @@ describe('cli: momonga -p', () => {
     const status = await runCliWithFakes(home, ['daemon', 'status']);
     expect(status.code).toBe(0);
     expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 3\.0\.0, phase running/);
-    expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
+    expect(processRunning(stack.supervisor.pid)).toBe(true);
     expect((await stack.client.health()).version).toBe('3.0.0');
   });
 
@@ -387,12 +378,10 @@ describe('cli: momonga -p', () => {
     const newPid = Number(/pid (\d+)/.exec((await runCliWithFakes(home, ['daemon', 'status'])).stdout)?.[1]);
     expect(newPid).not.toBe(oldPid);
 
-    const stopped = await runCliWithFakes(home, ['daemon', 'stop'], { boundMs: E2E_SUPERVISOR_CLOSE_BOUND_MS });
-
-    expect(stopped.code).toBe(0);
-    expect(stopped.stdout).toBe(`${stoppingText({ steps: 1, jobs: 0, items: [{ kind: 'run', id: held.id }] })}\nmomonga daemon stopped\n`);
-    await until(() => !processAlive(oldPid), { deadlineMs: E2E_SUPERVISOR_CLOSE_BOUND_MS, description: 'the old supervisor process to exit after its lock is released' });
-    await until(() => !processAlive(newPid), { deadlineMs: E2E_SUPERVISOR_CLOSE_BOUND_MS, description: 'the new supervisor process to exit after its lock is released' });
+    expect(await stopDaemonCli(home, [oldPid, newPid], { withFakes: true })).toEqual({
+      stdout: `${stoppingText({ steps: 1, jobs: 0, items: [{ kind: 'run', id: held.id }] })}\nmomonga daemon stopped\n`,
+      code: 0,
+    });
     expect((await runCliWithFakes(home, ['daemon', 'status'])).stdout).toBe('momonga daemon is not running\n');
     hold.release();
   });

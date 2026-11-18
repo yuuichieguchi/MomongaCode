@@ -6,12 +6,12 @@ import type { ChildRole } from '@momonga/supervisor';
 import { titleOf } from './support/cases.ts';
 import { NOISY_JSON_MSG, NOISY_STDERR_LINES, NOISY_STDOUT_LINE } from './support/fixtures/noisy-daemon.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
-import { readLog, supervisorLog } from './support/log-reader.ts';
+import { readLog, recordNamed, supervisorLog, untilRecord } from './support/log-reader.ts';
 import type { LogRecord } from './support/log-reader.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
 import { childOf, pidOf } from './support/supervisor-client.ts';
-import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { E2E_READY_DEADLINE_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 import { firstGeneration } from '@momonga/testkit';
 
 const NOISY_DAEMON_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'support', 'fixtures', 'noisy-daemon.ts');
@@ -65,6 +65,10 @@ describe('logs', () => {
     const gatewayPid = pidOf(health, 'gateway');
     const ledgerPgids = new Set(home.ledger.entries().map((entry) => entry.pgid));
     const { logFiles } = home.paths;
+    const scoped = await untilRecord(home.paths, stack.ready.pid, [recordNamed('child.ready', { child: 'runtime' }), recordNamed('child.ready', { child: 'gateway' })], {
+      deadlineMs: E2E_READY_DEADLINE_MS,
+      description: 'the readiness of both children',
+    });
 
     for (const file of [logFiles.supervisor, logFiles.gateway, logFiles.runtime]) {
       expect(fs.existsSync(file)).toBe(true);
@@ -100,8 +104,7 @@ describe('logs', () => {
       expect(record.service).toBe('supervisor');
       expect(record.pid).toBe(stack.ready.pid);
     }
-    const scoped = supervisorLog(home.paths, stack.ready.pid);
-    expect(scoped).toEqual(supervisorRecords);
+    expect(supervisorRecords.slice(0, scoped.length)).toEqual(scoped);
     for (const [role, pid] of [['runtime', runtimePid], ['gateway', gatewayPid]] as const) {
       expect(ofChild(scoped, 'child.spawn', role)).toEqual([expect.objectContaining({ childPid: pid, reason: 'initial', restarts: 0 })]);
       expect(ofChild(scoped, 'child.ready', role)).toEqual([expect.objectContaining({ childPid: pid, socketPath: firstGeneration(home.paths).sockets[role] })]);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hostPidOf, readIfReadable } from './process.ts';
-import type { ProcView } from './process.ts';
+import { expectEndedAtTerminal, hostPidOf, readIfReadable, untilProcessesEnded } from './process.ts';
+import type { LivenessPorts, ProcView } from './process.ts';
 
 const HOST = 'pid:[1]';
 const SANDBOX = 'pid:[2]';
@@ -67,5 +67,37 @@ describe('hostPidOf', () => {
 
   it('refuses to guess when the process that names the sandbox namespace is gone', () => {
     expect(() => hostPidOf(2, 99999, sandboxed)).toThrow(/99999/);
+  });
+});
+
+const portsOf = (running: readonly number[], groups: readonly number[]): LivenessPorts => ({
+  processRunning: (pid) => running.includes(pid),
+  groupRunning: async (pgid) => groups.includes(pgid),
+});
+
+describe('expectEndedAtTerminal', () => {
+  it('passes when the group and every named process have ended', async () => {
+    await expect(expectEndedAtTerminal('CANCELLED', { group: 7, processes: [8, 9] }, portsOf([], []))).resolves.toBeUndefined();
+  });
+
+  it('fails at once, naming the status, when the group can still run', async () => {
+    await expect(expectEndedAtTerminal('CANCELLED', { group: 7 }, portsOf([], [7]))).rejects.toThrow(/CANCELLED.*group 7/);
+  });
+
+  it('fails at once, naming each process that can still run', async () => {
+    await expect(expectEndedAtTerminal('COMPLETED', { processes: [8, 9] }, portsOf([9], []))).rejects.toThrow(/COMPLETED.*process 9/);
+  });
+});
+
+describe('untilProcessesEnded', () => {
+  it('resolves once every process has ended', async () => {
+    const running = [5];
+    const ports: LivenessPorts = { processRunning: (pid) => running.includes(pid), groupRunning: async () => false };
+    setTimeout(() => running.pop(), 30);
+    await expect(untilProcessesEnded([5], { deadlineMs: 2000, description: 'five ended' }, ports)).resolves.toBeUndefined();
+  });
+
+  it('fails at its bound when a process keeps running', async () => {
+    await expect(untilProcessesEnded([5], { deadlineMs: 100, description: 'five ended' }, portsOf([5], []))).rejects.toThrow(/five ended/);
   });
 });

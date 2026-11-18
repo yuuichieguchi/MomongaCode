@@ -12,7 +12,7 @@ import { STDERR_FLOOD_BYTES } from './fixtures/stderr-flood-supervisor.ts';
 import type { StackParentReport, StackParentRequest } from './fixtures/stack-parent.ts';
 import { createE2eHome, registerE2eCleanup } from './home.ts';
 import { supervisorLog } from './log-reader.ts';
-import { isAlive } from './process.ts';
+import { processRunning } from './process.ts';
 import { E2E_RUN_ENV, e2eEntryPrefix } from './run-env.ts';
 import { resolveSandbox } from './sandbox.ts';
 import {
@@ -227,7 +227,7 @@ describe('supervisor-main lifeline and pipes', () => {
     expect(daemonPids).toHaveLength(2);
     expect(ready.pid).toBeDefined();
     process.kill(parent.pid, 'SIGKILL');
-    await until(() => [report.supervisorPid, ...daemonPids].every((pid) => !isAlive(pid)), {
+    await until(() => [report.supervisorPid, ...daemonPids].every((pid) => !processRunning(pid)), {
       deadlineMs: E2E_SUPERVISOR_CLOSE_BOUND_MS,
       description: 'supervisor and daemons gone after the parent died',
     });

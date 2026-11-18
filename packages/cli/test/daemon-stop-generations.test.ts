@@ -105,4 +105,15 @@ describe('momonga daemon stop over the live generations (20.75, 15.14 P7 d)', ()
 
     expect((one as PollTimeout).message).toBe('the daemon (v1.2.4, pid 4002) did not stop within 200000 ms');
   });
+
+  it('does not say stopped while a supervisor that freed its lock is still running, and names it when it outlasts the bound', async (context) => {
+    const { paths, start, ports } = await setupGenerations(context, '1.2.4');
+    const lingering = await start({ version: '1.2.4', generation: 1, pid: 4101, outlivesLock: true });
+
+    const stopping = await stopDaemon({ ...ports, clock: oversleepingClock() }, paths).catch((error: unknown) => error);
+
+    expect(lingering.exited).toBe(false);
+    expect(stopping).toBeInstanceOf(PollTimeout);
+    expect((stopping as PollTimeout).message).toMatch(/^the daemon \(v1\.2\.4, pid 4101\) did not stop within \d+ ms$/);
+  });
 });

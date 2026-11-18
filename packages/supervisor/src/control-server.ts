@@ -14,7 +14,7 @@ export type ShutdownResponseWriter = {
 export type CredentialAnswer = { kind: 'value'; value: string } | { kind: 'refused' } | { kind: 'unset' };
 
 export type ControlHandlerOptions = {
-  health(): SupervisorHealth;
+  health(): Promise<SupervisorHealth>;
   credential(name: string, capability: string | undefined, signal: AbortSignal): Promise<CredentialAnswer>;
   onShutdownRequested(values?: StopValues): void;
   onIgnoredStopValues?(reason: string): void;
@@ -152,7 +152,14 @@ export const createControlRequestHandler = (options: ControlHandlerOptions): ((r
     const method = request.method ?? 'GET';
     if (pathname === '/v1/health') {
       if (method === 'GET' || method === 'HEAD') {
-        respondJson(request, response, 200, options.health());
+        options.health().then(
+          (health) => respondJson(request, response, 200, health),
+          (error: unknown) => {
+            const failure = failureOf(error);
+            options.onError(failure);
+            respondError(request, response, 500, { message: failure.message, type: 'server_error', code: 'health_unavailable' });
+          },
+        );
         return;
       }
       respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET, HEAD' });

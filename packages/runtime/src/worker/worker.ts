@@ -4,7 +4,7 @@ import type { ClaimControl } from './claim-control.ts';
 import { runClaim } from './claim-runner.ts';
 import type { ClaimHost } from './claim-runner.ts';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
-import { isFatalStoreError } from '@momonga/store';
+import { CLAIM_STATUSES, isFatalStoreError } from '@momonga/store';
 import { describeError } from './errors.ts';
 import { reportError } from './report.ts';
 import type { Worker, WorkerErrorContext, WorkerOptions } from './types.ts';
@@ -20,7 +20,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
   let unsubscribeWake: (() => void) | undefined;
   let aborted = false;
   const controls = new Set<ClaimControl>();
-  const inFlight = new Map<Promise<unknown>, string>();
+  const inFlight = new Map<Promise<unknown>, Claim>();
   const memories = new Map<string, RunMemory>();
   let heldReported = new Set<string>();
 
@@ -84,7 +84,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
     }
     onClaim?.(claim);
     const running = runClaim(options, claim, host);
-    inFlight.set(running, claim.runId);
+    inFlight.set(running, claim);
     try {
       await running;
     } finally {
@@ -132,6 +132,11 @@ export const createWorker = (options: WorkerOptions): Worker => {
       interruptSleep = done;
     });
 
+  const stillHeld = (claim: Claim): boolean => {
+    const run = options.store.getRun(claim.runId);
+    return run !== undefined && run.leaseOwner === claim.workerId && run.leaseToken === claim.leaseToken && CLAIM_STATUSES.some((status) => status === run.status);
+  };
+
   const sweepMemories = (): void => {
     const now = options.clock.now();
     for (const [runId, memory] of memories) {
@@ -170,7 +175,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
       await Promise.allSettled([...inFlight.keys()]);
     },
     memorySize: () => memories.size,
-    runsInFlight: () => [...inFlight.values()],
+    runsInFlight: () => [...inFlight.values()].filter(stillHeld).map((claim) => claim.runId),
     abort: async () => {
       aborted = true;
       stopping = true;

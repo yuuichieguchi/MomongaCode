@@ -1,9 +1,36 @@
 import fs from 'node:fs';
-import { isProcessAlive } from '@momonga/foundation';
+import { groupAlive, isProcessAlive } from '@momonga/foundation';
+import { until } from './wait.ts';
 
-export const isAlive = (pid: number): boolean => isProcessAlive(pid);
+export type LivenessPorts = {
+  processRunning(pid: number): boolean;
+  groupRunning(pgid: number): Promise<boolean>;
+};
 
-export const groupAlive = (pgid: number): boolean => isProcessAlive(-pgid);
+export const hostLiveness: LivenessPorts = {
+  processRunning: (pid) => isProcessAlive(pid),
+  groupRunning: (pgid) => groupAlive(pgid),
+};
+
+export const processRunning = (pid: number, ports: LivenessPorts = hostLiveness): boolean => ports.processRunning(pid);
+
+export const groupRunning = (pgid: number, ports: LivenessPorts = hostLiveness): Promise<boolean> => ports.groupRunning(pgid);
+
+export const groupSignalable = (pgid: number): boolean => isProcessAlive(-pgid);
+
+export type Ended = { readonly group?: number; readonly processes?: readonly number[] };
+
+export const expectEndedAtTerminal = async (status: string, ended: Ended, ports: LivenessPorts = hostLiveness): Promise<void> => {
+  const still = [
+    ...(ended.group !== undefined && (await ports.groupRunning(ended.group)) ? [`group ${ended.group}`] : []),
+    ...(ended.processes ?? []).filter((pid) => ports.processRunning(pid)).map((pid) => `process ${pid}`),
+  ];
+  if (still.length > 0) throw new Error(`status ${status} is visible, so the product has ended these and confirmed them gone, but ${still.join(', ')} can still run`);
+};
+
+export const untilProcessesEnded = async (pids: readonly number[], options: { deadlineMs: number; description: string }, ports: LivenessPorts = hostLiveness): Promise<void> => {
+  await until(() => pids.every((pid) => !ports.processRunning(pid)), options);
+};
 
 export type ProcView = {
   pids(): number[];

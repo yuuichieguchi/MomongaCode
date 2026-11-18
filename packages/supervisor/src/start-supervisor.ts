@@ -426,7 +426,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
           promoting = false;
         });
     }
-    const refreshCounts = async (): Promise<void> => {
+    const readCounts = async (): Promise<GenerationCounts> => {
       const reader = options.childCounts ?? readChildCounts;
       const read = async (manager: ChildManager): Promise<GenerationCounts> => {
         if (manager.state() !== 'ready') return {};
@@ -438,7 +438,10 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         }
       };
       const [fromGateway, fromRuntime] = await Promise.all([read(gateway), read(runtime)]);
-      counts = { ...fromRuntime, ...fromGateway };
+      return { ...fromRuntime, ...fromGateway };
+    };
+    const refreshCounts = async (): Promise<void> => {
+      counts = await readCounts();
     };
 
     const warnWhenMany = async (): Promise<void> => {
@@ -490,7 +493,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       }, intervals.generationPollMs);
     };
 
-    const health = (): SupervisorHealth => ({
+    const healthWith = (current: GenerationCounts): SupervisorHealth => ({
       status: 'ok',
       version: options.version,
       pid: process.pid,
@@ -502,9 +505,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
       generation: own.generation,
       role,
-      ...counts,
-      retention: counts.retention ?? null,
+      ...current,
+      retention: current.retention ?? null,
     });
+    const health = (): SupervisorHealth => healthWith(counts);
+    const answeredHealth = async (): Promise<SupervisorHealth> => healthWith(await readCounts());
 
     let recordFailedKey: string | undefined;
     let lastWrittenSeq: number | undefined;
@@ -635,7 +640,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...omitUndefined({ startSignal: options.signal }),
       socketPath: own.sockets.supervisor,
       timers,
-      health,
+      health: answeredHealth,
       credential: async (name, capability, signal) => {
         if (capability === undefined || !gateway.holdsCapability(capability)) return { kind: 'refused' };
         const loaded = await settings.loadOrKeep(signal).catch((error: unknown) => {
