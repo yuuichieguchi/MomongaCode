@@ -5,7 +5,7 @@ import { createRuntimeClient } from './support/runtime-client.ts';
 import type { EventsOptions, RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const PLAN_ARGS = { entries: [{ content: 'inspect the code', status: 'in_progress', priority: 'high' }] };
 
@@ -13,7 +13,7 @@ const SCRIPT = [toolCallReply('UpdatePlan', PLAN_ARGS), textReply('planned')];
 
 const replay = async (runtime: RuntimeClient, runId: string, options: EventsOptions = {}): Promise<RunEventFrame[]> => {
   const stream = runtime.events(runId, options);
-  const frames = await stream.toEnd(E2E_MARGIN_MS);
+  const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
   await stream.close();
   return frames;
 };

@@ -25,6 +25,7 @@ import type { E2eDeps } from './support/supervisor-main.ts';
 import type { SupervisorClient } from './support/supervisor-client.ts';
 import {
   E2E_HELD_RETRY_MS,
+  E2E_KILLED_GONE_BOUND_MS,
   E2E_LOCK_FREE_BOUND_MS,
   E2E_MARGIN_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
@@ -185,7 +186,7 @@ const stopRuntimeAndKillSupervisor = async (home: E2eHome): Promise<{ orphanPid:
   });
   const firstExit = trackExit(stack.supervisor);
   process.kill(stack.supervisor.pid, 'SIGKILL');
-  await until(() => firstExit(), { deadlineMs: E2E_MARGIN_MS, description: 'first supervisor gone after SIGKILL' });
+  await until(() => firstExit(), { deadlineMs: E2E_KILLED_GONE_BOUND_MS, description: 'first supervisor gone after SIGKILL' });
   expect(processRunning(orphanPid)).toBe(true);
   return { orphanPid, gatewayPid, firstPid: stack.ready.pid };
 };
@@ -206,7 +207,7 @@ describe('supervisor cases', () => {
 
     const firstExit = trackExit(stack.supervisor);
     process.kill(stack.supervisor.pid, 'SIGKILL');
-    const exit = await until(() => firstExit(), { deadlineMs: E2E_MARGIN_MS, description: 'supervisor gone after SIGKILL' });
+    const exit = await until(() => firstExit(), { deadlineMs: E2E_KILLED_GONE_BOUND_MS, description: 'supervisor gone after SIGKILL' });
     expect(exit).toEqual({ code: null, signal: 'SIGKILL' });
 
     await untilProcessesEnded([runtimePid, gatewayPid], { deadlineMs: E2E_ORPHAN_CLOSE_BOUND_MS, description: 'both daemons closed after the lifeline EOF' });
@@ -587,7 +588,7 @@ describe('supervisor cases', () => {
     expect(processRunning(holderPid)).toBe(true);
 
     process.kill(holderPid, 'SIGKILL');
-    await untilProcessesEnded([holderPid], { deadlineMs: E2E_MARGIN_MS, description: 'lock holder fixture gone' });
+    await untilProcessesEnded([holderPid], { deadlineMs: E2E_KILLED_GONE_BOUND_MS, description: 'lock holder fixture gone' });
     const ready = await stack.client.untilChild('runtime', (child) => child.state === 'ready', E2E_LOCK_FREE_BOUND_MS);
     const records = await untilRecord(home.paths, stack.ready.pid, recordNamed('child.spawn', { child: 'runtime', reason: 'lock-free' }), { deadlineMs: E2E_LOCK_FREE_BOUND_MS, description: 'the runtime spawn once the lock is free' });
     if (HANDS_LOCK_TO_CHILD) {

@@ -289,13 +289,13 @@ describe('acceptance (a) support', () => {
 
     expect(predicted.claims).toBe(1);
     expect(readDb<{ attempts: number; error_json: string | null }>(home.paths.databases.runtime, 'SELECT attempts, error_json FROM runs WHERE id = ?', runId)).toEqual([{ attempts: 1, error_json: null }]);
+    const completed = ofType(journal, 'tool.completed');
+    expect(predicted.journal.filter((event) => event.type === 'tool.completed').map((event) => event.data['output'])).toEqual(completed.map((event) => event.data['output']));
     expect(comparable(predicted.journal)).toEqual(comparable(journal));
     expect(predicted.wireCounts).toEqual(modelPosts.map((post) => wireTokensOfBody(post.body)));
     expect(predicted.pinned).toBe(wireTokensOfBody(modelPosts[0]?.body));
     const requested = ofType(journal, 'model.requested');
     for (const [index, event] of requested.entries()) expect((await count.count(event.data['body'])).input_tokens).toBe(wireTokensOfBody(modelPosts[index]?.body));
-    const completed = ofType(journal, 'tool.completed');
-    expect(predicted.journal.filter((event) => event.type === 'tool.completed').map((event) => event.data['output'])).toEqual(completed.map((event) => event.data['output']));
     for (const post of modelPosts) expect(reportedTokensOfRequest(post.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
   });
 });

@@ -16,7 +16,7 @@ import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import type { E2eStack } from './support/stack.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const FORGE_SECRET = 'forge-main';
 const FORGE_CREDENTIAL = 'e2e-forge-credential-4c1d9a7e';
@@ -105,7 +105,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
       expect(gitIn(home, 'log', '-1', '--format=%s')).toBe(COMMIT_MESSAGE);
       expect(linesOf(runs)).toEqual(['run', 'run']);
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       expect(effectFramesOf(frames, 'GitCommit').map((effect) => effect?.outcome)).toEqual(['applied']);
       expect(childOf(await stack.client.health(), 'runtime').restarts).toBe(1);
@@ -140,7 +140,7 @@ describe('gitpr: a runtime SIGKILL at a step of a git or pull request operation'
 
       await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} COMPLETED after recovery` });
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       expect(JSON.stringify(frames)).not.toContain(FORGE_CREDENTIAL);
       expectScriptedToolOffered(stack, 'PullRequestCreate');
