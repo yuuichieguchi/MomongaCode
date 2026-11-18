@@ -24,7 +24,7 @@ export type FakeSupervisorOptions = {
   holdsKernelLock?: boolean;
   publishes?: boolean;
   startRecordVersion?: string;
-  reports?: Partial<Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role' | 'interrupts' | 'retention'>>;
+  reports?: Partial<Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role' | 'interrupts' | 'retention' | 'countsNotKnown'>>;
 };
 
 export type FakeWork = {

@@ -36,7 +36,7 @@ export type Control = {
   candidateTimedOut: boolean;
   daemonRunning: boolean;
   daemonStart: CommandResult | CommandTimedOut;
-  retiring: { steps: number; jobs: number; versions: string[] };
+  retiring: { steps: number; jobs: number; versions: string[]; notKnown: string[] };
   lockHeld: boolean;
   autoUpdates: boolean;
 };
@@ -91,7 +91,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     candidateTimedOut: false,
     daemonRunning: false,
     daemonStart: ok(),
-    retiring: { steps: 0, jobs: 0, versions: [] },
+    retiring: { steps: 0, jobs: 0, versions: [], notKnown: [] },
     lockHeld: false,
     autoUpdates: true,
   };

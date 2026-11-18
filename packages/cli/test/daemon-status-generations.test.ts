@@ -35,6 +35,19 @@ describe('momonga daemon status over the live generations (20.71)', () => {
     expect(stdout.chunks.join('')).toBe('momonga daemon is not running\nv1.2.3 retiring (pid 4001): 1 steps in flight, 0 background jobs, 0 model calls in flight\n');
   });
 
+  it('says which counts of a retiring generation are not known when its runtime did not answer in time, never a figure', async (context) => {
+    const { paths, start, ports, stdout } = await setupGenerations(context, '1.2.4');
+    await start({ version: '1.2.3', generation: 1, pid: 4001, reports: { calls: 3, countsNotKnown: ['runtime'] } });
+    await start({ version: '1.2.4', generation: 2, pid: 4002 });
+
+    await daemonStatus({ ...ports, interrupt: new AbortController().signal } as unknown as CliPorts, paths, { json: false });
+
+    expect(stdout.chunks.join('')).toBe(
+      `momonga daemon running: pid 4002, version 1.2.4, phase running, started ${STARTED}\n${CHILD_LINES}` +
+        'v1.2.3 retiring (pid 4001): steps in flight not known, background jobs not known, 3 model calls in flight (its runtime did not answer in time)\n',
+    );
+  });
+
   it('says not running and nothing else when no generation is live', async (context) => {
     const { paths, ports, stdout } = await setupGenerations(context, '1.2.4');
 

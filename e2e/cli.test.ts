@@ -379,7 +379,7 @@ describe('cli: momonga -p', () => {
     expect(newPid).not.toBe(oldPid);
 
     expect(await stopDaemonCli(home, [oldPid, newPid], { withFakes: true })).toEqual({
-      stdout: `${stoppingText({ steps: 1, jobs: 0, items: [{ kind: 'run', id: held.id }] })}\nmomonga daemon stopped\n`,
+      stdout: `${stoppingText({ steps: 1, jobs: 0, items: [{ kind: 'run', id: held.id }], notKnown: [] })}\nmomonga daemon stopped\n`,
       code: 0,
     });
     expect((await runCliWithFakes(home, ['daemon', 'status'])).stdout).toBe('momonga daemon is not running\n');

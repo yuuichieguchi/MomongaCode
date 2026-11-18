@@ -75,6 +75,7 @@ describe('supervisor control API wire types', () => {
       jobs?: number;
       calls?: number;
       interrupts?: ({ kind: 'run'; id: string } | { kind: 'job'; id: string; command: string })[];
+      countsNotKnown?: ('gateway' | 'runtime')[];
       retention: { days: number; lastSweep: { at: string; sessionsDeleted: number; runsPurged: number; blobsCollected: number } | null } | null;
     }>();
     expectTypeOf<SupervisorHealth>().not.toHaveProperty('state');

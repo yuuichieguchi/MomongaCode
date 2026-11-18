@@ -58,6 +58,7 @@
     {"name":"POWERSHELL_CALL_BOUND_MS","file":"packages/foundation/src/platform/windows-inspector.ts","kind":"P","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"ABANDON_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
     {"name":"DAEMON_MARKER_KILL_GRACE_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
+    {"name":"HEALTH_CHILD_COUNTS_BOUND_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"supervisor","row":"foundation-supervisor-packaging.md"},
     {"name":"KEEPER_NAME_BYTES","file":"packages/foundation/src/process-contract.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"LOG_ITEM_MAX_CHARS","file":"packages/foundation/src/process-contract.ts","kind":"stated","owner":"foundation","row":"foundation-supervisor-packaging.md"},
     {"name":"SOLVER_THREAD_STOP_BOUND_MS","file":"packages/foundation/src/process-contract.ts","kind":"P","owner":"policy-verify-sandbox","row":"verify.md"},

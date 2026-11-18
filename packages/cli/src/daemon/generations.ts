@@ -5,7 +5,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import type { CliClock, CliPorts } from '../ports.ts';
 import type { RetiringWork } from '../update/ports.ts';
-import { DaemonStartError, STOP_WAIT_WHEN_UNKNOWN_MS, healthAt, liveGenerationsUnderLock, reopenSessionMessage } from './ensure-daemon.ts';
+import { DaemonStartError, STOP_WAIT_WHEN_UNKNOWN_MS, generationLabel, healthAt, runtimeCountsNotKnown, liveGenerationsUnderLock, reopenSessionMessage } from './ensure-daemon.ts';
 import type { NewerListener } from './ensure-daemon.ts';
 
 const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
@@ -40,6 +40,7 @@ export const retiringWorkOf = (live: readonly LiveGeneration[]): RetiringWork =>
     steps: sumOf(retiring.map((entry) => entry.health.steps)),
     jobs: sumOf(retiring.map((entry) => entry.health.jobs)),
     versions: [...new Set(retiring.map((entry) => entry.health.version))],
+    notKnown: retiring.filter((entry) => runtimeCountsNotKnown(entry.health)).map((entry) => generationLabel(entry.health)),
   };
 };
 
