@@ -248,7 +248,7 @@ export const createTuiBackend = (
     boot: () => {
       booting ??= (async () => {
         await ensureSessionDaemon(ports, paths, { signal: closing.signal, ...(onNewer === undefined ? {} : { onNewer }) });
-        client = connectSessionRuntime(ports, paths, onNewer, () => restoreDaemon(ports, paths, onNewer)(closing.signal));
+        client = connectSessionRuntime(ports, paths, 'tui', onNewer, () => restoreDaemon(ports, paths, onNewer)(closing.signal));
         return client.trust(ports.cwd);
       })();
       return booting;

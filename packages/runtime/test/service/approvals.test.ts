@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { SURFACE_HEADER } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import { callsStep } from '../worker/scripts.ts';
 import { FORMER_APPROVAL_LIMIT_MS, OPTIONS, attachWorkerKit, expectError, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
@@ -132,6 +133,32 @@ describe('approval resolution', () => {
     expect(single).toMatchObject({ status: 'resolved', optionId });
     expect(typeof single.resolvedAt).toBe('number');
     expectError(await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId } }), 409, 'approval_not_pending');
+  });
+
+  it('records the surface that answered, lists the settled approval with its answer after the pending ones, and names both in the 409 of a later answer', async () => {
+    const env = await startService();
+    const { run, approvals } = await askToWrite(env);
+    const [approval] = approvals;
+    const optionId = optionOf(approval, 'reject_once');
+    const resolved = await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId }, headers: { [SURFACE_HEADER]: 'tui' } });
+    expect(resolved.json.approval).toMatchObject({ status: 'resolved', optionId, resolvedBy: 'tui' });
+    expect(env.ofType(run.id, 'tool.permission.resolved').at(-1)).toMatchObject({ approvalId: approval.id, optionId, resolvedBy: 'tui' });
+
+    const listed = (await env.http('GET', `/v1/runs/${run.id}/approvals`)).json;
+    expect(listed.approvals).toEqual([]);
+    expect(listed.settled.map((entry: { id: string; resolvedBy: string }) => [entry.id, entry.resolvedBy])).toEqual([[approval.id, 'tui']]);
+
+    const again = await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId: optionOf(approval, 'allow_once') }, headers: { [SURFACE_HEADER]: 'cli' } });
+    expectError(again, 409, 'approval_not_pending');
+    expect(again.json.error.message).toBe(`approval ${approval.id} is not pending: it was resolved by the terminal UI: reject_once (Reject)`);
+  });
+
+  it('records no surface for a client that names none', async () => {
+    const env = await startService();
+    const { approvals } = await askToWrite(env);
+    const [approval] = approvals;
+    const resolved = await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId: optionOf(approval, 'allow_once') }, headers: { [SURFACE_HEADER]: 'someone' } });
+    expect(resolved.json.approval).not.toHaveProperty('resolvedBy');
   });
 
   it('rejects a superseded approval with 409 naming superseded', async () => {

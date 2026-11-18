@@ -1,6 +1,6 @@
 import { EXIT_CONFIG, EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
-import { TARGET_NOT_READY, WORDS, agentReadiness, approvalShownLines, attachRunCommand, budgetSentence, fallbackNoticeTextOn, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import { TARGET_NOT_READY, WORDS, agentReadiness, approvalEndingText, approvalShownLines, attachRunCommand, budgetSentence, fallbackNoticeTextOn, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
 import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -283,13 +283,13 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       }
       case 'tool.permission.resolved':
       case 'tool.unknown.resolved': {
-        const option = offered.get(event.approvalId)?.find((candidate) => candidate.optionId === event.optionId);
-        note([`momonga: approval ${event.approvalId}${by} resolved: ${option === undefined ? event.optionId : `${option.kind}${option.name === option.kind ? '' : ` (${option.name})`}`}; it takes no other answer`]);
+        const ending = approvalEndingText({ status: 'resolved', options: offered.get(event.approvalId) ?? [], optionId: event.optionId, ...(event.resolvedBy === undefined ? {} : { resolvedBy: event.resolvedBy }) });
+        note([`momonga: approval ${event.approvalId}${by} ${ending}; it takes no other answer`]);
         break;
       }
       case 'tool.permission.cancelled':
       case 'tool.unknown.cancelled':
-        note([`momonga: approval ${event.approvalId}${by} ${event.reason}; it takes no answer`]);
+        note([`momonga: approval ${event.approvalId}${by} ${approvalEndingText({ status: event.reason, options: [] })}; it takes no answer`]);
         break;
       case 'tool.elicitation.requested':
         note(leadWith(`momonga: waiting for input${by} `, describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)));
@@ -576,7 +576,7 @@ const onNewerOf = (ports: Pick<CliPorts, 'handover'>): { onNewer?: NewerListener
 export const resumeStream = async (ports: CliPorts, paths: MomongaPaths, adopted: { record: StreamRecord; file: string }, interrupt: AbortSignal): Promise<number> => {
   const { record, file } = adopted;
   await ensureSessionDaemon(ports, paths, { signal: interrupt, ...onNewerOf(ports) });
-  const client = connectSessionRuntime(ports, paths, newerListenerOf(ports));
+  const client = connectSessionRuntime(ports, paths, 'cli', newerListenerOf(ports));
   try {
     await client.getRun(record.runId);
     ports.handover?.removeRecord(file);

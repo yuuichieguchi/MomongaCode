@@ -1,8 +1,8 @@
-import type { TrustItemsView } from '@momonga/protocol';
+import type { Surface, TrustItemsView } from '@momonga/protocol';
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
-import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, WORDS, messageOf } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, SURFACE_HEADER, WORDS, messageOf } from '@momonga/protocol';
 import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, ToolResultPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -184,6 +184,7 @@ export type RuntimeClient = {
   trace(runId: string): Promise<RunTraceView>;
   toolResult(runId: string, callId: string, offset: number): Promise<ToolResultPage>;
   approvals(runId: string): Promise<ApprovalView[]>;
+  runApprovals(runId: string): Promise<RunApprovals>;
   getApproval(id: string): Promise<ApprovalView>;
   resolveApproval(id: string, optionId: string): Promise<ResolvedApproval>;
   skills(sessionId: string): Promise<SkillsResponse>;
@@ -326,12 +327,14 @@ export const pathSegment = (value: string): string => {
   return encodeURIComponent(value);
 };
 
-export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; personCapability: () => Promise<string>; onMoved?: () => Promise<void>; restoreConnection?: () => Promise<void> };
+export type RunApprovals = { readonly pending: readonly ApprovalView[]; readonly settled: readonly ApprovalView[] };
+
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; clock: Pick<CliClock, 'now' | 'sleep'>; personCapability: () => Promise<string>; surface?: Surface; onMoved?: () => Promise<void>; restoreConnection?: () => Promise<void> };
 
 export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket, { connectTimeoutMs: HOST_READ_BOUND_MS, headersTimeoutMs: HOST_READ_BOUND_MS });
 
-  const personHeaders = async (): Promise<Record<string, string>> => ({ [PERSON_CAPABILITY_HEADER]: await options.personCapability() });
+  const personHeaders = async (): Promise<Record<string, string>> => ({ [PERSON_CAPABILITY_HEADER]: await options.personCapability(), ...(options.surface === undefined ? {} : { [SURFACE_HEADER]: options.surface }) });
 
   const send = async (
     method: string,
@@ -543,6 +546,15 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     const path = `/v1/runs/${pathSegment(runId)}/approvals`;
     const { body } = await send('GET', path, [200]);
     return listOf(body, 'approvals', `GET ${path}`).map((entry) => checkApproval(entry, `GET ${path}`));
+  };
+
+  const runApprovals = async (runId: string): Promise<RunApprovals> => {
+    const path = `/v1/runs/${pathSegment(runId)}/approvals`;
+    const { body } = await send('GET', path, [200]);
+    return {
+      pending: listOf(body, 'approvals', `GET ${path}`).map((entry) => checkApproval(entry, `GET ${path}`)),
+      settled: listOf(body, 'settled', `GET ${path}`).map((entry) => checkApproval(entry, `GET ${path}`)),
+    };
   };
 
   const getApproval = async (id: string): Promise<ApprovalView> => {
@@ -920,6 +932,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     cancel,
     trace,
     approvals,
+    runApprovals,
     getApproval,
     resolveApproval,
     elicitations,

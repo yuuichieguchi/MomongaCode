@@ -1,8 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock, Random } from '@momonga/foundation';
-import { APPROVAL_KINDS, APPROVAL_STATUSES } from '@momonga/protocol';
-import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionOption } from '@momonga/protocol';
+import { APPROVAL_KINDS, APPROVAL_STATUSES, SURFACES } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionOption, Surface } from '@momonga/protocol';
 import { corrupt, expectOneOf, isRecord, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
@@ -43,6 +43,7 @@ const decodeApproval = (row: Row, context: DecodeContext): Approval => {
   const optionId = reader.nullableString('option_id');
   const resolvedAt = reader.nullableNumber('resolved_at');
   const subjectDigest = reader.nullableString('subject_digest');
+  const resolvedBy = reader.nullableString('resolved_by');
   const kind = storedOneOf(context, 'approvals', identity, 'kind', APPROVAL_KINDS, reader.string('kind'));
   const expiresAt = reader.nullableNumber('expires_at');
   const record = {
@@ -57,6 +58,7 @@ const decodeApproval = (row: Row, context: DecodeContext): Approval => {
     createdAt: reader.number('created_at'),
     ...(optionId === null ? {} : { optionId }),
     ...(resolvedAt === null ? {} : { resolvedAt }),
+    ...(resolvedBy === null ? {} : { resolvedBy: storedOneOf(context, 'approvals', identity, 'resolved_by', SURFACES, resolvedBy) }),
     ...(subjectDigest === null ? {} : { subjectDigest }),
   };
   if (kind === 'unknown') return { ...record, kind, ...(expiresAt === null ? {} : { expiresAt }) };
@@ -79,10 +81,13 @@ export type ApprovalOps = {
   store: ApprovalStore;
   request(input: ApprovalRequest): { approval: Approval; created: boolean; superseded?: Approval };
   listPendingDue(runId: string, nowMs: number): Approval[];
-  markResolved(id: string, optionId: string): Approval;
+  markResolved(id: string, optionId: string, resolvedBy: Surface | undefined): Approval;
+  listSettled(runId: string): Approval[];
   markAnswered(id: string, responses: Record<string, ElicitationAnswerRecord>): Approval;
   end(id: string, status: 'expired' | 'withdrawn' | 'superseded'): void;
 };
+
+export const SETTLED_APPROVALS_LISTED = 20;
 
 export const createApprovalStore = (db: DatabaseSync, clock: Clock, random: Random, context: DecodeContext): ApprovalOps => {
   const runExists = db.prepare('SELECT 1 AS present FROM runs WHERE id = :runId');
@@ -94,13 +99,16 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock, random: Rand
   const supersede = db.prepare("UPDATE approvals SET status = 'superseded' WHERE id = :id AND status = 'pending'");
   const selectById = db.prepare('SELECT * FROM approvals WHERE id = :id');
   const resolve = db.prepare(
-    "UPDATE approvals SET status = 'resolved', option_id = :optionId, resolved_at = :resolvedAt WHERE id = :id AND status = 'pending'",
+    "UPDATE approvals SET status = 'resolved', option_id = :optionId, resolved_at = :resolvedAt, resolved_by = :resolvedBy WHERE id = :id AND status = 'pending'",
   );
   const answer = db.prepare(
     "UPDATE approvals SET status = 'resolved', responses_json = :responses, resolved_at = :resolvedAt WHERE id = :id AND status = 'pending' AND kind = 'elicitation'",
   );
   const finish = db.prepare("UPDATE approvals SET status = :status WHERE id = :id AND status = 'pending'");
   const listPending = db.prepare("SELECT * FROM approvals WHERE run_id = :runId AND status = 'pending' ORDER BY created_at, rowid");
+  const listSettled = db.prepare(
+    "SELECT * FROM approvals WHERE run_id = :runId AND status <> 'pending' AND kind IN ('permission', 'unknown_effect') ORDER BY COALESCE(resolved_at, created_at) DESC, rowid DESC LIMIT :rows",
+  );
   const listPendingDue = db.prepare(
     "SELECT * FROM approvals WHERE run_id = :runId AND status = 'pending' AND expires_at <= :nowMs ORDER BY expires_at, rowid",
   );
@@ -155,8 +163,9 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock, random: Rand
     store,
     request,
     listPendingDue: (runId, nowMs) => listPendingDue.all({ runId, nowMs }).map((row) => decodeApproval(row, context)),
-    markResolved: (id, optionId) => {
-      const result = resolve.run({ id, optionId, resolvedAt: clock.now() });
+    listSettled: (runId) => listSettled.all({ runId, rows: SETTLED_APPROVALS_LISTED }).map((row) => decodeApproval(row, context)),
+    markResolved: (id, optionId, resolvedBy) => {
+      const result = resolve.run({ id, optionId, resolvedAt: clock.now(), resolvedBy: resolvedBy ?? null });
       if (Number(result.changes) !== 1) throw new Error(`approval ${id} could not be resolved`);
       return mustGet(id);
     },

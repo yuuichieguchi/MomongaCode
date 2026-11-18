@@ -2,7 +2,7 @@ import { credentialEnvNames, loadUserSettings, stripCredentialEnv } from '@momon
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
 import { TARGET_NOT_READY, messageOf, startModelOf } from '@momonga/protocol';
-import type { Mandate, MomongaModelList, PermissionMode } from '@momonga/protocol';
+import type { Mandate, MomongaModelList, PermissionMode, Surface } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
 import type { CreatedSession, RuntimeClient } from '../client/runtime-client.ts';
 import type { SessionView } from '../client/views.ts';
@@ -69,17 +69,19 @@ export const autoModeConfigured = async (ports: Pick<CliPorts, 'env' | 'home'>, 
 };
 
 export const connectRuntime = (ports: Pick<CliPorts, 'clock' | 'personCapability'>, paths: MomongaPaths): RuntimeClient =>
-  createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock, personCapability: () => ports.personCapability(paths.home) });
+  createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock, personCapability: () => ports.personCapability(paths.home), surface: 'cli' });
 
 export const connectSessionRuntime = (
   ports: Pick<DaemonPorts, 'version' | 'clock' | 'endpointScope'> & Pick<CliPorts, 'personCapability'>,
   paths: MomongaPaths,
+  surface: Surface,
   onNewer?: NewerListener,
   restoreConnection?: () => Promise<void>,
 ): RuntimeClient =>
   createRuntimeClient({
     resolveSocket: sessionSocketResolver(ports, paths, 'runtime'),
     clock: ports.clock,
+    surface,
     personCapability: () => ports.personCapability(paths.home),
     onMoved: endSessionWhenMovedAway(paths, ports.version, onNewer),
     ...(restoreConnection === undefined ? {} : { restoreConnection }),
@@ -88,7 +90,7 @@ export const connectSessionRuntime = (
 export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'platform' | 'stderr' | 'interrupt' | 'personCapability'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
   const { onNewer } = options;
   await ensureSessionDaemon(ports, paths, { ...(options.signal === undefined ? {} : { signal: options.signal }), ...(onNewer === undefined ? {} : { onNewer }) });
-  const client = connectSessionRuntime(ports, paths, onNewer);
+  const client = connectSessionRuntime(ports, paths, 'cli', onNewer);
   try {
     if (options.reopen !== undefined) {
       const listed = await options.modelList();

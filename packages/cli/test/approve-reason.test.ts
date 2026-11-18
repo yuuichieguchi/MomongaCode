@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pendingLines, settledApprovalText } from '../src/commands/runs.ts';
+import { pendingLines, settledApprovalText, settledLine } from '../src/commands/runs.ts';
 import type { ApprovalView } from '../src/client/views.ts';
 
 const outside: ApprovalView = {
@@ -48,10 +48,16 @@ describe('momonga approve shows why the policy asked', () => {
   });
 });
 
-describe('momonga approve of an approval that is no longer pending', () => {
-  it('says what ended it and with which answer, and changes nothing', () => {
-    expect(settledApprovalText({ ...outside, status: 'resolved', optionId: 'o2', resolvedAt: 5 })).toBe('approval ap1 is already resolved: reject_once; nothing was changed');
-    expect(settledApprovalText({ ...outside, status: 'expired' })).toBe('approval ap1 is already expired; nothing was changed');
+describe('momonga approve and status of an approval that is no longer pending', () => {
+  it('say what ended it, with which answer and from which surface, and change nothing', () => {
+    expect(settledApprovalText({ ...outside, status: 'resolved', optionId: 'o2', resolvedAt: 5, resolvedBy: 'tui' })).toBe('approval ap1 is not pending: it was resolved by the terminal UI: reject_once; nothing was changed');
+    expect(settledApprovalText({ ...outside, status: 'resolved', optionId: 'o1', resolvedAt: 5 })).toBe('approval ap1 is not pending: it was resolved: allow_once (Allow once); nothing was changed');
+    expect(settledApprovalText({ ...outside, status: 'expired' })).toBe('approval ap1 is not pending: it was expired; nothing was changed');
     expect(settledApprovalText(outside)).toBeUndefined();
+  });
+
+  it('list a settled approval under its run with how it ended', () => {
+    expect(settledLine(1, { ...outside, status: 'withdrawn' })).toBe('  approval ap1  Write /elsewhere/out.txt  withdrawn: the run ended');
+    expect(settledLine(2, { ...outside, status: 'resolved', optionId: 'o1', resolvedBy: 'cli' })).toBe('    approval ap1  Write /elsewhere/out.txt  resolved by the command line: allow_once (Allow once)');
   });
 });

@@ -14,7 +14,7 @@ describe('store.resolveApproval', () => {
     const id = approvals[0]?.id ?? '';
     expect((await store.resolveApproval(id, 'allow_once')).kind).toBe('ok');
 
-    expect(await store.resolveApproval(id, 'reject_once')).toEqual({ kind: 'approval_not_pending', status: 'resolved' });
+    expect(await store.resolveApproval(id, 'reject_once')).toMatchObject({ kind: 'approval_not_pending', status: 'resolved', approval: { status: 'resolved', optionId: 'allow_once' } });
     expect(store.approvals.get(id)?.optionId).toBe('allow_once');
   });
 
@@ -22,14 +22,14 @@ describe('store.resolveApproval', () => {
     const { store } = harness();
     const { claim, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'running');
     await requestFor(store, claim, 'call_1', 'b'.repeat(64));
-    expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
+    expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toMatchObject({ kind: 'approval_not_pending', status: 'superseded', approval: { status: 'superseded' } });
   });
 
   it('2. returns approval_not_pending naming withdrawn for a withdrawn approval', async () => {
     const { store } = harness();
     const { runId, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'running');
     await cancel(store, runId);
-    expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'withdrawn' });
+    expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toMatchObject({ kind: 'approval_not_pending', status: 'withdrawn', approval: { status: 'withdrawn' } });
   });
 
   it('2. never expires a pending approval: a sweep at any time before the run ends leaves it answerable', async () => {

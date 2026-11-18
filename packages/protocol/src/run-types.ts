@@ -6,6 +6,7 @@ import type { PrefixEvent } from './prefix-events.ts';
 import type { FallbackNotice } from './fallback-cause.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { Stored } from './stored-value.ts';
+import type { Surface } from './vocabulary.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
 import type { BudgetExhausted, CallFootprint, HeldCallView, HeldOutcome, RequestBudget, RunUsage } from './budget.ts';
@@ -319,10 +320,10 @@ export type RunEventPayload =
   | { type: 'tool.permission.classifying'; callId: string; subjectDigest: string }
   | ({ type: 'hook.started' } & HookStart)
   | ({ type: 'hook.completed' } & HookExecution)
-  | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
+  | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean; resolvedBy?: Surface }
   | { type: 'tool.permission.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
   | { type: 'tool.unknown.requested'; approvalId: string; callIds: string[]; options: PermissionOption[]; subjectDigest: string }
-  | { type: 'tool.unknown.resolved'; approvalId: string; optionId: string }
+  | { type: 'tool.unknown.resolved'; approvalId: string; optionId: string; resolvedBy?: Surface }
   | { type: 'tool.unknown.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
   | { type: 'tool.elicitation.requested'; inputId: string; callId: string; server: string; requests: ElicitationRequestView[] }
   | { type: 'tool.elicitation.resolved'; inputId: string; responses: Record<string, ElicitationAnswerRecord> }

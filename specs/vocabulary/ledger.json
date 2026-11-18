@@ -39,6 +39,9 @@
       "packages/runtime/src/service/delegation.ts": {
         "limit": 1
       },
+      "packages/store/src/approvals.ts": {
+        "limit": 1
+      },
       "packages/store/src/blobs.ts": {
         "limit": 1
       },

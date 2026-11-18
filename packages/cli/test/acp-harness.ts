@@ -271,6 +271,7 @@ export const fakeRuntime = (): FakeRuntime => {
     },
     trace: unexpected('trace'),
     approvals: unexpected('approvals'),
+    runApprovals: unexpected('runApprovals'),
     getApproval: async (id) => {
       record(`getApproval ${id}`);
       const failure = runtime.failures.get('getApproval');

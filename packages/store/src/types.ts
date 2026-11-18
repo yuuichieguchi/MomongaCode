@@ -55,6 +55,7 @@ import type {
   Admission,
   AdmissionAsk,
   RequestBudget,
+  Surface,
   TreeSpend,
 } from '@momonga/protocol';
 
@@ -206,7 +207,7 @@ export type SetSessionMcpServersResult = { kind: 'ok'; session: Session } | NotF
 export type ResolveApprovalResult =
   | { kind: 'ok'; approval: Approval; run: Run }
   | NotFound
-  | { kind: 'approval_not_pending'; status: Approval['status'] }
+  | { kind: 'approval_not_pending'; status: Approval['status']; approval?: ApprovalView }
   | { kind: 'request_missing' }
   | { kind: 'run_cancelled' }
   | { kind: 'option_not_offered' };
@@ -298,6 +299,7 @@ type ApprovalRecord = {
   createdAt: number;
   optionId?: string;
   resolvedAt?: number;
+  resolvedBy?: Stored<Surface>;
   subjectDigest?: string;
 };
 
@@ -316,6 +318,7 @@ export type ApprovalView = {
   createdAt: number;
   optionId?: string;
   resolvedAt?: number;
+  resolvedBy?: Stored<Surface>;
   suggestedRule?: string;
   reason: string;
   shown?: ApprovalShown;
@@ -701,7 +704,7 @@ export type RuntimeStore = {
     },
   ): Promise<RequestApprovalResult>;
   requestUnknownAck(claim: Claim, input: { callIds: string[] }): Promise<RequestApprovalResult>;
-  resolveApproval(approvalId: string, optionId: string): Promise<ResolveApprovalResult>;
+  resolveApproval(approvalId: string, optionId: string, resolvedBy?: Surface): Promise<ResolveApprovalResult>;
   requestElicitation(
     claim: Claim,
     input: { callId: string; expiresAt: number; server: string; requests: ElicitationRequestView[] },
@@ -718,6 +721,7 @@ export type RuntimeStore = {
   catchUpDerived(pages: number): Promise<boolean>;
   approvalView(approvalId: string): Promise<ApprovalView | undefined>;
   pendingApprovalViews(runId: string): Promise<ApprovalView[]>;
+  settledApprovalViews(runId: string): Promise<ApprovalView[]>;
   inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;
   createChildRun(input: ChildRunInput): Promise<CreateChildRunResult>;

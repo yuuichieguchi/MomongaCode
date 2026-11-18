@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, jsonValueOrText, migrate, openDatabase, openDatabaseWithIdentity, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import type { DatabaseFileIdentity } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, REPORT_PAGE_ROWS, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, admitRequest, isApprovalShown, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
-import type { Admission, ApprovalShown, CallTiming, InputItem, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
+import type { Admission, ApprovalShown, Surface, CallTiming, InputItem, MemoryOrigin, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, TreeSpend, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
@@ -997,16 +997,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return true;
   };
 
-  const resolveInTransaction = (approvalId: string, optionId: string, now: number): ResolveApprovalResult => {
+  const resolveInTransaction = (approvalId: string, optionId: string, now: number, resolvedBy: Surface | undefined): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
     if (approval === undefined || (approval.kind !== 'permission' && approval.kind !== 'unknown_effect')) return { kind: 'not_found' };
-    if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
+    if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status, approval: viewOf(approval) };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
     const run = requireRun(approval.runId);
     if (run.cancelRequested) return { kind: 'run_cancelled' };
     if (!approval.options.some((option) => option.optionId === optionId)) return { kind: 'option_not_offered' };
-    const resolved = approvalOps.markResolved(approval.id, optionId);
-    const event: RunEventPayload = { type: approval.kind === 'unknown_effect' ? 'tool.unknown.resolved' : 'tool.permission.resolved', approvalId: approval.id, optionId };
+    const resolved = approvalOps.markResolved(approval.id, optionId, resolvedBy);
+    const event: RunEventPayload = { type: approval.kind === 'unknown_effect' ? 'tool.unknown.resolved' : 'tool.permission.resolved', approvalId: approval.id, optionId, ...(resolvedBy === undefined ? {} : { resolvedBy }) };
     const settled = run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0;
     if (settled) {
       changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, [event]);
@@ -1108,6 +1108,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       createdAt: approval.createdAt,
       ...(approval.optionId === undefined ? {} : { optionId: approval.optionId }),
       ...(approval.resolvedAt === undefined ? {} : { resolvedAt: approval.resolvedAt }),
+      ...(approval.resolvedBy === undefined ? {} : { resolvedBy: approval.resolvedBy }),
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
       reason,
       ...(shown === undefined ? {} : { shown }),
@@ -1884,10 +1885,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       });
     },
 
-    resolveApproval: async (approvalId, optionId) => {
+    resolveApproval: async (approvalId, optionId, resolvedBy) => {
       const approval = approvalOps.store.get(approvalId);
       if (approval === undefined) return { kind: 'not_found' };
-      return derivedReads.write({ runTree: approval.runId }, () => resolveInTransaction(approvalId, optionId, clock.now()));
+      return derivedReads.write({ runTree: approval.runId }, () => resolveInTransaction(approvalId, optionId, clock.now(), resolvedBy));
     },
 
     requestElicitation: (claim, input) =>
@@ -2039,6 +2040,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return approval === undefined || (approval.kind !== 'permission' && approval.kind !== 'unknown_effect') ? undefined : derivedReads.read({ runId: approval.runId }, () => viewOf(approval));
     },
 
+    settledApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.listSettled(runId).map(viewOf)),
     pendingApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission' || approval.kind === 'unknown_effect').map(viewOf)),
 
     idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined, decodeContext),

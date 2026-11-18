@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { approvalShownLines, escapeTerminalLine } from '@momonga/protocol';
+import { approvalEndingText, approvalShownLines, escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionOption } from '@momonga/protocol';
 import { ensureCurrentDaemon, ensureSessionDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -26,7 +26,7 @@ export const attachRun = async (ports: CliPorts, paths: MomongaPaths, options: A
   if (adoption.kind === 'record') return resumeStream(ports, paths, adoption, options.interrupt);
   const onNewer = newerListenerOf(ports);
   await ensureSessionDaemon(ports, paths, onNewer === undefined ? {} : { onNewer });
-  const client = connectSessionRuntime(ports, paths, onNewer);
+  const client = connectSessionRuntime(ports, paths, 'cli', onNewer);
   const move = streamMoveOf(ports, paths, 'attach');
   try {
     const runId = options.runId ?? (await latestRunIdOf(client, ports.cwd));
@@ -57,13 +57,11 @@ export const pendingLines = (approval: ApprovalView, agent?: string): string =>
     ...approval.options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${escapeTerminalLine(option.name)})`}`),
   ].join('\n');
 
-const answeredWith = (approval: ApprovalView): string => {
-  const option = approval.options.find((candidate) => candidate.optionId === approval.optionId);
-  return option === undefined ? '' : `: ${option.kind}`;
-};
-
 export const settledApprovalText = (approval: ApprovalView): string | undefined =>
-  approval.status === 'pending' ? undefined : `approval ${approval.id} is already ${approval.status}${answeredWith(approval)}; nothing was changed`;
+  approval.status === 'pending' ? undefined : `approval ${approval.id} is not pending: it was ${escapeTerminalLine(approvalEndingText(approval))}; nothing was changed`;
+
+export const settledLine = (depth: number, approval: ApprovalView): string =>
+  `${'  '.repeat(depth)}approval ${approval.id}  ${escapeTerminalLine(approval.toolCall.title)}  ${escapeTerminalLine(approvalEndingText(approval))}`;
 
 export class ApprovalSettled extends Error {
   constructor(text: string) {
@@ -81,18 +79,12 @@ export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: 
     if (approvalId === undefined) {
       const runId = await activeRunIdOf(client, ports.cwd);
       const tree = await runTreeOf(client, runId);
-      const pending = (
-        await Promise.all(
-          tree.map(async ({ run }) =>
-            (await client.approvals(run.id)).filter((approval) => approval.status === 'pending').map((approval) => ({ approval, agent: run.agent })),
-          ),
-        )
-      ).flat();
-      ports.stdout.write(
-        pending.length === 0
-          ? `run ${runId} has no pending approvals\n`
-          : `${pending.map(({ approval, agent }) => pendingLines(approval, agent)).join('\n')}\n`,
-      );
+      const listed = await Promise.all(tree.map(async ({ run }) => ({ agent: run.agent, ...(await client.runApprovals(run.id)) })));
+      const pending = listed.flatMap(({ pending: waiting, agent }) => waiting.map((approval) => ({ approval, agent })));
+      const settled = listed.flatMap(({ settled: ended }) => ended);
+      const head = pending.length === 0 ? [`run ${runId} has no pending approvals`] : pending.map(({ approval, agent }) => pendingLines(approval, agent));
+      const tail = settled.length === 0 ? [] : ['settled in this run:', ...settled.map((approval) => settledLine(1, approval))];
+      ports.stdout.write(`${[...head, ...tail].join('\n')}\n`);
       return 0;
     }
     const approval = await client.getApproval(approvalId);
@@ -121,15 +113,22 @@ export const showStatus = async (ports: CliPorts, paths: MomongaPaths, runId: st
   try {
     const tree = await runTreeOf(client, runId ?? (await latestRunIdOf(client, ports.cwd)));
     const pending = await Promise.all(
-      tree.map(async (node) => ({ ...node, approvals: (await client.approvals(node.run.id)).filter((approval) => approval.status === 'pending') })),
+      tree.map(async (node) => {
+        const listed = await client.runApprovals(node.run.id);
+        return { ...node, approvals: listed.pending, settled: listed.settled };
+      }),
     );
     if (json) {
-      ports.stdout.write(`${JSON.stringify(pending.map(({ run, approvals }) => ({ run, approvals })))}\n`);
+      ports.stdout.write(`${JSON.stringify(pending.map(({ run, approvals, settled }) => ({ run, approvals, settled })))}\n`);
       return 0;
     }
     ports.stdout.write(
       `${pending
-        .flatMap((node) => [runLine(node), ...node.approvals.map((approval) => approvalLine(node.depth + 1, approval.id, approval.toolCall.title))])
+        .flatMap((node) => [
+          runLine(node),
+          ...node.approvals.map((approval) => approvalLine(node.depth + 1, approval.id, approval.toolCall.title)),
+          ...node.settled.map((approval) => settledLine(node.depth + 1, approval)),
+        ])
         .join('\n')}\n`,
     );
     return 0;

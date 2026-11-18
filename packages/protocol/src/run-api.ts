@@ -4,6 +4,7 @@ import type { InterruptedWorkItem, RetentionStatusView } from './supervisor-api.
 import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, nonNegativeInteger, nullable, root, storedEnumOf, string } from './schema-helpers.ts';
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
+import { SURFACES } from './vocabulary.ts';
 import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, REPORT_ANOMALY_CAUSES, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -618,7 +619,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['hookEvent', 'command', 'outcome', 'durationMs'],
   },
   'tool.permission.resolved': {
-    properties: { approvalId: string, optionId: string, rulePersisted: boolean },
+    properties: { approvalId: string, optionId: string, rulePersisted: boolean, resolvedBy: enumOf(SURFACES) },
     required: ['approvalId', 'optionId'],
   },
   'tool.permission.cancelled': {
@@ -630,7 +631,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['approvalId', 'callIds', 'options', 'subjectDigest'],
   },
   'tool.unknown.resolved': {
-    properties: { approvalId: string, optionId: string },
+    properties: { approvalId: string, optionId: string, resolvedBy: enumOf(SURFACES) },
     required: ['approvalId', 'optionId'],
   },
   'tool.unknown.cancelled': {
@@ -1704,6 +1705,7 @@ export const RUN_API_SCHEMAS = {
         createdAt: integer,
         optionId: string,
         resolvedAt: integer,
+        resolvedBy: storedEnumOf(SURFACES),
         suggestedRule: string,
         reason: string,
         shown: approvalShown,
@@ -2079,3 +2081,5 @@ export const runApiSchemaName = (schema: JsonSchema): string => {
 };
 
 export const PERSON_CAPABILITY_HEADER = 'momonga-person-capability';
+
+export const SURFACE_HEADER = 'momonga-surface';

@@ -6,10 +6,10 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf, approvalEndingText, SURFACES, SURFACE_HEADER } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
-import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RetentionStatusView, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
+import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RetentionStatusView, RunStatus, RunTraceView, CompactSessionRequest, Surface } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
@@ -800,7 +800,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const listRunApprovals: Handler = async (context) => {
     const run = requireRun(context.req.param('id') ?? '');
-    return json({ approvals: await store.pendingApprovalViews(run.id) });
+    return json({ approvals: await store.pendingApprovalViews(run.id), settled: await store.settledApprovalViews(run.id) });
   };
 
   const getApproval: Handler = async (context) => {
@@ -810,15 +810,17 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ approval });
   };
 
+  const surfaceOf = (presented: string | undefined): Surface | undefined => SURFACES.find((surface) => surface === presented);
+
   const resolveApproval: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
     const body = validateBody<ResolveApprovalBody>('ResolveApprovalRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const result = await store.resolveApproval(id, body.optionId);
+    const result = await store.resolveApproval(id, body.optionId, surfaceOf(context.req.header(SURFACE_HEADER)));
     switch (result.kind) {
       case 'not_found':
         throw notFound(`approval ${id} does not exist`);
       case 'approval_not_pending':
-        throw conflict('approval_not_pending', `approval ${id} is ${result.status}, not pending`);
+        throw conflict('approval_not_pending', `approval ${id} is not pending: it was ${result.approval === undefined ? result.status : approvalEndingText(result.approval)}`);
       case 'request_missing':
         throw conflict('approval_not_pending', `approval ${id} has no recorded permission request`);
       case 'run_cancelled':

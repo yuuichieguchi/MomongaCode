@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
-import type { FallbackNotice } from '@momonga/protocol';
+import type { FallbackNotice, Surface } from '@momonga/protocol';
 import type {
   ApprovalBasis,
   CallTiming,
@@ -245,6 +245,7 @@ describe('run event payloads', () => {
       approvalId: string;
       optionId: string;
       rulePersisted?: boolean;
+      resolvedBy?: Surface;
     }>();
     expectTypeOf<Payload<'tool.permission.cancelled'>>().toEqualTypeOf<{
       type: 'tool.permission.cancelled';

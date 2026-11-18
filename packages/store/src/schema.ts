@@ -1262,6 +1262,10 @@ const IDEMPOTENCY_GROUP_NAME = `
 ALTER TABLE idempotency ADD COLUMN group_name TEXT;
 `;
 
+const APPROVAL_RESOLVED_BY = `
+ALTER TABLE approvals ADD COLUMN resolved_by TEXT;
+`;
+
 const EVENT_SHOWN_FLAG = `
 ALTER TABLE events ADD COLUMN shown INTEGER;
 UPDATE events SET shown = 1 WHERE type = 'tool.permission.requested' AND json_extract(payload_json, '$.shown') IS NOT NULL;
@@ -1581,5 +1585,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 54,
     name: 'keep on each permission request row whether the request carries the content it shows, so the pending requests are read from the column and no payload is decoded',
     sql: EVENT_SHOWN_FLAG,
+  },
+  {
+    version: 55,
+    name: 'keep on a resolved approval the surface whose client answered it (the command line, the terminal UI or an ACP client), so every surface can say who answered; a row resolved before keeps NULL, read as not recorded',
+    sql: APPROVAL_RESOLVED_BY,
   },
 ];
