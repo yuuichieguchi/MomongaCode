@@ -24,6 +24,7 @@ export type ScreenProps = {
   allocation: RowAllocation;
   regions: ScreenRegions;
   panel: ReactNode | undefined;
+  panelFollows: number | undefined;
   onPanelRows(rows: number | undefined): void;
 };
 
@@ -47,7 +48,7 @@ function NewestRows({ children }: { children: ReactNode }) {
   );
 }
 
-export function Screen({ view, columns, rows, allocation, regions, panel, onPanelRows }: ScreenProps) {
+export function Screen({ view, columns, rows, allocation, regions, panel, panelFollows, onPanelRows }: ScreenProps) {
   const measuring = useRef<DOMElement>(null);
   const fullscreen = view === 'fullscreen';
   useLayoutEffect(() => {
@@ -69,7 +70,7 @@ export function Screen({ view, columns, rows, allocation, regions, panel, onPane
   }
   return (
     <Box flexDirection="column" width={columns} height={rows} overflow="hidden">
-      {panel === undefined ? <Region rows={allocation.viewport}>{regions.transcript}</Region> : <NewestRows>{regions.transcript}</NewestRows>}
+      {panel === undefined ? <Region rows={allocation.viewport}>{regions.transcript}</Region> : panelFollows === undefined ? <NewestRows>{regions.transcript}</NewestRows> : <Region rows={panelFollows}>{regions.transcript}</Region>}
       <Region rows={allocation.menu}>{regions.menu}</Region>
       <Region rows={allocation.waiting}>{regions.waiting}</Region>
       <Region rows={allocation.lines}>{regions.lines}</Region>
@@ -82,6 +83,7 @@ export function Screen({ view, columns, rows, allocation, regions, panel, onPane
           </Box>
         </Box>
       )}
+      {panelFollows === undefined ? null : <Box flexGrow={1} flexShrink={1} />}
       <Region rows={allocation.footer}>{regions.footer}</Region>
       <Region rows={allocation.subagents}>{regions.subagents}</Region>
     </Box>

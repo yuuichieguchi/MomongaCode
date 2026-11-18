@@ -40,7 +40,7 @@ const CENTRE_COLUMN = 7;
 
 const TAIL_ROW = FIGURE.length - 1;
 
-const drawnBanner = (): Row[] => bannerRows({ config: config(), model: 'scripted-model', cwd: '/Users/ada/p', notices: [] }, 80);
+const drawnBanner = (): Row[] => bannerRows({ config: config(), model: { kind: 'connected', name: 'scripted-model' }, cwd: '/Users/ada/p', notices: [], figure: true }, 80);
 
 const figureOf = (rows: readonly Row[]): string[] => rows.slice(1, -1).map((row) => row.text.slice(FIGURE_LEFT, FIGURE_LEFT + ART_WIDTH).trimEnd());
 
@@ -122,11 +122,15 @@ export const startupCases = (forceColor: 'set' | 'cleared'): void => {
   });
 
   it('says that no model is connected on the model line', () => {
-    expect(textLines(config(), undefined, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected  (use /login)', '~/p']);
+    expect(textLines(config(), { kind: 'not-connected', login: true }, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected  (use /login)', '~/p']);
+  });
+
+  it('names no command on the model line before the person can type one', () => {
+    expect(textLines(config(), { kind: 'not-connected', login: false }, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected', '~/p']);
   });
 
   it('drops the art, rather than wrapping it, below the width its own size and the text need', async () => {
-    const lines = textLines(config(), 'scripted-model', '/Users/ada/p');
+    const lines = textLines(config(), { kind: 'connected', name: 'scripted-model' }, '/Users/ada/p');
     const needed = ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => line.length)) + 4;
     expect(needed).toBe(42);
     expect(artFits(needed, lines)).toBe(true);

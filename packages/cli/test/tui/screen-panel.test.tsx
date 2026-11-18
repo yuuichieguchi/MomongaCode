@@ -26,6 +26,7 @@ const screenOf = (allocation: RowAllocation, panel: ReactNode | undefined, repor
     view="fullscreen"
     columns={COLUMNS}
     rows={ROWS}
+    panelFollows={undefined}
     allocation={allocation}
     panel={panel}
     onPanelRows={(rows) => reported.push(rows)}

@@ -5,7 +5,9 @@ import type { StyleToken } from './screen/tokens.ts';
 
 export type StartupConfig = { version: string; home: string };
 
-export type StartupBanner = { config: StartupConfig; model: string | undefined; cwd: string; notices: readonly string[] };
+export type BannerModel = { kind: 'connected'; name: string } | { kind: 'not-connected'; login: boolean };
+
+export type StartupBanner = { config: StartupConfig; model: BannerModel; cwd: string; notices: readonly string[]; figure: boolean };
 
 type ArtPart = { text: string; token?: StyleToken };
 
@@ -32,9 +34,13 @@ export const shortenHome = (cwd: string, home: string): string => {
   return cwd.startsWith(`${home}${path.sep}`) ? `~${cwd.slice(home.length)}` : cwd;
 };
 
-export const NOT_CONNECTED_MODEL = 'not connected  (use /login)';
+export const NOT_CONNECTED_MODEL = 'not connected';
 
-export const textLines = (config: StartupConfig, model: string | undefined, cwd: string): string[] => [`MomongaCode v${config.version}`, `model: ${model ?? NOT_CONNECTED_MODEL}`, shortenHome(cwd, config.home)];
+export const LOGIN_POINTER = '  (use /login)';
+
+const modelText = (model: BannerModel): string => (model.kind === 'connected' ? model.name : model.login ? `${NOT_CONNECTED_MODEL}${LOGIN_POINTER}` : NOT_CONNECTED_MODEL);
+
+export const textLines = (config: StartupConfig, model: BannerModel, cwd: string): string[] => [`MomongaCode v${config.version}`, `model: ${modelText(model)}`, shortenHome(cwd, config.home)];
 
 export const artFits = (columns: number, lines: readonly string[]): boolean =>
   columns >= ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => [...line].length)) + BOX_CHROME_COLUMNS;
@@ -59,10 +65,10 @@ const rowOf = (cells: readonly Cell[]): Row => {
 };
 
 export const bannerRows = (banner: StartupBanner, columns: number): Row[] => {
-  const { config, model, cwd, notices } = banner;
+  const { config, model, cwd, notices, figure } = banner;
   const inner = Math.max(1, columns - BOX_CHROME_COLUMNS);
   const lines = textLines(config, model, cwd);
-  const art = artFits(columns, lines) ? ART : [];
+  const art = figure && artFits(columns, lines) ? ART : [];
   const textWidth = art.length === 0 ? inner : inner - ART_WIDTH - ART_GAP;
   const text: Cell[][] = lines.flatMap((line, index) => wrapLine(line, textWidth, { links: false }).map((row): Cell[] => [{ text: row.text, ...(LINE_TOKENS[index] === undefined ? {} : { token: LINE_TOKENS[index] }) }]));
   const body: Cell[][] = Array.from({ length: Math.max(art.length, text.length) }, (_, index) => [

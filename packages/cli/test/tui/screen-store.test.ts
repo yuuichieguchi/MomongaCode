@@ -58,7 +58,7 @@ describe('the transcript store', () => {
 
   it('says of each entry whether it can no longer change, and keeps the banner live while it is the last entry', () => {
     const store = createTranscriptStore();
-    appendEntry(store, { kind: 'banner', banner: { config: { version: '1', home: '/h' }, model: 'a', cwd: '/h', notices: [] } }, 'banner');
+    appendEntry(store, { kind: 'banner', banner: { config: { version: '1', home: '/h' }, model: { kind: 'connected', name: 'a' }, cwd: '/h', notices: [], figure: true } }, 'banner');
     expect(store.settledAt(0)).toBe(false);
     storeOf([call], store);
     expect([store.settledAt(0), store.settledAt(1)]).toEqual([true, false]);
