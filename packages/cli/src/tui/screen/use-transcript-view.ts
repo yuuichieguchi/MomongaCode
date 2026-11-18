@@ -51,7 +51,7 @@ export type TranscriptViewState = { source: ViewSource; window: ViewWindow; posi
 
 type Drag = { anchor: Point; selecting: boolean };
 
-type Held = { epoch: number; position: Position; selection: Selection | undefined; toast: string | undefined; drag: Drag | undefined };
+type Held = { store: TranscriptStore; epoch: number; position: Position; selection: Selection | undefined; toast: string | undefined; drag: Drag | undefined };
 
 export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState => {
   const { store, terminal, width, allocation } = host;
@@ -62,11 +62,11 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
   const { timers } = host;
   const cache = useMemo(
     () => createRowCache(rowRenderersOf({ keys, a11y: { screenReader, reducedMotion } }), { defer: (run) => void timers.setTimeout(run, 0), onRows: redraw }),
-    [keys, screenReader, reducedMotion, timers],
+    [keys, screenReader, reducedMotion, timers, store],
   );
   useEffect(() => () => cache.close(), [cache]);
-  const [held] = useState<Held>(() => ({ epoch: store.epoch(), position: FOLLOWING, selection: undefined, toast: undefined, drag: undefined }));
-  if (held.epoch !== store.epoch()) Object.assign(held, { epoch: store.epoch(), position: FOLLOWING, selection: undefined, drag: undefined });
+  const [held] = useState<Held>(() => ({ store, epoch: store.epoch(), position: FOLLOWING, selection: undefined, toast: undefined, drag: undefined }));
+  if (held.store !== store || held.epoch !== store.epoch()) Object.assign(held, { store, epoch: store.epoch(), position: FOLLOWING, selection: undefined, drag: undefined });
   const [clicks] = useState(() => createClickCounter(host.now));
   const source = sourceOf(store, cache, width);
   const position = clamped(source, held.position);

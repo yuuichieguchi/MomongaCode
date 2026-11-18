@@ -4,7 +4,7 @@ import { followMeasurement } from '../../src/readiness.ts';
 import { describeRetryWait } from '../../src/retry-wait.ts';
 import { rowsOfEntry as rowsOfEntryWith } from '../../src/tui/screen/entry-rows.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
-import { subagentLines } from '../../src/tui/screen/subagents.tsx';
+import { agentListLines } from '../../src/tui/screen/subagents.tsx';
 import { waitingOf, waitingRowText as waitingRowTextWith } from '../../src/tui/screen/waiting-row.tsx';
 import type { WaitingFacts } from '../../src/tui/screen/waiting-row.tsx';
 import { modelChosen, runCreated, runLeft, setThoughtWindow, shownRunPhase, toggleNewestThought, toggleThought } from '../../src/tui/transcript.ts';
@@ -185,17 +185,20 @@ describe('the answering model (6.4)', () => {
 describe('the running subagents (3.3)', () => {
   const subagent = (index: number, extra: Partial<{ title: string; awaitingApproval: boolean }> = {}) => ({ runId: `r${index}`, agent: `agent${index}`, title: undefined, startedAt: 1000, awaitingApproval: false, ...extra });
 
-  it('writes one row each: the agent, what it does and its seconds', () => {
-    expect(subagentLines([subagent(1), subagent(2, { title: 'Read /b' }), subagent(3, { title: 'Bash ls', awaitingApproval: true })], 5, 13_500)).toEqual([
-      'agent1 · starting · 12s',
-      'agent2 · Read /b · 12s',
-      'agent3 · waiting for approval · 12s',
+  const linesOf = (subagents: ReturnType<typeof subagent>[], rows: number, now: number): string[] => agentListLines({ subagents, shown: undefined, focus: undefined, keys: DEFAULT_KEY_TABLE, screenReader: false, now, rows }).map((line) => line.text);
+
+  it('writes one row each after main: the agent, what it does and its seconds', () => {
+    expect(linesOf([subagent(1), subagent(2, { title: 'Read /b' }), subagent(3, { title: 'Bash ls', awaitingApproval: true })], 4, 13_500)).toEqual([
+      '● main',
+      '  agent1 · starting · 12s',
+      '  agent2 · Read /b · 12s',
+      '  agent3 · waiting for approval · 12s',
     ]);
   });
 
   it('ends with the overflow row when there are more than fit', () => {
-    expect(subagentLines([1, 2, 3, 4, 5].map((index) => subagent(index)), 3, 1000)).toEqual(['agent1 · starting · 0s', 'agent2 · starting · 0s', 'and 3 more']);
-    expect(subagentLines([subagent(1)], 0, 1000)).toEqual([]);
+    expect(linesOf([1, 2, 3, 4, 5].map((index) => subagent(index)), 4, 1000)).toEqual(['● main', '  agent1 · starting · 0s', '  agent2 · starting · 0s', 'and 3 more']);
+    expect(linesOf([subagent(1)], 0, 1000)).toEqual([]);
   });
 });
 

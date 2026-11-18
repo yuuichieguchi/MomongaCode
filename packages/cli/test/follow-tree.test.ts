@@ -157,6 +157,17 @@ describe('followRun tells the caller which subagents are running (design-screens
     expect(seen).toEqual(['started:reviewer:child', 'frame:reviewer:child:1', 'frame:reviewer:child:2', 'ended:reviewer:child']);
   });
 
+  it('tells onChildEnded how the child ended: the run it finished as, or the failure of its stream', async () => {
+    const finished = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer')], child: [text('child', 1)] });
+    const ends: unknown[] = [];
+    await followRun(optionsOf(finished.client, { onChildEvent: () => undefined, onChildEnded: (_agent, _runId, end) => ends.push(end.kind === 'finished' ? end.run.id : end.error) }));
+    expect(ends).toEqual(['child']);
+    const broken = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer')] }, new Set(['child']));
+    const failures: unknown[] = [];
+    await expect(followRun(optionsOf(broken.client, { onChildEvent: () => undefined, onChildEnded: (_agent, _runId, end) => failures.push(end.kind) }))).rejects.toThrow('stream of child is broken');
+    expect(failures).toEqual(['failed']);
+  });
+
   it('reports a grandchild that the child waits on, started and ended inside the child', async () => {
     const { client } = clientOf({
       parent: [waiting('parent', 1, 'child', 'planner')],

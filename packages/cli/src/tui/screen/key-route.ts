@@ -1,7 +1,7 @@
 import type { KeyContext } from '../keys/table.ts';
 import type { Overlay } from '../picker.tsx';
 
-export type KeyRoute = 'trust' | 'tool-view' | 'overlay' | 'between-lists' | 'welcome' | 'prompt' | 'shell' | 'menu' | 'editor';
+export type KeyRoute = 'trust' | 'tool-view' | 'overlay' | 'between-lists' | 'welcome' | 'prompt' | 'agents' | 'shell' | 'menu' | 'editor';
 
 export type KeyRouteFacts = {
   readonly trust: boolean;
@@ -13,6 +13,7 @@ export type KeyRouteFacts = {
   readonly detail: boolean;
   readonly shellDraft: boolean;
   readonly menuOpen: boolean;
+  readonly agentsChosen: boolean;
   readonly fullscreen: boolean;
 };
 
@@ -23,6 +24,7 @@ export const keyRouteOf = (facts: KeyRouteFacts): KeyRoute => {
   if (facts.betweenLists) return 'between-lists';
   if (facts.welcome) return 'welcome';
   if (facts.prompt !== undefined) return 'prompt';
+  if (facts.agentsChosen) return 'agents';
   if (facts.shellDraft) return 'shell';
   return facts.menuOpen ? 'menu' : 'editor';
 };
@@ -53,6 +55,8 @@ export const chordContextsOf = (facts: KeyRouteFacts): readonly KeyContext[] => 
       return NO_CONTEXT;
     case 'prompt':
       return facts.prompt === 'fields' ? LINE_ENTRY : listContexts(facts);
+    case 'agents':
+      return draftContexts(facts, ['agents']);
     case 'shell':
       return draftContexts(facts, ['shell']);
     case 'menu':
