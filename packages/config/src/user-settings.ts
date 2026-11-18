@@ -325,7 +325,10 @@ export const readUserStopValuesOrDefault = async ({ home, env, signal, files, on
 
 export const readUserStartupStallMsOrDefault = async ({ home, env, signal, files, onNotice }: UserStopValuesOptions): Promise<number> => {
   try {
-    return (await loadUserSettings({ home, env, signal, ...(files === undefined ? {} : { files }) })).settings.daemon.startupStallMs;
+    const asker = askerOf(signal, files);
+    const read = await readUserJsonFile(home, asker);
+    if (!read.found) return STARTUP_TIMEOUT_MS;
+    return (await userSettingsOf(home, env, read, undefined, asker)).settings.daemon.startupStallMs;
   } catch (error) {
     if (signal.aborted) throw signal.reason;
     onNotice(`the start-up stall limit could not be read from the user settings (${messageOf(error)}); the default value was used`);
