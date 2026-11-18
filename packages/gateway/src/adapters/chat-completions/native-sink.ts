@@ -5,7 +5,9 @@ import type { ContentSink } from './stream-driver.ts';
 import type { ToolCallFragment } from './upstream-chunk.ts';
 
 export const createNativeSink = (emitter: ResponseEmitter): ContentSink => ({
-  text: (text) => emitter.appendText(text),
+  text: async (text) => {
+    emitter.appendText(text);
+  },
   toolCall: (fragment: ToolCallFragment) => {
     if (!emitter.hasCall(fragment.index)) {
       if (emitter.callCount >= MAX_TOOL_CALLS) {
@@ -20,5 +22,5 @@ export const createNativeSink = (emitter: ResponseEmitter): ContentSink => ({
     }
     if (fragment.arguments !== undefined) emitter.appendCallArguments(fragment.index, fragment.arguments);
   },
-  finish: () => undefined,
+  finish: async () => undefined,
 });
