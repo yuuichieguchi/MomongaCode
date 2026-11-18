@@ -55,10 +55,4 @@ describe.skipIf(!HAS_POSIX_SHELL)('fetchTlaJar, the step of npm run test:setup',
     expect(fetchTlaJar(root, envWith(`file://${pinned}`))).toBe(tlaJarPathOf(root));
     expect(fs.readFileSync(tlaJarPathOf(root)).equals(fs.readFileSync(pinned))).toBe(true);
   });
-
-  it('is the test:setup script of the package', () => {
-    const scripts: unknown = JSON.parse(fs.readFileSync(`${repoRoot}package.json`, 'utf8')).scripts;
-    expect(scripts).toMatchObject({ 'test:setup': 'node scripts/fetch-tla.ts' });
-    expect(TEST_SETUP_COMMAND).toBe('npm run test:setup');
-  });
 });

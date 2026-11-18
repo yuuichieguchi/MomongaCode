@@ -48,7 +48,11 @@ describe('the code follows SettingsSwap.tla (settings applied in place)', () => 
   });
 
   it('the holding configurations check every property of the design', () => {
-    for (const name of ['SettingsSwap', 'SettingsSwap.underivable', 'SettingsSwap.removal', 'SettingsSwap.reorderHolds']) {
+    const holding = readManifest(path.join(specDir, 'manifest.json'))
+      .entries.filter((entry) => entry.config.startsWith('SettingsSwap') && entry.expect === 'holds')
+      .map((entry) => entry.config);
+    expect(holding.length).toBeGreaterThan(0);
+    for (const name of holding) {
       const invariants = invariantsOf(configOf(name));
       for (const property of DESIGN_PROPERTIES) expect(invariants, `${name} ${property}`).toContain(property);
       expect(constantOf(configOf(name), 'Variant'), name).toBe('"decided"');

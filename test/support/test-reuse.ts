@@ -8,7 +8,7 @@ export { OBSERVED_DIR, REUSE_STORE, TEST_REUSE_ENV, observedFileOf, testReuseMod
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-export const REUSE_RECORD_FORMAT = 'momonga-test-reuse/2';
+export const REUSE_RECORD_FORMAT = 'momonga-test-reuse/3';
 
 export const WHOLE_RUN_ENV = 'MOMONGA_WHOLE_RUN';
 
@@ -274,3 +274,32 @@ export const replayedSelected = (replayed: ReadonlyMap<string, readonly string[]
     .filter((file) => filters.length === 0 || filters.some((filter) => file.includes(filter))).length;
 
 export const projectsOf = (argv: readonly string[]): string[] => argv.flatMap((word, index) => (argv[index - 1] === '--project' ? [word] : word.startsWith('--project=') ? [word.slice('--project='.length)] : []));
+
+const PENDING = Symbol.for('momonga.testReusePending');
+
+type PendingHolder = { [PENDING]?: Observation[] };
+
+const pendingObservations = (): Observation[] => {
+  const holder = globalThis as PendingHolder;
+  holder[PENDING] ??= [];
+  return holder[PENDING];
+};
+
+export const holdObservation = (observation: Observation): void => {
+  pendingObservations().push(observation);
+};
+
+export const writeRecordsOf = (plan: ReusePlan, project: string, mainProcessFiles: readonly string[]): void => {
+  const pending = pendingObservations();
+  const mine = pending.filter((observation) => observation.project === project);
+  pending.splice(0, pending.length, ...pending.filter((observation) => observation.project !== project));
+  const tracked = trackedFilesOf(plan.root);
+  const trackedSet = new Set(tracked);
+  const mainInputs = inputsOf(plan.root, mainProcessFiles).filter((file) => trackedSet.has(file));
+  const live = createRepoDigests(plan.root, tracked);
+  for (const observation of mine) {
+    const withMain = { ...observation, inputs: [...observation.inputs, ...mainInputs] };
+    const unchanged = withMain.inputs.every((input) => live.digestOf(input) === plan.digests.digestOf(input)) && (!withMain.whole || live.treeDigest() === plan.digests.treeDigest());
+    if (unchanged) writeRecord(recordFileOf(plan.root, project, observation.file), recordFor(withMain, plan.digests, plan.globals));
+  }
+};

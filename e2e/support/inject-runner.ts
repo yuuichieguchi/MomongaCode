@@ -516,7 +516,7 @@ const runTrial = async (
       },
     );
     const replay = runtime.events(runId);
-    const frames = await replay.toEnd(E2E_MARGIN_MS);
+    const frames = await replay.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
     await replay.close();
     await fault.afterTerminal?.(env, frames);
     const facts = await factsOf(runtime, runId);
