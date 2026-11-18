@@ -8,6 +8,7 @@ import type { GenerationLayout, MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { LOCK_HOLDER_MAIN, firstGeneration, testKernelLock, testProcessInspector } from '@momonga/testkit';
 import { prepareGenerationForTest } from '@momonga/testkit/first-generation';
+import { ORPHAN_POLL_MS, orphanPhaseOneBoundMs } from '@momonga/supervisor';
 import type { ChildRole } from '@momonga/supervisor';
 import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
@@ -29,7 +30,7 @@ import {
   E2E_MARGIN_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
   E2E_ORPHAN_GRACE_MS,
-  E2E_PHASE2_REACHED_BOUND_MS,
+  E2E_PHASE2_HELD_BOUND_MS,
   E2E_READY_DEADLINE_MS,
   E2E_REAP_CLOSE_BOUND_MS,
   E2E_REAP_TO_RUNNING_BOUND_MS,
@@ -37,6 +38,7 @@ import {
   E2E_RESTART_POLICY,
   E2E_SETTINGS_RESTART_BOUND_MS,
   E2E_SETTINGS_SEEN_BOUND_MS,
+  E2E_STOP_VALUES,
   E2E_SUPERVISOR_CLOSE_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
   until,
@@ -45,6 +47,7 @@ import {
 } from './support/wait.ts';
 
 const S1C_PHASE1_ORPHAN_GRACE_MS = 30_000;
+const S1C_PHASE1_LISTED_BOUND_MS = orphanPhaseOneBoundMs({ orphanGraceMs: S1C_PHASE1_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS;
 const KILLED_STACK_BOUND_MS = E2E_READY_DEADLINE_MS + E2E_MARGIN_MS;
 const S1_TIMEOUT_MS = e2eTestTimeoutMs(
   E2E_READY_DEADLINE_MS,
@@ -55,8 +58,8 @@ const S1_TIMEOUT_MS = e2eTestTimeoutMs(
   E2E_READY_DEADLINE_MS,
 );
 const S1B_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_MARGIN_MS, E2E_REAP_TO_RUNNING_BOUND_MS);
-const S1C_PHASE1_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_MARGIN_MS, E2E_REAP_CLOSE_BOUND_MS);
-const S1C_PHASE2_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_PHASE2_REACHED_BOUND_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S1C_PHASE1_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_READY_DEADLINE_MS, S1C_PHASE1_LISTED_BOUND_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S1C_PHASE2_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({}), E2E_READY_DEADLINE_MS, E2E_PHASE2_HELD_BOUND_MS, E2E_MARGIN_MS, E2E_REAP_CLOSE_BOUND_MS);
 const S5_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_SETTINGS_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 const S5B_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_HELD_RETRY_MS + E2E_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 const S7_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_MARGIN_MS, E2E_LOCK_FREE_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
@@ -314,7 +317,8 @@ describe('supervisor cases', () => {
     await second.ready();
     const secondExit = trackExit(second);
     const client = openClient(home, 2);
-    await untilRecord(home.paths, second.pid, recordNamed('orphans.waiting'), { deadlineMs: E2E_READY_DEADLINE_MS, description: 'orphans.waiting of the reaper of the second supervisor' });
+    await untilRecord(home.paths, second.pid, recordNamed('generation.promoted'), { deadlineMs: E2E_READY_DEADLINE_MS, description: 'the promotion of the second supervisor, which starts its reaper' });
+    await untilRecord(home.paths, second.pid, recordNamed('orphans.waiting'), { deadlineMs: S1C_PHASE1_LISTED_BOUND_MS, description: 'orphans.waiting of the reaper of the second supervisor' });
 
     const shutdown = await client.shutdown();
     expect(shutdown).toEqual({ status: 202, body: { phase: 'draining' } });
@@ -344,11 +348,16 @@ describe('supervisor cases', () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
 
-    const second = await spawnNextSupervisor(home, { reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS } }, 2);
+    const reapHeld = path.join(home.root, 'reap-held');
+
+    const second = await spawnNextSupervisor(home, { reaper: { orphanGraceMs: E2E_ORPHAN_GRACE_MS }, reapHold: { markersDir: daemonMarkersOf(home.paths, 1), announce: reapHeld } }, 2);
     await second.ready();
     const secondExit = trackExit(second);
     const client = openClient(home, 2);
-    await untilRecord(home.paths, second.pid, recordNamed('orphans.reaping'), { deadlineMs: E2E_PHASE2_REACHED_BOUND_MS, description: 'orphans.reaping of the reaper of the second supervisor' });
+    await untilRecord(home.paths, second.pid, recordNamed('generation.promoted'), { deadlineMs: E2E_READY_DEADLINE_MS, description: 'the promotion of the second supervisor, which starts its reaper' });
+    await until(() => fs.existsSync(reapHeld), { deadlineMs: E2E_PHASE2_HELD_BOUND_MS, description: 'the reaper of the second supervisor held in phase 2, at the reap of the markers of generation 1' });
+    expect(fs.readFileSync(reapHeld, 'utf8')).toBe(`${daemonMarkersOf(home.paths, 1)}\n`);
+    expect(named(await untilRecord(home.paths, second.pid, recordNamed('orphans.reaping'), { deadlineMs: E2E_MARGIN_MS, description: 'orphans.reaping written before the reap of phase 2' }), 'orphans.reaping')).toHaveLength(1);
     expect(processRunning(orphanPid)).toBe(true);
 
     const shutdown = await client.shutdown();
