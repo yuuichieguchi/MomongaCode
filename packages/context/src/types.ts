@@ -52,6 +52,7 @@ export type ContextSources = {
   memories?: readonly DeepReadonly<MemoryView>[];
   moreMemories?: boolean;
   memoryMatchCap?: number;
+  memoryTouchedCap?: number;
   history: readonly HistoryItem[];
   summary?: ContextSummary;
   readers: ReferenceReaders;

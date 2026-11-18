@@ -5,8 +5,8 @@ import type { ChildLaunch, ChildProtection, FileSystemSync, GenerationRole, Proc
 import { SOCKET_PLACEHOLDER, WORDS, messageOf } from '@momonga/protocol';
 import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
-import { createExecFn, createGroupSpawn, reapStaleGroups } from './fm-processes.ts';
-import type { ChildEnv } from './fm-processes.ts';
+import { createExecFn, createGroupSpawn, reapStaleGroups } from './processes.ts';
+import type { ChildEnv } from './processes.ts';
 import { aboutModel } from './name.ts';
 import { notReadyText, runPreconditions } from './preconditions.ts';
 import type { ExecFn, RefusedVerdict } from './preconditions.ts';

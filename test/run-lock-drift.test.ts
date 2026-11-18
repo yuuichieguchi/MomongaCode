@@ -83,7 +83,7 @@ describe('scripts/support/run-lock.ts follows the heavy waiter of RunLock.tla', 
     ...over,
   });
 
-  const waiterUnits = (): string[] => [...new Set(fs.readdirSync(dir).map((name) => lockPathNameOf(sqliteFileLock, name)))].filter((name) => /^heavy-waiting\.[0-9a-f]{16}$/.test(name));
+  const waiterUnits = (): string[] => [...new Set(fs.readdirSync(dir).map((name) => lockPathNameOf(sqliteFileLock, name)))].filter((name) => /^waiting\.\d{16}\.heavy\.[0-9a-f]{16}$/.test(name));
 
   it('HRecordWait and LightsOutWhileWaiting: while the heavy waits, its unit exists and a new light run is refused naming it; WaiterReleased: the unit is gone once the heavy runs', async () => {
     const holder = await acquireRunLock(request({ pid: 10, command: 'holder' }));
@@ -115,7 +115,7 @@ describe('scripts/support/run-lock.ts follows the heavy waiter of RunLock.tla', 
   it('NoDeadWaiterBlocks and WaiterFileOnlyOfDead: the unit of a waiter whose process died keeps no light run out, and that light attempt removes it', async () => {
     fs.mkdirSync(dir, { recursive: true });
     const hex = 'eeeeeeeeeeeeeeee';
-    const claimed = await sqliteFileLock.claim(path.join(dir, `heavy-waiting.${hex}`));
+    const claimed = await sqliteFileLock.claim(path.join(dir, `waiting.0000000000000000.heavy.${hex}`));
     if (claimed.kind !== 'claimed') throw new Error('the waiter unit was not free');
     claimed.lock.writeHolder(hex);
     claimed.lock.release();

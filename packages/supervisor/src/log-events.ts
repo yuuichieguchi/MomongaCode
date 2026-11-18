@@ -38,7 +38,9 @@ export const childReadyMismatch = defineEvent<ChildRef & { readyService: string;
 export const childReadyIgnored = defineEvent<ChildRef>('child.ready.ignored', 'info');
 export const childProgress = defineEvent<ChildRef & { startupStep: string }>('child.progress', 'debug');
 export const childVersionMismatch = defineEvent<ChildRef & { childVersion: string; supervisorVersion: string }>('child.version.mismatch', 'error');
-export const childStop = defineEvent<ChildRef & { stop: StopReason; mode: StopMode; superseded?: StopReason }>('child.stop', 'info');
+export type StartupProgressSeen = { lastProgressStep: string | null; lastProgressAt: string | null };
+
+export const childStop = defineEvent<ChildRef & { stop: StopReason; mode: StopMode; superseded?: StopReason } & Partial<StartupProgressSeen>>('child.stop', 'info');
 export const childExit = defineEvent<ChildRef & { code: number | null; signal: string | null; reason: SupervisorExitReason; restarts: number }>('child.exit', 'info');
 export const childBackoff = defineEvent<{ child: ChildRole; delayMs: number; consecutiveFailures: number }>('child.backoff', 'info');
 export const childHeld = defineEvent<{ child: ChildRole; heldReason: string; source: HeldSource }>('child.held', 'warn');

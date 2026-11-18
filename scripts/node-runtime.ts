@@ -2,11 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { RELEASE_ASSETS, parseChecksumListing } from '@momonga/foundation';
 import type { ReleaseTargetName } from '@momonga/foundation';
 
 export const SEA_NODE_VERSION = '26.12.1';
 export const SEA_NODE_PLATFORM = 'darwin-arm64';
+export const nodeArchiveCacheDir = path.join(fileURLToPath(new URL('..', import.meta.url)), '.cache', 'node');
 export const SEA_NODE_ARCHIVE_SHA256 = '1901d539912c02afa10d1cc126943a8855a7eedebe830119463470db5e6c59e8';
 
 export type SeaTargetName = ReleaseTargetName;
@@ -53,8 +55,8 @@ export const SEA_TARGETS: Readonly<Record<SeaTargetName, SeaTarget>> = {
 export const isSeaTargetName = (value: string): value is SeaTargetName => Object.hasOwn(SEA_TARGETS, value);
 
 const DIST_BASE_URL = `https://nodejs.org/dist/v${SEA_NODE_VERSION}`;
-const archiveStemOf = (target: SeaTarget): string => `node-v${SEA_NODE_VERSION}-${target.name}`;
-const archiveNameOf = (target: SeaTarget): string => `${archiveStemOf(target)}.${target.archiveExtension}`;
+const archiveStemOf = (target: Pick<SeaTarget, 'name'>): string => `node-v${SEA_NODE_VERSION}-${target.name}`;
+export const archiveNameOf = (target: Pick<SeaTarget, 'name' | 'archiveExtension'>): string => `${archiveStemOf(target)}.${target.archiveExtension}`;
 
 export const sha256OfFile = (file: string): string => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 

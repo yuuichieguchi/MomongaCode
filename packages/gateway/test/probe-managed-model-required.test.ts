@@ -4,8 +4,8 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { managedInstancePaths, momongaPaths, systemTiming } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, testKernelLock, testProcessInspector, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
-import { listManagedModel } from '../src/probe/probe-fm.ts';
-import type { ManagedKeyReaderOptions, MeasureManagedServerOptions, ProbeManagedOptions } from '../src/probe/probe-fm.ts';
+import { listManagedModel } from '../src/probe/probe-managed.ts';
+import type { ManagedKeyReaderOptions, MeasureManagedServerOptions, ProbeManagedOptions } from '../src/probe/probe-managed.ts';
 import { makeHome } from './gateway-process-helpers.ts';
 import { FAKE_FM_LISTED_MODEL } from './fm-record-support.ts';
 

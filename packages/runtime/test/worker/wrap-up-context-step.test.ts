@@ -55,7 +55,7 @@ const contextFor = (state: RunState) => {
     readers: () => ({}),
     companions: () => ({ hostOf: {}, keepWithoutHost: false }),
     skills: { catalog: undefined },
-    recalled: { prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, tools: [] },
+    recalled: { prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, touchedCap: () => undefined, tools: [] },
     touched: { governing: { advance: async () => undefined, witnesses: () => [] }, probes: { advance: async () => undefined, witnesses: () => [] } },
     journal: {
       state,

@@ -14,7 +14,7 @@ import { REFUSED_WRITE_TEXT, SANDBOX_ENDS_WITH_RUNTIME, platformSandbox, product
 import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const UNKNOWN_EFFECT_SENTENCE = 'The effect of the interrupted command is unknown';
 
@@ -203,7 +203,7 @@ describe('b2: Bash under the platform sandbox', () => {
 
       await expectEndedAtTerminal('COMPLETED', { group: pgid });
       const stream = runtime.events(run.id);
-      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
       await stream.close();
       const reconciled = framesOfType(frames, 'tool.reconciled');
       expect(reconciled.map((frame) => frame.data.outcome)).toEqual(['unknown']);

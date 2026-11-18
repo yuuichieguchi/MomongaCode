@@ -9,7 +9,7 @@ import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_CANCEL_SWEEP_BOUND_MS, E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_CANCEL_SWEEP_BOUND_MS, E2E_MCP_AUTHORIZATION_BOUND_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -97,7 +97,7 @@ describe('mcp: client gaps', () => {
           const view = bodyOf(await runtime.json('GET', `/v1/sessions/${session.id}/mcp/servers/remote/authorization`), 200)['authorization'];
           return isRecord(view) && view['status'] === 'completed';
         },
-        { deadlineMs: E2E_MARGIN_MS, description: 'the authorization to complete' },
+        { deadlineMs: E2E_MCP_AUTHORIZATION_BOUND_MS, description: 'the authorization to complete' },
       );
       expect(bodyOf(await runtime.json('GET', `/v1/sessions/${session.id}/mcp/servers`), 200)['servers']).toMatchObject([{ auth: 'authorized' }]);
 
@@ -247,7 +247,7 @@ describe('mcp: client gaps', () => {
       await until(
         () =>
           readDb<{ meta_json: string }>(home.paths.databases.runtime, 'SELECT meta_json FROM idempotency WHERE state = ?', 'PENDING').some((row) => row.meta_json.includes(taskId)),
-        { deadlineMs: E2E_MARGIN_MS, description: 'the task id to be recorded' },
+        { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the task id to be recorded' },
       );
 
       const before = childOf(await stack.client.health(), 'runtime');

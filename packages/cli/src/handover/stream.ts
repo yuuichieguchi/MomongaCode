@@ -11,7 +11,11 @@ export type StreamMove = { mover: Pick<Mover, 'attach' | 'check'>; kind: 'attach
 
 export const newerListenerOf = (ports: Pick<CliPorts, 'handover'>): NewerListener | undefined => {
   const mover = ports.handover?.mover;
-  return mover === undefined ? undefined : (version, own) => mover.learned(version, own);
+  if (mover === undefined) return undefined;
+  return async (version, own) => {
+    await mover.learned(version, own);
+    return mover.standing(version);
+  };
 };
 
 export const streamMoveOf = (ports: Pick<CliPorts, 'handover'>, paths: Pick<MomongaPaths, 'run'>, kind: StreamMove['kind']): StreamMove | undefined => {

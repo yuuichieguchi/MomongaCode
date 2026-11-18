@@ -7,7 +7,7 @@ import type { DialectId, ManagedServerDescription, ProbeReport, ToolCallingMode 
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
 import { vocabularyOf } from '../adapters/chat-completions/vocabulary.ts';
-import { createExecFn, createExecWithStdin } from '../managed/fm-processes.ts';
+import { createExecFn, createExecWithStdin } from '../managed/processes.ts';
 import { createManagedServer } from '../managed/server.ts';
 import type { ManagedServer, ManagedServerTimers, SpawnFn } from '../managed/server.ts';
 import { missingExecutableVerdict, runPreconditions } from '../managed/preconditions.ts';

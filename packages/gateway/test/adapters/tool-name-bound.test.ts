@@ -18,7 +18,7 @@ const OUT_OF_BOUND = [
 ] as const;
 
 const emitterOf = (): ResponseEmitter =>
-  new ResponseEmitter({ clock: createFakeClock(START_MS), model: 'm', request: { model: 'm', input: [{ type: 'message', role: 'user', content: 'go' }] } });
+  new ResponseEmitter({ clock: createFakeClock(START_MS), model: 'm', request: { model: 'm', input: [{ type: 'message', role: 'user', content: 'go' }] }, signal: new AbortController().signal });
 
 describe('the bound of a tool name', () => {
   it('is the bound the vendored Open Responses schema puts on the name of a function call given as input', () => {
@@ -50,14 +50,14 @@ describe('a tool name the model writes: the response emitter', () => {
     expect(events.at(-1)).toMatchObject({ type: 'response.failed', response: { output: [] } });
   });
 
-  it('keeps a name of 64 characters with hyphens and underscores', () => {
+  it('keeps a name of 64 characters with hyphens and underscores', async () => {
     const emitter = emitterOf();
     emitter.start();
     const name = `mcp__server__${'x-'.repeat(25)}y`;
     expect(name).toHaveLength(64);
     emitter.beginCall(0, 'call_1', name);
     emitter.appendCallArguments(0, '{}');
-    emitter.complete(undefined);
+    await emitter.complete(undefined);
     expect(emitter.take().at(-1)).toMatchObject({ type: 'response.completed', response: { output: [{ type: 'function_call', name }] } });
   });
 });

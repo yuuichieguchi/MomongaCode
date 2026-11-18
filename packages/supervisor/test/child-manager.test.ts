@@ -251,8 +251,29 @@ describe('start-up stall limit', () => {
     await harness.timers.advanceAsync(1);
     await stopLineWritten();
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
+    expect(harness.logLines().filter((line) => line['msg'] === 'child.stop')).toEqual([
+      expect.objectContaining({ stop: 'startup-timeout', lastProgressStep: 'store', lastProgressAt: new Date(T0 + PROGRESS_EVERY_MS).toISOString() }),
+    ]);
     await exitAndWait(harness, 'backoff', 0);
     expect(harness.manager.health().lastExit?.reason).toBe('startup-timeout');
+  });
+
+  it('a child silent from its spawn is stopped naming that no progress was seen', async (context) => {
+    const harness = await createManagerHarness(context);
+    await harness.spawnInitial();
+    await harness.timers.advanceAsync(STARTUP_TIMEOUT_MS);
+    await stopLineWritten();
+    expect(harness.logLines().filter((line) => line['msg'] === 'child.stop')).toEqual([expect.objectContaining({ stop: 'startup-timeout', lastProgressStep: null, lastProgressAt: null })]);
+  });
+
+  it('the stall limit is the startupTimeoutMs the supervisor was given', async (context) => {
+    const harness = await createManagerHarness(context, { overrides: { startupTimeoutMs: 240_000 } });
+    await harness.spawnInitial();
+    await harness.timers.advanceAsync(240_000 - 1);
+    expect(harness.port.last().signals).toEqual([]);
+    await harness.timers.advanceAsync(1);
+    await stopLineWritten();
+    expect(harness.port.last().signals).toEqual(['SIGTERM']);
   });
 
   it('progress of another process does not re-arm the limit', async (context) => {

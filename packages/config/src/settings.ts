@@ -392,6 +392,8 @@ export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean;
 
 export type UpdateSettings = { stallTimeoutMs?: number };
 
+export type DaemonSettings = { startupStallMs?: number };
+
 export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[]; plaintextTokenFiles?: boolean };
 
 export type NetworkSettings = { httpProxy?: string; httpsProxy?: string; noProxy?: string; extraCaFiles?: string[]; environment?: boolean };
@@ -444,6 +446,7 @@ export type Settings = {
   models?: ModelsSettings;
   autoUpdates?: boolean;
   update?: UpdateSettings;
+  daemon?: DaemonSettings;
   tui?: TuiSettings;
   gateway?: GatewaySettings;
   runtime?: RuntimeSettings;

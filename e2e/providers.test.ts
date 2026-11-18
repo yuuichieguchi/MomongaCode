@@ -22,7 +22,7 @@ import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RunEventFrame } from './support/runtime-client.ts';
 import { secretNameOf, storeSecretThroughProduct } from './support/secrets.ts';
 import { startStack } from './support/stack.ts';
-import { E2E_MARGIN_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const SECRET_NAME_BASE = 'provider-main';
 const SECRET_VALUE = 'e2e-provider-key-7f3a91c2d4b6';
@@ -61,7 +61,7 @@ const startProviderStack = async (home: E2eHome, adapter: Adapter, upstream: Fak
 
 const framesOf = async (runtime: ReturnType<typeof createRuntimeClient>, runId: string): Promise<RunEventFrame[]> => {
   const stream = runtime.events(runId);
-  const frames = await stream.toEnd(E2E_MARGIN_MS);
+  const frames = await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
   await stream.close();
   return frames;
 };

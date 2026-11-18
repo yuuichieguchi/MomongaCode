@@ -5,13 +5,13 @@ import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../../packages/cli/src/
 import { defaultLedgerPorts, killSelectedGroups, parsePidsFile, selectGroupsToSignal } from './ledger.ts';
 import type { LedgerPorts } from './ledger.ts';
 import { removeTree } from './remove-tree.ts';
-import { KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eEntryPrefix, harnessFilePath, readHarnessFile, sharedTempBase } from './run-env.ts';
+import { CLAIM_FILE_SUFFIX, KEPT_HOME_FILE_NAME, PIDS_FILE_SUFFIX, e2eEntryPrefix, harnessFilePath, readHarnessFile, sharedTempBase } from './run-env.ts';
 
 export type TeardownPorts = Pick<LedgerPorts, 'startTimeOf' | 'groupAlive' | 'pidAlive' | 'killGroups'>;
 
 export type E2eTeardownOptions = { tmpRoot: string; run: string; evalBase?: string; sharedBase?: string; ports?: TeardownPorts; report?: (line: string) => void };
 
-const HARNESS_SUFFIXES: readonly string[] = [PIDS_FILE_SUFFIX];
+const HARNESS_SUFFIXES: readonly string[] = [PIDS_FILE_SUFFIX, CLAIM_FILE_SUFFIX];
 
 export const leftoverEntries = (listing: readonly string[], run: string): string[] => {
   const e2ePrefix = e2eEntryPrefix(run);

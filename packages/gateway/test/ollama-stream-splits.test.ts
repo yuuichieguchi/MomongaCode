@@ -29,7 +29,7 @@ async function* readsOf(parts: readonly Uint8Array[]): AsyncGenerator<Uint8Array
 
 const eventsOf = async (parts: readonly Uint8Array[]): Promise<StreamEvent[]> => {
   const events: StreamEvent[] = [];
-  for await (const event of ollamaEventsOf(readsOf(parts), { request, clock: createFakeClock(START_MS) })) events.push(event);
+  for await (const event of ollamaEventsOf(readsOf(parts), { request, clock: createFakeClock(START_MS), signal: new AbortController().signal })) events.push(event);
   return events;
 };
 

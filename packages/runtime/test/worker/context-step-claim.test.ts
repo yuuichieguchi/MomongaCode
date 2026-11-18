@@ -6,6 +6,8 @@ import { initialRunState } from '@momonga/store';
 import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { buildNext } from '../../src/worker/context-step.ts';
 import { capabilitiesFor } from './harness.ts';
+import { RECALL_TOUCHED_ROWS } from '../../src/process/constants.ts';
+import type { RecallRequest } from '../../src/ports.ts';
 import { TEST_FENCE } from '@momonga/testkit';
 
 const SYSTEM_PROMPT = 'You are the claim test agent.';
@@ -58,7 +60,7 @@ const contextFor = (state: RunState) => {
     readers: () => ({}),
     companions: () => ({ hostOf: {}, keepWithoutHost: false }),
     skills: { catalog: undefined },
-    recalled: { prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, tools: [] },
+    recalled: { prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, touchedCap: () => undefined, tools: [] },
     touched: { governing: { advance: async () => undefined, witnesses: () => [] }, probes: { advance: async () => undefined, witnesses: () => [] } },
     journal: {
       state,
@@ -130,5 +132,26 @@ describe('trailing input without removing the tools (4.3)', () => {
     if (outcome.kind !== 'built') throw new Error(`expected a build, received ${outcome.kind}`);
     expect(outcome.built.tools.map((tool) => tool.name)).toEqual(['Echo']);
     expect(outcome.built.input.at(-1)).toEqual(trailing);
+  });
+});
+
+describe('the recall reads one page of touched paths and passes its bound on (context 3.8 item 5)', () => {
+  it('asks the record for RECALL_TOUCHED_ROWS paths and hands the bound to the recall', async () => {
+    const { ctx } = contextFor(stateWithHistory());
+    const limits: number[] = [];
+    const requests: RecallRequest[] = [];
+    const store = ctx.options.store as unknown as { sessionTouched: { newest: (sessionId: string, limit: number) => unknown } };
+    store.sessionTouched.newest = (_sessionId, limit) => {
+      limits.push(limit);
+      return Array.from({ length: limit }, (_unused, index) => ({ path: `/project/claim/f${index}.ts`, firstEventId: limit - index }));
+    };
+    (ctx as unknown as { recalled: { prepare: (request: RecallRequest) => Promise<void> } }).recalled.prepare = async (request) => {
+      requests.push(request);
+    };
+
+    await buildNext(ctx);
+
+    expect(limits[0]).toBe(RECALL_TOUCHED_ROWS);
+    expect(requests[0]?.touchedCap).toBeGreaterThan(0);
   });
 });

@@ -30,15 +30,25 @@ export const createConstrainedSink = (emitter: ResponseEmitter, plan: Constraine
       nextKey += 1;
       emitter.beginCall(key, newCallId(clock), name);
       emitter.appendCallArguments(key, argumentsJson);
-      emitter.completeCall(key);
+      closing.push(key);
     },
   }, plan.requireToolCalls);
-  const feed = (run: () => ReturnType<IncrementalJsonParser['push']>): void => {
+  const closing: number[] = [];
+  const closeCalls = async (): Promise<void> => {
+    for (const key of closing.splice(0)) await emitter.completeCall(key);
+  };
+  const parsedEvents = (run: () => ReturnType<IncrementalJsonParser['push']>): ReturnType<IncrementalJsonParser['push']> => {
     try {
-      for (const event of run()) reader.accept(event);
+      return run();
     } catch (error) {
       if (error instanceof JsonSyntaxError) throw new MalformedOutputError(error.message);
       throw error;
+    }
+  };
+  const feed = async (run: () => ReturnType<IncrementalJsonParser['push']>): Promise<void> => {
+    for (const event of parsedEvents(run)) {
+      reader.accept(event);
+      await closeCalls();
     }
   };
   return {
@@ -46,10 +56,11 @@ export const createConstrainedSink = (emitter: ResponseEmitter, plan: Constraine
     toolCall: () => {
       throw new UpstreamProtocolError('the upstream sent native tool_calls to a constrained request');
     },
-    finish: (outcome) => {
+    finish: async (outcome) => {
       if (outcome === 'truncated') return;
-      feed(() => parser.end());
+      await feed(() => parser.end());
       reader.finish();
+      await closeCalls();
     },
   };
 };

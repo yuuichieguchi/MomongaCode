@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, RULE_VERIFY_LOAD_ALLOWANCE_MS } from '@momonga/protocol';
 import { REFLECTION_PICKUP_BOUND_MS } from '@momonga/runtime';
 import * as waits from './wait.ts';
 import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
-import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, KILL_CONFIRM_MS, MCP_CONNECT_TIMEOUT_LIMITS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 import {
@@ -18,7 +18,7 @@ import {
   E2E_LEASE_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
   E2E_ORPHAN_GRACE_MS,
-  E2E_PHASE2_REACHED_BOUND_MS,
+  E2E_PHASE2_HELD_BOUND_MS,
   E2E_READY_DEADLINE_MS,
   E2E_REAP_TO_RUNNING_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
@@ -51,7 +51,7 @@ describe('wait constants', () => {
     expect(E2E_STOP_VALUES).toEqual(DEFAULT_STOP_VALUES);
     expect(E2E_LEASE_MS).toBe(DEFAULT_LEASE_MS);
     expect(E2E_REAP_CLOSE_BOUND_MS).toBe(SHUTDOWN_RELEASE_BOUND_MS + E2E_MARGIN_MS);
-    expect(E2E_CANCEL_TERM_BOUND_MS).toBe(E2E_MARGIN_MS);
+    expect(E2E_CANCEL_TERM_BOUND_MS).toBe(SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS);
     expect(E2E_CANCEL_KILL_BOUND_MS).toBe(SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS);
     expect(E2E_CANCEL_STREAM_BOUND_MS).toBe(GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS);
     expect(E2E_RESTART_POLICY).toEqual({ baseMs: E2E_RESTART_BACKOFF_MS, maxMs: E2E_RESTART_BACKOFF_MS, minMs: E2E_RESTART_BACKOFF_MS });
@@ -67,7 +67,7 @@ describe('wait constants', () => {
   });
 
   it('wait for phase 2 of the orphan reap exactly as long as phase 1 of the short-grace e2e supervisor lasts, plus the observer margin', () => {
-    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS);
+    expect(E2E_PHASE2_HELD_BOUND_MS).toBe(orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS);
   });
 
   it('give a test the sum of the bounds it waits on in sequence, plus the observer margin', () => {
@@ -183,7 +183,21 @@ describe('the bounds a test waits on', () => {
     expect(waits.E2E_REFLECTION_SETTLED_BOUND_MS).toBeLessThan(waits.E2E_TEST_TIMEOUT_MS);
   });
 
-  it('give a run that verifies its rules the rule verify budget', () => {
-    expect(waits.E2E_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RECOVERY_BOUND_MS + RULE_VERIFY_BUDGET_MS + waits.E2E_MARGIN_MS);
+  it('wait for a SIGKILLed process as long as the product confirms a kill, and for an MCP authorization after its callback as long as the product lets its token exchange and store writes take', () => {
+    expect(waits.E2E_KILLED_GONE_BOUND_MS).toBe(KILL_CONFIRM_MS + waits.E2E_MARGIN_MS);
+    expect(waits.E2E_MCP_AUTHORIZATION_BOUND_MS).toBe(MCP_CONNECT_TIMEOUT_LIMITS.default + waits.E2E_MARGIN_MS);
+  });
+
+  it('give one verification of rules the time the product allows its solver thread to load and its budget', () => {
+    expect(waits.E2E_RULE_VERIFICATION_BOUND_MS).toBe(RULE_VERIFY_LOAD_ALLOWANCE_MS + RULE_VERIFY_BUDGET_MS);
+  });
+
+  it('give a run that verifies its rules at its start one verification', () => {
+    expect(waits.E2E_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RECOVERY_BOUND_MS + waits.E2E_RULE_VERIFICATION_BOUND_MS + waits.E2E_MARGIN_MS);
+  });
+
+  it('give a run created under a mandate a second verification, the one its creation waits for, and fit it in the test timeout', () => {
+    expect(waits.E2E_MANDATE_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RULE_VERIFICATION_BOUND_MS + waits.E2E_RUN_COMPLETED_BOUND_MS);
+    expect(waits.E2E_MANDATE_RUN_COMPLETED_BOUND_MS).toBeLessThan(waits.E2E_TEST_TIMEOUT_MS);
   });
 });
