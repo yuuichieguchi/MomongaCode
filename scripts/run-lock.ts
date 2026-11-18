@@ -121,6 +121,7 @@ export const runUnderLock = async (argv: readonly string[], env: Environment): P
   const { result: outcome, stoppedBy } = await untilStopped((signal) =>
     acquireRunLock({
       runClass,
+      repoRoot: lock.repositoryRootOf(process.cwd()),
       ...runLockDirsOf(stateDir),
       command: [command, ...commandArgs].join(' '),
       cwd: process.cwd(),
@@ -132,6 +133,10 @@ export const runUnderLock = async (argv: readonly string[], env: Environment): P
     }),
   );
 
+  if (outcome.kind === 'misplaced') {
+    say(outcome.message);
+    return EXIT.usage;
+  }
   if (outcome.kind === 'refused') {
     say(outcome.message);
     return EXIT.refused;

@@ -5,7 +5,7 @@ import type { ChildProcess } from '@momonga/testkit/child-process';
 import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { killGroup } from '../../scripts/support/cpu-budget.ts';
-import { RUN_LOCK_DEFAULT_WAIT_SECONDS } from '../../scripts/support/run-lock.ts';
+import { RUN_LOCK_DEFAULT_WAIT_SECONDS, RUN_LOCK_EXIT, misplacedHeavyMessage } from '../../scripts/support/run-lock.ts';
 import config from '../../vitest.config.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -123,9 +123,16 @@ const hold = async (runClass: 'heavy' | 'light'): Promise<{ run: Started; releas
   const release = path.join(root, `release-${runClass}`);
   const tokenFile = path.join(root, `token-${runClass}`);
   releaseFiles.push(release);
-  const run = startProcess(process.execPath, [WRAPPER, runClass, '--budget-cpu-seconds', '30', '--', process.execPath, '-e', holderScript(tokenFile, release)], REPO, baseEnv());
+  const run = startProcess(process.execPath, [WRAPPER, runClass, '--budget-cpu-seconds', '30', '--', process.execPath, '-e', holderScript(tokenFile, release)], root, baseEnv());
   await until(() => fs.existsSync(tokenFile) && lockEntries().some((entry) => entry.endsWith('.info')), run);
   return { run, release, token: fs.readFileSync(tokenFile, 'utf8') };
+};
+
+const asWorktreeOn = (directory: string, branch: string): void => {
+  const gitDir = path.join(root, 'common', 'worktrees', path.basename(directory));
+  fs.mkdirSync(gitDir, { recursive: true });
+  fs.writeFileSync(path.join(gitDir, 'HEAD'), `ref: refs/heads/${branch}\n`);
+  fs.writeFileSync(path.join(directory, '.git'), `gitdir: ${gitDir}\n`);
 };
 
 const tokenFiles = (): string[] => fs.readdirSync(out).filter((name) => name.endsWith('.token'));
@@ -146,6 +153,26 @@ describe('the run lock global setup classifies a vitest run and holds its lock',
     expect(token.startsWith(prefix)).toBe(true);
     expect(token).toMatch(/^(heavy|light)\.[0-9a-f]{16}$/);
     expect(fs.readFileSync(path.join(out, `${file}.child`), 'utf8')).toBe(token);
+  });
+
+  it('refuses a heavy vitest run whose root is a worktree on a branch other than fix/integration or main, before any test file runs', async () => {
+    asWorktreeOn(fixture, 'fix/x');
+
+    const run = fixtureRun([]);
+
+    expect(await run.exit).not.toBe(0);
+    expect(run.output()).toContain(misplacedHeavyMessage('fix/x'));
+    expect(tokenFiles()).toEqual([]);
+    expect(lockEntries()).toEqual([]);
+  });
+
+  it('runs a light vitest run whose root is a worktree on any branch', async () => {
+    asWorktreeOn(fixture, 'fix/x');
+
+    const run = fixtureRun(['a/x.test.ts']);
+
+    expect(await run.exit).toBe(0);
+    expect(fs.readFileSync(path.join(out, 'x.test.ts.token'), 'utf8')).toMatch(/^light\.[0-9a-f]{16}$/);
   });
 
   it('TB38 refuses a heavy run while a wrapper holds the heavy lock, before any test file runs', async () => {
@@ -250,7 +277,7 @@ const groupGone = (pgid: number): Promise<void> =>
   pollUntil(() => groupMembers(pgid).length === 0, { description: `process group ${pgid} to be gone`, boundMs: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const heavyIsFree = (): number | null =>
-  spawnSync(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '5', '--', 'true'], { cwd: REPO, env: baseEnv(), stdio: 'ignore' }).status;
+  spawnSync(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '5', '--', 'true'], { cwd: root, env: baseEnv(), stdio: 'ignore' }).status;
 
 const pidIn = async (file: string, run: Started): Promise<number> => {
   await until(() => fs.existsSync(file) && fs.readFileSync(file, 'utf8').trim() !== '', run);
@@ -258,8 +285,21 @@ const pidIn = async (file: string, run: Started): Promise<number> => {
 };
 
 describe('the lock runner bounds the command it holds the lock for', () => {
+  it('ends a heavy wrapper started in a worktree on fix/x with exit 64 before it takes any lock, and runs a light one there', async () => {
+    const worktree = path.join(root, 'worktree');
+    fs.mkdirSync(path.join(worktree, 'nested'), { recursive: true });
+    asWorktreeOn(worktree, 'fix/x');
+    const heavy = startProcess(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '5', '--', 'true'], path.join(worktree, 'nested'), baseEnv());
+
+    expect(await heavy.exit).toBe(RUN_LOCK_EXIT.usage);
+    expect(heavy.output()).toContain(misplacedHeavyMessage('fix/x'));
+    expect(lockEntries()).toEqual([]);
+    expect(await startProcess(process.execPath, [WRAPPER, 'light', '--budget-cpu-seconds', '5', '--', 'true'], worktree, baseEnv()).exit).toBe(0);
+  });
+
+
   it('refuses a command with no CPU budget and leaves the lock free', async () => {
-    const run = startProcess(process.execPath, [WRAPPER, 'heavy', '--', 'true'], REPO, baseEnv());
+    const run = startProcess(process.execPath, [WRAPPER, 'heavy', '--', 'true'], root, baseEnv());
 
     expect(await run.exit).toBe(64);
     expect(run.output()).toContain('--budget-cpu-seconds <seconds>');
@@ -268,10 +308,10 @@ describe('the lock runner bounds the command it holds the lock for', () => {
 
   it('ends the whole group of a command that burns CPU past its budget, names the budget, and frees the lock', async () => {
     const pidFile = path.join(root, 'pid');
-    const run = startProcess(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '1', '--', 'sh', '-c', `echo $$ > ${pidFile}; while :; do :; done`], REPO, baseEnv());
+    const run = startProcess(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '1', '--', 'sh', '-c', `echo $$ > ${pidFile}; while :; do :; done`], root, baseEnv());
     const pgid = await pidIn(pidFile, run);
 
-    expect(await run.exit).toBe(75);
+    expect(await run.exit).toBe(RUN_LOCK_EXIT.cpuBudget);
     expect(run.output()).toContain('run-lock: the command passed its CPU budget of 1 s');
     await groupGone(pgid);
     expect(heavyIsFree()).toBe(0);
@@ -281,11 +321,11 @@ describe('the lock runner bounds the command it holds the lock for', () => {
     const pidFile = path.join(root, 'pid');
     const grandchildFile = path.join(root, 'grandchild');
     const script = `echo $$ > ${pidFile}; sh -c 'while :; do :; done' & echo $! > ${grandchildFile}; wait`;
-    const run = startProcess(process.execPath, [WRAPPER, 'light', '--budget-cpu-seconds', '1', '--', 'sh', '-c', script], REPO, baseEnv());
+    const run = startProcess(process.execPath, [WRAPPER, 'light', '--budget-cpu-seconds', '1', '--', 'sh', '-c', script], root, baseEnv());
     const pgid = await pidIn(pidFile, run);
     const grandchild = await pidIn(grandchildFile, run);
 
-    expect(await run.exit).toBe(75);
+    expect(await run.exit).toBe(RUN_LOCK_EXIT.cpuBudget);
     await groupGone(pgid);
     expect(groupMembers(pgid)).not.toContain(grandchild);
     expect(heavyIsFree()).toBe(0);
@@ -293,7 +333,7 @@ describe('the lock runner bounds the command it holds the lock for', () => {
 
   it('ends the group and frees the lock when the process that started the runner is gone', async () => {
     const pidFile = path.join(root, 'pid');
-    const starter = startProcess('sh', ['-c', `${JSON.stringify(process.execPath)} ${JSON.stringify(WRAPPER)} heavy --budget-cpu-seconds 600 -- sh -c 'echo $$ > ${pidFile}; sleep 600' & wait`], REPO, baseEnv());
+    const starter = startProcess('sh', ['-c', `${JSON.stringify(process.execPath)} ${JSON.stringify(WRAPPER)} heavy --budget-cpu-seconds 600 -- sh -c 'echo $$ > ${pidFile}; sleep 600' & wait`], root, baseEnv());
     const pgid = await pidIn(pidFile, starter);
     starter.child.kill('SIGKILL');
     await starter.exit;

@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { REAP_KILL_GRACE_MS, bsdFileLock, createLockCapability, lockPathNameOf, sqliteFileLock } from '@momonga/foundation';
+import { bsdFileLock, createLockCapability, lockPathNameOf, sqliteFileLock } from '@momonga/foundation';
+import { REAP_KILL_GRACE_MS } from '../../packages/foundation/src/process-contract.ts';
 import type { HeldKernelLock, KernelLockMechanism, LockCapabilityProbe } from '@momonga/foundation';
 import { treeCpuSeconds } from './cpu-budget.ts';
 
@@ -118,8 +119,52 @@ export const clauseOf = (runClass: RunClass, description: HolderDescription | un
 const clauseOfHeld = async (lockPath: string, runClass: RunClass, mechanism: KernelLockMechanism): Promise<string> =>
   clauseOf(runClass, await descriptionOfHeld(lockPath, runClass, mechanism));
 
+const HEAVY_BRANCHES: readonly string[] = ['fix/integration', 'main'];
+const BRANCH_REF = /^ref: refs\/heads\/(.+)$/;
+const GITDIR_LINE = /^gitdir: (.+)$/;
+const TLC_RECORD_ENV = 'MOMONGA_TLC_RECORD';
+const TLC_TIER_ENV = 'MOMONGA_TLC_TIER';
+const TLC_TIER_RUNNER = path.join('test', 'formal', 'tlc.test.ts');
+
+export const misplacedHeavyMessage = (branch: string): string =>
+  `run-lock: a heavy run is started only from the integration head (this worktree is on ${branch}); run the named test files of your change instead`;
+
+export const isTlcRecordRun = ({ repoRoot, selected, env }: { repoRoot: string; selected: readonly string[]; env: Readonly<Record<string, string | undefined>> }): boolean =>
+  env[TLC_RECORD_ENV] === '1' && env[TLC_TIER_ENV] === 'deep' && selected.length === 1 && selected[0] === path.join(repoRoot, TLC_TIER_RUNNER);
+
+const missingAsUndefined = (error: unknown): undefined => {
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+  throw error;
+};
+
+const worktreeBranchOf = async (repoRoot: string): Promise<string | undefined> => {
+  const gitEntry = path.join(repoRoot, '.git');
+  const stat = await fs.promises.stat(gitEntry).catch(missingAsUndefined);
+  if (stat === undefined || stat.isDirectory()) return undefined;
+  const pointer = GITDIR_LINE.exec((await fs.promises.readFile(gitEntry, 'utf8')).trim());
+  if (pointer === null) throw new Error(`${gitEntry} names no gitdir`);
+  const gitDir = path.resolve(repoRoot, pointer[1] as string);
+  const head = (await fs.promises.readFile(path.join(gitDir, 'HEAD'), 'utf8')).trim();
+  return BRANCH_REF.exec(head)?.[1] ?? 'a detached HEAD';
+};
+
+export const repositoryRootOf = (directory: string): string => {
+  for (let current = path.resolve(directory); ; current = path.dirname(current)) {
+    if (fs.existsSync(path.join(current, '.git'))) return current;
+    if (path.dirname(current) === current) return path.resolve(directory);
+  }
+};
+
+const misplacedHeavyOf = async (request: RunLockRequest): Promise<string | undefined> => {
+  if (request.runClass !== 'heavy' || request.tlcRecord === true) return undefined;
+  const branch = await worktreeBranchOf(request.repoRoot);
+  return branch === undefined || HEAVY_BRANCHES.includes(branch) ? undefined : misplacedHeavyMessage(branch);
+};
+
 export type RunLockRequest = {
   runClass: RunClass;
+  repoRoot: string;
+  tlcRecord?: boolean;
   dir: string;
   proofDir: string;
   command: string;
@@ -145,6 +190,7 @@ export type RunLockOutcome =
   | { kind: 'acquired'; token: string; mechanism: 'file-lock' | 'sqlite-lock'; release: () => Promise<void> }
   | { kind: 'inherited' }
   | { kind: 'refused'; message: string }
+  | { kind: 'misplaced'; message: string }
   | { kind: 'waited-out'; message: string }
   | { kind: 'aborted' }
   | { kind: 'unusable'; message: string };
@@ -437,6 +483,8 @@ const defaultSleep = async (ms: number, signal: AbortSignal): Promise<void> => {
 };
 
 const acquireOrWait = async (request: RunLockRequest): Promise<RunLockOutcome> => {
+  const misplaced = await lockWork(() => misplacedHeavyOf(request));
+  if (misplaced !== undefined) return { kind: 'misplaced', message: misplaced };
   const { runClass, waitSeconds, signal, say } = request;
   const context: AttemptContext = { request, mechanism: await lockWork(() => mechanismFor(request)), now: request.now ?? ((): Date => new Date()), arrival: { seq: Number.POSITIVE_INFINITY, hex: undefined } };
 

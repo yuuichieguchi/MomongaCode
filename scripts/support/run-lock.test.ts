@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { EXIT_CODES, REAP_KILL_GRACE_MS, bsdFileLock, sqliteFileLock } from '@momonga/foundation';
+import { EXIT_CODES, bsdFileLock, sqliteFileLock } from '@momonga/foundation';
+import { REAP_KILL_GRACE_MS } from '../../packages/foundation/src/process-contract.ts';
 import type { KernelLockMechanism, LockCapability } from '@momonga/foundation';
-import { HEAVY_STEPS, LIGHT_HOLDER_STALL_MS, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, RUN_LOCK_EXIT, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
+import { HEAVY_STEPS, LIGHT_HOLDER_STALL_MS, isTlcRecordRun, misplacedHeavyMessage, LIGHT_STEPS, RUN_LOCK_DEFAULT_WAIT_SECONDS, RUN_LOCK_EXIT, acquireRunLock, clauseOf, parseWaitSeconds, runLockDirsOf } from './run-lock.ts';
 import { createTempRoot, removeTempRoot } from './temp.ts';
 
 const STARTED = '2026-11-10T00:00:00.000Z';
@@ -45,6 +46,7 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
     runClass: 'heavy',
     dir,
     proofDir,
+    repoRoot: root,
     command: 'cmd1',
     cwd: '/w',
     pid: 111,
@@ -354,12 +356,13 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
     const wakers: Array<() => void> = [];
     const queued: Queued[] = [];
 
+    const settlers: Array<() => void> = [];
+    const changed = (): void => {
+      for (const settler of settlers.splice(0)) settler();
+    };
+
     const settle = async (): Promise<void> => {
-      for (let turn = 0; turn < 2000; turn += 1) {
-        if (queued.every((run) => run.ended || run.asleep)) return;
-        await new Promise((resolve) => setTimeout(resolve, 2));
-      }
-      throw new Error('a queued run neither slept nor ended');
+      while (!queued.every((run) => run.ended || run.asleep)) await new Promise<void>((resolve) => settlers.push(resolve));
     };
 
     const arrive = async (name: string, runClass: 'heavy' | 'light'): Promise<Queued> => {
@@ -373,6 +376,7 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
           sleep: () =>
             new Promise<void>((resolve) => {
               run.asleep = true;
+              changed();
               wakers.push(() => {
                 run.asleep = false;
                 resolve();
@@ -381,6 +385,7 @@ describe.each(MECHANISMS)('acquireRunLock with %s', (_name, mechanism) => {
         }),
       ).then((outcome) => {
         run.ended = true;
+        changed();
         if (outcome.kind === 'acquired') releases.push(() => outcome.release());
         return outcome;
       });
@@ -754,6 +759,7 @@ describe('acquireRunLock chooses its mechanism by capability', () => {
   const request = (capability: LockCapability): Request => ({
     runClass: 'heavy',
     dir,
+    repoRoot: root,
     proofDir,
     command: 'cmd1',
     cwd: '/w',
@@ -783,6 +789,80 @@ describe('acquireRunLock chooses its mechanism by capability', () => {
       kind: 'unusable',
       message: `run-lock: cannot use ${dir}: the lock capability of ${dir} could not be measured`,
     });
+  });
+});
+
+describe('a heavy run is started only from the integration head', () => {
+  type RepoState = 'no repository' | 'main checkout' | 'detached' | `worktree on ${string}`;
+
+  const repositoryOf = (state: RepoState): string => {
+    const repo = path.join(root, 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+    if (state === 'no repository') return repo;
+    if (state === 'main checkout') {
+      fs.mkdirSync(path.join(repo, '.git'));
+      fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/fix/elsewhere\n');
+      return repo;
+    }
+    const gitDir = path.join(root, 'common', 'worktrees', 'repo');
+    fs.mkdirSync(gitDir, { recursive: true });
+    fs.writeFileSync(path.join(repo, '.git'), `gitdir: ${gitDir}\n`);
+    fs.writeFileSync(path.join(gitDir, 'HEAD'), state === 'detached' ? '0123456789abcdef0123456789abcdef01234567\n' : `ref: refs/heads/${state.slice('worktree on '.length)}\n`);
+    return repo;
+  };
+
+  const attempt = (state: RepoState, over: Partial<Parameters<typeof acquireRunLock>[0]> = {}): Promise<Outcome> =>
+    acquireRunLock({
+      runClass: 'heavy',
+      dir,
+      proofDir,
+      repoRoot: repositoryOf(state),
+      command: 'cmd',
+      cwd: '/w',
+      pid: 111,
+      env: {},
+      waitSeconds: 0,
+      signal: new AbortController().signal,
+      say: () => undefined,
+      mechanism: sqliteFileLock,
+      ...over,
+    }).then((outcome) => {
+      if (outcome.kind === 'acquired') releases.push(() => outcome.release());
+      return outcome;
+    });
+
+  it.each(['worktree on fix/integration', 'worktree on main', 'main checkout', 'no repository'] as const)('acquires a heavy run from %s', async (state) => {
+    expect((await attempt(state)).kind).toBe('acquired');
+  });
+
+  it.each([
+    ['worktree on fix/x', 'fix/x'],
+    ['detached', 'a detached HEAD'],
+  ] as const)('ends a heavy run from a %s at once, touching no lock file, whatever the environment says', async (state, branch) => {
+    const outcome = await attempt(state, { env: { MOMONGA_RUN_LOCK: 'heavy.0123456789abcdef', MOMONGA_RUN_LOCK_WAIT_SECONDS: '60' } });
+
+    expect(outcome).toEqual({ kind: 'misplaced', message: misplacedHeavyMessage(branch) });
+    expect(misplacedHeavyMessage('fix/x')).toBe('run-lock: a heavy run is started only from the integration head (this worktree is on fix/x); run the named test files of your change instead');
+    expect(entries()).toEqual([]);
+  });
+
+  it('acquires a light run from any worktree', async () => {
+    expect((await attempt('worktree on fix/x', { runClass: 'light' })).kind).toBe('acquired');
+  });
+
+  it('acquires the TLC record run of the formal models from any worktree', async () => {
+    expect((await attempt('worktree on fix/formal-models', { tlcRecord: true })).kind).toBe('acquired');
+  });
+
+  it('takes for the TLC record run exactly a deep-tier record run whose only selected file is the tier runner', () => {
+    const repo = '/r';
+    const tier = path.join(repo, 'test', 'formal', 'tlc.test.ts');
+    const record = { MOMONGA_TLC_RECORD: '1', MOMONGA_TLC_TIER: 'deep' };
+    expect(isTlcRecordRun({ repoRoot: repo, selected: [tier], env: record })).toBe(true);
+    expect(isTlcRecordRun({ repoRoot: repo, selected: [tier], env: { MOMONGA_TLC_TIER: 'deep' } })).toBe(false);
+    expect(isTlcRecordRun({ repoRoot: repo, selected: [tier], env: { MOMONGA_TLC_RECORD: '1' } })).toBe(false);
+    expect(isTlcRecordRun({ repoRoot: repo, selected: [tier, path.join(repo, 'e2e', 'cli.test.ts')], env: record })).toBe(false);
+    expect(isTlcRecordRun({ repoRoot: repo, selected: [path.join(repo, 'test', 'formal', 'verdict.test.ts')], env: record })).toBe(false);
   });
 });
 
