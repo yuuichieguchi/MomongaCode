@@ -21,6 +21,7 @@
     {"name":"RECONNECT_FIRST_RETRY_MS","file":"packages/cli/src/constants.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"RECONNECT_MAX_INTERVAL_MS","file":"packages/cli/src/constants.ts","kind":"C","owner":"cli","row":"cli.md"},
     {"name":"KILL_WAIT_MS","file":"packages/cli/src/daemon/generations.ts","kind":"P","owner":"cli","row":"cli.md"},
+    {"name":"KEEPER_BUILD_BOUND_MS","file":"packages/cli/src/node-ports.ts","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"LARGEST_HOST_TIMER_SECONDS","file":"packages/cli/src/program.ts","kind":"P","owner":"cli","row":"gateway-config.md"},
     {"name":"BACKGROUND_ANSWER_WAIT_MS","file":"packages/cli/src/tui/screen/history-view.tsx","kind":"P","owner":"cli","row":"cli.md"},
     {"name":"NEXT_TURN_MS","file":"packages/cli/src/tui/screen/history-view.tsx","kind":"C","owner":"cli","row":"cli.md"},
@@ -367,11 +368,6 @@
       "packages/gateway/src/probe/client.ts": 1,
       "packages/gateway/src/process.ts": 2
     },
-    "synchronousChildWaits": {
-      "packages/cli/src/node-ports.ts": {
-        "count": 1,
-        "fixedBy": "A5 (ruling-input-design-mismatches-2026-11-18): bound the keeper build or make it asynchronous with the asker's signal"
-      }
-    }
+    "synchronousChildWaits": {}
   }
 }

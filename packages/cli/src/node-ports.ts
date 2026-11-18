@@ -1,5 +1,4 @@
 import { hostRunStateOf, syncPaths } from '@momonga/foundation';
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -25,6 +24,7 @@ import {
   momongaLayout,
   resolveLayoutLocks,
   minimalChildEnv,
+  nodeBoundedCommandRunner,
   nodeFileSystem,
   pidNamespaceOf,
   nodeFileSystemSync,
@@ -40,7 +40,7 @@ import {
 } from '@momonga/foundation';
 import type { FileSystem, GuardedStandardStreams, HeldKernelLock, HelperHost, LaunchProgram, ProcessGroupPort, SandboxNetworkSetting, ProcessPort, KernelLockMechanism, EndpointScope } from '@momonga/foundation';
 import { prebuiltLinuxSocketGuard, sourceBuiltWindowsKeeper } from './keeper/source.ts';
-import type { SourceKeeperFiles } from './keeper/source.ts';
+import type { KeeperBuildEnding, SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
 import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
@@ -177,14 +177,19 @@ export const nodeSourceKeeperFiles: SourceKeeperFiles = {
   read: (file) => readFileSync(file),
 };
 
-export const runKeeperBuild = (script: string, workDir: string): number | null => {
-  const run = spawnSync(process.execPath, [script, '--work-dir', workDir], { stdio: ['ignore', 'ignore', 'inherit'], windowsHide: true });
-  if (run.error !== undefined) throw run.error;
-  return run.status;
-};
+export const KEEPER_BUILD_BOUND_MS = 300_000;
+
+export const runKeeperBuildWithin =
+  (boundMs: number) =>
+  async (script: string, workDir: string): Promise<KeeperBuildEnding> => {
+    const ended = await nodeBoundedCommandRunner(process.execPath, [script, '--work-dir', workDir], { env: undefined, timeoutMs: boundMs });
+    if ('timedOut' in ended) return { timedOut: true, boundMs: ended.timeoutMs };
+    if (ended.exitCode !== 0) process.stderr.write(ended.stderr);
+    return ended.exitCode;
+  };
 
 export const hostSourceBuiltWindowsKeeper = (executablesRoot: string, lock: KernelLockMechanism): (() => Promise<() => string>) =>
-  sourceBuiltWindowsKeeper({ script: WINDOWS_KEEPER_BUILD_SCRIPT, executablesRoot, build: runKeeperBuild, files: nodeSourceKeeperFiles, random: systemRandom, lock });
+  sourceBuiltWindowsKeeper({ script: WINDOWS_KEEPER_BUILD_SCRIPT, executablesRoot, build: runKeeperBuildWithin(KEEPER_BUILD_BOUND_MS), files: nodeSourceKeeperFiles, random: systemRandom, lock });
 
 export const LINUX_SOCKET_GUARD_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'linux-socket-guard.ts');
 

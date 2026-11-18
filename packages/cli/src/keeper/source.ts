@@ -25,10 +25,14 @@ export type SourceKeeperFiles = Pick<FileSystem, 'mkdirPrivate' | 'readFile' | '
   read(file: string): Uint8Array;
 };
 
+export type KeeperBuildTimedOut = { timedOut: true; boundMs: number };
+
+export type KeeperBuildEnding = number | KeeperBuildTimedOut;
+
 export type SourceKeeperPorts = {
   script: string;
   executablesRoot: string;
-  build(script: string, workDir: string): number | null;
+  build(script: string, workDir: string): Promise<KeeperBuildEnding>;
   files: SourceKeeperFiles;
   random: Pick<Random, 'hex'>;
   lock: KernelLockMechanism;
@@ -100,7 +104,8 @@ const checkedFrom = async (helper: SourceBuiltHelper, ports: CheckPorts, built: 
 };
 
 const buildChecked = async (helper: SourceBuiltHelper, ports: SourceKeeperPorts, workDir: string): Promise<() => string> => {
-  const status = ports.build(ports.script, workDir);
+  const status = await ports.build(ports.script, workDir);
+  if (typeof status !== 'number') throw helper.failure(`the build of the ${helper.executable} from ${helper.source} did not end within ${status.boundMs} ms`);
   if (status === WINDOWS_KEEPER_COMPILER_MISSING_EXIT) {
     throw helper.failure(`${helper.compiler} was not found on PATH, so the ${helper.executable} that ${helper.neededBy} needs could not be built from ${helper.source}`);
   }
