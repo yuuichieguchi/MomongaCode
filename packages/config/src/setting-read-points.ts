@@ -35,6 +35,7 @@ export const SETTING_READ_POINTS: Readonly<Record<string, SettingReadPoint>> = {
   operations: 'operation',
   autoUpdates: 'operation',
   update: 'operation',
+  daemon: 'operation',
   gateway: 'operation',
   runtime: 'operation',
   'tui.theme': 'operation',

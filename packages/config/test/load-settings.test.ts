@@ -16,6 +16,7 @@ describe('SETTINGS_SCHEMA', () => {
         'ceilings',
         'context',
         'credentials',
+        'daemon',
         'disabledMcpjsonServers',
         'enableAllProjectMcpServers',
         'enabledMcpjsonServers',

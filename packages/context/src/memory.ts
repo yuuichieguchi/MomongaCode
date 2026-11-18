@@ -35,7 +35,7 @@ export const renderMemories = (memories: readonly DeepReadonly<MemoryView>[], om
   [
     ...FRAMING,
     ...(matchCap === undefined ? [] : [`Only the newest ${matchCap} saved notes matching the task were considered when choosing the notes shown.`]),
-    ...(touchedCap === undefined ? [] : [`Only the newest ${touchedCap} touched paths were used, with the task, to choose the notes shown; earlier touched paths were not used.`]),
+    ...(touchedCap === undefined ? [] : [`Only the newest ${touchedCap} touched paths were used, with the request of the run, to choose the notes shown; earlier touched paths were not used.`]),
     ...(omitted > 0
       ? [`${atLeast ? 'at least ' : ''}${omitted} more saved ${omitted === 1 ? 'note is' : 'notes are'} not shown; call ${MEMORY_SEARCH_TOOL} to look for them.`]
       : []),
