@@ -2,7 +2,7 @@ import { readUserStopValuesOrDefault } from '@momonga/config';
 import { STOP_VALUE_NAMES, generationLayout, readStopRecord } from '@momonga/foundation';
 import type { MomongaPaths, StopValueName, StopValues } from '@momonga/foundation';
 import { INTERRUPTED_WORK_LISTED } from '@momonga/protocol';
-import type { InterruptedWorkItem, RetentionStatusView, SupervisorHealth } from '@momonga/protocol';
+import type { InterruptedWorkItem, RetentionStatusView, SupervisorChildRole, SupervisorHealth } from '@momonga/protocol';
 import { ensureCurrentDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts, InterruptedWork } from '../daemon/ensure-daemon.ts';
 import { listLiveGenerations } from '../daemon/generations.ts';
@@ -27,8 +27,16 @@ export const daemonStatusText = (health: SupervisorHealth): string =>
 
 const NOT_RUNNING_TEXT = 'momonga daemon is not running';
 
-const retiringWorkText = ({ steps, jobs, calls }: SupervisorHealth): string =>
-  steps === undefined || jobs === undefined || calls === undefined ? '' : `: ${steps} steps in flight, ${jobs} background jobs, ${calls} model calls in flight`;
+const countText = (count: number | undefined, noun: string, notKnown: boolean): string => (notKnown ? `${noun} not known` : `${count} ${noun}`);
+
+const notAnsweredText = (roles: readonly SupervisorChildRole[]): string => (roles.length === 0 ? '' : ` (its ${roles.join(' and its ')} did not answer in time)`);
+
+const retiringWorkText = ({ steps, jobs, calls, countsNotKnown = [] }: SupervisorHealth): string => {
+  const runtimeNotKnown = countsNotKnown.includes('runtime');
+  const gatewayNotKnown = countsNotKnown.includes('gateway');
+  if ((!runtimeNotKnown && (steps === undefined || jobs === undefined)) || (!gatewayNotKnown && calls === undefined)) return '';
+  return `: ${countText(steps, 'steps in flight', runtimeNotKnown)}, ${countText(jobs, 'background jobs', runtimeNotKnown)}, ${countText(calls, 'model calls in flight', gatewayNotKnown)}${notAnsweredText(countsNotKnown)}`;
+};
 
 export const otherGenerationText = ({ role, health }: LiveGeneration): string =>
   escapedLines([`v${health.version} ${role} (pid ${health.pid})${role === 'retiring' ? retiringWorkText(health) : ''}`]);
@@ -88,12 +96,13 @@ export const stoppingText = (work: InterruptedWork): string => {
   const rest = work.steps + work.jobs - shown.length;
   const more = rest > 0 ? ` and ${rest} more` : '';
   const list = shown.length === 0 ? '' : `: ${shown.map(interruptedItemText).join(', ')}${more}`;
-  return escapedLines([`Stopping the daemon. This interrupts ${work.steps} running steps and ${work.jobs} background jobs${list}. Interrupted runs resume when the daemon starts again.`]);
+  const notKnown = work.notKnown.length === 0 ? '' : `, and work that is not known in ${work.notKnown.join(', ')}, whose runtime did not answer in time`;
+  return escapedLines([`Stopping the daemon. This interrupts ${work.steps} running steps and ${work.jobs} background jobs${list}${notKnown}. Interrupted runs resume when the daemon starts again.`]);
 };
 
 export const daemonStop = async (ports: CliPorts & DaemonPorts, paths: MomongaPaths): Promise<number> => {
   const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports), undefined, (work) => {
-    if (work.steps + work.jobs > 0) ports.stdout.write(`${stoppingText(work)}\n`);
+    if (work.steps + work.jobs > 0 || work.notKnown.length > 0) ports.stdout.write(`${stoppingText(work)}\n`);
   });
   ports.stdout.write(stopped ? 'momonga daemon stopped\n' : `${NOT_RUNNING_TEXT}\n`);
   return 0;

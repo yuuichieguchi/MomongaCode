@@ -28,8 +28,10 @@ export type SupervisorExitReason =
   | 'retired'
   | 'version-mismatch';
 
+export type SupervisorChildRole = 'gateway' | 'runtime';
+
 export type SupervisorChildHealth = {
-  role: 'gateway' | 'runtime';
+  role: SupervisorChildRole;
   state: SupervisorChildState;
   pid?: number;
   startedAt?: string;
@@ -82,6 +84,7 @@ export type SupervisorHealth = {
   jobs?: number;
   calls?: number;
   interrupts?: InterruptedWorkItem[];
+  countsNotKnown?: SupervisorChildRole[];
   retention: RetentionStatusView | null;
 };
 

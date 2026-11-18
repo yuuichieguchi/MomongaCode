@@ -436,7 +436,7 @@ describe('momonga update: the daemon after the update', () => {
   it('says what finishes in the background when work of older generations is running (20.72)', async (context) => {
     const harness = await setupUpdate(context);
     harness.control.daemonRunning = true;
-    harness.control.retiring = { steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] };
+    harness.control.retiring = { steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'], notKnown: [] };
     publish(harness);
 
     await update(harness);

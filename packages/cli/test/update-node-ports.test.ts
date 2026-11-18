@@ -182,7 +182,7 @@ describe('daemon probe', () => {
       registerCleanup(context, () => supervisor.stop());
     }
 
-    expect(await nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] });
+    expect(await nodeDaemonProbe(paths, { clock: virtualClock(), endpointScope: testEndpointScope }, testKernelLock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'], notKnown: [] });
   });
 
   it('gives the ready bound of the daemon as the wait of the start after an install (20.72)', async (context) => {

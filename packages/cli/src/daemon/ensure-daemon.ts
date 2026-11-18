@@ -169,7 +169,11 @@ export const liveGenerationsUnderLock = async (ports: Pick<DaemonPorts, 'clock'>
     { boundMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the generation lock to list the running daemons' },
   );
 
-export type InterruptedWork = { steps: number; jobs: number; items: readonly InterruptedWorkItem[] };
+export type InterruptedWork = { steps: number; jobs: number; items: readonly InterruptedWorkItem[]; notKnown: readonly string[] };
+
+export const generationLabel = (health: SupervisorHealth): string => `v${health.version} (pid ${health.pid})`;
+
+export const runtimeCountsNotKnown = (health: SupervisorHealth): boolean => health.countsNotKnown?.includes('runtime') === true;
 
 export class DaemonStopTimeout extends PollTimeout {
   readonly remaining: readonly SupervisorHealth[];
@@ -234,6 +238,7 @@ export const stopDaemon = async (
     steps: sumOf(candidates.map((candidate) => candidate.health.steps)),
     jobs: sumOf(candidates.map((candidate) => candidate.health.jobs)),
     items: candidates.flatMap((candidate) => candidate.health.interrupts ?? []),
+    notKnown: candidates.filter((candidate) => runtimeCountsNotKnown(candidate.health)).map((candidate) => generationLabel(candidate.health)),
   });
   let stopValues: Promise<StopValues> | undefined;
   const values = (): Promise<StopValues> => (stopValues ??= readStopValues(ports, onNotice));
