@@ -169,6 +169,39 @@ describe.skipIf(!HAS_POSIX_SHELL)('node scripts/run-lock.ts', () => {
     expect(lines.indexOf('H1 end')).toBeLessThan(lines.indexOf('H2 start'));
   });
 
+  it('starts the light runs that arrived before a heavy waiter together while it waits, and keeps a light run that arrived after it waiting until it ends', async () => {
+    const first = await holdHeavy('H1');
+    const waits = (run: Started): Promise<void> => until(() => run.stderr().includes(' run waits up to 60 s for '), run);
+    const lightA = releaseFileOf('LA');
+    const a = wrapper(['light', ...BUDGET, '--wait', '60', '--', ...holderCommand('LA', lightA)]);
+    await waits(a);
+    const lightB = releaseFileOf('LB');
+    const b = wrapper(['light', ...BUDGET, '--wait', '60', '--', ...holderCommand('LB', lightB)]);
+    await waits(b);
+    const heavyRelease = releaseFileOf('H2');
+    const heavy = wrapper(['heavy', ...BUDGET, '--wait', '60', '--', ...holderCommand('H2', heavyRelease)]);
+    await waits(heavy);
+    const marker = path.join(root, 'late-light-ran');
+    const late = wrapper(['light', ...BUDGET, '--wait', '60', '--', ...quick(marker)]);
+    await waits(late);
+
+    fs.writeFileSync(first.release, '');
+    await until(() => eventLines().includes('LA start') && eventLines().includes('LB start'), a);
+    expect(eventLines()).not.toContain('H2 start');
+    expect(fs.existsSync(marker)).toBe(false);
+
+    fs.writeFileSync(lightA, '');
+    fs.writeFileSync(lightB, '');
+    await until(() => eventLines().includes('H2 start'), heavy);
+    expect(fs.existsSync(marker)).toBe(false);
+
+    fs.writeFileSync(heavyRelease, '');
+    expect(await late.exit).toBe(0);
+    expect(fs.existsSync(marker)).toBe(true);
+    const lines = eventLines();
+    expect(lines.indexOf('LB end')).toBeLessThan(lines.indexOf('H2 start'));
+  });
+
   it('TB25 gives up after --wait 1 with exit 72 when the holder stays', async () => {
     await holdHeavy();
     const second = wrapper(['heavy', ...BUDGET, '--wait', '1', '--', ...quick(path.join(root, 'ran'))]);
