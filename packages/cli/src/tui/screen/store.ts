@@ -77,7 +77,12 @@ export type TranscriptStore = {
   epoch(): number;
   subscribe(listener: StoreListener): () => void;
   reset(): void;
+  hold(): void;
+  release(): void;
+  shown(): TranscriptStore;
 };
+
+type Held = { entries: readonly StoreEntry[]; positions: ReadonlyMap<string, number>; firstId: number; state: TranscriptState; openKey: string | undefined; version: number; epoch: number };
 
 const settled = (entry: Entry): boolean => {
   switch (entry.kind) {
@@ -105,6 +110,7 @@ export const createTranscriptStore = (): TranscriptStore => {
   let storeVersion = 0;
   let epoch = 0;
   let openKey: string | undefined;
+  let held: Held | undefined;
   const listeners = new Set<StoreListener>();
 
   const tell = (entryId: number | undefined, version: number): void => {
@@ -123,7 +129,7 @@ export const createTranscriptStore = (): TranscriptStore => {
     return entry.kind === 'banner' ? index < entries.length - 1 : settled(entry);
   };
 
-  return {
+  const live: TranscriptStore = {
     count: () => entries.length,
     at,
     indexOfId: (id) => (id >= firstId && id < firstId + entries.length ? id - firstId : undefined),
@@ -183,5 +189,47 @@ export const createTranscriptStore = (): TranscriptStore => {
       epoch += 1;
       tell(undefined, storeVersion + 1);
     },
+    hold: () => {
+      held = { entries: [...entries], positions: new Map(positions), firstId, state, openKey, version: storeVersion, epoch };
+    },
+    release: () => {
+      if (held === undefined) return;
+      held = undefined;
+      tell(undefined, storeVersion + 1);
+    },
+    shown: () => shown,
   };
+
+  const heldAt = (frozen: Held, index: number): StoreEntry => {
+    const found = frozen.entries[index];
+    if (found === undefined) throw new Error(`the transcript has no entry at ${index}`);
+    return found;
+  };
+
+  const shown: TranscriptStore = {
+    ...live,
+    count: () => held?.entries.length ?? entries.length,
+    at: (index) => (held === undefined ? at(index) : heldAt(held, index)),
+    indexOfId: (id) => (held === undefined ? live.indexOfId(id) : id >= held.firstId && id < held.firstId + held.entries.length ? id - held.firstId : undefined),
+    byKey: (key) => {
+      if (held === undefined) return live.byKey(key);
+      const position = held.positions.get(key);
+      return position === undefined ? undefined : heldAt(held, position);
+    },
+    open: () => (held === undefined ? openKey : held.openKey),
+    state: () => held?.state ?? state,
+    settledAt: (index) => {
+      if (held === undefined) return settledAt(index);
+      const { entry } = heldAt(held, index);
+      return entry.kind === 'banner' ? index < held.entries.length - 1 : settled(entry);
+    },
+    version: () => held?.version ?? storeVersion,
+    epoch: () => held?.epoch ?? epoch,
+    subscribe: (listener) =>
+      live.subscribe((entryId, version) => {
+        if (held === undefined) listener(entryId, version);
+      }),
+  };
+
+  return live;
 };

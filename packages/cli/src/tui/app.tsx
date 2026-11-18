@@ -207,8 +207,9 @@ export function App(props: AppProps) {
   const [store] = useState(createTranscriptStore);
   const [origins] = useState(() => createOrigins(store));
   useEffect(() => origins.stop, [origins]);
-  useSyncExternalStore(store.subscribe, store.version);
-  const transcript = store.state();
+  const visible = store.shown();
+  useSyncExternalStore(visible.subscribe, visible.version);
+  const transcript = visible.state();
   const { now, timers } = props;
   const [openedAt] = useState(now);
   const baseSlash = props.slash ?? createSlashRegistry(DEFAULT_SLASH_COMMANDS);
@@ -800,6 +801,7 @@ export function App(props: AppProps) {
 
   const endReading = (): void => {
     readingRef.current = false;
+    store.release();
     runIdRef.current = undefined;
     setReconnectingSince(undefined);
     runLeft(store);
@@ -836,11 +838,13 @@ export function App(props: AppProps) {
       readingRef.current = false;
       notes?.rest();
       restored?.caughtUp();
+      store.release();
     };
     const queue = createReplayQueue(timers, (done) => {
       setLoading(done < total ? { done, total, startedAt } : undefined);
       if (done >= total) caughtUp();
     });
+    store.hold();
     notes?.before();
     if (total === 0) caughtUp();
     try {
@@ -1632,7 +1636,7 @@ export function App(props: AppProps) {
   }, [sessionModel, notices, unconnected, beforeConversation, displays, figureFits]);
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const view = useTranscriptView({
-    store,
+    store: visible,
     terminal,
     fullscreen: fullscreen && !switching,
     width: transcriptWidth,
@@ -1770,9 +1774,9 @@ export function App(props: AppProps) {
         transcript: fullscreen && toolView.shown ? (
           toolView.view
         ) : fullscreen ? (
-          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
+          <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={visible.count()} following={view.position.following} selection={view.selection} />
         ) : (
-          <HistoryView key={historyGeneration} store={store} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
+          <HistoryView key={historyGeneration} store={visible} source={view.source} feed={feed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
         ),
         menu: !menuShown ? null : invitationText.length > 0 ? <InvitationLine rows={fullscreen ? invitationText.slice(0, allocation.menu) : invitationText} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
@@ -1786,7 +1790,7 @@ export function App(props: AppProps) {
             ))}
           </>
         ) : null,
-        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, store.settledAt).length, rowRequests))} /> : null,
+        input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(feed.live(view.source, visible.settledAt).length, rowRequests))} /> : null,
         footer: (
           <>
             <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />

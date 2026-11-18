@@ -4,7 +4,7 @@ import type { RunEventFrame } from '../../src/client/runtime-client.ts';
 import { RESUME_PICKER_TITLE, conversationRow } from '../../src/tui/commands/resume.ts';
 import { runView } from '../fake-backend.ts';
 import type { FakeConversation } from '../fake-backend.ts';
-import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { runStarted, start, type } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 import { turnTimers } from './turn-timers.ts';
@@ -278,13 +278,70 @@ describe('reading a long conversation (9.2, 14.1, 14.2)', () => {
     expect(before).not.toContain('> long ago');
     clock.turn();
     const first = await untilFrame(app, 'loading the conversation 500 of 1200 events');
-    expect(first).toContain('the first answer');
+    expect(first).not.toContain('the first answer');
     expect(first).not.toContain('the last answer');
     clock.turn();
     await untilFrame(app, 'loading the conversation 1000 of 1200 events');
     clock.turn();
     const read = await untilFrame(app, (frame) => !frame.includes('loading the conversation') && frame.includes('the last answer'));
     expect(read).toMatch(IDLE);
+    app.unmount();
+  });
+});
+
+const MANY_REPLIES = 40;
+
+const manyReplies = (id: string, runId: string): FakeConversation => {
+  const events = Array.from({ length: MANY_REPLIES }, (_, index) => [
+    { type: 'user.message', text: `question ${index}` },
+    { type: 'agent.message.delta', attempt: 0, itemId: `m${index}`, text: `reply number ${index}.` },
+    ...Array.from({ length: 28 }, () => ({ type: 'usage.updated', inputTokens: 1, outputTokens: 1, totalTokens: 2 })),
+  ]).flat();
+  return { session: { id, createdAt: NOW }, firstPrompt: 'question 0', runs: [{ id: runId, status: 'RUNNING', frames: framesOf(runId, events) }] };
+};
+
+const showsEntry = (frame: string): boolean => /question \d+|reply number \d+/.test(frame);
+
+const readInOneFrame = async (app: Parameters<typeof type>[0], clock: ReturnType<typeof turnTimers>, from: number): Promise<string> => {
+  await untilFrame(app, 'loading the conversation 0 of 1200 events');
+  for (const done of [500, 1000]) {
+    await vi.waitFor(() => expect(clock.waiting()).toBeGreaterThan(0));
+    clock.turn();
+    await untilFrame(app, `loading the conversation ${done} of 1200 events`);
+  }
+  await vi.waitFor(() => expect(clock.waiting()).toBeGreaterThan(0));
+  clock.turn();
+  const whole = await untilFrame(app, (frame) => !frame.includes('loading the conversation') && frame.includes(`reply number ${MANY_REPLIES - 1}.`));
+  const frames = app.frames.slice(from);
+  const firstShown = frames.findIndex(showsEntry);
+  expect(firstShown).toBeGreaterThan(-1);
+  expect(frames.slice(0, firstShown).some((frame) => frame.includes('loading the conversation'))).toBe(true);
+  expect(frames.slice(firstShown).filter((frame) => frame.includes('loading the conversation') && showsEntry(frame))).toEqual([]);
+  expect(frames[firstShown]).toContain(`reply number ${MANY_REPLIES - 1}.`);
+  return whole;
+};
+
+describe('a reopened conversation appears in one frame (9.2)', () => {
+  it('--resume shows the loading row and none of the conversation until the replay is done, then all of it at its end, then live events', async () => {
+    const time = manualClock(NOW);
+    const clock = turnTimers(time);
+    const { app, backend } = await start({ conversations: [manyReplies('ffffffff66666666', 'many-1')] }, { reopen: { kind: 'id', id: 'ffffffff' }, now: time.now, timers: clock.timers });
+    await readInOneFrame(app, clock, 0);
+    backend.emit({ id: 1201, event: 'agent.message.delta', data: { runId: 'many-1', sessionId: 's', step: 1, createdAt: 1000, id: 1201, seq: 1201, type: 'agent.message.delta', attempt: 0, itemId: 'm39', text: ' Still going.' } as PublicRunEvent });
+    clock.turn();
+    await untilFrame(app, 'Still going.');
+    app.unmount();
+  });
+
+  it('/resume shows the conversation in one frame after the loading row', async () => {
+    const time = manualClock(NOW);
+    const clock = turnTimers(time);
+    const { app } = await start({ conversations: [manyReplies('ffffffff66666666', 'many-1')] }, { now: time.now, timers: settleAtOnce(clock.timers) });
+    await untilFrame(app, 'mode: manual');
+    while (clock.waiting() > 0) clock.turn();
+    const from = app.frames.length;
+    await enter(app, '/resume ffffffff');
+    await readInOneFrame(app, clock, from);
     app.unmount();
   });
 });
