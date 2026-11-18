@@ -136,11 +136,11 @@ describe('momonga models catalog and momonga models add --plan (O-R5-4 S5)', () 
     expect(await models['modelsCatalog']?.({ stdout: writer(), stderr: writer(), plan }, { json: false })).toBe(0);
   });
 
-  it('adds a model of a plan account to the settings through the one writer and prints the confirm sentence and the summary', async (context) => {
+  it('adds a model of a plan account to the settings through the one writer and prints only the summary under --yes', async (context) => {
     const at = homeWith(context, undefined);
     const harness = shellOf(at);
     expect(await runModelsForm(harness.shell, 'add', { args: [], options: { plan: 'chatgpt', model: 'gpt-wide', yes: true } })).toBe(0);
-    expect(harness.out()).toBe('Add gpt-wide to your settings?\nAdded gpt-wide. It is used from the next request.\n');
+    expect(harness.out()).toBe('Added gpt-wide. It is used from the next request.\n');
     expect(documentOf(at.settingsFile)).toEqual({ models: { connections: [{ adapter: 'open-responses', plan: { profile: 'chatgpt' }, models: [{ id: 'gpt-wide' }] }] } });
   });
 });
