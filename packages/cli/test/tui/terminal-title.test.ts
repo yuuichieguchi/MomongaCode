@@ -10,6 +10,8 @@ const ESC = '\u001b';
 const PUSH_TITLE = `${ESC}[22;2t`;
 const POP_TITLE = `${ESC}[23;2t`;
 const FOCUS_IN = `${ESC}[I`;
+const DA1_QUERY = `${ESC}[c`;
+const DA1_REPLY = `${ESC}[?1;2c`;
 
 const fakes = () => {
   const stdin = new EventEmitter();
@@ -150,6 +152,7 @@ describe('the title in the terminal layer', () => {
     t.layer.start();
     t.layer.setTitle('momonga · demo');
     t.layer.suspend();
+    t.feed(DA1_REPLY);
     t.writes.length = 0;
     t.raise('SIGCONT');
     const written = t.writes.join('');
@@ -175,8 +178,8 @@ describe('the background colour query', () => {
     t.layer.enable('focus');
     t.writes.length = 0;
     t.feed(FOCUS_IN);
-    expect(t.writes.join('')).toBe(BACKGROUND_QUERY);
-    t.feed(`${ESC}]11;rgb:ffff/ffff/ffff\u0007`);
+    expect(t.writes.join('')).toBe(`${BACKGROUND_QUERY}${DA1_QUERY}`);
+    t.feed(`${ESC}]11;rgb:ffff/ffff/ffff\u0007${DA1_REPLY}`);
     expect(t.layer.state().backgroundColor).toBe('rgb:ffff/ffff/ffff');
   });
 });

@@ -113,6 +113,8 @@ describe('a signal ends the screen through the one exit path, picker or waiting 
     const app = startOnLayer({ trust: { path: '/work/project', decision: null } });
     await app.shows('Do you trust the files in /work/project?');
     app.raise('SIGTERM');
+    expect(app.kills).toEqual([]);
+    app.feed(`${ESC}[?1;2c`);
     expect(app.kills).toEqual(['SIGTERM']);
     expect(app.control.join('')).toContain(`${ESC}[?2004l`);
     expect(app.processListeners.get('SIGTERM')?.size ?? 0).toBe(0);
@@ -127,6 +129,8 @@ describe('a signal ends the screen through the one exit path, picker or waiting 
     app.feed('\r');
     await app.shows('esc to cancel');
     app.raise('SIGTERM');
+    expect(app.kills).toEqual([]);
+    app.feed(`${ESC}[?1;2c`);
     expect(app.kills).toEqual(['SIGTERM']);
     expect(app.control.join('')).toContain(`${ESC}[?2004l`);
     expect(app.processListeners.get('SIGTERM')?.size ?? 0).toBe(0);
