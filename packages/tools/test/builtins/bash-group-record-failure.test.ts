@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, createMarker, hostProcessInspector, hostInspectorPorts, recordMarkerGroup, systemRandom } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { TEST_BUILTIN_TOOL_OFFER, REAL_PROCESS_TEST_TIMEOUT_MS, TEST_TOOL_LIMITS, testPaths, testLocks, TEST_CHILD_UNPROTECTED } from '@momonga/testkit';
 import { createMarkerSettle, nodeShellHost } from '@momonga/tools';
@@ -34,7 +34,7 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
     const handle = await createMarker(marker, { capability: UNMEASURED_CAPABILITY });
     fs.writeFileSync(marker, NOT_AN_ATTEMPT_RECORD);
     const warnings: string[] = [];
-    const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(testLocks().capability), capability: UNMEASURED_CAPABILITY } as never);
+    const inspector = hostProcessInspector({ ...hostInspectorPorts(testLocks().capability), capability: UNMEASURED_CAPABILITY } as never);
     const settle = createMarkerSettle({ marker, mode: handle.mode, inspector, killGraceMs: 300, onWarning: (message) => void warnings.push(message) });
     const recordFailures: unknown[] = [];
     const attached: number[] = [];
@@ -81,7 +81,8 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
     const command = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"; echo finished`;
     const result = await bashToolFor(TEST_BUILTIN_TOOL_OFFER).execute({ command }, ctx, undefined);
 
-    const output = (result as { output: string }).output;
+    const { output: printed, notes = [] } = result as { output: string; notes?: string[] };
+    const output = [printed, ...notes].join('\n');
     const outlived = Number(/pid:(\d+)/.exec(output)?.[1]);
     if (outlived > 1) trackPid(outlived);
     expect(recordFailures).toHaveLength(1);

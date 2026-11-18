@@ -1,4 +1,4 @@
-import { isRecord, uuidv7, validateUntrusted } from '@momonga/foundation';
+import { checkWithPatterns, isRecord, patternRefusal, uuidv7, validateUntrusted } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type {
   AdapterRequest,
@@ -55,6 +55,8 @@ export type ResponseEmitterOptions = {
   jsonReply?: JsonReplyPath | undefined;
   onOutput?: () => void;
   outputCeiling?: number | undefined;
+  signal: AbortSignal;
+  patternCheckLimitMs?: number;
 };
 
 const newId = (prefix: string, clock: Clock): string => `${prefix}_${uuidv7(clock).replaceAll('-', '')}`;
@@ -222,8 +224,8 @@ export class ResponseEmitter {
     this.emit({ type: 'response.function_call_arguments.delta', item_id: call.id, output_index: call.outputIndex, delta });
   }
 
-  completeCall(key: number): void {
-    this.closeItem(this.callOf(key), 'completed');
+  async completeCall(key: number): Promise<void> {
+    await this.closeCompletedCall(this.callOf(key));
   }
 
   get reasoningCount(): number {
@@ -317,8 +319,11 @@ export class ResponseEmitter {
     return reasoning;
   }
 
-  complete(usage: Usage | undefined, contextInputTokens?: number, cacheWriteInputTokens?: number): void {
-    this.closeOpenItems('completed');
+  async complete(usage: Usage | undefined, contextInputTokens?: number, cacheWriteInputTokens?: number): Promise<void> {
+    for (const item of this.openItemsInOrder()) {
+      if (item.kind === 'call') await this.closeCompletedCall(item);
+      else this.closeItem(item, 'completed');
+    }
     this.emit({
       type: 'response.completed',
       response: {
@@ -373,9 +378,33 @@ export class ResponseEmitter {
     return call;
   }
 
-  private closeOpenItems(status: ItemStatus): void {
-    const items = [...this.open.values()].sort((left, right) => left.outputIndex - right.outputIndex);
-    for (const item of items) this.closeItem(item, status);
+  private openItemsInOrder(): OpenItem[] {
+    return [...this.open.values()].sort((left, right) => left.outputIndex - right.outputIndex);
+  }
+
+  private closeOpenItems(status: 'incomplete'): void {
+    for (const item of this.openItemsInOrder()) this.closeItem(item, status);
+  }
+
+  private async closeCompletedCall(call: OpenCall): Promise<void> {
+    this.open.delete(call.outputIndex);
+    this.invertCallArguments(call);
+    await this.checkNonStrictArguments(call);
+    this.finishCall(call, 'completed');
+  }
+
+  private invertCallArguments(call: OpenCall): void {
+    const record = this.options.wraps?.get(call.name);
+    if (record === undefined) return;
+    call.args = invertReply(record, call.args);
+    if (call.args !== '') this.emit({ type: 'response.function_call_arguments.delta', item_id: call.id, output_index: call.outputIndex, delta: call.args });
+  }
+
+  private finishCall(call: OpenCall, status: ItemStatus): void {
+    this.emit({ type: 'response.function_call_arguments.done', item_id: call.id, output_index: call.outputIndex, arguments: call.args });
+    const done = this.callItem(call, status);
+    this.doneItems.push(done);
+    this.emit({ type: 'response.output_item.done', output_index: call.outputIndex, item: done });
   }
 
   private closeItem(item: OpenItem, status: ItemStatus): void {
@@ -385,16 +414,8 @@ export class ResponseEmitter {
       return;
     }
     if (item.kind === 'call') {
-      const record = this.options.wraps?.get(item.name);
-      if (record !== undefined) {
-        item.args = invertReply(record, item.args);
-        if (item.args !== '') this.emit({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: item.outputIndex, delta: item.args });
-      }
-      if (status === 'completed') this.checkNonStrictArguments(item);
-      this.emit({ type: 'response.function_call_arguments.done', item_id: item.id, output_index: item.outputIndex, arguments: item.args });
-      const done = this.callItem(item, status);
-      this.doneItems.push(done);
-      this.emit({ type: 'response.output_item.done', output_index: item.outputIndex, item: done });
+      this.invertCallArguments(item);
+      this.finishCall(item, status);
       return;
     }
     item.parts.forEach((part, index) => {
@@ -417,14 +438,18 @@ export class ResponseEmitter {
     this.emit({ type: 'response.output_item.done', output_index: item.outputIndex, item: done });
   }
 
-  private checkNonStrictArguments(call: OpenCall): void {
+  private async checkNonStrictArguments(call: OpenCall): Promise<void> {
     const nonStrict = this.options.nonStrict;
     if (nonStrict === undefined || !nonStrict.has(call.name)) return;
     const schema = nonStrict.get(call.name);
     const parsed = usableUpstreamJson(call.args);
     if (!isRecord(parsed)) throw new MalformedOutputError(`the arguments of tool call "${call.name}" are not a JSON object`);
     if (!isRecord(schema)) return;
-    const verdict = validateUntrusted(`gateway/non-strict-tool/${call.name}`, schema, parsed);
+    const { signal, patternCheckLimitMs } = this.options;
+    const checked = await checkWithPatterns(() => validateUntrusted(`gateway/non-strict-tool/${call.name}`, schema, parsed), { signal, ...(patternCheckLimitMs === undefined ? {} : { patternCheckLimitMs }) });
+    if (checked.kind === 'stopped') throw signal.reason;
+    if (checked.kind === 'not-checked') throw new MalformedOutputError(patternRefusal(`arguments of ${call.name}`, parsed, checked));
+    const verdict = checked.value;
     if (verdict.valid) return;
     const reasons = verdict.errors.map((error) => `${error.instancePath === '' ? 'the arguments' : error.instancePath} ${error.message}`).join('; ');
     throw new MalformedOutputError(`the arguments of tool call "${call.name}" do not match its schema: ${reasons}`);

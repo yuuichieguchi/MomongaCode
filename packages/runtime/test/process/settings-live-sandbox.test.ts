@@ -1,16 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, decodeOtlpSpans, startOtlpCollector, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
+import { HOST_SANDBOX_KIND, REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, decodeOtlpSpans, startOtlpCollector, REAL_PROCESS_WAIT_MS } from '@momonga/testkit';
 import { onCleanup, writeInvalidUserSettings } from './helpers.ts';
 import { finishApprovingPrompts, launchRuntime, prepareStack, scriptedToolCall, startGateway, startStack, waitForCondition, waitForStatus } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FINAL = ['COMPLETED', 'FAILED', 'CANCELLED'];
-const HOST_KIND = process.platform === 'darwin' ? 'seatbelt' : 'bubblewrap';
-const OTHER_KIND = process.platform === 'darwin' ? 'bubblewrap' : 'seatbelt';
-const OTHER_PLATFORM = process.platform === 'darwin' ? 'linux' : 'darwin';
+const HOST_KIND = HOST_SANDBOX_KIND;
+const OTHER_KIND = HOST_SANDBOX_KIND === 'seatbelt' ? 'bubblewrap' : 'seatbelt';
+const OTHER_LAUNCHER = OTHER_KIND === 'seatbelt' ? { name: 'sandbox-exec', path: '/usr/bin/sandbox-exec' } : { name: 'bwrap', path: '/usr/bin/bwrap' };
+const LAUNCHERS_LOOKED_FOR = '/usr/bin/sandbox-exec (seatbelt) and /usr/bin/bwrap (bubblewrap)';
 const BYPASS = { permissionMode: 'bypassPermissions', bypassAllowed: true };
 
 const textReply = (text: string) => ({ kind: 'stream' as const, chunks: [{ delta: { role: 'assistant', content: text }, finishReason: 'stop' }] });
@@ -95,7 +96,7 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
     expect(refused.status).toBe(422);
     expect(refused.json.error).toMatchObject({
       code: 'config_error',
-      message: `sandbox "${OTHER_KIND}" is only available on ${OTHER_PLATFORM}; set "sandbox" in ${settingsFile} to "none" to run without a sandbox (Bash will then ask before every command); new runs are refused until the file is fixed, running runs continue`,
+      message: `${OTHER_LAUNCHER.name} is not available at ${OTHER_LAUNCHER.path}; the sandbox launchers looked for are ${LAUNCHERS_LOOKED_FOR}; set "sandbox": "none" in ${settingsFile} to run without a sandbox (Bash will then ask before every command); new runs are refused until the file is fixed, running runs continue`,
     });
     hold.release();
     expect(await waitForStatus(stack.temp, running.id, FINAL)).toBe('COMPLETED');

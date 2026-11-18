@@ -460,7 +460,10 @@ const notObservedNote = (reason: string): string => `${NOT_OBSERVED_LEAD}: ${rea
 const oversizedNote = (files: readonly string[]): string =>
   `${NOT_OBSERVED_LEAD} for files over ${OBSERVED_UNTRACKED_FILE_MAX_BYTES} bytes that the repository does not track: ${files.join(', ')}`;
 
-const withNote = (result: ToolResult, note: string | undefined): ToolResult => (note === undefined ? result : { ...result, output: `${result.output}\n${note}` });
+const withNote = (result: ToolResult, note: string | undefined): ToolResult => (note === undefined ? result : { ...result, notes: [...(result.notes ?? []), note] });
+
+const withNotes = (output: string, notes: readonly string[] | undefined): string =>
+  (notes ?? []).reduce((text, note) => (text === '' ? note : `${text}\n${note}`), output);
 
 const recordedFactsOf = (record: ToolIdempotencyRecord): SubjectFacts => {
   const stored = record.meta['facts'];
@@ -712,7 +715,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const truncated: FittedOutput = formatted ?? (await fittedOutput(result, fit, runId));
     return {
       status: result.status,
-      output: truncated.output,
+      output: withNotes(truncated.output, result.notes),
       ...(result.content === undefined ? {} : { content: result.content }),
       ...(result.plan === undefined ? {} : { plan: result.plan }),
       ...(result.skill === undefined ? {} : { skill: result.skill }),
@@ -1447,7 +1450,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
     if (hooked === undefined) return result;
     if (hooked.halt !== undefined) haltBatch(batch, hooked.halt.reason, 'PostToolUse');
-    return hooked.feedback === undefined ? result : { ...result, output: `${result.output}\n\n[PostToolUse hook]\n${hooked.feedback}` };
+    return hooked.feedback === undefined ? result : { ...result, notes: [...(result.notes ?? []), `\n[PostToolUse hook]\n${hooked.feedback}`] };
   };
 
   const observations = new WeakMap<object, ObservationState>();

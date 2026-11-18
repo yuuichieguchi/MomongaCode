@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
+import { RULE_VERIFY_BUDGET_MS, RULE_VERIFY_LOAD_ALLOWANCE_MS } from '@momonga/protocol';
 import { REFLECTION_PICKUP_BOUND_MS } from '@momonga/runtime';
 import * as waits from './wait.ts';
 import { DEFAULT_LEASE_MS } from '../../packages/runtime/src/process/start-runtime-process.ts';
@@ -18,7 +18,7 @@ import {
   E2E_LEASE_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
   E2E_ORPHAN_GRACE_MS,
-  E2E_PHASE2_REACHED_BOUND_MS,
+  E2E_PHASE2_HELD_BOUND_MS,
   E2E_READY_DEADLINE_MS,
   E2E_REAP_TO_RUNNING_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
@@ -67,7 +67,7 @@ describe('wait constants', () => {
   });
 
   it('wait for phase 2 of the orphan reap exactly as long as phase 1 of the short-grace e2e supervisor lasts, plus the observer margin', () => {
-    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS);
+    expect(E2E_PHASE2_HELD_BOUND_MS).toBe(orphanPhaseOneBoundMs({ orphanGraceMs: E2E_ORPHAN_GRACE_MS, orphanPollMs: ORPHAN_POLL_MS, predecessorStopValues: E2E_STOP_VALUES }) + E2E_MARGIN_MS);
   });
 
   it('give a test the sum of the bounds it waits on in sequence, plus the observer margin', () => {
@@ -188,7 +188,16 @@ describe('the bounds a test waits on', () => {
     expect(waits.E2E_MCP_AUTHORIZATION_BOUND_MS).toBe(MCP_CONNECT_TIMEOUT_LIMITS.default + waits.E2E_MARGIN_MS);
   });
 
-  it('give a run that verifies its rules the rule verify budget', () => {
-    expect(waits.E2E_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RECOVERY_BOUND_MS + RULE_VERIFY_BUDGET_MS + waits.E2E_MARGIN_MS);
+  it('give one verification of rules the time the product allows its solver thread to load and its budget', () => {
+    expect(waits.E2E_RULE_VERIFICATION_BOUND_MS).toBe(RULE_VERIFY_LOAD_ALLOWANCE_MS + RULE_VERIFY_BUDGET_MS);
+  });
+
+  it('give a run that verifies its rules at its start one verification', () => {
+    expect(waits.E2E_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RECOVERY_BOUND_MS + waits.E2E_RULE_VERIFICATION_BOUND_MS + waits.E2E_MARGIN_MS);
+  });
+
+  it('give a run created under a mandate a second verification, the one its creation waits for, and fit it in the test timeout', () => {
+    expect(waits.E2E_MANDATE_RUN_COMPLETED_BOUND_MS).toBe(waits.E2E_RULE_VERIFICATION_BOUND_MS + waits.E2E_RUN_COMPLETED_BOUND_MS);
+    expect(waits.E2E_MANDATE_RUN_COMPLETED_BOUND_MS).toBeLessThan(waits.E2E_TEST_TIMEOUT_MS);
   });
 });

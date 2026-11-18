@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { itWithDocuments } from '@momonga/testkit';
 import { RUNTIME_TEARDOWN_BUDGET_MS } from '@momonga/foundation';
 import { OTLP_EXPORTS_PER_TEARDOWN, OTLP_EXPORT_TIMEOUT_MS, OTLP_TEARDOWN_SHARE } from '@momonga/observability';
 import { hasRow } from '../../../test/support/host-bounds-scan.ts';
@@ -19,15 +20,10 @@ describe('the export bound of the trace exporter is derived from the teardown bu
 });
 
 const documentTitle = `writes the derivation of every named constant of the trace and the cost report in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
-const constantsDocument = process.env[CONSTANTS_DOCUMENT_VARIABLE];
 
 describe('the constants of the observability package carry their derivation', () => {
-  if (constantsDocument === undefined) {
-    it(documentTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
-  } else {
-    it(documentTitle, () => {
-      const missing = Object.entries(DOCUMENTED).flatMap(([file, names]) => names.filter((name) => !hasRow(fs.readFileSync(path.join(constantsDocument, file), 'utf8'), name)));
-      expect(missing).toEqual([]);
-    });
-  }
+  itWithDocuments(CONSTANTS_DOCUMENT_VARIABLE, import.meta.dirname, documentTitle, (constantsDocument) => {
+    const missing = Object.entries(DOCUMENTED).flatMap(([file, names]) => names.filter((name) => !hasRow(fs.readFileSync(path.join(constantsDocument, file), 'utf8'), name)));
+    expect(missing).toEqual([]);
+  });
 });

@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { itWithDocuments } from '@momonga/testkit';
 import { CONCEPTS, MESSAGE_KEYS, NOT_RUN_REASONS, SURFACES, STOP_REASONS, VOCABULARY, WORDS, attachRunCommand, bannedVariantsIn, budgetSentence, messageOf, notRunWord, reopenSessionCommand, shellQuote, stopWord, withBillingRemedy, withSignInRemedy } from '../src/index.ts';
 import type { BudgetExhausted, VocabularyRow } from '../src/index.ts';
 
@@ -11,7 +14,7 @@ describe('the one vocabulary table (ruling 2026-11-11, cli-commands DECISION-10)
 
   it('keeps the words the model names design fixes, and a server is a model server', () => {
     expect([WORDS.connection, WORDS.provider, WORDS.ownName, WORDS.server]).toEqual(['connection', 'provider', 'own name', 'server']);
-    expect(['connection', 'provider', 'ownName'].map((concept) => VOCABULARY[concept as 'connection' | 'provider' | 'ownName'].fixedBy.startsWith('design-model-names-2026-11-10.md'))).toEqual([true, true, true]);
+    expect(['connection', 'provider', 'ownName'].map((concept) => VOCABULARY[concept as 'connection' | 'provider' | 'ownName'].fixedBy.startsWith('design/models.md section '))).toEqual([true, true, true]);
     expect(VOCABULARY.server.concept).toBe('a model server the product starts or finds');
     expect([...VOCABULARY.connection.banned, ...VOCABULARY.provider.banned, ...VOCABULARY.ownName.banned]).toEqual([]);
   });
@@ -28,6 +31,34 @@ describe('the one vocabulary table (ruling 2026-11-11, cli-commands DECISION-10)
     expect(bannedVariantsIn('the context was compacted by a compaction')).toEqual([]);
     expect(bannedVariantsIn('MomongaCode runs the momonga command')).toEqual([]);
     expect(bannedVariantsIn('Momonga Code').map((use) => use.word)).toEqual(['MomongaCode']);
+  });
+});
+
+const DESIGN_DOCUMENTS_VARIABLE = 'MOMONGA_DESIGN_DOCUMENTS';
+const DESIGN_CITATION = /^design\/([a-z-]+\.md) sections? (\d+(?:\.\d+)*)(?: to (\d+(?:\.\d+)*))?$/;
+
+const citationsOf = (concept: (typeof CONCEPTS)[number]): string[] => rowOf(concept).fixedBy.split('; ');
+
+const designCitations = CONCEPTS.flatMap((concept) => citationsOf(concept).map((citation) => ({ concept, citation })));
+
+describe('every fixedBy names a section of a permanent design document (design/protocol-schema.md B7)', () => {
+  it('cites for every concept a design as design/<area>.md section <n>, and nothing else', () => {
+    expect(designCitations.filter(({ citation }) => !DESIGN_CITATION.test(citation))).toEqual([]);
+    expect(CONCEPTS.flatMap((concept) => rowOf(concept).banned.flatMap((banned) => ('keptFor' in banned ? [banned.keptFor] : []))).filter((note) => /design-[a-z-]+(?:-\d{4}-\d{2}-\d{2})?\.md/.test(note))).toEqual([]);
+  });
+
+  itWithDocuments(DESIGN_DOCUMENTS_VARIABLE, import.meta.dirname, `finds the file and the section of every design citation in the design folder named by ${DESIGN_DOCUMENTS_VARIABLE}`, (folder) => {
+    const missing = designCitations.flatMap(({ concept, citation }) => {
+      const [, file, ...sections] = DESIGN_CITATION.exec(citation) ?? [];
+      const target = path.join(folder, file as string);
+      if (!fs.existsSync(target)) return [`${concept}: ${citation}: no file ${target}`];
+      const text = fs.readFileSync(target, 'utf8');
+      return sections
+        .filter((section): section is string => section !== undefined)
+        .filter((section) => !new RegExp(`^(?:#+ )?${section.replaceAll('.', '\\.')}[. ]`, 'm').test(text))
+        .map((section) => `${concept}: ${citation}: no section ${section} in ${file}`);
+    });
+    expect(missing).toEqual([]);
   });
 });
 

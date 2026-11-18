@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as foundation from '@momonga/foundation';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS, itWithDocuments } from '@momonga/testkit';
 import { hasRow } from './support/host-bounds-scan.ts';
 import { parsedProductSource, productSources, relativeOf } from './support/source-scan.ts';
+
+vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
 const CONSTANTS_DOCUMENT_VARIABLE = 'MOMONGA_CONSTANTS_DOCUMENT';
 const FOUNDATION_ROWS = 'foundation-supervisor-packaging.md';
@@ -45,14 +48,9 @@ describe('a foundation constant is one rule with one name', () => {
     expect(foundation.ABANDON_KILL_GRACE_MS).toBe(foundation.DAEMON_MARKER_KILL_GRACE_MS);
   });
 
-  const constantsDocument = process.env[CONSTANTS_DOCUMENT_VARIABLE];
   const rowsTitle = `finds the row of every foundation constant whose name carries no unit in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
-  if (constantsDocument === undefined) {
-    it(rowsTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
-  } else {
-    it(rowsTitle, () => {
-      const document = fs.readFileSync(path.join(constantsDocument, FOUNDATION_ROWS), 'utf8');
-      expect(NAMED_WITHOUT_A_UNIT.filter((name) => !hasRow(document, name))).toEqual([]);
-    });
-  }
+  itWithDocuments(CONSTANTS_DOCUMENT_VARIABLE, import.meta.dirname, rowsTitle, (constantsDocument) => {
+    const document = fs.readFileSync(path.join(constantsDocument, FOUNDATION_ROWS), 'utf8');
+    expect(NAMED_WITHOUT_A_UNIT.filter((name) => !hasRow(document, name))).toEqual([]);
+  });
 });

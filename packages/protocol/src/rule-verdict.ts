@@ -6,6 +6,8 @@ export const POLICY_VERDICT_NOTICE_CODE = 'policy_verdict';
 
 export const RULE_VERIFY_BUDGET_MS = 60_000;
 
+export const RULE_VERIFY_LOAD_ALLOWANCE_MS = 10_000;
+
 export const RULE_VERDICTS = ['proved', 'refuted', 'unknown', 'failed', 'not-needed'] as const;
 
 export type RuleVerdictKind = (typeof RULE_VERDICTS)[number];

@@ -91,6 +91,14 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(next.output.trimEnd()).toBe(sub);
   });
 
+  it('keeps the cwd reset note out of the output the formatter sees, and puts it after the output', async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const seen: string[] = [];
+    const result = resultOf(await bash(tools, `echo printed; cd ${tools.layout.outside}`, { formatOutput: ({ output }) => void seen.push(output) }));
+    expect(seen).toEqual(['printed']);
+    expect(result.output).toBe('printed\nShell cwd was reset to .');
+  });
+
   it('resets a cd outside the roots and says so', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, `cd ${tools.layout.outside}`));

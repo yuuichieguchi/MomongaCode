@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, EXIT_RETIRED, MAXIMUM_STOP_VALUES, gatewayAbortBudgetMs, gatewayStopBudgetMs, runtimeAbortStopBudgetMs, runtimeStopBudgetMs } from '@momonga/foundation';
-import { afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness, T0 } from './support/p2-manager-harness.ts';
@@ -251,8 +251,29 @@ describe('start-up stall limit', () => {
     await harness.timers.advanceAsync(1);
     await stopLineWritten();
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
+    expect(harness.logLines().filter((line) => line['msg'] === 'child.stop')).toEqual([
+      expect.objectContaining({ stop: 'startup-timeout', lastProgressStep: 'store', lastProgressAt: new Date(T0 + PROGRESS_EVERY_MS).toISOString() }),
+    ]);
     await exitAndWait(harness, 'backoff', 0);
     expect(harness.manager.health().lastExit?.reason).toBe('startup-timeout');
+  });
+
+  it('a child silent from its spawn is stopped naming that no progress was seen', async (context) => {
+    const harness = await createManagerHarness(context);
+    await harness.spawnInitial();
+    await harness.timers.advanceAsync(STARTUP_TIMEOUT_MS);
+    await stopLineWritten();
+    expect(harness.logLines().filter((line) => line['msg'] === 'child.stop')).toEqual([expect.objectContaining({ stop: 'startup-timeout', lastProgressStep: null, lastProgressAt: null })]);
+  });
+
+  it('the stall limit is the startupTimeoutMs the supervisor was given', async (context) => {
+    const harness = await createManagerHarness(context, { overrides: { startupTimeoutMs: 240_000 } });
+    await harness.spawnInitial();
+    await harness.timers.advanceAsync(240_000 - 1);
+    expect(harness.port.last().signals).toEqual([]);
+    await harness.timers.advanceAsync(1);
+    await stopLineWritten();
+    expect(harness.port.last().signals).toEqual(['SIGTERM']);
   });
 
   it('progress of another process does not re-arm the limit', async (context) => {
@@ -324,7 +345,7 @@ describe('exit classification in the manager', () => {
     expect(harness.timers.pending()).toEqual([]);
   });
 
-  it('exit 77 does not respawn on a timer and makes the holder external at once', async (context) => {
+  it('exit 77 does not respawn on a timer and makes the holder external at once', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (context) => {
     const harness = await createManagerHarness(context);
     harness.lock.holdExternally(firstGeneration(harness.paths).locks.runtime, process.pid);
     await harness.spawnInitial();

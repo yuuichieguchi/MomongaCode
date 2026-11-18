@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TIME_BOUND, hasRow, scanProduct, scanSource } from './support/host-bounds-scan.ts';
 import type { FoundConstant, HostBounds, PerFile } from './support/host-bounds-scan.ts';
 import { ROOT, parseSource } from './support/source-scan.ts';
-import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { SOURCE_SCAN_TEST_TIMEOUT_MS, itWithDocuments } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -215,25 +215,19 @@ describe('every host bound is registered once', () => {
     expect(Object.values(registry.burnDown.synchronousChildWaits).filter((wait) => wait.fixedBy.trim() === '')).toEqual([]);
   });
 
-  const constantsDocument = process.env[CONSTANTS_DOCUMENT_VARIABLE];
   const rowsTitle = `finds the row of every ruled constant in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
 
   const staleTitle = `keeps on the burn-down list no constant said to lack a row that has one in the constants document named by ${CONSTANTS_DOCUMENT_VARIABLE}`;
 
-  if (constantsDocument === undefined) {
-    it(rowsTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
-    it(staleTitle, (context) => context.skip(`${CONSTANTS_DOCUMENT_VARIABLE} names no document in this run; the release gate sets it`));
-  } else {
-    it(rowsTitle, () => {
-      expect(registry.constants.filter((entry) => !hasRow(fs.readFileSync(path.join(constantsDocument, entry.row), 'utf8'), entry.name))).toEqual([]);
-    });
-    it(staleTitle, () => {
-      const documents = fs
-        .readdirSync(constantsDocument)
-        .filter((file) => file.endsWith('.md'))
-        .map((file) => fs.readFileSync(path.join(constantsDocument, file), 'utf8'));
-      const rowed = (name: string): boolean => documents.some((document) => hasRow(document, name));
-      expect(registry.burnDown.constants.filter((entry) => entry.lacks.includes('row') === rowed(entry.name)).map(keyOf)).toEqual([]);
-    });
-  }
+  itWithDocuments(CONSTANTS_DOCUMENT_VARIABLE, import.meta.dirname, rowsTitle, (constantsDocument) => {
+    expect(registry.constants.filter((entry) => !hasRow(fs.readFileSync(path.join(constantsDocument, entry.row), 'utf8'), entry.name))).toEqual([]);
+  });
+  itWithDocuments(CONSTANTS_DOCUMENT_VARIABLE, import.meta.dirname, staleTitle, (constantsDocument) => {
+    const documents = fs
+      .readdirSync(constantsDocument)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => fs.readFileSync(path.join(constantsDocument, file), 'utf8'));
+    const rowed = (name: string): boolean => documents.some((document) => hasRow(document, name));
+    expect(registry.burnDown.constants.filter((entry) => entry.lacks.includes('row') === rowed(entry.name)).map(keyOf)).toEqual([]);
+  });
 });

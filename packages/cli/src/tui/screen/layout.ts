@@ -29,12 +29,12 @@ export const allocate = (height: number, requests: RowRequests): RowAllocation =
     left -= given;
     return given;
   };
-  const invitation = panel === undefined ? take(requests.invitation) : 0;
-  const waiting = take(requests.waiting);
   const inputExtra = panel === undefined ? take(Math.min(requests.inputRows, inputRowsCap(height)) - 1) : 0;
-  const menu = invitation + (panel === undefined ? take(Math.min(requests.menu, menuRowsCap(height))) : 0);
   const subagents = take(Math.min(requests.subagents, subagentRowsCap(height)));
   const footerSecond = take(requests.footerSecond);
+  const invitation = panel === undefined ? take(requests.invitation) : 0;
+  const waiting = take(requests.waiting);
+  const menu = invitation + (panel === undefined ? take(Math.min(requests.menu, menuRowsCap(height))) : 0);
   const lines = panel === undefined ? take(requests.lines) : 0;
   return { viewport: VIEWPORT_ROWS + left, menu, waiting, lines, input: reservedInput + inputExtra, footer: FOOTER_ROWS + footerSecond, subagents };
 };

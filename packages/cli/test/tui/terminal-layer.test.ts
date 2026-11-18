@@ -1,11 +1,11 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { HANDOVER_TERMINAL_ENV, KEY_SETTLE_MS, NO_FULLSCREEN_NOTICE, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES, PASTE_TOO_LARGE_NOTICE } from '../../src/tui/terminal/constants.ts';
+import { HANDOVER_TERMINAL_ENV, KEY_SETTLE_MS, NEGOTIATION_DRAIN_MS, NO_FULLSCREEN_NOTICE, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES, PASTE_TOO_LARGE_NOTICE } from '../../src/tui/terminal/constants.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { handoverTerminalValue, parseHandoverTerminal, startFromHandover } from '../../src/tui/terminal/handover.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { DeliverableSignal, ProcessEvent, ProcessSignal, ScreenRequest, TerminalLayerOptions } from '../../src/tui/terminal/layer.ts';
-import { LEAVE_EVERY_MODE, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
+import { BACKGROUND_QUERY, DEVICE_ATTRIBUTES_QUERY, LEAVE_EVERY_MODE, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
 import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
 import { manualClock } from './screen-clock.ts';
 
@@ -336,6 +336,7 @@ describe('the one restore path', () => {
   it('leaves only the modes that were entered', () => {
     const t = fakes({ screen: 'scrollback' });
     t.layer.start();
+    t.feed(`${KITTY_REPLY}${DA1_REPLY}`);
     t.writes.length = 0;
     t.layer.close();
     expect(t.writes).toEqual([`${ESC}[?2004l${ESC}[<u`]);
@@ -348,6 +349,7 @@ describe('the one restore path', () => {
     t.layer.enable('focus');
     t.layer.disable('focus');
     expect(t.writes).toEqual([SCROLLBACK_START, `${ESC}[?1004h`, `${ESC}[?1004l`]);
+    t.feed(`${KITTY_REPLY}${DA1_REPLY}`);
     t.writes.length = 0;
     t.layer.close();
     expect(t.writes).toEqual([`${ESC}[?2004l${ESC}[<u`]);
@@ -384,6 +386,118 @@ describe('the one restore path', () => {
     const t = fakes();
     t.layer.start();
     for (const event of ['exit', 'SIGINT', 'SIGTERM', 'SIGHUP', 'uncaughtExceptionMonitor'] as const) expect(t.listening(event), event).toBe(true);
+  });
+});
+
+describe('no reply to a query is left for another reader of the terminal', () => {
+  const unanswered = (): Fakes => {
+    const t = fakes();
+    t.layer.start();
+    t.writes.length = 0;
+    t.log.length = 0;
+    return t;
+  };
+
+  const LATE_REPLIES = `${ESC}[?1049;1$y${ESC}[?2026;2$y${ESC}]11;rgb:0000/0000/0000${ESC}\\${DA1_REPLY}`;
+
+  it('keeps reading at Ctrl+Z until the last reply has come, consumes the replies, then stops the process', () => {
+    const t = unanswered();
+    t.feed('\u001a');
+    expect(t.kills).toEqual([]);
+    expect(t.dataListeners()).toBe(1);
+    expect(t.log).toEqual([]);
+    t.feed(LATE_REPLIES);
+    expect(t.log.slice(-2)).toEqual(['raw:false', 'kill:SIGSTOP']);
+    expect(t.layer.state().enabled).toEqual([]);
+    expect(t.delivered.filter((event) => event.type === 'key')).toEqual([]);
+  });
+
+  it('stops the process at the bound when the terminal never answers', () => {
+    const t = unanswered();
+    t.feed('\u001a');
+    t.clock.advance(NEGOTIATION_DRAIN_MS - 1);
+    expect(t.kills).toEqual([]);
+    t.clock.advance(1);
+    expect(t.kills).toEqual(['SIGSTOP']);
+  });
+
+  it('hands the terminal to a program only after the last reply, which the layer consumes', async () => {
+    const t = unanswered();
+    let left = false;
+    const leaving = t.layer.leaveForProgram().then((back) => {
+      left = true;
+      return back;
+    });
+    await Promise.resolve();
+    expect(left).toBe(false);
+    expect(t.dataListeners()).toBe(1);
+    t.feed(LATE_REPLIES);
+    const back = await leaving;
+    expect(t.dataListeners()).toBe(0);
+    expect(t.delivered.filter((event) => event.type === 'key')).toEqual([]);
+    await back();
+  });
+
+  it('hands the terminal to a program at the bound when the terminal never answers', async () => {
+    const t = unanswered();
+    const leaving = t.layer.leaveForProgram();
+    t.clock.advance(NEGOTIATION_DRAIN_MS);
+    await leaving;
+    expect(t.dataListeners()).toBe(0);
+  });
+
+  it('closes only after the last reply, which the layer consumes', async () => {
+    const t = unanswered();
+    let closed = false;
+    const closing = t.layer.close().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    expect(t.dataListeners()).toBe(1);
+    t.feed(LATE_REPLIES);
+    await closing;
+    expect(t.dataListeners()).toBe(0);
+    expect(t.delivered.filter((event) => event.type === 'key')).toEqual([]);
+  });
+
+  it('closes at the bound when the terminal never answers', async () => {
+    const t = unanswered();
+    const closing = t.layer.close();
+    t.clock.advance(NEGOTIATION_DRAIN_MS);
+    await closing;
+    expect(t.dataListeners()).toBe(0);
+  });
+
+  it.each(['SIGINT', 'SIGTERM', 'SIGHUP'] as const)('on %s reads the replies still owed before it leaves and raises the signal again', (signal) => {
+    const t = unanswered();
+    t.raise(signal);
+    expect(t.kills).toEqual([]);
+    t.feed(DA1_REPLY);
+    expect(t.kills).toEqual([signal]);
+    expect(t.dataListeners()).toBe(0);
+  });
+
+  it('asks for the device attributes after the background colour at focus in, and waits for that answer too', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(DA1_REPLY);
+    t.layer.enable('focus');
+    t.writes.length = 0;
+    t.feed(`${ESC}[I`);
+    expect(t.writes).toEqual([`${BACKGROUND_QUERY}${DEVICE_ATTRIBUTES_QUERY}`]);
+    t.feed('\u001a');
+    expect(t.kills).toEqual([]);
+    t.feed(`${ESC}]11;rgb:ffff/ffff/ffff${ESC}\\${DA1_REPLY}`);
+    expect(t.kills).toEqual(['SIGSTOP']);
+  });
+
+  it('leaves at once when every query has its answer', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(DA1_REPLY);
+    t.feed('\u001a');
+    expect(t.kills).toEqual(['SIGSTOP']);
   });
 });
 
@@ -632,6 +746,8 @@ describe('a lone ESC and the key settle', () => {
   it('does not wait for a settle after the terminal was released', () => {
     const t = fakes();
     t.layer.start();
+    t.feed(`${KITTY_REPLY}${DA1_REPLY}`);
+    t.delivered.length = 0;
     t.feed(ESC);
     t.layer.close();
     expect(t.clock.pending()).toBe(0);

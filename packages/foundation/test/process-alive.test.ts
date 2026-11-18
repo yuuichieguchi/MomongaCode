@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { isProcessAlive, linuxRunStateOf } from '../src/process-alive.ts';
+import { isProcessAlive, linuxRunStateOf, runStateOfHost } from '../src/process-alive.ts';
 
 const delivered = (): void => undefined;
 
@@ -45,13 +45,43 @@ describe('isProcessAlive', () => {
     expect(linuxRunStateOf(read)(42)).toBeUndefined();
   });
 
-  it('a host child that has exited but is not yet waited for is not alive', async () => {
-    const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  it('a host child is alive until it exits and is not alive once its exit is reported', async () => {
+    const child = spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'ignore', 'ignore'] });
     const pid = child.pid as number;
     const exited = new Promise((resolve) => child.once('exit', resolve));
-    const deadline = Date.now() + 5000;
-    while (isProcessAlive(pid) && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
-    expect(isProcessAlive(pid)).toBe(false);
+    expect(isProcessAlive(pid)).toBe(true);
+    child.stdin.end();
     await exited;
+    expect(isProcessAlive(pid)).toBe(false);
+  });
+});
+
+describe('runStateOfHost: the run state is read where the host reports it, never chosen by the platform name (B1)', () => {
+  const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+
+  it('reads /proc when the host serves its own /proc/self/stat', () => {
+    const asked: string[] = [];
+    const stateOf = runStateOfHost((file) => {
+      asked.push(file);
+      return '42 (node) Z 1 2 3';
+    });
+    expect(asked).toEqual(['/proc/self/stat']);
+    expect(stateOf?.(42)).toBe('Z');
+  });
+
+  it.each([['ENOENT'], ['ENOTDIR']])('has no run-state reader when /proc/self/stat is absent (%s)', (code) => {
+    expect(
+      runStateOfHost(() => {
+        throw errno(code);
+      }),
+    ).toBeNull();
+  });
+
+  it('lets any other failure of the probe propagate rather than guessing', () => {
+    expect(() =>
+      runStateOfHost(() => {
+        throw errno('EIO');
+      }),
+    ).toThrow('EIO');
   });
 });

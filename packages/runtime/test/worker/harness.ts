@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, HOST_RULE_ENFORCEMENT, nodeFileSystem, nodeFileSystemSync, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, fixedRolePort, nodeFileSystem, nodeFileSystemSync, openDatabase, sha256Hex, systemRandom, BUSY_WAIT_LIMIT_MS, momongaLayout, ruleEnforcementOf } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { pinnedFloorFor } from '@momonga/context';
 import type { InstructionReader } from '@momonga/context';
@@ -18,7 +18,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
-import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector, createTempDir, TEST_UNPROTECTED_LAUNCH } from '@momonga/testkit';
+import { unconfiguredNetworkOf, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, driveFakeTime, testProbes, testPaths, testKernelLock, testLocks, testProcessInspector, createTempDir, TEST_UNPROTECTED_LAUNCH, HOST_SANDBOX_KIND } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -112,7 +112,7 @@ afterEach(async () => {
   if (errors.length > 0) throw errors[0];
 });
 
-export const inertMemoryPort: MemoryPort = { load: async () => ({ prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, tools: [] }) };
+export const inertMemoryPort: MemoryPort = { load: async () => ({ prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, touchedCap: () => undefined, tools: [] }) };
 
 export const inertHistoryPort: HistoryPort = { load: async () => ({ tools: [] }) };
 
@@ -375,7 +375,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     policyFor: async (target: Session, policyOptions: { env: ToolEnv; rules: readonly PermissionRule[] }) => {
       portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });
       const roots = [target.cwd, EXTRA_ROOT];
-      const fileRules = await computeFileRules(policyOptions.rules, roots, sessionTmpDir, HOST_RULE_ENFORCEMENT, testProbes());
+      const fileRules = await computeFileRules(policyOptions.rules, roots, sessionTmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND), testProbes());
       return { roots, sandboxPolicy: { ...sandboxPolicy, fileRules }, tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
     },
     recoveryContextFor: async (target: Session, recoveryOptions: { env: ToolEnv }) => ({ roots: [target.cwd, EXTRA_ROOT], tmpDir: sessionTmpDir, env: recoveryOptions.env }),

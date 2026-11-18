@@ -27,6 +27,7 @@ export type ObservedTrees = { from: string; to: string };
 export type ToolResult = {
   status: 'completed' | 'failed';
   output: string;
+  notes?: string[];
   content?: ToolContent[];
   plan?: PlanEntry[];
   skill?: SkillActivation;

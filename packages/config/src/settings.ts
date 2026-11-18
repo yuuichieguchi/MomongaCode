@@ -20,7 +20,14 @@ export type PermissionsSettings = {
   additionalDirectories?: string[];
 };
 
-export type McpStdioServerConfig = {
+export type McpServerCallBounds = {
+  timeoutMs?: number;
+  idleTimeoutMs?: number;
+};
+
+export const MCP_SERVER_CALL_BOUND_KEYS = ['timeoutMs', 'idleTimeoutMs'] as const satisfies ReadonlyArray<keyof McpServerCallBounds>;
+
+export type McpStdioServerConfig = McpServerCallBounds & {
   type?: 'stdio';
   command: string;
   args?: string[];
@@ -35,7 +42,7 @@ export type McpOAuthConfig = {
   callbackPort?: number;
 };
 
-export type McpRemoteServerConfig = {
+export type McpRemoteServerConfig = McpServerCallBounds & {
   type: 'http';
   url: string;
   headers?: Record<string, string>;
@@ -392,6 +399,8 @@ export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean;
 
 export type UpdateSettings = { stallTimeoutMs?: number };
 
+export type DaemonSettings = { startupStallMs?: number };
+
 export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[]; plaintextTokenFiles?: boolean };
 
 export type NetworkSettings = { httpProxy?: string; httpsProxy?: string; noProxy?: string; extraCaFiles?: string[]; environment?: boolean };
@@ -444,6 +453,7 @@ export type Settings = {
   models?: ModelsSettings;
   autoUpdates?: boolean;
   update?: UpdateSettings;
+  daemon?: DaemonSettings;
   tui?: TuiSettings;
   gateway?: GatewaySettings;
   runtime?: RuntimeSettings;

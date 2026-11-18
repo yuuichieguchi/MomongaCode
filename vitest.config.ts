@@ -4,6 +4,7 @@ import { hostE2eFileWorkers } from './e2e/support/parallelism.ts';
 import { hostTlcRowsAtOnce } from './test/formal/tlc-rows.ts';
 import { RUN_CLASS_KEY } from './scripts/support/run-class.ts';
 import { HARNESS_INPUTS, testReusePlan } from './test/support/test-reuse.ts';
+import { documentEnvironmentOf } from './packages/testkit/src/document-folders.ts';
 
 const CALIBRATION_TESTS = 'packages/*/test/calibration/**/*.test.ts';
 
@@ -29,6 +30,10 @@ const SETUP = {
     globalSetup: ['test/support/run-lock.ts', 'test/support/main-observation.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'e2e/global-setup.ts', 'test/support/lock-proof.ts'],
   },
 };
+
+const DOCUMENT_ENVIRONMENT = documentEnvironmentOf(import.meta.dirname, process.env);
+
+Object.assign(process.env, DOCUMENT_ENVIRONMENT);
 
 const REUSE = testReusePlan(import.meta.dirname, {
   shared: [...HARNESS_INPUTS, ...REPORTERS.filter((reporter) => reporter.startsWith('./')).map((reporter) => reporter.slice(2))],

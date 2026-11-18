@@ -388,6 +388,12 @@ describe('a value interpolated into a print-mode note stays on its own line', ()
     expect(err).toEqual([`momonga: MCP server docs ${SHOWN} needs authorization; run: momonga mcp login docs ${SHOWN}\n`]);
   });
 
+  it('adds the command line remedy to a stored fallback notice from its structured cause', () => {
+    const { sink, err } = printSink();
+    sink.handle(frame({ type: 'notice', level: 'warning', code: 'fallback_target', message: 'The model call was answered by the fallback model secondary. Did not fall back to metered: billing from plan to metered is not allowed.', fallback: { target: 'secondary', causes: [{ target: 'metered', name: 'metered', code: null, message: 'billing refused', reason: 'billing_change_refused', fromBilling: 'plan', toBilling: 'metered' }] } }));
+    expect(err).toEqual(['momonga: warning: The model call was answered by the fallback model secondary. Did not fall back to metered: billing from plan to metered is not allowed. Run momonga models billing allow plan metered.\n']);
+  });
+
   it('prints a notice message with a newline on the notice line', () => {
     const { sink, err } = printSink();
     sink.handle(frame({ type: 'notice', level: 'warning', message: FORGED }));

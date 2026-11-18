@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SHUTDOWN_SETTING_LIMITS, STARTUP_TIMEOUT_MS } from '@momonga/foundation';
 import { HOOK_DEFAULT_TIMEOUT_SECONDS } from '@momonga/protocol';
 import {
   DEFAULT_RETENTION_DAYS,
@@ -8,7 +8,6 @@ import {
   SETTING_UNIT_OF,
   defaultContextSettings,
   defaultMemorySettings,
-  defaultSandboxSetting,
   defaultToolsSettings,
   defaultVerificationSettings,
   DEFAULT_UPDATE_STALL_TIMEOUT_MS,
@@ -21,13 +20,20 @@ type Node = Readonly<Record<string, unknown>>;
 
 const isNode = (value: unknown): value is Node => typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const propertyOf = (node: Node, step: string): unknown => {
+  if (isNode(node['properties'])) return node['properties'][step];
+  const branches = Array.isArray(node['oneOf']) ? node['oneOf'].filter(isNode) : [];
+  const found = branches.map((branch) => (isNode(branch['properties']) ? branch['properties'][step] : undefined)).filter(isNode);
+  return found.length === branches.length && found.length > 0 ? found[0] : undefined;
+};
+
 const nodeAt = (path: readonly string[]): Node => {
   let node: unknown = SETTINGS_SCHEMA;
   for (const step of path) {
     if (!isNode(node)) throw new Error(`no schema at ${path.join('.')}`);
     if (step === '[]') node = node['items'];
     else if (step === '<name>') node = node['additionalProperties'];
-    else node = isNode(node['properties']) ? node['properties'][step] : undefined;
+    else node = propertyOf(node, step);
   }
   if (!isNode(node)) throw new Error(`no schema at ${path.join('.')}`);
   return node;
@@ -61,6 +67,7 @@ const DEFAULTS: readonly [string, unknown][] = [
   ['retention.days', DEFAULT_RETENTION_DAYS],
   ...Object.entries(defaultTuiSettings()).map(([key, value]): [string, unknown] => [`tui.${key}`, value]),
   ['update.stallTimeoutMs', DEFAULT_UPDATE_STALL_TIMEOUT_MS],
+  ['daemon.startupStallMs', STARTUP_TIMEOUT_MS],
   ['models.headersTimeoutMs', FIVE_MINUTES_MS],
   ['models.idleTimeoutMs', FIVE_MINUTES_MS],
   ['mcp.toolIdleTimeoutNetworkMs', MCP_TOOL_IDLE_TIMEOUT_MS.network],
@@ -85,6 +92,7 @@ const UNITS: readonly [string, string][] = [
   ['tools.search.timeoutMs', 'milliseconds'],
   ['tools.operations.timeoutMs', 'milliseconds'],
   ['update.stallTimeoutMs', 'milliseconds'],
+  ['daemon.startupStallMs', 'milliseconds'],
   ['mcp.toolIdleTimeoutNetworkMs', 'milliseconds'],
   ['mcp.toolIdleTimeoutStdioMs', 'milliseconds'],
   ['mcp.toolTotalTimeoutMs', 'milliseconds'],
@@ -97,6 +105,8 @@ const UNITS: readonly [string, string][] = [
   ['runtime.drainTimeoutMs', 'milliseconds'],
   ['ceilings.timeMs', 'milliseconds'],
   ['mandates.<name>.timeMs', 'milliseconds'],
+  ['mcpServers.<name>.timeoutMs', 'milliseconds'],
+  ['mcpServers.<name>.idleTimeoutMs', 'milliseconds'],
   ['limits.maxCostUsd', 'USD'],
   ['ceilings.costUsd', 'USD'],
   ['mandates.<name>.costUsd', 'USD'],
@@ -126,9 +136,8 @@ describe('the settings schema states the default the product takes and the unit 
     expect(SETTING_DEFAULTS_BY['hooks.<name>[].hooks[].timeout']).toEqual({ by: 'event', values: byEvent });
   });
 
-  it('sandbox has the default of each platform the product chooses, beside the schema', () => {
-    const platforms = ['darwin', 'linux', 'win32'] as const;
-    expect(SETTING_DEFAULTS_BY['sandbox']).toEqual({ by: 'platform', values: Object.fromEntries(platforms.map((platform) => [platform, defaultSandboxSetting(platform)])) });
+  it('sandbox has the default of each OS mechanism, and none where the product has no mechanism, beside the schema', () => {
+    expect(SETTING_DEFAULTS_BY['sandbox']).toEqual({ by: 'platform', values: { darwin: 'seatbelt', linux: 'bubblewrap', win32: 'none' } });
   });
 
   it('names only settings the schema declares, and the schema itself carries no keyword of its own for them', () => {

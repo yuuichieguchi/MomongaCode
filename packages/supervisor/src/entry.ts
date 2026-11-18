@@ -1,4 +1,4 @@
-import { createStopValuesReader, readUserStopValuesOrDefault } from '@momonga/config';
+import { createStopValuesReader, readUserStartupStallMsOrDefault, readUserStopValuesOrDefault } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
 import {
   COMMON_ENTRY_FLAGS,
@@ -59,9 +59,12 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
       const lockMechanism = context.locks.mechanism;
       const inspector = layoutProcessInspector(context.locks.capability);
       const stopValuesAtStart = stopValuesOf(context.logger);
-      stopValuesAtStart.remember(await readUserStopValuesOrDefault({ env: process.env, home: context.home, signal: context.signal, onNotice: (message) => context.logger.warn(message) }));
+      const userSettingsRead = { env: process.env, home: context.home, signal: context.signal, onNotice: (message: string) => context.logger.warn(message) };
+      stopValuesAtStart.remember(await readUserStopValuesOrDefault(userSettingsRead));
+      const startupTimeoutMs = deps.startupTimeoutMs ?? (await readUserStartupStallMsOrDefault(userSettingsRead));
       const supervisor = await startSupervisor({
         ...deps,
+        startupTimeoutMs,
         reaperPass: deps.reaperPass ?? entryReaperPass({ ...deps, lockMechanism, inspector }, { home: context.home, env: context.env, clock, timers, logger, stopValues: stopValuesAtStart }),
         clock,
         timers,

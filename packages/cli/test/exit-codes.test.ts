@@ -41,7 +41,8 @@ describe('the exit codes of packages/cli/src', () => {
     expect(unknown).toEqual([]);
   });
 
-  it('reads the table: usage is 2, waiting for approval is 75, 76 is reserved, the held daemon lock is 77, interrupted is 130', () => {
-    expect([EXIT_CODES.usage.code, EXIT_CODES.waitingForApproval.code, EXIT_CODES.versionMismatchReserved.code, EXIT_CODES.alreadyRunning.code, EXIT_CODES.interrupted.code]).toEqual([2, 75, 76, 77, 130]);
+  it('reads the table: usage is 2, waiting for approval is 75, the held daemon lock is 77, interrupted is 130, and 76 is not a code', () => {
+    expect([EXIT_CODES.usage.code, EXIT_CODES.waitingForApproval.code, EXIT_CODES.alreadyRunning.code, EXIT_CODES.interrupted.code]).toEqual([2, 75, 77, 130]);
+    expect(Object.values(EXIT_CODES).map((entry) => entry.code)).not.toContain(76);
   });
 });
