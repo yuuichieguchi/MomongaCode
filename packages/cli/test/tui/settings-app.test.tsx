@@ -15,6 +15,7 @@ import { testKernelLock } from '@momonga/testkit';
 vi.setConfig({ testTimeout: TUI_TEST_TIMEOUT_MS });
 
 const CLEAR = `${KEYS.ctrlA}${KEYS.ctrlK}`;
+const LONG_PROGRAM = '/opt/tools/search/bin/ripgrep-from-the-team-share';
 const SUBMIT = `${KEYS.ctrlX}${KEYS.enter}`;
 
 const open = (started: Started): Promise<string> => command(started, '/config', SETTINGS_TITLE);
@@ -107,7 +108,10 @@ describe('/config, the settings screen', () => {
     { key: 'daemon.startupStallMs', filter: 'daemon process', edit: `${CLEAR}45000${KEYS.enter}`, value: '45000  user', applies: APPLIES_NEXT_DAEMON_START, stored: { daemon: { startupStallMs: 45000 } } },
     { key: 'tui.mouse', filter: 'Mouse', edit: '', value: 'off  user', applies: APPLIES_NEXT_SESSION, stored: { tui: { mouse: false } } },
     { key: 'tools.bash.drainIdleMs', filter: 'read no further', edit: `${CLEAR}2500${KEYS.enter}`, value: '2500  user', applies: APPLIES_NOW, stored: { tools: { bash: { drainIdleMs: 2500 } } } },
+    { key: 'tools.ripgrep', filter: 'ripgrep', edit: `${CLEAR}${LONG_PROGRAM}${KEYS.enter}`, value: `${LONG_PROGRAM}  user`, applies: APPLIES_NOW, stored: { tools: { ripgrep: LONG_PROGRAM } } },
   ] as const;
+
+  const packedText = (text: string): string => text.replace(/\s+/g, '');
 
   const insideFrame = (line: string): string => line.replace(/^│ ?/, '').replace(/ *│ *$/, '');
 
@@ -119,7 +123,7 @@ describe('/config, the settings screen', () => {
     return head !== undefined && tail !== undefined && head.length > 0 && label.startsWith(head) && label.endsWith(tail) && tail.endsWith(lastSegment);
   };
 
-  for (const size of [{ columns: 100, rows: 40 }, { columns: 40, rows: 24 }]) {
+  for (const size of [{ columns: 100, rows: 40 }, { columns: 40, rows: 24 }, { columns: 40, rows: 12 }, { columns: 40, rows: 16 }, { columns: 40, rows: 30 }]) {
     describe(`at ${size.columns}x${size.rows} on a terminal, the written row shows its key, its whole value and the whole applies text`, () => {
       for (const write of WRITES) {
         it(`for ${write.key}`, async () => {
@@ -129,16 +133,18 @@ describe('/config, the settings screen', () => {
           await app.type('/config', (lines) => lines.some((line) => line.includes('/config')), 'the command is typed');
           await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes(SETTINGS_TITLE)), 'the settings screen opens');
           await app.type(write.filter, (lines) => lines.some((line) => line.includes(`filter: ${write.filter}`)), 'the filter is typed');
-          await app.type(KEYS.enter, (lines) => write.edit === '' || lines.some((line) => line.includes('a whole number from 1')), 'the row opens');
-          if (write.edit !== '') await app.type(write.edit, (lines) => lines.some((line) => line.includes(SETTINGS_TITLE)), 'the value is entered');
+          await app.type(KEYS.enter, (lines) => write.edit === '' || !lines.some((line) => line.includes(`filter: ${write.filter}`)), 'the row opens');
+          if (write.edit !== '') await app.type(write.edit, (lines) => lines.some((line) => line.includes('filter: ')), 'the value is entered');
           const shown = (await app.type('', (lines) => lines.some((line) => line.includes(write.applies)), 'the applies text is shown')).map(insideFrame);
           const selected = shown.findIndex((line) => line.startsWith('› '));
           expect(selected, shown.join('\n')).toBeGreaterThanOrEqual(0);
           const row = shown[selected] ?? '';
-          expect(row.endsWith(write.value) || row.includes(`${write.value}  ${write.applies}`), shown.join('\n')).toBe(true);
-          expect(keyShown(row.slice(2, row.indexOf(`  ${write.value}`)), label), shown.join('\n')).toBe(true);
-          expect([row, shown[selected + 1] ?? ''].some((line) => line.trim() === write.applies || line.endsWith(`  ${write.applies}`)), shown.join('\n')).toBe(true);
-          expect(shown.some((line) => line.includes('to move')), shown.join('\n')).toBe(true);
+          const block = shown.slice(selected, selected + 6);
+          const valueOnRow = row.includes(`  ${write.value}`);
+          expect(valueOnRow || packedText(block.slice(1).join('')).includes(packedText(write.value)), shown.join('\n')).toBe(true);
+          expect(keyShown(valueOnRow ? row.slice(2, row.indexOf(`  ${write.value}`)) : row.slice(2).trim(), label), shown.join('\n')).toBe(true);
+          expect(block.some((line) => line.trim() === write.applies || line.endsWith(`  ${write.applies}`)), shown.join('\n')).toBe(true);
+          expect(shown.some((line) => line.includes('to move') || (size.rows < 16 && line.includes('more lines'))), shown.join('\n')).toBe(true);
           expect(stored(place.userFile)).toEqual(write.stored);
           app.close();
         });

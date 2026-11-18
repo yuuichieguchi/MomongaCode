@@ -246,7 +246,7 @@ const choiceText = (label: string, number: number | undefined, disabled: boolean
 const choicePrefix = (selected: boolean, screenReader: boolean): string => (screenReader ? '' : `${selected ? SELECTED_MARKER : ' '} `);
 
 const ELLIPSIS = '…';
-const KEY_TAIL_MINIMUM = 4;
+const KEY_SHORTEST = 12;
 
 const widthSlice = (text: string, room: number, from: 'start' | 'end'): string => {
   const segments = segmentsOf(text);
@@ -287,10 +287,10 @@ export const choiceLines = ({ key, value, kept }: ChoiceParts, prefix: string, w
   if (shownKept !== undefined && displayWidth(`${withValue}${PART_GAP}${shownKept}`) <= width) return [`${withValue}${PART_GAP}${shownKept}`];
   if (displayWidth(withValue) <= width || shownValue === undefined) return [withValue, ...keptLines];
   const keyRoom = width - displayWidth(prefix) - PART_GAP.length - displayWidth(shownValue);
-  if (keyRoom >= Math.min(displayWidth(key), KEY_TAIL_MINIMUM + displayWidth(ELLIPSIS))) return [`${prefix}${shortenedKey(key, keyRoom)}${PART_GAP}${shownValue}`, ...keptLines];
-  const keyLine = `${prefix}${shortenedKey(key, Math.max(1, width - displayWidth(prefix)))}`;
-  if (!whole) return [`${keyLine}${PART_GAP}${shownValue}`, ...keptLines];
-  return [keyLine, ...ownLines(shownValue, displayWidth(prefix) + PART_GAP.length, width), ...keptLines];
+  const shortest = Math.min(displayWidth(key), KEY_SHORTEST);
+  if (keyRoom >= shortest) return [`${prefix}${shortenedKey(key, keyRoom)}${PART_GAP}${shownValue}`, ...keptLines];
+  if (!whole) return [`${prefix}${shortenedKey(key, shortest)}${PART_GAP}${shownValue}`, ...keptLines];
+  return [`${prefix}${shortenedKey(key, Math.max(1, width - displayWidth(prefix)))}`, ...ownLines(shownValue, displayWidth(prefix) + PART_GAP.length, width), ...keptLines];
 };
 
 const partsOf = (row: SelectRow, number: number | undefined): ChoiceParts => ({ key: choiceText(row.label, number, row.disabled), ...(row.value === undefined ? {} : { value: row.value }), ...(row.kept === undefined ? {} : { kept: row.kept }) });
@@ -317,7 +317,9 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
   const moreRow = more > 0 && textRoom > 0;
   const capacity = Math.max(1, listRows);
   const position = Math.max(0, listed.indexOf(state.index));
-  const span = spanAt(listed.length, state.scrolled ? state.top : topFor(position, state.top, listed.length, capacity), capacity);
+  const windowed = spanAt(listed.length, state.scrolled ? state.top : topFor(position, state.top, listed.length, capacity), capacity);
+  const onlyHighlighted = listed.length > 0 && windowed.end <= windowed.start;
+  const span = onlyHighlighted ? { start: position, end: position + 1 } : windowed;
   const items = listed.slice(span.start, span.end);
   return {
     text: shown,
@@ -326,8 +328,8 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
     items,
     itemLines: items.map((index) => linesOfRow(spec.rows[index], stops.indexOf(index) + 1, rowWidth, screenReader, index === state.index)),
     rowWidth,
-    above: span.start,
-    below: listed.length - span.end,
+    above: onlyHighlighted ? 0 : span.start,
+    below: onlyHighlighted ? 0 : listed.length - span.end,
     listTop: border / 2 + shown.length + (moreRow ? 1 : 0) + filterRows,
     capacity,
   };

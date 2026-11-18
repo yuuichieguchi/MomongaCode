@@ -31,7 +31,7 @@ export const startOnTerminal = async (size: { columns: number; rows: number }, o
   });
   const stdin = Object.assign(new EventEmitter(), { isTTY: false, setEncoding: () => undefined, setRawMode: () => undefined, ref: () => undefined, unref: () => undefined, read: () => null, resume: () => undefined, pause: () => undefined });
   const terminal = fakeScreenTerminal(size);
-  const instance = render(<App backend={fakeBackend(options)} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} onExit={() => undefined} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true });
+  const instance = render(<App backend={fakeBackend(options)} terminal={terminal} initialMode={undefined} now={Date.now} timers={systemTiming} startup={{ version: '1.2.3', home: options.settingsPlace?.home ?? '/home/none' }} onExit={() => undefined} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true });
   const parser = createInputParser();
   const screen = (): string[] => shown.text();
   const until = async (holds: (lines: string[]) => boolean, description: string): Promise<string[]> => {
