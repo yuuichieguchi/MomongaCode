@@ -54,6 +54,16 @@ describe('/jobs typed in the terminal UI lists the jobs of the session it is typ
     app.unmount();
   });
 
+  it('passes the session it opened at launch before its first run', async () => {
+    const { app, argvs } = await open({ session: { id: OWN_SESSION, createdAt: 100 }, conversations: [conversation(OTHER_SESSION, 50, 'run-of-other')] });
+    await untilFrame(app, IDLE);
+
+    await typedJobs(app, argvs);
+
+    expect(argvs).toEqual([['jobs', OWN_SESSION]]);
+    app.unmount();
+  });
+
   it('passes the session it was reopened in before any run is made in it here', async () => {
     const { app, argvs } = await open({ conversations: [conversation(OWN_SESSION, 1, 'run-of-own'), conversation(OTHER_SESSION, 50, 'run-of-other')] }, { kind: 'id', id: OWN_SESSION });
 
