@@ -1004,8 +1004,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const resolveInTransaction = (approvalId: string, optionId: string, now: number, resolvedBy: Surface | undefined): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
     if (approval === undefined || (approval.kind !== 'permission' && approval.kind !== 'unknown_effect')) return { kind: 'not_found' };
-    if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status, approval: viewOf(approval) };
-    if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
+    const announced = approvalAnnounced(approval.runId, approval.id);
+    if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status, ...(announced ? { approval: viewOf(approval) } : {}) };
+    if (!announced) return { kind: 'request_missing' };
     const run = requireRun(approval.runId);
     if (run.cancelRequested) return { kind: 'run_cancelled' };
     if (!approval.options.some((option) => option.optionId === optionId)) return { kind: 'option_not_offered' };
