@@ -42,6 +42,7 @@ import { meteredPrecondition, requireMeasurementConsent } from './consent.ts';
 import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import { meteredGateOf } from './probe-endpoint.ts';
 import { DeclaredWindowAboveReportedError } from './declared-window.ts';
+import type { PreconditionFailedError } from '../adapters/shared/failures.ts';
 
 export type ProbeOllamaTargetOptions = {
   ports: ProbePorts;
@@ -312,6 +313,15 @@ export const ollamaPrecondition = (upstream: UpstreamEndpoint, ports: ProbeHostP
     const tags = await withClient(upstream, ports, signal, (client) => jsonOf(client, 'GET', TAGS_PATH), identityTraffic());
     if (digestIn(tags, model) !== undefined) return { kind: 'met' };
     return { kind: 'refused', message: `the Ollama server does not list the model "${model}"`, detail: `GET ${TAGS_PATH} has no entry for it`, remedy: `ollama pull ${model}` };
+  },
+});
+
+export const refusingAfter = (precondition: ProbePrecondition, refusal: PreconditionFailedError): ProbePrecondition => ({
+  boundMs: precondition.boundMs,
+  check: async (signal) => {
+    const verdict = await precondition.check(signal);
+    if (verdict.kind === 'refused') return verdict;
+    return { kind: 'refused', message: refusal.message, detail: refusal.detail ?? '', remedy: refusal.remediation };
   },
 });
 

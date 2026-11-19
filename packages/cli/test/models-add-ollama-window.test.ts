@@ -186,7 +186,7 @@ describe('a metered Ollama model with no stated window is measured within the bo
     const fake = await startFakeOllama({ show: METERED_SHOW });
     const bound = measurementBoundOf(131072, DEFAULT_SAMPLES);
     const servedHome = meteredHome(fake.origin);
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home: servedHome, env: baseEnv(servedHome), version: PROCESS_VERSION, measureOllama: () => new Promise(() => undefined) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home: servedHome, env: baseEnv(servedHome), version: PROCESS_VERSION });
 
     const refused = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `paid/${OLLAMA_LISTED}`, input: userInput('hi') }));
 

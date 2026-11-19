@@ -113,7 +113,7 @@ import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, ol
 import { answersAsOllama, readOllamaDigest, readOllamaReported } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
 import type { OllamaDeclaredCapabilities } from './probe/ollama-target.ts';
-import { DeclaredWindowAboveReportedError, refusingAdapter, reportedWindowAt } from './probe/declared-window.ts';
+import { DeclaredWindowAboveReportedError, ReportedWindowMissingError, refusingAdapter, reportedWindowAt } from './probe/declared-window.ts';
 import { preconditionText } from './precondition-text.ts';
 import { keyReadLimitOf } from './key-read-limit.ts';
 import type { KeyReadLimit } from './key-read-limit.ts';
@@ -162,7 +162,7 @@ import type { ManagedRecordCurrency, ManagedRecordKey } from './probe/record.ts'
 import { lockKeyOf, managedCurrencyOf, managedKeyReader, managedPrecondition, managedProbeSubject, measureManagedServer } from './probe/probe-managed.ts';
 import { endpointPrecondition, endpointProbeSubject, measureEndpoint, meteredGateOf } from './probe/probe-endpoint.ts';
 import type { EndpointMeasurement } from './probe/probe-endpoint.ts';
-import { measureOllama, ollamaPrecondition, ollamaProbeSubject } from './probe/ollama.ts';
+import { measureOllama, ollamaPrecondition, ollamaProbeSubject, refusingAfter } from './probe/ollama.ts';
 import type { OllamaMeasurement } from './probe/ollama.ts';
 import { endpointKeyOfLock, endpointLockKeyOf } from './probe/endpoint-record.ts';
 import type { EndpointKey, EndpointLockKey } from './probe/endpoint-record.ts';
@@ -685,14 +685,15 @@ const createProbedOllamaAdapter = async (
   const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, displayOf()), key);
   const loaded = await readRecord();
   const statedWindow = target.writtenCapabilities.contextWindow;
-  const subjectFor = (contextWindow: number) => {
-    const metered = isMeteredTarget(target) ? { displayOf, declaredContextWindow: contextWindow } : undefined;
+  const listed = ollamaPrecondition(upstream, probes.ports, target.model);
+  const subjectFor = (contextWindow: number | undefined) => {
+    const metered = isMeteredTarget(target) && contextWindow !== undefined ? { displayOf, declaredContextWindow: contextWindow } : undefined;
     return ollamaProbeSubject({
       target: endpointLockKeyOf(key).target,
       key,
       probeRecordDir,
       lock: probes.lock,
-      precondition: ollamaPrecondition(upstream, probes.ports, target.model),
+      precondition: isMeteredTarget(target) && contextWindow === undefined ? refusingAfter(listed, new ReportedWindowMissingError(displayOf(), endpoint)) : listed,
       measure:
         (probes.measureOllama === undefined ? undefined : onRecordKey(probes.measureOllama)) ??
         measureOllama({

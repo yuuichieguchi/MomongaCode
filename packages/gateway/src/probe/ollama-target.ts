@@ -31,7 +31,7 @@ export type ProbedOllamaTargetOptions = {
   record: OllamaEndpointRecord | null;
   readRecord: () => Promise<OllamaEndpointRecord | null>;
   readReported: () => Promise<ReportedFields>;
-  startProbe: (ask: MeasuringAsk, contextWindow: number) => Promise<Probing>;
+  startProbe: (ask: MeasuringAsk, contextWindow: number | undefined) => Promise<Probing>;
   readDigest: (signal: AbortSignal) => Promise<string | undefined>;
 };
 
@@ -61,12 +61,14 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
     return { ...options.declared, contextWindow, maxOutputTokens: written.maxOutputTokens ?? maxOutputTokensFor(contextWindow) };
   };
 
+  const measuring = async (reported: ReportedFields): Promise<never> => {
+    throw targetProbingError(await options.startProbe(measuringAskOf(options.displayOf(), unknownFieldsOf({ toolCalling: options.toolCalling }, reported)), written.contextWindow ?? reported.contextWindow));
+  };
+
   const fromSources = async (): Promise<Capabilities> => {
     const reported = await readReported();
-    const declared = declaredFor(reported);
-    const served = sourcedCapabilities(declared, written, options.toolCalling, reported);
-    if (served !== undefined) return served;
-    throw targetProbingError(await options.startProbe(measuringAskOf(options.displayOf(), unknownFieldsOf({ toolCalling: options.toolCalling }, reported)), declared.contextWindow));
+    if (unknownFieldsOf({ toolCalling: options.toolCalling }, reported).length > 0) return measuring(reported);
+    return sourcedCapabilities(declaredFor(reported), written, options.toolCalling, reported) ?? measuring(reported);
   };
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {

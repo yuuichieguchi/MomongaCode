@@ -111,16 +111,57 @@ describe('an ollama target in a started gateway', () => {
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureOllama: () => new Promise(() => undefined) });
     const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi'), max_output_tokens: 100 }));
 
-    const refused = await ask();
+    const measuring = await ask();
     showAnswers = true;
     const served = await ask();
 
-    expect(refused.status).toBe(412);
-    expect(refused.body.error.message).toContain('capabilities.contextWindow');
+    expect({ status: measuring.status, code: measuring.body.error?.code }).toEqual({ status: 503, code: TARGET_PROBING });
     expect(served.status).toBe(200);
     expect(outputText(served.body)).toBe('hello');
     expect(fake.chatBodies()).toHaveLength(1);
     expect(fake.chatBodies()[0].options).toEqual({ num_predict: 100 });
+  });
+
+  it('names ollama pull for a model with no stated window that the server does not list, whose /api/show is refused', async () => {
+    const fake = await startFakeOllama({ chat: [textReply('never sent')], showStatus: () => 404, tags: () => ({ models: [] }) });
+    const home = makeHome();
+    writeSettings(home, { models: modelsOf({ local: unstatedTarget(fake.origin) }) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureOllama: () => new Promise(() => undefined) });
+
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi') }));
+    const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
+    const entry = models.body.data.find((model: { id: string }) => model.id === `local/${OLLAMA_LISTED}`);
+
+    expect(response.status).toBe(412);
+    expect(response.body.error.message).toContain(`does not list the model "${OLLAMA_LISTED}"`);
+    expect(response.body.error.message).toContain(`ollama pull ${OLLAMA_LISTED}`);
+    expect(response.body.error.message).not.toContain('capabilities.contextWindow');
+    expect(entry.capabilities.toolCalling.state).toBe('unavailable');
+    expect(fake.chatBodies()).toEqual([]);
+  });
+
+  it('refuses a metered model with no stated window whose /api/show gives neither tools nor a context length, naming capabilities.contextWindow, and measures nothing', async () => {
+    const fake = await startFakeOllama({ chat: [textReply('never sent')], show: SHOW_WITHOUT_CAPABILITIES });
+    const home = makeHome();
+    writeSettings(home, { models: modelsOf({ local: { ...unstatedTarget(fake.origin), billing: 'metered' } }) });
+    const measured: unknown[] = [];
+    const handle = await launchGateway({
+      generation: FIRST_GENERATION,
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      measureOllama: ({ key }) => {
+        measured.push(key);
+        return new Promise(() => undefined);
+      },
+    });
+
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi') }));
+
+    expect(response.status).toBe(412);
+    expect(response.body.error.message).toContain(`no capabilities.contextWindow is declared, and the server at ${fake.origin} answered no context length for it`);
+    expect(measured).toEqual([]);
+    expect(fake.chatBodies()).toEqual([]);
   });
 
   it('refuses a model with no stated window whose /api/show gives no context length, naming capabilities.contextWindow, and sends no chat', async () => {
