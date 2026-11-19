@@ -2,11 +2,12 @@ import path from 'node:path';
 import { displayWidth, wrapLine } from './screen/wrap.ts';
 import type { Row, Span } from './screen/wrap.ts';
 import type { StyleToken } from './screen/tokens.ts';
-import type { ReasoningEffort } from '@momonga/protocol';
+import { effortLine } from './effort.ts';
+import type { ShownEffort } from './effort.ts';
 
 export type StartupConfig = { version: string; home: string };
 
-export type BannerModel = { kind: 'connected'; name: string; effort?: ReasoningEffort } | { kind: 'not-connected'; login: boolean };
+export type BannerModel = { kind: 'connected'; name: string; effort?: ShownEffort } | { kind: 'not-connected'; login: boolean };
 
 export type StartupBanner = { config: StartupConfig; model: BannerModel; cwd: string; notices: readonly string[]; figure: boolean };
 
@@ -55,7 +56,7 @@ const modelText = (model: BannerModel): string => (model.kind === 'connected' ? 
 export const textLines = (config: StartupConfig, model: BannerModel, cwd: string): string[] => [
   `MomongaCode v${config.version}`,
   `model: ${modelText(model)}`,
-  ...(model.kind === 'connected' && model.effort !== undefined ? [`effort: ${model.effort}`] : []),
+  ...(model.kind === 'connected' && model.effort !== undefined ? [effortLine(model.effort, 'full')] : []),
   shortenHome(cwd, config.home),
 ];
 

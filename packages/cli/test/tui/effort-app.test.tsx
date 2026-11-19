@@ -33,16 +33,34 @@ describe('the start figure names the effort that is sent', () => {
     app.close();
   });
 
-  it('shows no effort line when no effort is chosen', async () => {
+  it('shows the standard level that is sent, and no note, when the model has a reasoning control and none is chosen', async () => {
     const app = await opened({ reasoning: DECLARED });
-    expect(app.screen().join('\n')).not.toContain('effort');
+    const screen = await app.type('', shows('effort: medium'), 'the standard effort is drawn');
+    expect(screen.join('\n')).not.toContain('default');
+    expect(screen.join('\n')).not.toContain('was chosen');
     app.close();
   });
 
-  it('shows no effort line when the model declares no reasoning control, and says the chosen one is not sent', async () => {
+  it('says that effort is not available when the model declares no reasoning control', async () => {
+    const app = await opened({});
+    await app.type('', (lines) => lines.some((line) => line.includes('│') && line.includes('effort: not available for this model')), 'the unavailable effort is drawn');
+    app.close();
+  });
+
+  it('says effort is not available and that the chosen one is not sent, when the model has no reasoning control', async () => {
     const app = await opened({ session: { effort: 'high' } });
     const screen = await app.type('', shows('none is sent'), 'the note is written');
-    expect(screen.some((line) => line.includes('effort: '))).toBe(false);
+    expect(screen.join('\n')).toContain('effort: not available for this model');
+    app.close();
+  });
+
+  it('keeps the effort line in the start screen at 40 columns', async () => {
+    const place = freshPlace();
+    const app = await startOnTerminal({ columns: 40, rows: 30 }, { settingsPlace: { home: place.home, projectDir: place.project }, reasoning: DECLARED });
+    await app.type('go', shows('go'), 'the prompt is typed');
+    await app.type(KEYS.enter, () => true, 'the prompt is sent');
+    await app.backend.called('openSession');
+    await app.type('', shows('effort: medium'), 'the standard effort is drawn at 40 columns');
     app.close();
   });
 });
@@ -83,18 +101,18 @@ describe('/effort', () => {
     app.close();
   });
 
-  it('opens a picker of the accepted levels without an argument, and Enter sets the chosen one', async () => {
+  it('opens a picker of the accepted levels without an argument, and starting on the level in force, and Enter sets the chosen one', async () => {
     const app = await opened({ reasoning: DECLARED });
     const picker = await app.type(`/effort${KEYS.enter}`, shows('Reasoning effort'), 'the picker opens');
     expect(picker.join('\n')).toContain('xhigh');
     expect(picker.join('\n')).not.toContain('minimal');
-    await app.type(KEYS.enter, shows('effort: low; applies from the next run'), 'the first level is set');
+    await app.type(KEYS.enter, shows('effort: medium; applies from the next run'), 'the level in force is set');
     app.close();
   });
 
-  it('says that a model without a reasoning control takes no effort', async () => {
+  it('says that effort is not available for a model without a reasoning control', async () => {
     const app = await opened({});
-    await app.type(`/effort high${KEYS.enter}`, shows('declares no reasoning effort, so no effort can be sent to it'), 'the refusal is shown');
+    await app.type(`/effort high${KEYS.enter}`, shows('effort is not available for scripted-model: it declares no reasoning control'), 'the refusal is shown');
     app.close();
   });
 });

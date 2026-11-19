@@ -1,4 +1,6 @@
 import type { PublicRunEvent, ReasoningEffort } from '@momonga/protocol';
+import { effortLine, effortValue } from '../effort.ts';
+import type { ShownEffort } from '../effort.ts';
 import { describeRunEnd } from '../../run/headless.ts';
 import type { ChildEnd } from '../../run/follow.ts';
 import { appendEntry, foldLiveEvent } from '../transcript.ts';
@@ -28,13 +30,13 @@ export type AgentViews = {
   version(): number;
 };
 
-export type AgentHeaderFacts = { readonly agent: string; readonly state: string; readonly model: string; readonly effort: ReasoningEffort | undefined };
+export type AgentHeaderFacts = { readonly agent: string; readonly state: string; readonly model: string; readonly effort: ShownEffort | undefined };
 
 const ELLIPSIS = '…';
 
 export const agentHeader = ({ agent, state, model, effort }: AgentHeaderFacts, columns: number): string => {
-  const rest = `${state} · model: ${model}${effort === undefined ? '' : ` · effort: ${effort}`}`;
-  const bare = [state, model, ...(effort === undefined ? [] : [effort])].join(' · ');
+  const rest = `${state} · model: ${model}${effort === undefined ? '' : ` · ${effortLine(effort, 'short')}`}`;
+  const bare = [state, model, ...(effort === undefined ? [] : [effortValue(effort)])].join(' · ');
   const names = segmentsOf(agent).map(({ index }) => `${agent.slice(0, index)}${ELLIPSIS}`).filter((name) => name !== ELLIPSIS).reverse();
   return fit([{ side: 'left', forms: [`Subagent ${agent} · ${rest}`, `${agent} · ${rest}`, ...names.map((name) => `${name} · ${rest}`), rest, bare] }], columns);
 };

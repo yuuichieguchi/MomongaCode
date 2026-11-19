@@ -37,3 +37,22 @@ export const effortChoiceText = (declared: DeclaredReasoning, chosen: ReasoningE
   if (sent === undefined) return `effort ${chosen} was chosen, but ${modelName} declares no reasoning effort, so none is sent`;
   return `effort ${chosen} was chosen; ${modelName} does not accept it, so ${sent} is used`;
 };
+
+export type ShownEffort = { readonly kind: 'sent'; readonly level: ReasoningEffort } | { readonly kind: 'not-available' };
+
+export const EFFORT_NOT_AVAILABLE = 'not available';
+
+export const shownEffort = (entries: readonly MomongaModelEntry[], model: string, chosen: ReasoningEffort | undefined, answering?: string): ShownEffort | undefined => {
+  const target = answering === undefined ? undefined : entryOf(entries, model)?.chain.find((candidate) => candidate.model === answering);
+  const declared = target === undefined ? declaredReasoning(entries, model) : declaredOf(target.capabilities);
+  if (!declared.known) return undefined;
+  const level = sentEffort(entries, model, chosen, answering);
+  return level === undefined ? { kind: 'not-available' } : { kind: 'sent', level };
+};
+
+export const effortLine = (shown: ShownEffort, form: 'full' | 'short'): string =>
+  shown.kind === 'sent' ? `effort: ${shown.level}` : form === 'full' ? `effort: ${EFFORT_NOT_AVAILABLE} for this model` : `effort: ${EFFORT_NOT_AVAILABLE}`;
+
+export const effortValue = (shown: ShownEffort): string => (shown.kind === 'sent' ? shown.level : EFFORT_NOT_AVAILABLE);
+
+export const effortRefusalText = (modelName: string): string => `effort is ${EFFORT_NOT_AVAILABLE} for ${modelName}: it declares no reasoning control`;

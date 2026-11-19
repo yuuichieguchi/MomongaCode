@@ -1,6 +1,6 @@
-import { REASONING_EFFORTS, isReasoningEffort } from '@momonga/protocol';
+import { REASONING_EFFORTS, isReasoningEffort, sentReasoningEffort } from '@momonga/protocol';
 import type { ReasoningEffort } from '@momonga/protocol';
-import { acceptedEffortsOf, declaredReasoning } from '../effort.ts';
+import { acceptedEffortsOf, declaredReasoning, effortRefusalText } from '../effort.ts';
 import type { SlashCommand } from '../slash.ts';
 
 export const EFFORT_PICKER_TITLE = 'Reasoning effort';
@@ -21,7 +21,7 @@ export const effortCommand: SlashCommand = {
     }
     const accepted = acceptedEffortsOf(declared);
     if (accepted.length === 0) {
-      context.info(`${name} declares no reasoning effort, so no effort can be sent to it`);
+      context.info(effortRefusalText(name));
       return;
     }
     if (args !== '') {
@@ -32,11 +32,11 @@ export const effortCommand: SlashCommand = {
       await context.setEffort(args);
       return;
     }
-    const current = context.effort;
+    const inForce = declared.reasoning === undefined ? undefined : sentReasoningEffort(declared.reasoning, context.effort);
     const index = await context.display.pick({
       title: EFFORT_PICKER_TITLE,
       rows: accepted.map((level) => ({ label: level })),
-      initial: current === undefined ? 0 : Math.max(0, accepted.indexOf(current)),
+      initial: inForce === undefined ? 0 : Math.max(0, accepted.indexOf(inForce)),
       decideOn: 'enter',
       escape: 'back',
     });

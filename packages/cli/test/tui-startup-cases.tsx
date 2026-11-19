@@ -67,7 +67,7 @@ const gapsInside = (row: string): number => row.trim().split(/ +/).length - 1;
 
 export const startupCases = (forceColor: 'set' | 'cleared'): void => {
   describe(`startup screen with FORCE_COLOR ${forceColor}`, () => {
-  it('shows the squirrel, the version, the model by its name and the shortened folder side by side, and no mode line', async () => {
+  it('shows the squirrel, the version, the model by its name, its effort and the shortened folder side by side, and no mode line', async () => {
     const { app } = await start({ session: { cwd: '/Users/ada/projects/demo', model: 'lmstudio/smart' }, models: ['lmstudio/smart', 'openai/cloud'], chain: ['lmstudio/smart', 'openai/cloud'] }, { startup: config() }, { columns: 80, rows: 16 });
     const screen = await untilFrame(app, 'mode: manual (shift+tab)');
     const text = screen
@@ -75,7 +75,7 @@ export const startupCases = (forceColor: 'set' | 'cleared'): void => {
       .split('\n')
       .filter((row) => row.startsWith('│'))
       .map((row) => row.slice(ART_WIDTH + ART_GAP + 2).replace(/ *│.*$/, ''));
-    expect(text.slice(0, 3)).toEqual(['MomongaCode v1.2.3', 'model: smart', '~/projects/demo']);
+    expect(text.slice(0, 4)).toEqual(['MomongaCode v1.2.3', 'model: smart', 'effort: not available for this model', '~/projects/demo']);
     expect(screen).not.toContain('→');
     expect(screen.split('mode: ')).toHaveLength(2);
     expect(screen).toContain('•ᴥ•');

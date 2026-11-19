@@ -69,7 +69,7 @@ import { watchFileLinks } from './screen/file-link-watch.ts';
 import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf, viewTargetsOf } from './screen/subagents.tsx';
 import type { ViewTarget } from './screen/subagents.tsx';
 import { agentHeader, createAgentViews, endStateOf } from './screen/agent-views.ts';
-import { declaredReasoning, effortChoiceText, sentEffort } from './effort.ts';
+import { declaredReasoning, effortChoiceText, shownEffort } from './effort.ts';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
@@ -471,7 +471,7 @@ export function App(props: AppProps) {
     props.startup === undefined ? undefined : { config: props.startup, model: shownModel, cwd: backend.cwd, notices: shownNotices, figure };
 
   const connectedModel = (stored: string, chosen?: ReasoningEffort): BannerModel => {
-    const effort = sentEffort(entriesRef.current, stored, chosen);
+    const effort = shownEffort(entriesRef.current, stored, chosen);
     return { kind: 'connected', name: shownModel(stored), ...(effort === undefined ? {} : { effort }) };
   };
 
@@ -1753,7 +1753,7 @@ export function App(props: AppProps) {
             agent: shownAgent.agent,
             state: shownAgent.loading !== undefined ? loadingText(shownAgent.loading.applied, shownAgent.loading.backlog) : shownAgent.end !== undefined ? endStateOf(shownAgent.end) : awaitingApproval ? 'waiting for approval' : 'running',
             model: shownModel(viewed.state().answeringTarget ?? shownAgent.model),
-            effort: sentEffort(entriesRef.current, shownAgent.model, shownAgent.effort, viewed.state().answeringTarget),
+            effort: shownEffort(entriesRef.current, shownAgent.model, shownAgent.effort, viewed.state().answeringTarget),
           },
           columns,
         );

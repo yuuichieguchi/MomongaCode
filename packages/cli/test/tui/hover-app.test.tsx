@@ -52,7 +52,7 @@ describe('the row under the mouse pointer', () => {
     await app.type(`${hover(1, asked + 1)}${hover(4, asked + 1)}${hover(8, asked + 1)}${hover(5, row + 1)}`, () => wholeRowInverse(app, row), 'the pointer sweeps to the row');
     for (let column = 0; column < 8; column += 1) expect(app.inverseAt(asked, column)).toBe(false);
     expect(app.screen().join('\n')).not.toContain('Subagent general-purpose');
-    await app.type(click(5, row + 1), (lines) => lines.some((line) => line.includes('Subagent general-purpose')), 'a click opens the row');
+    await app.type(click(5, row + 1), (lines) => lines.some((line) => line.includes('running · model: ')), 'a click opens the row');
     app.close();
   });
 

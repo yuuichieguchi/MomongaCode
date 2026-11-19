@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedReasoningEfforts, clampReasoningEffort, sentReasoningEffort } from '@momonga/protocol';
+import { acceptedReasoningEfforts, clampReasoningEffort, sentReasoningEffort, STANDARD_REASONING_EFFORT } from '@momonga/protocol';
 import type { ReasoningCapability } from '@momonga/protocol';
 
 describe('one clamping rule for every reasoning control', () => {
@@ -66,8 +66,10 @@ describe('the levels each reasoning control accepts', () => {
 });
 
 describe('the effort a request carries for the chosen effort', () => {
-  it('sends nothing when no effort is chosen', () => {
-    expect(sentReasoningEffort({ control: 'reasoning_effort', lowest: 'low' }, undefined)).toBeUndefined();
+  it('sends the standard level clamped to the model when no effort is chosen', () => {
+    expect(sentReasoningEffort({ control: 'reasoning_effort', lowest: 'low' }, undefined)).toBe(STANDARD_REASONING_EFFORT);
+    expect(sentReasoningEffort({ control: 'thinking', form: 'budget', budgets: { high: 8000 } }, undefined)).toBe('high');
+    expect(sentReasoningEffort({ control: 'none' }, undefined)).toBeUndefined();
   });
 
   it('sends nothing to a model that declares no reasoning control or no ladder level', () => {

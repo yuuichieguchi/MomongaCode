@@ -93,6 +93,8 @@ export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export const LOWEST_REASONING_EFFORT: ReasoningEffort = 'none';
 
+export const STANDARD_REASONING_EFFORT: ReasoningEffort = 'medium';
+
 export const THINKING_OFFS = ['disabled', 'between_tools'] as const;
 export type ThinkingOff = (typeof THINKING_OFFS)[number];
 
@@ -134,9 +136,9 @@ export const clampReasoningEffort = (requested: ReasoningEffort, accepted: reado
 };
 
 export const sentReasoningEffort = (reasoning: ReasoningCapability | undefined, chosen: ReasoningEffort | undefined): ReasoningEffort | undefined => {
-  if (chosen === undefined || reasoning === undefined) return undefined;
+  if (reasoning === undefined) return undefined;
   const accepted = acceptedReasoningEfforts(reasoning);
-  return accepted.some((level) => level !== 'none') ? clampReasoningEffort(chosen, accepted) : undefined;
+  return accepted.some((level) => level !== 'none') ? clampReasoningEffort(chosen ?? STANDARD_REASONING_EFFORT, accepted) : undefined;
 };
 
 export type OutputTokenCapabilities = { maxOutputTokens: number; reasoning?: ReasoningCapability | undefined };
