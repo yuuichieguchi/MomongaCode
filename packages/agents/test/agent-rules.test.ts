@@ -91,6 +91,15 @@ describe('a permission rule that names a subagent', () => {
     expect(await suggestAllowRule(POLICY_TOOL, subjectFor('reviewer'), PROJECT, async (target) => ({ ok: true, path: target }) as never)).toBe('Agent(reviewer)');
   });
 
+  it.each(['*', 'rev*', 'a(b)', 'x)'])('suggests no rule for an agent named %s, so approving it never allows another agent', async (name) => {
+    const suggested = await suggestAllowRule(POLICY_TOOL, { kind: 'agent', tool: 'Agent', agent: name }, PROJECT, async (target) => ({ ok: true, path: target }) as never);
+    expect(suggested).toBeUndefined();
+  });
+
+  it('keeps the wildcard of a rule the person writes', () => {
+    expect(matchPathlessRule(rule('allow', 'Agent(*)'), { kind: 'agent', tool: 'Agent', agent: 'reviewer' })).toBe(true);
+  });
+
   it('takes a denied agent out of the description and the choices the model is offered', async () => {
     const tool = await offered([rule('deny', 'Agent(general-purpose)')]);
     expect(tool?.description).not.toContain('- general-purpose:');

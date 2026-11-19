@@ -7,6 +7,8 @@ import type { PermissionSubject, PolicyTool } from './types.ts';
 
 const UNMATCHABLE_PATH_CHARACTERS = /[*?[\]{}!+@()\\\0]/;
 
+const UNMATCHABLE_AGENT_CHARACTERS = /[*()\0]/;
+
 const suggestForCommand = (command: string): string | undefined => {
   const text = command.trim();
   if (text === '' || text.endsWith(COMMAND_PREFIX_SUFFIX) || !hasBalancedParentheses(text)) return undefined;
@@ -46,7 +48,7 @@ export const suggestAllowRule = async (
     case 'forge':
       return subject.approval === 'always' ? undefined : subject.tool;
     case 'agent':
-      return `${subject.tool}(${subject.agent})`;
+      return UNMATCHABLE_AGENT_CHARACTERS.test(subject.agent) ? undefined : `${subject.tool}(${subject.agent})`;
     case 'none':
       return tool.name;
   }
