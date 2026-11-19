@@ -63,6 +63,7 @@ import type { ScreenTerminal } from './screen/input.ts';
 import type { RowRequests } from './screen/layout.ts';
 import { allocate, drawnTranscriptRows, inputTopOf, menuRowsCap, naturalRows, panelRowsCap, regionAt } from './screen/layout.ts';
 import { chordContextsOf, keyRouteOf } from './screen/key-route.ts';
+import { SELECT_CONTEXTS } from './select.tsx';
 import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
 import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
@@ -712,7 +713,7 @@ export function App(props: AppProps) {
     panelRows: panelRowsCap(rows),
     keys,
     screenReader: a11y.screenReader,
-    cancelNewest,
+    interruptRun: () => cancelAndArmExit('prompt.interrupt'),
     reportError,
     fail,
     exit: () => finish({}),
@@ -1713,11 +1714,17 @@ export function App(props: AppProps) {
   const onKey = (event: KeyEvent, pressed: KeyTable): void => {
     bindings.poll(now());
     const action = pressed.actionOf(EDITOR_CONTEXTS, event);
+    const route = keyRouteOf(routeFacts());
+    const interrupts = route === 'prompt' && (action === 'prompt.interrupt' || pressed.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.interrupt');
+    if (interrupts && armedExit.current?.action === 'prompt.interrupt') {
+      exitOnSecondPress('prompt.interrupt');
+      return;
+    }
     if (armedExit.current === undefined || armedExit.current.action !== action) {
       disarmExit();
       setHint(undefined);
     }
-    routeKey(keyRouteOf(routeFacts()), event, pressed);
+    routeKey(route, event, pressed);
   };
 
   const replayHeldKeys = useEffectEvent((events: readonly KeyEvent[]): void => {
