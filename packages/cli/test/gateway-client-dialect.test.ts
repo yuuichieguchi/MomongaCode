@@ -27,7 +27,7 @@ const serveModels = async (context: TestContext, schemaDialect: unknown): Promis
   const listed = capabilities(schemaDialect);
   const model = 'local/served';
   const member = { model, counter: '1'.repeat(64), billing: 'local', adapter: 'chat-completions', answers: 'model', upstream: 'served', capabilities: listed };
-  const body = JSON.stringify({ object: 'list', data: [{ id: model, object: 'model', provider: 'local', ownName: 'served', billing: 'local', capabilities: listed, state: 'available', chain: [member] }], start: model, roles: {} });
+  const body = JSON.stringify({ object: 'list', data: [{ id: model, object: 'model', provider: 'local', ownName: 'served', naming: 'server', billing: 'local', capabilities: listed, state: 'available', chain: [member] }], start: model, roles: {} });
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(body);
   });

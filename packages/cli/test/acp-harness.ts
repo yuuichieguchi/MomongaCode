@@ -400,13 +400,13 @@ export const modelChangedFrame = (id: number, model: string, previousModel: stri
 export const OTHER_MODEL = 'apple/fm-large';
 
 export const MODEL_VIEWS: ModelViews = [
-  { canon: SESSION.model, provider: SCRIPTED_PROVIDER, ownName: SCRIPTED_MODEL_ID },
-  { canon: OTHER_MODEL, provider: 'apple', ownName: 'fm-large' },
+  { canon: SESSION.model, provider: SCRIPTED_PROVIDER, ownName: SCRIPTED_MODEL_ID, naming: 'account' },
+  { canon: OTHER_MODEL, provider: 'apple', ownName: 'fm-large', naming: 'server' },
 ];
 
 export const MODEL_OPTIONS = [
   { value: SESSION.model, name: SCRIPTED_MODEL_ID },
-  { value: OTHER_MODEL, name: 'fm-large' },
+  { value: OTHER_MODEL, name: 'apple/fm-large' },
 ];
 
 export type Harness = {

@@ -2,6 +2,7 @@ import type { ErrorShape } from './budget-constants.ts';
 import type { Capabilities, ChainCapabilities, HealthResult, ProbingCapabilities, ReasoningEffort, TargetAnswers, TargetBilling, UnavailableCapabilities } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 import type { PlanAccountRef } from './plan-account.ts';
+import type { ModelNaming } from './model-ref.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
 
@@ -88,6 +89,7 @@ export type MomongaModelEntry = {
   provider: string;
   ownName: string;
   defaultTag?: string;
+  naming: ModelNaming;
   billing: TargetBilling;
   capabilities: ChainCapabilities | ProbingCapabilities | UnavailableCapabilities;
   state: ModelEntryState;

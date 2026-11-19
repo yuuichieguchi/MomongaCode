@@ -8,7 +8,7 @@ import { createGateway } from '@momonga/gateway';
 import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
 import type { Telemetry } from '@momonga/observability';
 import { parseCanon } from '@momonga/protocol';
-import type { MomongaModelRoles, StreamEvent, TargetAnswers, TargetBilling } from '@momonga/protocol';
+import type { ModelNaming, MomongaModelRoles, StreamEvent, TargetAnswers, TargetBilling } from '@momonga/protocol';
 import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator, createTempDir, testKernelLock } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
@@ -78,6 +78,7 @@ type ConfiguredTarget = GatewayConfig['models']['targets'][string];
 export type TargetSpec = {
   kind?: string;
   defaultTag?: string;
+  naming?: ModelNaming;
   answers?: TargetAnswers;
   billing?: ConfiguredTarget['billing'];
   maxConcurrency?: number;
@@ -120,6 +121,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
       provider,
       model: ownName,
       ...(spec.defaultTag === undefined ? {} : { defaultTag: spec.defaultTag }),
+      naming: spec.naming ?? 'account',
       ...(spec.answers === undefined ? {} : { answers: spec.answers }),
       billing: spec.billing ?? 'metered',
       maxConcurrency: spec.maxConcurrency ?? 4,

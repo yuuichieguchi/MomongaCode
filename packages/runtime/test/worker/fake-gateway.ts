@@ -101,7 +101,7 @@ export const FAKE_PROVIDER = 'fake';
 
 export const FAKE_ADAPTER = 'chat-completions';
 
-export const fakeViewsOf = (models: readonly string[]): ModelView[] => models.map((model) => ({ canon: model, provider: FAKE_PROVIDER, ownName: model }));
+export const fakeViewsOf = (models: readonly string[]): ModelView[] => models.map((model) => ({ canon: model, provider: FAKE_PROVIDER, ownName: model, naming: 'account' }));
 
 export const FALLBACK_TARGETS: readonly string[] = ['secondary'];
 
@@ -248,6 +248,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       id: model,
       canon: model,
       provider: FAKE_PROVIDER,
+      naming: 'account',
       ownName: model,
       capabilities: { ...capabilitiesOfModel },
       chain: targetsOf(model).map((target) => ({

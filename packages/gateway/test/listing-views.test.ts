@@ -37,7 +37,8 @@ const settingsOf = (seed: number) => {
   return settings;
 };
 
-const viewOf = (entry: { id: string; provider: string; ownName: string; defaultTag?: string }): ModelView => ({
+const viewOf = (entry: { id: string; provider: string; ownName: string; defaultTag?: string; naming: ModelView['naming'] }): ModelView => ({
+  naming: entry.naming,
   canon: entry.id,
   provider: entry.provider,
   ownName: entry.ownName,

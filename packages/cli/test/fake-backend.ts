@@ -138,6 +138,8 @@ export type FakeBackendOptions = {
 
 const OLLAMA_DEFAULT_TAG = 'latest';
 
+const SERVER_PROVIDERS: ReadonlySet<string> = new Set(['ollama', 'lmstudio', 'apple']);
+
 export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain'][number]['capabilities'], members: readonly string[] = [id]): MomongaModelEntry => {
   const parsed = parseCanon(id) ?? { provider: SCRIPTED_PROVIDER, ownName: id };
   return {
@@ -146,6 +148,7 @@ export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain
     provider: parsed.provider,
     ownName: parsed.ownName,
     ...(parsed.provider === 'ollama' ? { defaultTag: OLLAMA_DEFAULT_TAG } : {}),
+    naming: SERVER_PROVIDERS.has(parsed.provider) ? 'server' : 'account',
     billing: 'local',
     capabilities,
     state: 'available',

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { baseUrlProblem, providerNameOf, serverNameFromCommand } from '@momonga/config';
-import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, managedServerOf, withDefaultTag } from '@momonga/protocol';
+import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, managedServerOf, modelNamingOf, withDefaultTag } from '@momonga/protocol';
 import type { ManagedServerDescription, DetectedLocalServer, DetectedModel, LocalServerDetection, ModelView } from '@momonga/protocol';
 import { describeFailure } from '../../failure.ts';
 import { wholeNumberWithin } from '../../models-check.ts';
@@ -66,9 +66,9 @@ export const askWindow = async (context: ModelsFlowContext, display: string, cei
   return entered === undefined ? undefined : wholeNumberIn(entered, ceiling);
 };
 
-const viewOf = (provider: string, id: string, defaultTag: string | undefined): ModelView => {
+const viewOf = (connection: object, provider: string, id: string, defaultTag: string | undefined): ModelView => {
   const ownName = withDefaultTag(id, defaultTag);
-  return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }) };
+  return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }), naming: modelNamingOf(connection) };
 };
 
 const displaysWith = (edit: ModelsEdit, added: readonly ModelView[]): ReadonlyMap<string, string> => {
@@ -78,7 +78,7 @@ const displaysWith = (edit: ModelsEdit, added: readonly ModelView[]): ReadonlyMa
 
 export const foundDisplays = (edit: ModelsEdit, server: DetectedLocalServer): string[] => {
   const { defaultTag } = kindOf(server);
-  const views = server.models.map((model) => viewOf(server.provider, model.id, defaultTag));
+  const views = server.models.map((model) => viewOf(server, server.provider, model.id, defaultTag));
   const displays = displaysWith(edit, views);
   return views.map((view) => displays.get(view.canon) ?? view.canon);
 };
@@ -90,7 +90,7 @@ export const foundNotConfigured = (edit: ModelsEdit, servers: readonly DetectedL
   return servers.flatMap((server) => {
     const { defaultTag } = kindOf(server);
     const displays = foundDisplays(edit, server);
-    return server.models.flatMap((model, index) => (configured.has(viewOf(server.provider, model.id, defaultTag).canon) ? [] : [{ server, model, display: displays[index] ?? model.id }]));
+    return server.models.flatMap((model, index) => (configured.has(viewOf(server, server.provider, model.id, defaultTag).canon) ? [] : [{ server, model, display: displays[index] ?? model.id }]));
   });
 };
 
@@ -140,7 +140,7 @@ const addTyped = async (context: ModelsFlowContext, opened: Opened, connection: 
   if (name === undefined) return NOT_ADDED;
   const id = name.trim();
   const provider = providerNameOf(nameInputOf(connection), opened.edit.ports.kinds);
-  const view = viewOf(provider, id, undefined);
+  const view = viewOf(connection, provider, id, undefined);
   const window = await askWindow(context, displaysWith(opened.edit, [view]).get(view.canon) ?? id, undefined);
   if (window === undefined) return NOT_ADDED;
   const written = await confirmAndWrite(opened, context, addProposalOf(opened.edit, connection, entryOf(id, window)), before);

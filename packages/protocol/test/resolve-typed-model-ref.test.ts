@@ -84,8 +84,8 @@ describe('modelRefErrorOf: the one sentence of each refusal', () => {
 
   it('not found with models configured lists their display names', () => {
     const error = refusalOf('nope', S1);
-    expect(error.message).toBe('The model "nope" is not configured. Configured models: devstral-small-2, qwen3.8:27b.');
-    expect({ code: error.code, text: error.text, choices: error.choices }).toEqual({ code: 'model_not_found', text: 'nope', choices: ['devstral-small-2', 'qwen3.8:27b'] });
+    expect(error.message).toBe('The model "nope" is not configured. Configured models: ollama/devstral-small-2, ollama/qwen3.8:27b.');
+    expect({ code: error.code, text: error.text, choices: error.choices }).toEqual({ code: 'model_not_found', text: 'nope', choices: ['ollama/devstral-small-2', 'ollama/qwen3.8:27b'] });
   });
 
   it('not found with no model configured says how to connect one', () => {

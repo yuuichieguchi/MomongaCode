@@ -77,7 +77,7 @@ describe('fieldValueText: the one text of a setting value, in the row and in the
     expect(fieldValueText('admissionTimeoutMs', 1500)).toBe('1500 ms');
     const home = homeWith(S1_FILE);
     const result = await editModels(home, [op('setModelField', { model: 'ollama/devstral-small-2:latest', path: ['capabilities', 'contextWindow'], value: 32768 })]);
-    expect(result.summaries).toEqual(['Set Context window of devstral-small-2 to 32768.']);
+    expect(result.summaries).toEqual(['Set Context window of ollama/devstral-small-2 to 32768.']);
   });
 });
 
@@ -139,13 +139,13 @@ describe('the writer texts name the cause and the way forward (config-C24 R5, P-
 
   it('forbidding a change that was allowed names the model', () => {
     expect(planModels(withChange, [op('forbidBillingChange', { from: 'local', to: 'metered', model: PLAN_MODEL })])).toMatchObject({
-      summaries: ['Requests may no longer fall from local to metered for devstral-small-2.'],
+      summaries: ['Requests may no longer fall from local to metered for ollama/devstral-small-2.'],
     });
   });
 
   it('forbidding a change that was never allowed says so and that nothing changed', () => {
     expect(planModels(S1_FILE, [op('forbidBillingChange', { from: 'local', to: 'plan', model: PLAN_MODEL })])).toMatchObject({
-      summaries: ['Requests were not allowed to fall from local to plan for devstral-small-2; nothing changed.'],
+      summaries: ['Requests were not allowed to fall from local to plan for ollama/devstral-small-2; nothing changed.'],
     });
     expect(planModels(S1_FILE, [op('forbidBillingChange', { from: 'local', to: 'plan' })])).toMatchObject({
       summaries: ['Requests were not allowed to fall from local to plan; nothing changed.'],
@@ -154,7 +154,7 @@ describe('the writer texts name the cause and the way forward (config-C24 R5, P-
 
   it('allowing a change that is already allowed says that nothing changed', () => {
     expect(planModels(withChange, [op('allowBillingChange', { from: 'local', to: 'metered', model: PLAN_MODEL })])).toEqual({
-      refused: { code: 'duplicate', message: 'Requests may already fall from local to metered for devstral-small-2; nothing changed.' },
+      refused: { code: 'duplicate', message: 'Requests may already fall from local to metered for ollama/devstral-small-2; nothing changed.' },
     });
   });
 

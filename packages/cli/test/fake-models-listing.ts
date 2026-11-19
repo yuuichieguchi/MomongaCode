@@ -65,6 +65,7 @@ export const listingEntry = (id: string, memberCapabilities: Record<string, unkn
     object: 'model',
     provider: named.provider,
     ownName: named.ownName,
+    naming: 'account',
     billing: 'plan',
     capabilities: Object.values(memberCapabilities)[0],
     state: 'available',

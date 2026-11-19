@@ -6,7 +6,7 @@ import { momongaLayout } from '@momonga/foundation';
 import { createTempDir, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { canonOf, displayOf, parseCanon, resolveTypedModelRef, shortOf, typedModelText } from '../src/index.ts';
 import { seeded } from '../../context/test/helpers.ts';
-import { view } from './model-ref-fixtures.ts';
+import { namedView, view } from './model-ref-fixtures.ts';
 import type { View } from './model-ref-fixtures.ts';
 
 vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
@@ -47,8 +47,9 @@ const viewsOf = (random: Random): View[] => {
   const providers = [...new Set(Array.from({ length: random.int(0, 4) }, () => providerOf(random)))];
   return providers.flatMap((provider) => {
     const defaultTag = random.int(0, 1) === 0 ? TAG : undefined;
+    const naming = random.int(0, 1) === 0 ? 'server' : 'account';
     const ownNames = [...new Set(Array.from({ length: random.int(0, 4) }, () => normalised(ownNameOf(random), defaultTag)))];
-    return ownNames.map((ownName) => view(provider, ownName, defaultTag));
+    return ownNames.map((ownName) => namedView(naming, provider, ownName, defaultTag));
   });
 };
 
@@ -128,7 +129,7 @@ describe('model references, for every generated configuration', () => {
   );
 
   it(
-    'I-N2: the display name of every model resolves to it, a text with several holders is ambiguous, and a server name with a short form names its model',
+    'I-N2: the display name of every model resolves to it, a model of a server is shown with its server name, a text with several holders is ambiguous, and a server name with a short form names its model',
     () => {
       for (let seed = 1; seed <= SEEDS; seed += 1) {
         const random = seeded(seed);
@@ -136,6 +137,7 @@ describe('model references, for every generated configuration', () => {
         for (const entry of views) {
           const display = displayOf(entry, views);
           expect(resolveTypedModelRef(typedModelText(display), views), `seed ${seed} ${display}`).toEqual({ kind: 'found', model: entry });
+          if (entry.naming === 'server') expect(display.startsWith(`${entry.provider}/`), `seed ${seed} ${display}`).toBe(true);
           const short = expectedShort(entry.ownName, entry.defaultTag);
           if (short !== undefined) {
             const withServer = `${entry.provider}/${short}`;

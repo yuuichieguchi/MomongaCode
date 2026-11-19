@@ -75,7 +75,7 @@ export const startupCases = (forceColor: 'set' | 'cleared'): void => {
       .split('\n')
       .filter((row) => row.startsWith('│'))
       .map((row) => row.slice(ART_WIDTH + ART_GAP + 2).replace(/ *│.*$/, ''));
-    expect(text.slice(0, 4)).toEqual(['MomongaCode v1.2.3', 'model: smart', 'effort: not available for this model', '~/projects/demo']);
+    expect(text.slice(0, 4)).toEqual(['MomongaCode v1.2.3', 'model: lmstudio/smart', 'effort: not available for this model', '~/projects/demo']);
     expect(screen).not.toContain('→');
     expect(screen.split('mode: ')).toHaveLength(2);
     expect(screen).toContain('•ᴥ•');

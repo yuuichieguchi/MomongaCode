@@ -50,7 +50,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
       models: {
         chains: { [TARGET]: [TARGET] },
         targets: {
-          [TARGET]: { kind: 'chat-completions', provider: 'fake', model: 'system', billing: 'metered', maxConcurrency: 1, admissionTimeoutMs: 5_000, counter: createHash('sha256').update(TARGET).digest('hex') },
+          [TARGET]: { kind: 'chat-completions', provider: 'fake', model: 'system', naming: 'account', billing: 'metered', maxConcurrency: 1, admissionTimeoutMs: 5_000, counter: createHash('sha256').update(TARGET).digest('hex') },
         },
       },
       breaker: { ...GATEWAY_CONFIG_DEFAULTS.breaker, failureThreshold: BREAKER_STAYS_CLOSED_SO_EVERY_REQUEUED_ATTEMPT_REACHES_THE_ONE_TARGET },

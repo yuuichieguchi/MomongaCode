@@ -178,12 +178,12 @@ describe('local servers from the welcome', () => {
     await choose(app, 'Use a local server');
     await choose(app, `ollama  ·  ${ADDRESS}`);
     await choose(app, 'llama3.2');
-    await untilFrame(app, 'Context window for llama3.2 (at most 131072):');
+    await untilFrame(app, 'Context window for ollama/llama3.2 (at most 131072):');
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'Enter a whole number from 1 to 131072.');
     expect(writtenBy(backend)).toBeUndefined();
     await submitLine(app, '8192');
-    await untilFrame(app, 'Add llama3.2 to your settings?');
+    await untilFrame(app, 'Add ollama/llama3.2 to your settings?');
     expect(writtenBy(backend)).toBeUndefined();
     await choose(app, 'Yes');
     await backend.called('openSession');
@@ -199,7 +199,7 @@ describe('local servers from the welcome', () => {
     await choose(app, 'Use a local server');
     await choose(app, 'lmstudio  ·  http://127.0.0.1:1234/v1');
     await choose(app, 'reported-model');
-    await untilFrame(app, 'Add reported-model to your settings?');
+    await untilFrame(app, 'Add lmstudio/reported-model to your settings?');
     await choose(app, 'Yes');
     await backend.called('openSession');
     expect(writtenBy(backend)?.models.connections).toMatchObject([{ provider: 'lmstudio', models: [{ id: 'reported-model', capabilities: { contextWindow: 32768 } }] }]);
@@ -211,12 +211,12 @@ describe('local servers from the welcome', () => {
     await choose(app, 'Use a local server');
     await choose(app, 'lmstudio  ·  http://127.0.0.1:1234/v1');
     await choose(app, 'silent-model');
-    await untilFrame(app, 'Context window for silent-model:');
+    await untilFrame(app, 'Context window for lmstudio/silent-model:');
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'Enter a whole number of at least 1.');
     expect(writtenBy(backend)).toBeUndefined();
     await submitLine(app, '16384');
-    await untilFrame(app, 'Add silent-model to your settings?');
+    await untilFrame(app, 'Add lmstudio/silent-model to your settings?');
     await choose(app, 'Yes');
     await backend.called('openSession');
     expect(writtenBy(backend)?.models.connections).toMatchObject([{ provider: 'lmstudio', models: [{ id: 'silent-model', capabilities: { contextWindow: 16384 } }] }]);

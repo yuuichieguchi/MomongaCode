@@ -10,17 +10,17 @@ const OTHER = 'lmstudio/other';
 const PLAIN = 'lmstudio/plain';
 
 const VIEWS: ModelViews = [
-  { canon: MAIN, provider: 'ollama', ownName: 'main:latest', defaultTag: 'latest' },
-  { canon: OTHER, provider: 'lmstudio', ownName: 'other' },
-  { canon: PLAIN, provider: 'lmstudio', ownName: 'plain' },
+  { canon: MAIN, provider: 'ollama', ownName: 'main:latest', defaultTag: 'latest', naming: 'server' },
+  { canon: OTHER, provider: 'lmstudio', ownName: 'other', naming: 'server' },
+  { canon: PLAIN, provider: 'lmstudio', ownName: 'plain', naming: 'server' },
 ];
 
 const reasoningCapabilities = { contextWindow: 8192, maxOutputTokens: 1024, reasoning: { control: 'reasoning_effort', lowest: 'low' } };
 
 const LISTED = [
-  { id: MAIN, canon: MAIN, provider: 'ollama', ownName: 'main:latest', capabilities: reasoningCapabilities, chain: [] },
-  { id: OTHER, canon: OTHER, provider: 'lmstudio', ownName: 'other', capabilities: reasoningCapabilities, chain: [] },
-  { id: PLAIN, canon: PLAIN, provider: 'lmstudio', ownName: 'plain', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 }, chain: [] },
+  { id: MAIN, canon: MAIN, provider: 'ollama', ownName: 'main:latest', naming: 'server' as const, capabilities: reasoningCapabilities, chain: [] },
+  { id: OTHER, canon: OTHER, provider: 'lmstudio', ownName: 'other', naming: 'server' as const, capabilities: reasoningCapabilities, chain: [] },
+  { id: PLAIN, canon: PLAIN, provider: 'lmstudio', ownName: 'plain', naming: 'server' as const, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 }, chain: [] },
 ];
 
 const agentWith = (fields: { model?: string; effort?: ReasoningEffort } = {}): AgentDefinition => ({
@@ -70,13 +70,13 @@ describe('the reasoning effort a subagent runs at', () => {
     const { created, runs } = childRunsUnder(undefined);
     const failure = await runs.spawn({ parentRunId: 'parent-1', parentCallId: 'call-1', agent: agentWith({ model: OTHER }), prompt: 'p', effort: 'minimal' }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ChildRunError);
-    expect((failure as Error).message).toBe('Subagent reviewer cannot run at effort minimal: its model other accepts low, medium, high, xhigh; call Agent again with one of them');
+    expect((failure as Error).message).toBe('Subagent reviewer cannot run at effort minimal: its model lmstudio/other accepts low, medium, high, xhigh; call Agent again with one of them');
     expect(created).toEqual([]);
   });
 
   it('refuses an effort argument for a child model with no reasoning control', async () => {
     const { runs } = childRunsUnder(undefined);
     const failure = await runs.spawn({ parentRunId: 'parent-1', parentCallId: 'call-1', agent: agentWith({ model: PLAIN }), prompt: 'p', effort: 'high' }).catch((error: unknown) => error);
-    expect((failure as Error).message).toBe('Subagent reviewer cannot run at effort high: its model plain declares no reasoning control; call Agent again without effort');
+    expect((failure as Error).message).toBe('Subagent reviewer cannot run at effort high: its model lmstudio/plain declares no reasoning control; call Agent again without effort');
   });
 });

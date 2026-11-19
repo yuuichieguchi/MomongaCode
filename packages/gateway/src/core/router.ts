@@ -18,6 +18,7 @@ import {
   typedModelText,
 } from '@momonga/protocol';
 import type {
+  ModelNaming,
   ReasoningEffort,
   AdapterRequest,
   AdapterTarget,
@@ -71,6 +72,7 @@ export type TargetRuntime = {
   provider: string;
   model: string;
   defaultTag: string | undefined;
+  naming: ModelNaming;
   answers: TargetAnswers;
   billing: TargetBilling;
   counter: string;
@@ -245,6 +247,7 @@ export const createRouter = (options: RouterOptions): Router => {
     provider: target.provider,
     ownName: target.model,
     ...(target.defaultTag === undefined ? {} : { defaultTag: target.defaultTag }),
+    naming: target.naming,
   }));
   const displays = displayMapOf(views);
   const displayOf = (model: string): string => displays.get(model) ?? model;
@@ -262,6 +265,7 @@ export const createRouter = (options: RouterOptions): Router => {
       provider: target.provider,
       model: target.model,
       defaultTag: target.defaultTag,
+      naming: target.naming,
       answers: target.answers ?? 'model',
       billing: target.billing,
       counter: target.counter,

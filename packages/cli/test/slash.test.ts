@@ -172,7 +172,7 @@ describe('built-in commands', () => {
     await pickerCommand.run('qwen3.8:27b', context);
     await pickerCommand.run('turbo', context);
     expect(models).toEqual([QWEN]);
-    expect(infos).toEqual(['The model "turbo" is not configured. Configured models: gemma-3-4b, qwen3.8:27b.']);
+    expect(infos).toEqual(['The model "turbo" is not configured. Configured models: ollama/gemma-3-4b, ollama/qwen3.8:27b.']);
   });
 
   it('/model is described in the help with its usage', async () => {

@@ -60,7 +60,7 @@ describe('chat-completions target with toolCalling auto', () => {
 
     expect(response.status).toBe(412);
     expect(response.body.error.code).toBe(TARGET_NOT_READY);
-    expect(response.body.error.message).toContain('momonga gateway probe system --yes');
+    expect(response.body.error.message).toContain('momonga gateway probe local/system --yes');
     expect(completions(fake)).toEqual([]);
   });
 

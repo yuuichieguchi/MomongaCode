@@ -96,7 +96,7 @@ describe('addModel: the one way a model enters the settings', () => {
   it('an Ollama model into an empty home writes exactly the file of the design, mode 0600, and waits for the settings lock under the signal it is given', async () => {
     const home = homeWith();
     const result = await editModels(home, [addModel(OLLAMA, DEVSTRAL)]);
-    expect(result).toEqual({ wrote: true, summaries: ['Added devstral-small-2. It is used from the next request.'], model: DEVSTRAL_MODEL });
+    expect(result).toEqual({ wrote: true, summaries: ['Added ollama/devstral-small-2. It is used from the next request.'], model: DEVSTRAL_MODEL });
     expect(documentOf(home)).toEqual(S1_FILE);
     expect(Object.keys(modelsOf(home))).toEqual(['connections']);
     expect(fs.statSync(home.file).mode & 0o777).toBe(0o600);
@@ -120,12 +120,12 @@ describe('addModel: the one way a model enters the settings', () => {
   it('a second model of the same server is appended to its connection; the same id again writes nothing and says so', async () => {
     const home = homeWith(S1_FILE);
     const second = await editModels(home, [addModel({ ...OLLAMA, baseUrl: 'http://127.0.0.1:11434/' }, QWEN)]);
-    expect(second).toEqual({ wrote: true, summaries: ['Added qwen3.8:27b. It is used from the next request.'], model: QWEN_MODEL });
+    expect(second).toEqual({ wrote: true, summaries: ['Added ollama/qwen3.8:27b. It is used from the next request.'], model: QWEN_MODEL });
     expect(connectionsOf(home)).toEqual([{ ...OLLAMA, models: [DEVSTRAL, QWEN] }]);
     const before = textOf(home);
     const again = await editModels(home, [addModel(OLLAMA, { ...DEVSTRAL, capabilities: { contextWindow: 8192, maxOutputTokens: 2048 } })]);
     expect(again.wrote).toBe(false);
-    expect(again.summaries).toEqual(['devstral-small-2 is already in your settings.']);
+    expect(again.summaries).toEqual(['ollama/devstral-small-2 is already in your settings.']);
     expect(textOf(home)).toBe(before);
   });
 
@@ -185,7 +185,7 @@ describe('removing a model or a server removes every reference to it in the same
     expect(referencesIn(documentOf(home))).toEqual(AFTER_REMOVAL);
     expect(await loads(home)).toEqual([OLLAMA_GEMMA]);
     const lastOfAll = await editModels(home, [op('removeModel', { model: OLLAMA_GEMMA })]);
-    expect(lastOfAll.summaries).toEqual(['Removed gemma-3-4b.']);
+    expect(lastOfAll.summaries).toEqual(['Removed ollama/gemma-3-4b.']);
     expect(connectionsOf(home)).toEqual([]);
     expect(modelsOf(home).fallback ?? []).toEqual([]);
     expect(await loads(home)).toEqual([]);
@@ -224,7 +224,7 @@ describe('the references a user sets', () => {
     const home = homeWith(BASE);
     const result = await editModels(home, [op('setFallback', { models: [LMSTUDIO_GEMMA, QWEN_MODEL, LMSTUDIO_GEMMA] })]);
     expect(modelsOf(home).fallback).toEqual([LMSTUDIO_GEMMA, QWEN_MODEL]);
-    expect(result.summaries).toEqual(['Fallback order saved: gemma-3-4b → qwen3.8:27b']);
+    expect(result.summaries).toEqual(['Fallback order saved: lmstudio/gemma-3-4b → ollama/qwen3.8:27b']);
     expect((await editModels(home, [op('setFallback', { models: [] })])).summaries).toEqual(['Fallback order cleared.']);
     expect(modelsOf(home).fallback ?? []).toEqual([]);
     expect((await refusalOfEdit(editModels(home, [op('setFallback', { models: [QWEN_MODEL, 'ollama/nope'] })]))).code).toBe('unresolved');
@@ -372,7 +372,7 @@ describe('server programs, wait limits and dialects', () => {
       op('declareServer', { id: 'llama-server', ...S4_SERVER }),
       addModel({ adapter: 'managed', server: 'llama-server' }, { id: 'qwen3-coder-30b', capabilities: { contextWindow: 65536, maxOutputTokens: 16384 } }),
     ]);
-    expect(result).toEqual({ wrote: true, summaries: ['Declared the server program llama-server.', 'Added qwen3-coder-30b. It is used from the next request.'], model: LLAMA_MODEL });
+    expect(result).toEqual({ wrote: true, summaries: ['Declared the server program llama-server.', 'Added llama-server/qwen3-coder-30b. It is used from the next request.'], model: LLAMA_MODEL });
     expect(documentOf(home)).toEqual(S4);
   });
 
@@ -431,7 +431,7 @@ describe('what the writer never does', () => {
     expect(refused.message.endsWith('models.connections[0] and models.connections[1] both resolve to the server name "srv-127.0.0.1-8080"; write "provider" on one of them')).toBe(true);
     expect(textOf(home)).toBe(before);
     const unresolved = await refusalOfEdit(editModels(home, [op('setStart', { model: 'ollama/nope' })]));
-    expect(unresolved).toEqual({ code: 'unresolved', message: 'The model "ollama/nope" is not configured. Configured models: m.' });
+    expect(unresolved).toEqual({ code: 'unresolved', message: 'The model "ollama/nope" is not configured. Configured models: srv-127.0.0.1-8080/m.' });
     expect(textOf(home)).toBe(before);
   });
 
@@ -445,26 +445,26 @@ describe('what the writer never does', () => {
   });
 
   it.each([
-    ['addModel', addModel(OLLAMA, { id: 'llama3.2:latest', capabilities: GEMMA_WINDOW }), 'Added llama3.2. It is used from the next request.'],
-    ['addModel of a model that is there', addModel(OLLAMA, DEVSTRAL), 'devstral-small-2 is already in your settings.'],
-    ['removeModel', op('removeModel', { model: QWEN_MODEL }), 'Removed qwen3.8:27b.'],
+    ['addModel', addModel(OLLAMA, { id: 'llama3.2:latest', capabilities: GEMMA_WINDOW }), 'Added ollama/llama3.2. It is used from the next request.'],
+    ['addModel of a model that is there', addModel(OLLAMA, DEVSTRAL), 'ollama/devstral-small-2 is already in your settings.'],
+    ['removeModel', op('removeModel', { model: QWEN_MODEL }), 'Removed ollama/qwen3.8:27b.'],
     ['removeConnection with two models', op('removeConnection', { provider: 'ollama' }), 'Removed ollama and its 2 models.'],
     ['removeConnection with one model', op('removeConnection', { provider: 'lmstudio' }), 'Removed lmstudio and its 1 model.'],
-    ['setStart', op('setStart', { model: LMSTUDIO_GEMMA }), 'New sessions start with gemma-3-4b.'],
+    ['setStart', op('setStart', { model: LMSTUDIO_GEMMA }), 'New sessions start with lmstudio/gemma-3-4b.'],
     ['setStart cleared', op('setStart', { model: null }), 'New sessions start with the first model in your settings.'],
-    ['setFallback', op('setFallback', { models: [LMSTUDIO_GEMMA, QWEN_MODEL] }), 'Fallback order saved: gemma-3-4b → qwen3.8:27b'],
+    ['setFallback', op('setFallback', { models: [LMSTUDIO_GEMMA, QWEN_MODEL] }), 'Fallback order saved: lmstudio/gemma-3-4b → ollama/qwen3.8:27b'],
     ['setFallback cleared', op('setFallback', { models: [] }), 'Fallback order cleared.'],
     ['allowBillingChange', op('allowBillingChange', { from: 'local', to: 'metered' }), 'Requests may now fall from local to metered.'],
-    ['allowBillingChange for one model', op('allowBillingChange', { from: 'local', to: 'metered', model: DEVSTRAL_MODEL }), 'Requests may now fall from local to metered for devstral-small-2.'],
+    ['allowBillingChange for one model', op('allowBillingChange', { from: 'local', to: 'metered', model: DEVSTRAL_MODEL }), 'Requests may now fall from local to metered for ollama/devstral-small-2.'],
     ['forbidBillingChange', op('forbidBillingChange', { from: 'local', to: 'plan' }), 'Requests may no longer fall from local to plan.'],
-    ['setRole compaction', op('setRole', { job: 'compaction', model: QWEN_MODEL }), 'Summaries now uses qwen3.8:27b.'],
+    ['setRole compaction', op('setRole', { job: 'compaction', model: QWEN_MODEL }), 'Summaries now uses ollama/qwen3.8:27b.'],
     ['setRole reflection cleared', op('setRole', { job: 'reflection', model: null }), "Reflection now uses the session's model."],
-    ['setRole analysis', op('setRole', { job: 'analysis', model: LMSTUDIO_GEMMA }), 'Analysis now uses gemma-3-4b.'],
-    ['setClassifier', op('setClassifier', { model: LMSTUDIO_GEMMA }), 'The auto-mode classifier is now gemma-3-4b.'],
+    ['setRole analysis', op('setRole', { job: 'analysis', model: LMSTUDIO_GEMMA }), 'Analysis now uses lmstudio/gemma-3-4b.'],
+    ['setClassifier', op('setClassifier', { model: LMSTUDIO_GEMMA }), 'The auto-mode classifier is now lmstudio/gemma-3-4b.'],
     ['setClassifier cleared', op('setClassifier', { model: null }), "The auto-mode classifier is now the session's model."],
-    ['setModelField', op('setModelField', { model: DEVSTRAL_MODEL, path: ['capabilities', 'contextWindow'], value: 65536 }), 'Set Context window of devstral-small-2 to 65536.'],
-    ['setModelField cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['toolCalling'], value: undefined }), 'Cleared Tool calling of gemma-3-4b.'],
-    ['setModelField effort cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['effort'], value: undefined }), 'Cleared Reasoning effort of gemma-3-4b.'],
+    ['setModelField', op('setModelField', { model: DEVSTRAL_MODEL, path: ['capabilities', 'contextWindow'], value: 65536 }), 'Set Context window of ollama/devstral-small-2 to 65536.'],
+    ['setModelField cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['toolCalling'], value: undefined }), 'Cleared Tool calling of lmstudio/gemma-3-4b.'],
+    ['setModelField effort cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['effort'], value: undefined }), 'Cleared Reasoning effort of lmstudio/gemma-3-4b.'],
     ['setConnectionField', op('setConnectionField', { provider: 'lmstudio', path: ['maxConcurrency'], value: 2 }), 'Set Concurrent requests of lmstudio to 2.'],
     ['setProvider', op('setProvider', { provider: 'lmstudio', name: 'studio' }), 'Renamed lmstudio to studio.'],
     ['setProvider cleared', op('setProvider', { provider: 'lmstudio', name: null }), 'lmstudio is now named srv-127.0.0.1-1234.'],
@@ -508,18 +508,18 @@ describe('what the writer never does', () => {
     fs.writeFileSync(home.file, JSON.stringify({ models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }] } }), { mode: 0o600 });
     release();
     await holder;
-    expect(await outcome).toEqual(['New sessions start with qwen3.8:27b.']);
+    expect(await outcome).toEqual(['New sessions start with ollama/qwen3.8:27b.']);
     expect(documentOf(home)).toEqual({ models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }], start: QWEN_MODEL } });
   });
 
   it('a change made by hand between the plan and the write is judged on the file as it is', async () => {
     const withBoth = { models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }] } };
     const home = homeWith(withBoth);
-    expect(planned(documentOf(home), [op('setStart', { model: QWEN_MODEL })]).summaries).toEqual(['New sessions start with qwen3.8:27b.']);
+    expect(planned(documentOf(home), [op('setStart', { model: QWEN_MODEL })]).summaries).toEqual(['New sessions start with ollama/qwen3.8:27b.']);
     fs.writeFileSync(home.file, JSON.stringify(S1_FILE), { mode: 0o600 });
     const before = textOf(home);
     const refused = await refusalOfEdit(editModels(home, [op('setStart', { model: QWEN_MODEL })]));
-    expect(refused).toEqual({ code: 'unresolved', message: 'The model "ollama/qwen3.8:27b" is not configured. Configured models: devstral-small-2.' });
+    expect(refused).toEqual({ code: 'unresolved', message: 'The model "ollama/qwen3.8:27b" is not configured. Configured models: ollama/devstral-small-2.' });
     expect(textOf(home)).toBe(before);
   });
 
@@ -548,7 +548,7 @@ describe('what the writer never does', () => {
       addModel({ adapter: 'managed', server: 'llama-server' }, { id: 'qwen3-coder-30b', capabilities: { contextWindow: 65536, maxOutputTokens: 16384 } }),
     ]);
     expect(renames.mock.calls.filter(([, to]) => String(to) === home.file)).toHaveLength(1);
-    expect(result.summaries).toEqual(['Declared the server program llama-server.', 'Added qwen3-coder-30b. It is used from the next request.']);
+    expect(result.summaries).toEqual(['Declared the server program llama-server.', 'Added llama-server/qwen3-coder-30b. It is used from the next request.']);
     expect(result.model).toBe(LLAMA_MODEL);
     expect(await loads(home)).toEqual([DEVSTRAL_MODEL, LLAMA_MODEL]);
   });
@@ -559,7 +559,7 @@ describe('what the writer never does', () => {
     const renames = vi.spyOn(fs.promises, 'rename');
     const refused = await refusalOfEdit(editModels(home, [addModel(OLLAMA, QWEN), op('setStart', { model: 'ollama/nope' })]));
     expect(refused.code).toBe('unresolved');
-    expect(refused.message).toBe('The model "ollama/nope" is not configured. Configured models: devstral-small-2, qwen3.8:27b.');
+    expect(refused.message).toBe('The model "ollama/nope" is not configured. Configured models: ollama/devstral-small-2, ollama/qwen3.8:27b.');
     expect(textOf(home)).toBe(before);
     expect(renames.mock.calls.filter(([, to]) => String(to) === home.file)).toEqual([]);
     expect(await loads(home)).toEqual([DEVSTRAL_MODEL]);
@@ -568,7 +568,7 @@ describe('what the writer never does', () => {
 
 describe('a settings file that does not load can be edited, and only a result that does not load is refused', () => {
   const DANGLING = { models: { connections: [{ ...OLLAMA, models: [DEVSTRAL, QWEN] }], start: 'ollama/removed-by-hand:latest' } };
-  const START_SENTENCE = 'models.start: "ollama/removed-by-hand:latest" is not a configured model; configured models: devstral-small-2, qwen3.8:27b';
+  const START_SENTENCE = 'models.start: "ollama/removed-by-hand:latest" is not a configured model; configured models: ollama/devstral-small-2, ollama/qwen3.8:27b';
 
   it('the file with a start model that was removed by hand does not load', async () => {
     const home = homeWith(DANGLING);
@@ -577,7 +577,7 @@ describe('a settings file that does not load can be edited, and only a result th
 
   it('setStart to a configured model repairs it, and so does clearing the start model', async () => {
     const chosen = homeWith(DANGLING);
-    expect((await editModels(chosen, [op('setStart', { model: QWEN_MODEL })])).summaries).toEqual(['New sessions start with qwen3.8:27b.']);
+    expect((await editModels(chosen, [op('setStart', { model: QWEN_MODEL })])).summaries).toEqual(['New sessions start with ollama/qwen3.8:27b.']);
     expect(modelsOf(chosen).start).toBe(QWEN_MODEL);
     expect(await loads(chosen)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL]);
     const cleared = homeWith(DANGLING);
@@ -592,7 +592,7 @@ describe('a settings file that does not load can be edited, and only a result th
     expect(await loads(removed)).toEqual([QWEN_MODEL]);
     const added = homeWith(DANGLING);
     const result = await editModels(added, [addModel(LMSTUDIO, { id: 'gemma-3-4b', capabilities: GEMMA_WINDOW }), op('setStart', { model: LMSTUDIO_GEMMA })]);
-    expect(result.summaries).toEqual(['Added gemma-3-4b. It is used from the next request.', 'New sessions start with gemma-3-4b.']);
+    expect(result.summaries).toEqual(['Added lmstudio/gemma-3-4b. It is used from the next request.', 'New sessions start with lmstudio/gemma-3-4b.']);
     expect(await loads(added)).toEqual([DEVSTRAL_MODEL, QWEN_MODEL, LMSTUDIO_GEMMA]);
   });
 
@@ -600,7 +600,7 @@ describe('a settings file that does not load can be edited, and only a result th
     const home = homeWith(DANGLING);
     const before = textOf(home);
     const refused = await refusalOfEdit(editModels(home, [addModel(LMSTUDIO, { id: 'gemma-3-4b', capabilities: GEMMA_WINDOW })]));
-    expect(refused).toEqual({ code: 'would_not_load', message: `Not saved: ${START_SENTENCE}, gemma-3-4b` });
+    expect(refused).toEqual({ code: 'would_not_load', message: `Not saved: ${START_SENTENCE}, lmstudio/gemma-3-4b` });
     expect(textOf(home)).toBe(before);
   });
 
@@ -653,7 +653,7 @@ describe('a field writer changes only the fields of its table, and a rewrite kee
   it('setting the id of a model that is referred to renames it and rewrites every reference in the same write', async () => {
     const home = homeWith(REFERRED);
     const result = await editModels(home, [op('setModelField', { model: LMSTUDIO_GEMMA, path: ['id'], value: 'gemma-3-12b' })]);
-    expect(result.summaries).toEqual(['Renamed lmstudio/gemma-3-4b to gemma-3-12b.']);
+    expect(result.summaries).toEqual(['Renamed lmstudio/gemma-3-4b to lmstudio/gemma-3-12b.']);
     const renamed = 'lmstudio/gemma-3-12b';
     const document = documentOf(home);
     expect(referencesIn(document)).toMatchObject({

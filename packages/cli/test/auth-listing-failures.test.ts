@@ -89,7 +89,7 @@ const CAPABILITIES = {
 
 const MEMBER = { model: 'local/m', counter: 'local/m', billing: 'local', provider: 'local', adapter: 'chat-completions', answers: 'model', upstream: 'm', capabilities: CAPABILITIES };
 
-const ENTRY = { id: 'local/m', object: 'model', provider: 'local', ownName: 'm', billing: 'local', capabilities: CAPABILITIES, state: 'available', chain: [MEMBER] };
+const ENTRY = { id: 'local/m', object: 'model', provider: 'local', ownName: 'm', naming: 'server', billing: 'local', capabilities: CAPABILITIES, state: 'available', chain: [MEMBER] };
 
 const LIST = { object: 'list', data: [ENTRY], start: 'local/m', roles: { compaction: 'local/m' } };
 

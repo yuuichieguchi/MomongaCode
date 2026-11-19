@@ -3,8 +3,8 @@ import type { ModelViews } from '@momonga/protocol';
 import { modelOptionOf, selectableModelOf } from '../src/acp/models.ts';
 
 const VIEWS: ModelViews = [
-  { canon: 'ollama/gemma-3-4b:latest', provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest' },
-  { canon: 'lmstudio/gemma-3-4b', provider: 'lmstudio', ownName: 'gemma-3-4b' },
+  { canon: 'ollama/gemma-3-4b:latest', provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest', naming: 'server' },
+  { canon: 'lmstudio/gemma-3-4b', provider: 'lmstudio', ownName: 'gemma-3-4b', naming: 'server' },
 ];
 
 describe('the model option of an ACP session', () => {

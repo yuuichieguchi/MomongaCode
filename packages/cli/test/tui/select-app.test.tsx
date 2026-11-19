@@ -267,7 +267,7 @@ describe('a picker is the selection component', () => {
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'qwen3.8:27b  ·  metered');
     app.stdin.write('2');
-    await untilOutput(app, 'model: qwen3.8:27b');
+    await untilOutput(app, 'model: ollama/qwen3.8:27b');
     await untilFrame(app, /^(?![\s\S]*esc: go back)[\s\S]*mode: manual/);
     expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual([]);
     app.unmount();

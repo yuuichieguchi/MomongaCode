@@ -4,13 +4,14 @@ import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
 import type { Redactor } from './core/redaction.ts';
-import type { BilledCallsCursorView, BilledCallsPageView, MomongaModelRoles, ReasoningEffort, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, RunSpansPage, TraceContentPage } from '@momonga/protocol';
+import type { BilledCallsCursorView, ModelNaming, BilledCallsPageView, MomongaModelRoles, ReasoningEffort, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, RunSpansPage, TraceContentPage } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
   provider: string;
   model: string;
   defaultTag?: string;
+  naming: ModelNaming;
   answers?: TargetAnswers;
   billing: TargetBilling;
   maxConcurrency: number;

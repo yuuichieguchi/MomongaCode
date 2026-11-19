@@ -191,6 +191,7 @@ export const listedEntry = (id: string, capabilities: unknown, chain: readonly u
   object: 'model',
   provider: LISTED_PROVIDER,
   ownName: id,
+  naming: 'account',
   billing: 'metered',
   capabilities,
   chain,
@@ -198,4 +199,4 @@ export const listedEntry = (id: string, capabilities: unknown, chain: readonly u
 
 export const listingBody = (data: readonly unknown[], rest: Record<string, unknown> = {}): Record<string, unknown> => ({ object: 'list', data, start: null, roles: {}, ...rest });
 
-export const listedView = (id: string): Record<string, unknown> => ({ id, canon: id, provider: LISTED_PROVIDER, ownName: id });
+export const listedView = (id: string): Record<string, unknown> => ({ id, canon: id, provider: LISTED_PROVIDER, ownName: id, naming: 'account' });

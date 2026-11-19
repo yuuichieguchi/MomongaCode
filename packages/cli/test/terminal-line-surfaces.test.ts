@@ -49,9 +49,9 @@ describe('a value a person did not write stays on its own line in command output
       imageInput: false,
     } as Capabilities;
     const ownName = `google/fast:7b ${FORGED}`;
-    const entry: MomongaModelEntry = { id: `lmstudio/${ownName}`, object: 'model', provider: 'lmstudio', ownName, billing: 'local', capabilities, state: 'available', chain: [] };
+    const entry: MomongaModelEntry = { id: `lmstudio/${ownName}`, object: 'model', provider: 'lmstudio', ownName, naming: 'server', billing: 'local', capabilities, state: 'available', chain: [] };
     const lines = formatModels(modelsDocumentOf({ object: 'list', data: [entry], start: null, roles: {} }, new Map([['lmstudio', `http://e.test/ ${FORGED}`]]), new Set(), new Map())).split('\n');
-    expect(lines).toEqual([`lmstudio  ·  http://e.test/ ${SHOWN}`, `  google/fast:7b ${SHOWN}  ·  1 tokens  ·  local`]);
+    expect(lines).toEqual([`lmstudio  ·  http://e.test/ ${SHOWN}`, `  lmstudio/google/fast:7b ${SHOWN}  ·  1 tokens  ·  local`]);
   });
 
   it('shows a daemon child held reason with a newline on the child line', () => {

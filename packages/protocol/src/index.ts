@@ -167,6 +167,7 @@ export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalSe
 export { GENERIC_SERVER_KIND, SERVER_ADAPTER_LABELS, SERVER_KINDS } from './server-kinds.ts';
 export type { JsonCheck, ServerKind, ServerKindAdapter, ServerKindRead, ServerKindRecognise, ServerKinds } from './server-kinds.ts';
 export {
+  MODEL_NAMINGS,
   ModelRefError,
   PROVIDER_NAME_PATTERN,
   STORED_MODEL_KEYS,
@@ -175,6 +176,7 @@ export {
   displayMapOf,
   displayOf,
   hasTag,
+  modelNamingOf,
   modelRefErrorOf,
   parseCanon,
   resolveStoredModelRef,
@@ -185,7 +187,7 @@ export {
   withDefaultTag,
   sessionModelNotConfiguredText,
 } from './model-ref.ts';
-export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
+export type { ModelNaming, ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
 export {
   ADD_MODEL_COMMAND,
   CHOOSE_SESSION_COMMAND,

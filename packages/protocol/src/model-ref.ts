@@ -3,7 +3,15 @@ import type { Surface } from './vocabulary.ts';
 
 export const PROVIDER_NAME_PATTERN = /^[a-z][a-z0-9._-]*$/;
 
-export type ModelView = { canon: string; provider: string; ownName: string; defaultTag?: string };
+export const MODEL_NAMINGS = ['server', 'account'] as const;
+
+export type ModelNaming = (typeof MODEL_NAMINGS)[number];
+
+const ACCOUNT_FACTS = ['plan', 'apiKeyEnv', 'apiKeySecret'] as const;
+
+export const modelNamingOf = (connection: object): ModelNaming => (ACCOUNT_FACTS.some((fact) => Reflect.get(connection, fact) !== undefined) ? 'account' : 'server');
+
+export type ModelView = { canon: string; provider: string; ownName: string; defaultTag?: string; naming: ModelNaming };
 export type ModelViews = readonly ModelView[];
 
 declare const storedBrand: unique symbol;
@@ -82,9 +90,9 @@ const displayIn = (index: ViewIndex, view: ModelView): string => {
     const resolution = resolveIn(index, text);
     return resolution.kind === 'found' && resolution.model.canon === view.canon;
   };
-  if (names(bare)) return bare;
   const withServer = canonOf(view.provider, bare);
-  return names(withServer) ? withServer : view.canon;
+  const candidates = view.naming === 'server' ? [withServer] : [bare, withServer];
+  return candidates.find(names) ?? view.canon;
 };
 
 export const displayOf = (view: ModelView, views: ModelViews): string => displayIn(indexOf(views), view);

@@ -65,7 +65,7 @@ describe('the fields the edit flows offer (4.9.2)', () => {
     expect(toggled.picks().find((pick) => pick.title === 'Streaming')?.rows).toEqual(['yes', 'no', 'not declared']);
     expect(toggled.picks().find((pick) => pick.title === 'Reasoning')?.rows).toEqual(['none', 'reasoning_effort', 'Remove the value']);
     expect(toggled.prompts().map((prompt) => prompt.title)).toEqual(['Pixels per image token:', 'Largest image:', 'Smallest image:']);
-    expect(toggled.infos[0]).toBe('Set Streaming of qwen3.8:27b to no.');
+    expect(toggled.infos[0]).toBe('Set Streaming of ollama/qwen3.8:27b to no.');
     expect(toggled.infos.at(-1)).toMatch(/capabilities\.imageTokens is declared but capabilities\.imageInput is false/);
     expect(toggled.picks().at(-1)?.rows).not.toEqual(['No', 'Yes']);
     const written = toggled.written() as { models: { connections: { models: { capabilities: Record<string, unknown> }[] }[] } };

@@ -88,7 +88,7 @@ describe('gateway client against a real gateway', () => {
     expect(listed.map((model) => model.id)).toEqual([MODEL]);
     const models = listed.flatMap((model) => ('probing' in model ? [] : [model]));
     expect(models[0]?.capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
-    expect(Object.keys(models[0] ?? {}).sort()).toEqual(['canon', 'capabilities', 'chain', 'id', 'ownName', 'provider']);
+    expect(Object.keys(models[0] ?? {}).sort()).toEqual(['canon', 'capabilities', 'chain', 'id', 'naming', 'ownName', 'provider']);
     expect(models[0]?.chain.map((member) => member.model)).toEqual([models[0]?.id]);
     expect(models[0]?.chain[0]?.counter).toMatch(/^[0-9a-f]{64}$/);
   });

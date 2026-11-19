@@ -1,6 +1,7 @@
 import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
 import {
+  MODEL_NAMINGS,
   isReasoningEffort,
   COMPACTION_RESULT_EVENT,
   DEFERRED_HEADER,
@@ -35,6 +36,7 @@ import type {
   GatewayCostReportView,
   GatewayHealth,
   HeaderRole,
+  ModelNaming,
   ModelQuote,
   ModelView,
   ModelViews,
@@ -303,6 +305,8 @@ const listedModelOf = (entry: unknown): ListedGatewayModel => {
   }
   const defaultTag = entry['defaultTag'];
   if (defaultTag !== undefined && typeof defaultTag !== 'string') throw invalidResponse('the model list holds a malformed entry');
+  const naming = entry['naming'];
+  if (!MODEL_NAMINGS.some((known) => known === naming)) throw invalidResponse('the model list holds a malformed entry');
   const members = entry['chain'];
   if (!Array.isArray(members) || members.length === 0) throw invalidResponse('the model list holds an entry without its chain members and their counters');
   const chain = members.map(listedMemberOf);
@@ -318,6 +322,7 @@ const listedModelOf = (entry: unknown): ListedGatewayModel => {
     provider: entry['provider'],
     ownName: entry['ownName'],
     ...(defaultTag === undefined ? {} : { defaultTag }),
+    naming: naming as ModelNaming,
     capabilities: entry['capabilities'],
     chain,
     ...(effort === undefined ? {} : { effort }),
@@ -336,7 +341,7 @@ const listedRolesOf = (value: unknown): MomongaModelRoles => {
   return roles;
 };
 
-const viewOf = ({ canon, provider, ownName, defaultTag }: ModelView): ModelView => ({ canon, provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }) });
+const viewOf = ({ canon, provider, ownName, defaultTag, naming }: ModelView): ModelView => ({ canon, provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }), naming });
 
 export const gatewayListingOf = (parsed: unknown): GatewayListing => {
   const data = isRecord(parsed) ? parsed['data'] : undefined;

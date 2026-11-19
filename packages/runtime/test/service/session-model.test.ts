@@ -9,13 +9,13 @@ const OLLAMA_GEMMA = 'ollama/gemma-3-4b:latest';
 const LMSTUDIO_GEMMA = 'lmstudio/gemma-3-4b';
 
 const S1: ModelViews = [
-  { canon: DEVSTRAL, provider: 'ollama', ownName: 'devstral-small-2:latest', defaultTag: 'latest' },
-  { canon: QWEN, provider: 'ollama', ownName: 'qwen3.8:27b', defaultTag: 'latest' },
+  { canon: DEVSTRAL, provider: 'ollama', ownName: 'devstral-small-2:latest', defaultTag: 'latest', naming: 'server' },
+  { canon: QWEN, provider: 'ollama', ownName: 'qwen3.8:27b', defaultTag: 'latest', naming: 'server' },
 ];
 
 const S2: ModelViews = [
-  { canon: OLLAMA_GEMMA, provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest' },
-  { canon: LMSTUDIO_GEMMA, provider: 'lmstudio', ownName: 'gemma-3-4b' },
+  { canon: OLLAMA_GEMMA, provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest', naming: 'server' },
+  { canon: LMSTUDIO_GEMMA, provider: 'lmstudio', ownName: 'gemma-3-4b', naming: 'server' },
 ];
 
 const serviceListing = async (views: ModelViews, start?: string) => {
@@ -53,7 +53,7 @@ describe('the model of a session (design-model-names 3.1, 2.2, 12.1 N2.4)', () =
       type: 'invalid_request',
       code: 'invalid_request',
       param: 'model',
-      message: 'The model "nope" is not configured. Configured models: devstral-small-2, qwen3.8:27b.',
+      message: 'The model "nope" is not configured. Configured models: ollama/devstral-small-2, ollama/qwen3.8:27b.',
     });
     expect(env.store.listSessions({ limit: 100, cursor: null }).sessions).toEqual([]);
   });

@@ -1,7 +1,7 @@
 import { GENERATION_RETIRED_CODE, HOST_READ_BOUND_MS, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver, UdsClient } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
-import { isReasoningEffort, JSON_MODES, MODEL_ENTRY_STATES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import { MODEL_NAMINGS, isReasoningEffort, JSON_MODES, MODEL_ENTRY_STATES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   TraceContentPage,
   Capabilities,
@@ -158,6 +158,7 @@ const ENTRY_FIELDS: readonly (readonly [string, (value: unknown) => boolean])[] 
   ['provider', isString],
   ['ownName', isString],
   ['defaultTag', (value) => isOptional(value, isString)],
+  ['naming', (value) => oneOf(value, MODEL_NAMINGS)],
   ['billing', isBilling],
   ['capabilities', isEntryCapabilities],
   ['state', (value) => oneOf(value, MODEL_ENTRY_STATES)],
@@ -178,6 +179,7 @@ const unreadableEntryOf = (entry: Record<string, unknown>, index: number, field:
     object: 'model',
     provider,
     ownName: isString(entry['ownName']) ? entry['ownName'] : id,
+    naming: oneOf(entry['naming'], MODEL_NAMINGS) ? (entry['naming'] as MomongaModelEntry['naming']) : 'account',
     billing: isBilling(entry['billing']) ? (entry['billing'] as MomongaModelEntry['billing']) : 'local',
     capabilities: { toolCalling: { state: 'unavailable', status: 502, type: 'server_error', code: ENTRY_UNREADABLE_CODE, message }, source: 'unprobed' },
     state: 'degraded',
@@ -200,7 +202,7 @@ const isModelListFrame = (value: unknown): value is Omit<MomongaModelList, 'data
   isRecord(value) && value['object'] === 'list' && Array.isArray(value['data']) && (value['start'] === null || isString(value['start'])) && isModelRoles(value['roles']);
 
 export const listingViewsOf = (entries: readonly MomongaModelEntry[]): ModelViews =>
-  entries.map((entry) => ({ canon: entry.id, provider: entry.provider, ownName: entry.ownName, ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }) }));
+  entries.map((entry) => ({ canon: entry.id, provider: entry.provider, ownName: entry.ownName, ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }), naming: entry.naming }));
 
 const isTargetHealth = (value: unknown): value is TargetHealth =>
   isRecord(value) &&

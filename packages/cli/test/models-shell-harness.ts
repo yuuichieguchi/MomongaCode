@@ -55,7 +55,7 @@ export const threeModels = (models: Record<string, unknown> = {}, qwen: Record<s
   models: { connections: [ollamaConnection([GEMMA_ON_OLLAMA, { ...QWEN_ON_OLLAMA, ...qwen }]), lmstudioConnection()], ...models },
 });
 
-export const THREE_DISPLAYS = 'ollama/gemma-3-4b, qwen3.8:27b, lmstudio/gemma-3-4b';
+export const THREE_DISPLAYS = 'ollama/gemma-3-4b, ollama/qwen3.8:27b, lmstudio/gemma-3-4b';
 
 export type ShellHome = { home: string; settingsFile: string };
 
@@ -123,6 +123,7 @@ export const listingOf = (home: string): MomongaModelList => {
       provider: model.provider,
       ownName: model.ownName,
       ...(model.defaultTag === undefined ? {} : { defaultTag: model.defaultTag }),
+      naming: model.naming,
       billing: model.billing,
       capabilities: capabilitiesOf(model),
       state: 'available',

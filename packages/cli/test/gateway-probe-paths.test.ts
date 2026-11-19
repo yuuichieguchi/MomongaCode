@@ -78,7 +78,7 @@ describe('gateway probe on a HOME that has never run momonga', () => {
 
     expect(result.codes).toEqual([0]);
     expect(hostPrograms).toContain('sw_vers');
-    expect(result.stdout).toContain('probed system: model system, context window 8192 (reported)');
+    expect(result.stdout).toContain('probed apple/system: model system, context window 8192 (reported)');
     expect(modeOf(path.join(home, '.momonga'))).toBe(0o700);
     expect(modeOf(path.join(home, '.momonga', 'run'))).toBe(0o700);
     expect(modeOf(path.join(home, '.momonga', 'state'))).toBe(0o700);
@@ -104,7 +104,7 @@ describe('gateway probe on a HOME that has never run momonga', () => {
     const result = await runCli(home, ['gateway', 'probe', 'fake/system', '--samples', '1']);
 
     expect(result.codes).toEqual([0]);
-    expect(result.stdout).toContain('probed system: model system');
+    expect(result.stdout).toContain('probed fake/system: model system');
     expect(modeOf(root)).toBe(0o700);
     expect(modeOf(path.join(root, 'run'))).toBe(0o700);
     expect(modeOf(path.join(root, 'state'))).toBe(0o700);

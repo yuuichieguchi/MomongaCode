@@ -49,19 +49,19 @@ const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
 
 describe('the /model list (6.2)', () => {
   it('has one row per configured model, in the order of the file', (context) => {
-    expect(rowsOf(listingWith(context, threeModels()))).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local']);
+    expect(rowsOf(listingWith(context, threeModels()))).toEqual(['ollama/gemma-3-4b  ·  local', 'ollama/qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local']);
   });
 
   it('shows the display name, then the models it falls back to when there are any', (context) => {
     expect(rowsOf(listingWith(context, threeModels({ fallback: ['lmstudio/gemma-3-4b', 'qwen3.8:27b'] })))).toEqual([
-      'ollama/gemma-3-4b → lmstudio/gemma-3-4b → qwen3.8:27b  ·  local',
-      'qwen3.8:27b → lmstudio/gemma-3-4b  ·  local',
-      'lmstudio/gemma-3-4b → qwen3.8:27b  ·  local',
+      'ollama/gemma-3-4b → lmstudio/gemma-3-4b → ollama/qwen3.8:27b  ·  local',
+      'ollama/qwen3.8:27b → lmstudio/gemma-3-4b  ·  local',
+      'lmstudio/gemma-3-4b → ollama/qwen3.8:27b  ·  local',
     ]);
   });
 
   it("marks the session's model", (context) => {
-    expect(rowsOf(listingWith(context, threeModels()), 'ollama/qwen3.8:27b')).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local  ·  current', 'lmstudio/gemma-3-4b  ·  local']);
+    expect(rowsOf(listingWith(context, threeModels()), 'ollama/qwen3.8:27b')).toEqual(['ollama/gemma-3-4b  ·  local', 'ollama/qwen3.8:27b  ·  local  ·  current', 'lmstudio/gemma-3-4b  ·  local']);
   });
 
   it('has no row that says default', (context) => {
@@ -80,14 +80,14 @@ describe('the /model list (6.2)', () => {
   it('shows the found models that are not configured below a separator, only after a search the user started', async (context) => {
     const before = flowOf(context, threeModels(), []);
     await pickerOf(before).modelPicker(undefined);
-    expect(before.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', MODEL_SETTINGS_ROW]);
+    expect(before.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'ollama/qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', MODEL_SETTINGS_ROW]);
 
-    const steps: Step[] = [{ pick: /^devstral-small-2/ }, { type: '32768' }, { pick: 'Yes' }];
+    const steps: Step[] = [{ pick: /^ollama\/devstral-small-2/ }, { type: '32768' }, { pick: 'Yes' }];
     const after = flowOf(context, threeModels(), steps);
     after.context.found.remember(offeredServers([ollamaFound(OLLAMA_ADDRESS, ['qwen3.8:27b', 'devstral-small-2:latest'])]));
     const connected: string[] = [];
     await pickerOf(after, connected).modelPicker(undefined);
-    expect(after.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', 'Found on this computer', `devstral-small-2  ·  ${OLLAMA_ADDRESS}`, MODEL_SETTINGS_ROW]);
+    expect(after.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'ollama/qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', 'Found on this computer', `ollama/devstral-small-2  ·  ${OLLAMA_ADDRESS}`, MODEL_SETTINGS_ROW]);
     expect(connected).toEqual(['ollama/devstral-small-2:latest']);
     expect((after.written() as { models: { connections: { models: { id: string }[] }[] } }).models.connections[0]?.models.map((model) => model.id)).toContain('devstral-small-2:latest');
   });
@@ -120,6 +120,6 @@ describe('the /model list (6.2)', () => {
     await switchModel('qwen3.8:27b --start', listingOf(harness.place.home).data, slash);
     expect(set).toEqual(['ollama/qwen3.8:27b']);
     expect((harness.written() as { models: { start: string } }).models.start).toBe('ollama/qwen3.8:27b');
-    expect(harness.infos.at(-1)).toBe('Starting model set to qwen3.8:27b');
+    expect(harness.infos.at(-1)).toBe('Starting model set to ollama/qwen3.8:27b');
   });
 });

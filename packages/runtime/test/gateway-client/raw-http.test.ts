@@ -192,8 +192,8 @@ describe('gateway client request headers', () => {
       },
       roles: { compaction: MAIN },
       views: [
-        { canon: SMALL, provider: LISTED_PROVIDER, ownName: SMALL },
-        { canon: MAIN, provider: LISTED_PROVIDER, ownName: MAIN },
+        { canon: SMALL, provider: LISTED_PROVIDER, ownName: SMALL, naming: 'account' },
+        { canon: MAIN, provider: LISTED_PROVIDER, ownName: MAIN, naming: 'account' },
       ],
     });
     const listing = await client.listing({ signal });

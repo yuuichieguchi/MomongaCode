@@ -43,7 +43,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const partly = flowOf(context, S1, [{ pick: SEARCH }, { pick: /^ollama/ }], { found: twoOnOllama });
     await runAddFlow(partly.context);
     expect(partly.picks()[1]?.rows).toEqual(['ollama  ·  http://127.0.0.1:11434  ·  1 model']);
-    expect(partly.picks()[2]?.rows).toEqual(['qwen3.8:27b']);
+    expect(partly.picks()[2]?.rows).toEqual(['ollama/qwen3.8:27b']);
 
     const whole = flowOf(context, S1, [{ pick: SEARCH }, { pick: /^ollama/ }], { found: () => [ollamaFound(OLLAMA_ADDRESS, ['devstral-small-2:latest'])] });
     await runAddFlow(whole.context);
@@ -52,29 +52,29 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
   });
 
   it('row 1: a model of a server the search finds is added after the confirm row, and Esc cancels the search', async (context) => {
-    const steps: Step[] = [{ pick: SEARCH }, { pick: OLLAMA_ROW }, { pick: 'devstral-small-2' }, { type: 'many' }, { type: '32768' }];
+    const steps: Step[] = [{ pick: SEARCH }, { pick: OLLAMA_ROW }, { pick: 'ollama/devstral-small-2' }, { type: 'many' }, { type: '32768' }];
     const declined = flowOf(context, undefined, [...steps, NO], { found: twoOnOllama });
     await runAddFlow(declined.context);
     expect(declined.phases).toEqual([SEARCHING, READING]);
     expect(declined.detections.map((request) => request.typed)).toEqual([[]]);
     expect(declined.picks().map((pick) => pick.rows)[1]).toEqual([OLLAMA_ROW]);
-    expect(declined.picks()[2]?.rows).toEqual(['devstral-small-2', 'qwen3.8:27b']);
-    expect(declined.prompts()).toEqual([{ kind: 'text', title: 'Context window for devstral-small-2:', hidden: false, problems: ['Enter a whole number of at least 1.'] }]);
-    expect(declined.picks().at(-1)?.title).toBe('Add devstral-small-2 to your settings?');
+    expect(declined.picks()[2]?.rows).toEqual(['ollama/devstral-small-2', 'ollama/qwen3.8:27b']);
+    expect(declined.prompts()).toEqual([{ kind: 'text', title: 'Context window for ollama/devstral-small-2:', hidden: false, problems: ['Enter a whole number of at least 1.'] }]);
+    expect(declined.picks().at(-1)?.title).toBe('Add ollama/devstral-small-2 to your settings?');
     expect(declined.bytes()).toBeUndefined();
 
     const accepted = flowOf(context, undefined, [...steps, YES], { found: twoOnOllama });
     await runAddFlow(accepted.context);
     expect(writtenOf(accepted).models.connections).toMatchObject([{ adapter: 'ollama', baseUrl: OLLAMA_ADDRESS, models: [{ id: 'devstral-small-2:latest', capabilities: { contextWindow: 32768 } }] }]);
-    expect(accepted.infos).toEqual(['Added devstral-small-2. It is used from the next request.']);
+    expect(accepted.infos).toEqual(['Added ollama/devstral-small-2. It is used from the next request.']);
 
-    const ceiling = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'small' }, { type: '9000' }], {
+    const ceiling = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'ollama/small' }, { type: '9000' }], {
       found: () => [{ kind: 'ollama', provider: 'ollama', address: OLLAMA_ADDRESS, models: [{ id: 'small:latest', tools: 'unknown', ceiling: 8192 }] }],
     });
     await runAddFlow(ceiling.context);
-    expect(ceiling.prompts()).toEqual([{ kind: 'text', title: 'Context window for small (at most 8192):', hidden: false, problems: ['Enter a whole number from 1 to 8192.'] }]);
+    expect(ceiling.prompts()).toEqual([{ kind: 'text', title: 'Context window for ollama/small (at most 8192):', hidden: false, problems: ['Enter a whole number from 1 to 8192.'] }]);
 
-    const described = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'small' }, YES], {
+    const described = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'ollama/small' }, YES], {
       found: () => [{ kind: 'ollama', provider: 'ollama', address: OLLAMA_ADDRESS, models: [{ id: 'small:latest', tools: 'unknown', ceiling: 8192 }] }],
       describe: async (_server, model) => ({ ...model, contextWindow: 4096 }),
     });
@@ -100,11 +100,11 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     expect(harness.prompts()[0]).toEqual({ kind: 'text', title: 'Address (for example http://127.0.0.1:11434):', hidden: false, problems: ['Not an address. Write it like http://127.0.0.1:11434.'] });
     expect(harness.detections.map((request) => ({ candidates: request.candidates, typed: request.typed }))).toEqual([{ candidates: [], typed: [address] }]);
     expect(harness.picks()[1]).toMatchObject({ title: `No model server answered at ${address}. Add it anyway?`, rows: APIS });
-    expect(harness.prompts().slice(1).map((prompt) => prompt.title)).toEqual(['Model name as the server calls it:', 'Context window for my-model:']);
-    expect(harness.picks().at(-1)?.title).toBe('Add my-model to your settings?');
+    expect(harness.prompts().slice(1).map((prompt) => prompt.title)).toEqual(['Model name as the server calls it:', 'Context window for srv-127.0.0.1-8080/my-model:']);
+    expect(harness.picks().at(-1)?.title).toBe('Add srv-127.0.0.1-8080/my-model to your settings?');
     expect(writtenOf(harness).models.connections).toMatchObject([{ adapter: 'chat-completions', baseUrl: address, models: [{ id: 'my-model', capabilities: { contextWindow: 4096 } }] }]);
 
-    const answering = flowOf(context, undefined, [{ pick: TYPE_ADDRESS }, { type: OLLAMA_ADDRESS }, { pick: 'qwen3.8:27b' }, { type: '8192' }, YES], { found: twoOnOllama });
+    const answering = flowOf(context, undefined, [{ pick: TYPE_ADDRESS }, { type: OLLAMA_ADDRESS }, { pick: 'ollama/qwen3.8:27b' }, { type: '8192' }, YES], { found: twoOnOllama });
     await runAddFlow(answering.context);
     expect(writtenOf(answering).models.connections).toMatchObject([{ adapter: 'ollama', models: [{ id: 'qwen3.8:27b' }] }]);
   });
@@ -178,19 +178,19 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
   });
 
   it('row 5: removing a model names what it is also the model for, and the list is read once after the write', async (context) => {
-    const harness = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), [{ pick: /^qwen3\.8:27b/ }, { pick: 'Remove' }, YES]);
+    const harness = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), [{ pick: /^ollama\/qwen3\.8:27b/ }, { pick: 'Remove' }, YES]);
     await runModelsHub(harness.context);
-    expect(harness.picks()[2]?.title).toBe('Remove qwen3.8:27b? It is also the model for: new sessions. Sessions that used it keep their history.');
-    expect(harness.infos).toEqual(['Removed qwen3.8:27b.']);
+    expect(harness.picks()[2]?.title).toBe('Remove ollama/qwen3.8:27b? It is also the model for: new sessions. Sessions that used it keep their history.');
+    expect(harness.infos).toEqual(['Removed ollama/qwen3.8:27b.']);
     expect(writtenOf(harness).models.connections[0]?.models.map((model) => model['id'])).toEqual(['gemma-3-4b:latest']);
     expect(writtenOf(harness).models['start']).toBeUndefined();
     expect(harness.listings).toHaveLength(2);
-    expect(harness.picks().at(-1)?.rows.some((row) => row.includes('qwen3.8:27b'))).toBe(false);
+    expect(harness.picks().at(-1)?.rows.some((row) => row.includes('ollama/qwen3.8:27b'))).toBe(false);
 
-    const plain = flowOf(context, threeModels(), [{ pick: /^qwen3\.8:27b/ }, { pick: 'Remove' }, NO]);
+    const plain = flowOf(context, threeModels(), [{ pick: /^ollama\/qwen3\.8:27b/ }, { pick: 'Remove' }, NO]);
     const before = plain.bytes();
     await runModelsHub(plain.context);
-    expect(plain.picks()[2]?.title).toBe('Remove qwen3.8:27b? Sessions that used it keep their history.');
+    expect(plain.picks()[2]?.title).toBe('Remove ollama/qwen3.8:27b? Sessions that used it keep their history.');
     expect(plain.bytes()).toBe(before);
   });
 
@@ -214,7 +214,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
   it('row 7: the model a new session starts with is chosen from the configured models, or left to the first one', async (context) => {
     const cleared = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), [{ pick: 'Use the first model in my settings' }, YES]);
     await runStartFlow(cleared.context);
-    expect(cleared.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b', 'qwen3.8:27b  ·  starts new sessions', 'lmstudio/gemma-3-4b', 'Use the first model in my settings']);
+    expect(cleared.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b', 'ollama/qwen3.8:27b  ·  starts new sessions', 'lmstudio/gemma-3-4b', 'Use the first model in my settings']);
     expect(writtenOf(cleared).models['start']).toBeUndefined();
 
     const chosen = flowOf(context, threeModels(), [{ pick: 'lmstudio/gemma-3-4b' }, YES]);
@@ -232,18 +232,18 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const harness = flowOf(
       context,
       threeModels(),
-      [{ pick: 'Add a model' }, { pick: 'qwen3.8:27b' }, YES, { pick: 'Add a model' }, { pick: 'lmstudio/gemma-3-4b' }, YES, { pick: '1  qwen3.8:27b' }, { pick: 'Move down' }, YES, { pick: '2  qwen3.8:27b' }, { pick: 'Remove' }, YES],
+      [{ pick: 'Add a model' }, { pick: 'ollama/qwen3.8:27b' }, YES, { pick: 'Add a model' }, { pick: 'lmstudio/gemma-3-4b' }, YES, { pick: '1  ollama/qwen3.8:27b' }, { pick: 'Move down' }, YES, { pick: '2  ollama/qwen3.8:27b' }, { pick: 'Remove' }, YES],
       { model: 'ollama/gemma-3-4b:latest' },
     );
     await runFallbackFlow(harness.context);
     const lists = harness.picks().filter((pick) => pick.title === title);
     expect(lists[0]).toMatchObject({ lines: ['No fallback models. If the model cannot answer, the request fails.', 'ollama/gemma-3-4b'], rows: ['Add a model'] });
-    expect(lists[1]).toMatchObject({ lines: ['ollama/gemma-3-4b → qwen3.8:27b'], rows: ['1  qwen3.8:27b', 'Add a model'] });
-    expect(lists[2]?.rows).toEqual(['1  qwen3.8:27b', '2  lmstudio/gemma-3-4b', 'Add a model']);
-    expect(lists[3]?.rows).toEqual(['1  lmstudio/gemma-3-4b', '2  qwen3.8:27b', 'Add a model']);
-    expect(harness.picks().find((pick) => pick.title === 'qwen3.8:27b')?.rows).toEqual(['Remove', 'Move up', 'Move down']);
+    expect(lists[1]).toMatchObject({ lines: ['ollama/gemma-3-4b → ollama/qwen3.8:27b'], rows: ['1  ollama/qwen3.8:27b', 'Add a model'] });
+    expect(lists[2]?.rows).toEqual(['1  ollama/qwen3.8:27b', '2  lmstudio/gemma-3-4b', 'Add a model']);
+    expect(lists[3]?.rows).toEqual(['1  lmstudio/gemma-3-4b', '2  ollama/qwen3.8:27b', 'Add a model']);
+    expect(harness.picks().find((pick) => pick.title === 'ollama/qwen3.8:27b')?.rows).toEqual(['Remove', 'Move up', 'Move down']);
     const confirms = harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title);
-    expect(confirms).toEqual(['Add qwen3.8:27b as fallback 1?', 'Add lmstudio/gemma-3-4b as fallback 2?', 'Move qwen3.8:27b to position 2?', 'Remove qwen3.8:27b from the fallback models?']);
+    expect(confirms).toEqual(['Add ollama/qwen3.8:27b as fallback 1?', 'Add lmstudio/gemma-3-4b as fallback 2?', 'Move ollama/qwen3.8:27b to position 2?', 'Remove ollama/qwen3.8:27b from the fallback models?']);
     expect(writtenOf(harness).models['fallback']).toEqual(['lmstudio/gemma-3-4b']);
   });
 
@@ -269,10 +269,10 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const session = "the session's model";
     const harness = flowOf(context, threeModels(), [
       { pick: /^Summaries/ },
-      { pick: 'qwen3.8:27b' },
+      { pick: 'ollama/qwen3.8:27b' },
       YES,
       { pick: /^Auto-mode classifier/ },
-      { pick: 'qwen3.8:27b' },
+      { pick: 'ollama/qwen3.8:27b' },
       YES,
       { pick: /^Summaries/ },
       { pick: "Use the session's model" },
@@ -280,20 +280,20 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     ]);
     await runRoleFlow(harness.context);
     expect(harness.picks()[0]?.rows).toEqual([`Summaries (compaction)  ·  ${session}`, `Reflection  ·  ${session}`, `Analysis  ·  ${session}`, `Auto-mode classifier  ·  ${session}`]);
-    expect(harness.picks()[1]?.rows).toEqual(['ollama/gemma-3-4b', 'qwen3.8:27b', 'lmstudio/gemma-3-4b', "Use the session's model"]);
+    expect(harness.picks()[1]?.rows).toEqual(['ollama/gemma-3-4b', 'ollama/qwen3.8:27b', 'lmstudio/gemma-3-4b', "Use the session's model"]);
     const confirms = harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title);
-    expect(confirms).toEqual(['Use qwen3.8:27b for summaries?', 'Use qwen3.8:27b for the auto-mode classifier?', "Use the session's model for summaries?"]);
+    expect(confirms).toEqual(['Use ollama/qwen3.8:27b for summaries?', 'Use ollama/qwen3.8:27b for the auto-mode classifier?', "Use the session's model for summaries?"]);
     expect(writtenOf(harness).models['roles']).toBeUndefined();
     expect(writtenOf(harness).autoMode).toEqual({ classifier: 'ollama/qwen3.8:27b' });
   });
 
   it('row 11: a number of a model is edited from its row', async (context) => {
-    const harness = flowOf(context, threeModels(), [{ pick: /^qwen3\.8:27b/ }, { pick: 'Edit' }, { pick: /^Context window/ }, { type: '65536' }, YES]);
+    const harness = flowOf(context, threeModels(), [{ pick: /^ollama\/qwen3\.8:27b/ }, { pick: 'Edit' }, { pick: /^Context window/ }, { type: '65536' }, YES]);
     await runModelsHub(harness.context);
     expect(harness.picks()[1]?.rows).toEqual(['Edit', 'Remove']);
-    expect(harness.prompts()[0]?.title).toBe('Context window for qwen3.8:27b:');
-    expect(harness.picks().find((pick) => pick.rows.join() === 'No,Yes')?.title).toBe('Set Context window of qwen3.8:27b to 65536?');
-    expect(harness.infos).toEqual(['Set Context window of qwen3.8:27b to 65536.']);
+    expect(harness.prompts()[0]?.title).toBe('Context window for ollama/qwen3.8:27b:');
+    expect(harness.picks().find((pick) => pick.rows.join() === 'No,Yes')?.title).toBe('Set Context window of ollama/qwen3.8:27b to 65536?');
+    expect(harness.infos).toEqual(['Set Context window of ollama/qwen3.8:27b to 65536.']);
     expect(writtenOf(harness).models.connections[0]?.models[1]).toMatchObject({ capabilities: { contextWindow: 65536 } });
   });
 
@@ -330,7 +330,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       ['Name for this server (Enter: llama-server):', []],
     ]);
     expect(harness.phases).toContain(MEASURING);
-    expect(harness.picks().at(-1)?.title).toBe(`Add llama-server (${LLAMA_SERVER.command}) as a model server with the model qwen3-coder-30b?`);
+    expect(harness.picks().at(-1)?.title).toBe(`Add llama-server (${LLAMA_SERVER.command}) as a model server with the model llama-server/qwen3-coder-30b?`);
     expect(writtenOf(harness).models).toMatchObject({ servers: { 'llama-server': LLAMA_SERVER }, connections: [{ adapter: 'managed', server: 'llama-server', models: [{ id: 'qwen3-coder-30b' }] }] });
 
     const failing = flowOf(context, undefined, steps);
@@ -378,7 +378,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       rows: [
         `ollama  ·  ${OLLAMA_ADDRESS}`,
         'ollama/gemma-3-4b  ·  32.8k tokens  ·  local',
-        'qwen3.8:27b  ·  32.8k tokens  ·  local  ·  starts new sessions',
+        'ollama/qwen3.8:27b  ·  32.8k tokens  ·  local  ·  starts new sessions',
         'lmstudio  ·  http://127.0.0.1:1234/v1',
         'lmstudio/gemma-3-4b  ·  4.1k tokens  ·  local',
         'Change',
@@ -397,7 +397,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     expect(plain.picks()[0]?.rows.slice(0, 3)).toEqual([
       'gpu-box  ·  http://192.168.1.20:8080/v1',
       'The address of gpu-box is plain http to another computer: what you send to it is not encrypted.',
-      'm  ·  8.2k tokens  ·  metered  ·  starts new sessions',
+      'gpu-box/m  ·  8.2k tokens  ·  metered  ·  starts new sessions',
     ]);
 
     const empty = flowOf(context, undefined, []);
@@ -438,7 +438,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const harness = flowOf(context, threeModels(), [{ pick: 'Check the servers' }], { found: (request) => (request.typed[0] === OLLAMA_ADDRESS ? found() : []) });
     await runModelsHub(harness.context);
     expect(harness.phases).toEqual([CHECKING]);
-    expect(harness.picks()[1]?.rows).toContain('qwen3.8:27b  ·  32.8k tokens  ·  local  ·  not listed by the server');
+    expect(harness.picks()[1]?.rows).toContain('ollama/qwen3.8:27b  ·  32.8k tokens  ·  local  ·  not listed by the server');
     expect(harness.picks()[1]?.rows).toContain('ollama/gemma-3-4b  ·  32.8k tokens  ·  local  ·  starts new sessions');
 
     const cancelled = flowOf(context, threeModels(), [{ pick: 'Check the servers' }], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING });

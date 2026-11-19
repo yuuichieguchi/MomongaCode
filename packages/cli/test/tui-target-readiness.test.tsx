@@ -38,7 +38,7 @@ describe('the TUI shows the readiness verdict before any request', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/model chat-only', '> /model chat-only');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: chat-only');
+    await untilOutput(app, 'model: lmstudio/chat-only');
     await untilOutput(app, NO_TOOLS_NOTICE);
     expect(backend.calls).toContain(`model:${CHAT_ONLY}`);
     app.unmount();

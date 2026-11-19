@@ -24,7 +24,7 @@ const capabilities = (schemaDialect: string | undefined): Record<string, unknown
 
 const member = (model: string, dialect: string) => ({ model, counter: '1'.repeat(64), billing: 'local', adapter: 'chat-completions', answers: 'model', upstream: model.split('/')[1], capabilities: capabilities(dialect) });
 
-const entry = (id: string, chain: unknown[], listed: Record<string, unknown>) => ({ id, object: 'model', provider: id.split('/')[0], ownName: id.split('/')[1], billing: 'local', capabilities: listed, state: 'available', chain });
+const entry = (id: string, chain: unknown[], listed: Record<string, unknown>) => ({ id, object: 'model', provider: id.split('/')[0], ownName: id.split('/')[1], naming: 'server', billing: 'local', capabilities: listed, state: 'available', chain });
 
 const serve = async (context: TestContext, data: unknown[]): Promise<GatewayClient> => {
   const socketPath = path.join(withTempDir(context), 'g.sock');

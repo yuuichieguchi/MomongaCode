@@ -3,10 +3,10 @@ import type { ResolvedModelTarget } from '@momonga/config';
 import type { ManagedServerDescription, ReasoningCapability } from '@momonga/protocol';
 import type { ProbeOutputPolicy } from './probe/decide.ts';
 
-type ResolvedTarget = ResolvedModelTarget & { canon?: string; ownName?: string; defaultTag?: string };
+type ResolvedTarget = ResolvedModelTarget & { canon?: string; ownName?: string; defaultTag?: string; naming?: string };
 
 const definitionOf = (target: ResolvedTarget): ResolvedModelTarget => {
-  const { canon: _canon, ownName: _ownName, defaultTag: _defaultTag, ...definition } = target;
+  const { canon: _canon, ownName: _ownName, defaultTag: _defaultTag, naming: _naming, ...definition } = target;
   return definition;
 };
 

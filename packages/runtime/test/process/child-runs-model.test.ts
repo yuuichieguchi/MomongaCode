@@ -9,8 +9,8 @@ const OLLAMA_GEMMA = 'ollama/gemma-3-4b:latest';
 const LMSTUDIO_GEMMA = 'lmstudio/gemma-3-4b';
 
 const S2: ModelViews = [
-  { canon: OLLAMA_GEMMA, provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest' },
-  { canon: LMSTUDIO_GEMMA, provider: 'lmstudio', ownName: 'gemma-3-4b' },
+  { canon: OLLAMA_GEMMA, provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest', naming: 'server' },
+  { canon: LMSTUDIO_GEMMA, provider: 'lmstudio', ownName: 'gemma-3-4b', naming: 'server' },
 ];
 
 const agentWith = (model?: string): AgentDefinition => ({

@@ -12,7 +12,7 @@ describe('momonga gateway probe <model>', () => {
     const { resolved } = await loadUserModels({ home: homeWith(context, threeModels()).home, signal: new AbortController().signal });
 
     expect(probeSubjectOf(resolved, 'ollama/gemma-3-4b')).toMatchObject({ canon: 'ollama/gemma-3-4b:latest', display: 'ollama/gemma-3-4b' });
-    expect(probeSubjectOf(resolved, 'qwen3.8:27b')).toMatchObject({ canon: 'ollama/qwen3.8:27b', display: 'qwen3.8:27b' });
+    expect(probeSubjectOf(resolved, 'qwen3.8:27b')).toMatchObject({ canon: 'ollama/qwen3.8:27b', display: 'ollama/qwen3.8:27b' });
     expect(() => probeSubjectOf(resolved, 'gemma-3-4b')).toThrow('The model "gemma-3-4b" is served by two servers: ollama/gemma-3-4b, lmstudio/gemma-3-4b. Write one of them.');
   });
 

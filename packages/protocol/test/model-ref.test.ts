@@ -46,8 +46,8 @@ describe('the short form of an own name (the default tag left out)', () => {
 });
 
 describe('the display name of a configured model', () => {
-  it('S1, one Ollama server: the short form, or the own name when it has no short form', () => {
-    expect(displaysOf(S1)).toEqual(['devstral-small-2', 'qwen3.8:27b']);
+  it('S1, one Ollama server: the server name in front of the short form, or of the own name when it has no short form', () => {
+    expect(displaysOf(S1)).toEqual(['ollama/devstral-small-2', 'ollama/qwen3.8:27b']);
   });
 
   it('S2, Ollama and LM Studio serving one name: the server name in front of the short form and of the own name', () => {
@@ -62,8 +62,8 @@ describe('the display name of a configured model', () => {
     expect(displaysOf(S3)).toEqual(['chatgpt/gpt-5.5', 'openai/gpt-5.5']);
   });
 
-  it('an own name with a slash on one server is shown alone', () => {
-    expect(displaysOf(SLASH_ID)).toEqual(['google/gemma-3n-e4b']);
+  it('an own name with a slash on a local server keeps the server name in front', () => {
+    expect(displaysOf(SLASH_ID)).toEqual(['lmstudio/google/gemma-3n-e4b']);
   });
 
   it('a model whose own name equals another model canonical reference is shown by its own canonical reference', () => {

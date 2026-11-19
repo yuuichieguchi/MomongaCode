@@ -53,13 +53,13 @@ describe('autoModeNotice renders the view for the client surface', () => {
 
 describe('store-protocol-C33: the notice names the classifier by the one display of model references', () => {
   const CANON = 'ollama/guard:latest';
-  const views = [{ canon: CANON, provider: 'ollama', ownName: 'guard:latest', defaultTag: 'latest' }];
+  const views = [{ canon: CANON, provider: 'ollama', ownName: 'guard:latest', defaultTag: 'latest', naming: 'server' as const }];
   const notice = (view: View): string => protocol.autoModeNotice({ view: view as never, surface: 'cli', shownModel: protocol.displayOf(views[0] as protocol.ModelView, views) });
 
   it.each(['not_measured', 'unreadable', 'passed', 'did_not_pass'] as const)('carries the short name and never the full reference (%s)', (measurement) => {
     const facts = { recordedAt: '2026-11-06T00:00:00.000Z', falseAllows: 0, total: 75, upperBound: 0.0487 };
     const line = notice({ model: CANON, key: KEY, measurement, facts, refusal: { file: '/f.json', reason: 'not a record' } });
-    expect(line).toContain('classifier guard ');
+    expect(line).toContain('classifier ollama/guard ');
     expect(line).not.toContain(CANON);
   });
 });

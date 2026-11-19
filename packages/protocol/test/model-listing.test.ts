@@ -42,7 +42,7 @@ const UNAVAILABLE = { state: 'unavailable', status: 412, type: 'invalid_request'
 
 describe('the models listing of the gateway names every model by its canonical reference', () => {
   it('an entry holds id, provider, ownName, an optional defaultTag, billing, capabilities, its chain and the effort it starts with', () => {
-    expectTypeOf<keyof MomongaModelEntry>().toEqualTypeOf<'id' | 'object' | 'provider' | 'ownName' | 'defaultTag' | 'billing' | 'capabilities' | 'state' | 'chain' | 'effort'>();
+    expectTypeOf<keyof MomongaModelEntry>().toEqualTypeOf<'id' | 'object' | 'provider' | 'ownName' | 'defaultTag' | 'naming' | 'billing' | 'capabilities' | 'state' | 'chain' | 'effort'>();
     expectTypeOf<MomongaModelEntry['provider']>().toEqualTypeOf<string>();
     expectTypeOf<MomongaModelEntry['ownName']>().toEqualTypeOf<string>();
     expectTypeOf<MomongaModelEntry['defaultTag']>().toEqualTypeOf<string | undefined>();
@@ -58,12 +58,13 @@ describe('the models listing of the gateway names every model by its canonical r
       provider: 'ollama',
       ownName: 'gemma-3-4b:latest',
       defaultTag: 'latest',
+      naming: 'server',
       billing: 'local',
       capabilities: { toolCalling: { state: 'probing', message: 'm', retryAfterSeconds: 1 }, source: 'unprobed' } as unknown as ProbingCapabilities,
       state: 'available',
       chain: [],
     };
-    expect(Object.keys(entry)).toEqual(['id', 'object', 'provider', 'ownName', 'defaultTag', 'billing', 'capabilities', 'state', 'chain']);
+    expect(Object.keys(entry)).toEqual(['id', 'object', 'provider', 'ownName', 'defaultTag', 'naming', 'billing', 'capabilities', 'state', 'chain']);
     expect(constant('MODEL_NOT_LISTED_CODE')).toBe('model_not_listed');
   });
 

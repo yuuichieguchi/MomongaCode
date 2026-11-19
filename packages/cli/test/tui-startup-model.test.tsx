@@ -13,7 +13,7 @@ const QWEN = 'ollama/qwen3.8:27b';
 describe('the model on the start screen', () => {
   it('shows the model by its display name, and no fallback line', async () => {
     const { app } = await start({ session: { model: DEVSTRAL }, models: [DEVSTRAL, QWEN], chain: [DEVSTRAL, QWEN] }, { startup: config }, { columns: 80, rows: 16 });
-    const screen = await untilFrame(app, 'model: devstral-small-2');
+    const screen = await untilFrame(app, 'model: ollama/devstral-small-2');
     expect(screen).not.toContain(`model: ${DEVSTRAL}`);
     expect(screen).not.toContain('fallback:');
     app.unmount();

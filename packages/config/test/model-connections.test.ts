@@ -31,11 +31,11 @@ describe('models.connections: one object per server or account, each listing its
     expect(keysOf((await loadFile(S4)).models)).toEqual(['llama-server/qwen3-coder-30b']);
     const s1 = (await loadFile(S1)).models;
     expect(s1.views).toEqual([
-      { canon: 'ollama/devstral-small-2:latest', provider: 'ollama', ownName: 'devstral-small-2:latest', defaultTag: 'latest' },
-      { canon: 'ollama/qwen3.8:27b', provider: 'ollama', ownName: 'qwen3.8:27b', defaultTag: 'latest' },
+      { canon: 'ollama/devstral-small-2:latest', provider: 'ollama', ownName: 'devstral-small-2:latest', defaultTag: 'latest', naming: 'server' },
+      { canon: 'ollama/qwen3.8:27b', provider: 'ollama', ownName: 'qwen3.8:27b', defaultTag: 'latest', naming: 'server' },
     ]);
     expect(modelAt(s1, 'ollama/qwen3.8:27b')).toMatchObject({ canon: 'ollama/qwen3.8:27b', provider: 'ollama', ownName: 'qwen3.8:27b', model: 'qwen3.8:27b', defaultTag: 'latest', adapter: 'ollama' });
-    expect((await loadFile(S2)).models.views[1]).toEqual({ canon: 'lmstudio/gemma-3-4b', provider: 'lmstudio', ownName: 'gemma-3-4b' });
+    expect((await loadFile(S2)).models.views[1]).toEqual({ canon: 'lmstudio/gemma-3-4b', provider: 'lmstudio', ownName: 'gemma-3-4b', naming: 'server' });
   });
 
   it('the built-in managed server is named by its description, so its model is apple/<id>', async () => {

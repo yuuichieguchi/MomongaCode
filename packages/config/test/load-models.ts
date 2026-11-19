@@ -7,7 +7,7 @@ export type Chains = ReadonlyMap<string, readonly string[]>;
 export type LoadedModels = {
   connections: readonly Record<string, unknown>[];
   models: ReadonlyMap<string, Record<string, unknown>>;
-  views: readonly { canon: string; provider: string; ownName: string; defaultTag?: string }[];
+  views: readonly { canon: string; provider: string; ownName: string; defaultTag?: string; naming: string }[];
   chains: Chains;
   start: string | undefined;
   effort?: string;

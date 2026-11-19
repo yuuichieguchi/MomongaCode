@@ -31,7 +31,7 @@ describe('server programs in the list of local servers (O-R5-5 item 4, S7, S10)'
     const { app, backend } = await startPlan({ models: [], accounts: [], detected: [managed, refused], programModel: 'apple-fm' });
     await choose(app, 'Use a local server');
     await choose(app, 'Use the Apple on-device model');
-    await untilFrame(app, 'Add apple-fm to your settings?');
+    await untilFrame(app, 'Add apple/apple-fm to your settings?');
     expect(fs.existsSync(backend.modelsFile())).toBe(false);
     await choose(app, 'Yes');
     await backend.called('openSession');

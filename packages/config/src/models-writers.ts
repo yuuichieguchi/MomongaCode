@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { answeredLater, isRecord } from '@momonga/foundation';
 import {
+  modelNamingOf,
   PROVIDER_NAME_PATTERN,
   SERVER_ADAPTER_LABELS,
   SERVER_KINDS,
@@ -180,7 +181,7 @@ const writtenViewsOf = (connection: unknown, provider: string | undefined, kinds
   const defaultTag = tagOf(connection, kinds);
   return writtenEntries(connection).map((entry) => {
     const ownName = withDefaultTag(String(isRecord(entry) ? entry['id'] : undefined), defaultTag);
-    return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }) };
+    return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }), naming: modelNamingOf(connection) };
   });
 };
 

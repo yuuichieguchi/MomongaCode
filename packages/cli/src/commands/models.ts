@@ -4,6 +4,7 @@ import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, Mode
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
 import {
+  modelNamingOf,
   REASONING_EFFORTS,
   isReasoningEffort,
   GENERIC_SERVER_KIND,
@@ -379,7 +380,7 @@ export const viewsOfDocument = (document: Json, ports: ModelsEditPorts): ModelVi
     const entries = Array.isArray(connection['models']) ? connection['models'].filter(isRecord) : [];
     return entries.map((entry): ModelView => {
       const ownName = withDefaultTag(String(entry['id']), defaultTag);
-      return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }) };
+      return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }), naming: modelNamingOf(connection) };
     });
   });
 

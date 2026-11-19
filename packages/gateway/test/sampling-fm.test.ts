@@ -35,6 +35,6 @@ describe('an fm target renders no sampling field', () => {
     expect(response.body.error.type).toBe('invalid_request');
     expect(response.body.error.param).toBe('temperature');
     expect(response.body.error.message).toContain('temperature');
-    expect(response.body.error.message).toContain('model "system"');
+    expect(response.body.error.message).toContain('model "local-fm/system"');
   });
 });

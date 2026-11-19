@@ -905,6 +905,7 @@ export const gatewayConfigOf = (resolved: Pick<ResolvedModels, 'models' | 'chain
           provider: target.provider,
           model: target.model,
           ...(target.defaultTag === undefined ? {} : { defaultTag: target.defaultTag }),
+          naming: target.naming,
           ...(target.answers === undefined ? {} : { answers: target.answers }),
           ...(target.idempotencyKeyHeader === undefined ? {} : { idempotencyKeyHeader: target.idempotencyKeyHeader }),
           billing: target.billing,

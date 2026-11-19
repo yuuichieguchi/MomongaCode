@@ -40,9 +40,9 @@ const LOCAL_MODEL = 'lmstudio/local-model';
 const SLOW_MODEL = 'apple/slow';
 
 const LISTING = [
-  { id: PLAN_MODEL, object: 'model', provider: 'chatgpt', ownName: 'plan-model', billing: 'plan', capabilities: UNAV, state: 'available', chain: [member(PLAN_MODEL, 'plan-model', 'plan', UNAV), member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
-  { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local', capabilities: LOCAL, state: 'available', chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
-  { id: SLOW_MODEL, object: 'model', provider: 'apple', ownName: 'slow', billing: 'local', capabilities: PROBING, state: 'available', chain: [member(SLOW_MODEL, 'slow', 'local', PROBING)] },
+  { id: PLAN_MODEL, object: 'model', provider: 'chatgpt', ownName: 'plan-model', naming: 'account', billing: 'plan', capabilities: UNAV, state: 'available', chain: [member(PLAN_MODEL, 'plan-model', 'plan', UNAV), member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
+  { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', naming: 'server', billing: 'local', capabilities: LOCAL, state: 'available', chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
+  { id: SLOW_MODEL, object: 'model', provider: 'apple', ownName: 'slow', naming: 'server', billing: 'local', capabilities: PROBING, state: 'available', chain: [member(SLOW_MODEL, 'slow', 'local', PROBING)] },
 ];
 
 const ENTRIES = LISTING as unknown as readonly MomongaModelEntry[];
@@ -84,7 +84,7 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
       const capabilities = listed?.capabilities as { toolCalling: { code?: string } } | undefined;
       return { refusal: capabilities?.toolCalling.code, expected: 'model_entry_unreadable' };
     };
-    const base = { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local', state: 'available' };
+    const base = { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', naming: 'server', billing: 'local', state: 'available' };
     const entryLevel = await answerTo({ ...base, capabilities: malformed, chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] });
     expect(entryLevel.refusal).toBe(entryLevel.expected);
     const memberLevel = await answerTo({ ...base, capabilities: LOCAL, chain: [member(LOCAL_MODEL, 'local-model', 'local', malformed)] });
@@ -93,7 +93,7 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
 
   it('momonga models prints a plan model with its billing, a listed one with its window and a measured one without a window', () => {
     expect(formatModels(modelsDocumentOf(LISTED, new Map([['lmstudio', 'http://127.0.0.1:1234/v1']]), new Set(), new Map()))).toBe(
-      ['chatgpt', '  plan-model  ·  plan  ·  available', 'lmstudio  ·  http://127.0.0.1:1234/v1', '  local-model  ·  32.8k tokens  ·  local', 'apple', '  slow  ·  window not known'].join('\n'),
+      ['chatgpt', '  plan-model  ·  plan  ·  available', 'lmstudio  ·  http://127.0.0.1:1234/v1', '  lmstudio/local-model  ·  32.8k tokens  ·  local', 'apple', '  apple/slow  ·  window not known'].join('\n'),
     );
   });
 

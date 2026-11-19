@@ -167,8 +167,8 @@ describe('the screen-reader display', () => {
     const shown = (await untilFrame(started.app, 'Check the servers')).split('\n').map((line) => line.trimEnd());
     expect(shown.join('\n')).not.toMatch(/[├└]/);
     expect(shown).toContain(' 1. ollama');
-    expect(shown.some((line) => /^ 2\. {4}qwen3\.8:27b/.test(line))).toBe(true);
-    expect(shown.some((line) => /^ 3\. {4}gemma-3-4b/.test(line))).toBe(true);
+    expect(shown.some((line) => /^ 2\. {4}ollama\/qwen3\.8:27b/.test(line))).toBe(true);
+    expect(shown.some((line) => /^ 3\. {4}ollama\/gemma-3-4b/.test(line))).toBe(true);
     started.app.unmount();
   });
 

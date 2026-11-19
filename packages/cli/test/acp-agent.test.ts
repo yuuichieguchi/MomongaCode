@@ -1011,7 +1011,7 @@ describe('model selection', () => {
 
     expect(unknownOption.code).toBe(-32602);
     expect(unknownModel.code).toBe(-32602);
-    expect(unknownModel.message).toContain('The model "not-a-model" is not one of the configured models: scripted-model, fm-large.');
+    expect(unknownModel.message).toContain('The model "not-a-model" is not one of the configured models: scripted-model, apple/fm-large.');
     expect(harness.runtime.calls.some((call) => call.startsWith('setModel'))).toBe(false);
     await harness.peer.close();
   });

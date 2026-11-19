@@ -11,7 +11,7 @@ const THREE = [chatConnection('https://a.example.com/v1'), chatConnection('https
 
 const chainsOf = (chains: Chains): Record<string, readonly string[]> => Object.fromEntries(chains);
 
-const NOT_CONFIGURED = '"nope" is not a configured model; configured models: devstral-small-2, qwen3.8:27b';
+const NOT_CONFIGURED = '"nope" is not a configured model; configured models: ollama/devstral-small-2, ollama/qwen3.8:27b';
 
 describe('models.start: the model a new session starts with', () => {
   it('is the first model in file order when the key is absent, the named model when written, and absent when no model is configured', async () => {

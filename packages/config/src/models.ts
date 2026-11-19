@@ -2,6 +2,7 @@ import path from 'node:path';
 import { askedPaths, endpointHostOf, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import type { PathAsking } from '@momonga/foundation';
 import {
+  modelNamingOf,
   DEFAULT_ANTHROPIC_API_VERSION,
   SERVER_KINDS,
   acceptedReasoningEfforts,
@@ -14,7 +15,7 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
-import type { AnthropicApiVersion, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningCapability, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, ModelNaming, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningCapability, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { ConfigError, toConfigError } from './config-error.ts';
 import { chainRoomVerdict, roomNumbersText } from './chain-room.ts';
 import type { ChainMember } from './chain-room.ts';
@@ -55,7 +56,7 @@ import type {
   TargetCapabilitiesCore,
 } from './settings.ts';
 
-export type ResolvedModel = ResolvedModelTarget & { canon: string; provider: string; providerWritten: boolean; ownName: string; defaultTag?: string };
+export type ResolvedModel = ResolvedModelTarget & { canon: string; provider: string; providerWritten: boolean; ownName: string; defaultTag?: string; naming: ModelNaming };
 
 export type ResolvedConnection = {
   provider: string;
@@ -492,7 +493,7 @@ const resolveConnections = (connections: readonly ModelConnection[], source: str
     const resolved = entries.map(({ flat, place }) => resolveTarget(flat, provider, place, context));
     configured.connections.push(resolvedConnectionOf(connections[index] as ModelConnection, provider, defaultTag, resolved[0] as ResolvedModelTarget));
     resolved.forEach((target, entryIndex) => {
-      const view: ModelView = { canon: canonOf(provider, target.model), provider, ownName: target.model, ...(defaultTag === undefined ? {} : { defaultTag }) };
+      const view: ModelView = { canon: canonOf(provider, target.model), provider, ownName: target.model, ...(defaultTag === undefined ? {} : { defaultTag }), naming: modelNamingOf(target) };
       const saved = savedEffortOf(connections[index] as ModelConnection, entryIndex);
       if (saved !== undefined) {
         checkSavedEffort(target, saved, (entries[entryIndex] as { place: { entry: string } }).place.entry);

@@ -4,8 +4,8 @@ import { textStep } from '../worker/scripts.ts';
 import { attachWorkerKit, startService } from './helpers.ts';
 
 const STORED = 'p1/x';
-const WITH_X: ModelViews = [{ canon: STORED, provider: 'p1', ownName: 'x' }];
-const WITH_OWN_NAME_P1_X: ModelViews = [{ canon: 'p1/p1/x', provider: 'p1', ownName: 'p1/x' }];
+const WITH_X: ModelViews = [{ canon: STORED, provider: 'p1', ownName: 'x', naming: 'account' }];
+const WITH_OWN_NAME_P1_X: ModelViews = [{ canon: 'p1/p1/x', provider: 'p1', ownName: 'p1/x', naming: 'account' }];
 const LOCAL = 'local';
 
 const sentenceOf = (stored: string): string => `The model "${stored}" of this session is not configured any more. Choose another with /model.`;

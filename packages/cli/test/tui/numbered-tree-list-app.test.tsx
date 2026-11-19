@@ -50,10 +50,10 @@ describe('a numbered list reads as one column of labels and a tree of child rows
     const childIndent = (row: Numbered): number => row.text.search(/[a-z0-9]/i);
     expect(childIndent(first)).toBeGreaterThanOrEqual(2);
     expect(childIndent(second)).toBe(childIndent(first));
-    expect(first.text).toMatch(/^├─ qwen/);
-    expect(second.text).toMatch(/^└─ gemma/);
+    expect(first.text).toMatch(/^├─ ollama\/qwen/);
+    expect(second.text).toMatch(/^└─ ollama\/gemma/);
     expect(rowOf(rows, 4).text).toMatch(/^lmstudio/);
-    expect(rowOf(rows, 5).text).toMatch(/^└─ devstral/);
+    expect(rowOf(rows, 5).text).toMatch(/^└─ lmstudio\/devstral/);
     app.close();
   });
 });

@@ -17,7 +17,7 @@ describe('resolveStoredModelRef: a value the product stored', () => {
   it('a stored reference never moves to a model whose own name equals the stored text', () => {
     const views = [view('p1', 'p1/x')];
     expect(stored('p1/x', views)).toBeUndefined();
-    expect(resolveTypedModelRef(typedModelText('p1/x'), views)).toEqual({ kind: 'found', model: { canon: 'p1/p1/x', provider: 'p1', ownName: 'p1/x' } });
+    expect(resolveTypedModelRef(typedModelText('p1/x'), views)).toEqual({ kind: 'found', model: { canon: 'p1/p1/x', provider: 'p1', ownName: 'p1/x', naming: 'account' } });
   });
 
   it('a value an earlier build stored gives nothing', () => {

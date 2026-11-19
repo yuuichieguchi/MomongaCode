@@ -150,7 +150,7 @@ export const createFakePorts = (): FakePorts => {
     start,
     modelListing: async () => {
       if (listingFailure.error !== undefined) throw listingFailure.error;
-      const views = shown.views ?? listed.map((model) => ({ canon: model, provider: FAKE_PROVIDER, ownName: model }));
+      const views = shown.views ?? listed.map((model) => ({ canon: model, provider: FAKE_PROVIDER, ownName: model, naming: 'account' as const }));
       return { views, start: start.model === undefined ? (views[0]?.canon ?? null) : start.model };
     },
     sessionCreateSettings: async (cwd) => {
