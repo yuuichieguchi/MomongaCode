@@ -89,7 +89,7 @@ describe('modelRefErrorOf: the one sentence of each refusal', () => {
   });
 
   it('not found with no model configured says how to connect one', () => {
-    expect(refusalOf('nope', []).message).toBe('The model "nope" is not configured. No model is connected. Use /login to connect one.');
+    expect(refusalOf('nope', []).message).toBe('The model "nope" is not configured. No model is connected. Use /login to sign in or add an API key, or /model to use a local server.');
   });
 
   it('not found with no model configured names a shell command where the reader is in a shell', () => {
