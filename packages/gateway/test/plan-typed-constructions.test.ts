@@ -37,7 +37,7 @@ describe('a token response is built from its checked fields (GR-cast CA-3, CA-4)
   });
 
   it('names the problem of a body that fails a check', () => {
-    expect(tokenResponseOf({ ...body, expires_in: 0 }, { refreshRequired: false })).toEqual({ problem: 'the token response has no positive integer expires_in' });
+    expect(tokenResponseOf({ ...body, expires_in: 0 }, { refreshRequired: false })).toEqual({ problem: 'the token response has no positive expires_in' });
     expect(tokenResponseOf('text', { refreshRequired: false })).toEqual({ problem: 'the token response is not a JSON object' });
   });
 

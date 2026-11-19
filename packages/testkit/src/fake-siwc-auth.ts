@@ -53,6 +53,7 @@ export type SiwcTokenStep =
   | { kind: 'no_replacement_refresh_token' }
   | { kind: 'null_fields'; fields: readonly SiwcNullableTokenField[] }
   | { kind: 'expires_in'; seconds: number }
+  | { kind: 'token_type'; value: string | undefined }
   | { kind: 'hold'; reached: () => void; released: Promise<void> };
 
 export type SiwcJwksStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' };
@@ -332,8 +333,14 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     };
   };
 
+  const withTokenType = (body: Record<string, unknown>, step: SiwcTokenStep | undefined): Record<string, unknown> => {
+    if (step?.kind !== 'token_type') return body;
+    const { token_type: _type, ...rest } = body;
+    return step.value === undefined ? rest : { ...rest, token_type: step.value };
+  };
+
   const withNullFields = (body: Record<string, unknown>, step: SiwcTokenStep | undefined): Record<string, unknown> =>
-    step?.kind === 'null_fields' ? { ...body, ...Object.fromEntries(step.fields.map((field) => [field, null])) } : body;
+    withTokenType(step?.kind === 'null_fields' ? { ...body, ...Object.fromEntries(step.fields.map((field) => [field, null])) } : body, step);
 
   const oauthError = (code: string, status = 400): Outcome => ({ status, body: { error: code, error_description: code } });
 

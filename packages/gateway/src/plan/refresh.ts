@@ -15,7 +15,7 @@ export type PlanTokenResponse = {
   access_token: string;
   refresh_token: string;
   id_token?: string;
-  token_type: string;
+  token_type?: string;
   expires_in: number;
   scope: string;
   earliest_refresh_at?: string;
@@ -72,6 +72,12 @@ const keptEarliestRefreshAt = (value: unknown): string | undefined => {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : undefined;
 };
 
+const BEARER_TOKEN_TYPE = 'bearer';
+
+const isBearerType = (value: unknown): boolean => value === undefined || (typeof value === 'string' && value.toLowerCase() === BEARER_TOKEN_TYPE);
+
+const scheduledSeconds = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : undefined);
+
 const withoutNullMembers = (body: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(body).filter(([, value]) => value !== null));
 
 export const tokenResponseOf = (received: unknown, { refreshRequired }: { refreshRequired: boolean }): TokenResponseReading => {
@@ -79,9 +85,10 @@ export const tokenResponseOf = (received: unknown, { refreshRequired }: { refres
   const body = withoutNullMembers(received);
   const { access_token: accessToken, token_type: tokenType, scope, expires_in: expiresIn, refresh_token: refreshToken, id_token: idToken, earliest_refresh_at: receivedEarliestRefreshAt } = body;
   if (!nonEmptyText(accessToken)) return { problem: 'the token response has no access token' };
-  if (tokenType !== 'Bearer') return { problem: 'the token response is not a Bearer token' };
+  if (!isBearerType(tokenType)) return { problem: 'the token response is not a Bearer token' };
   if (typeof scope !== 'string') return { problem: 'the token response has no granted scope' };
-  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn <= 0) return { problem: 'the token response has no positive integer expires_in' };
+  const lifetimeSeconds = scheduledSeconds(expiresIn);
+  if (lifetimeSeconds === undefined) return { problem: 'the token response has no positive expires_in' };
   if (refreshRequired && !nonEmptyText(refreshToken)) return { problem: 'the token response has no refresh token' };
   if (refreshToken !== undefined && !nonEmptyText(refreshToken)) return { problem: 'the token response has a malformed refresh token' };
   if (idToken !== undefined && typeof idToken !== 'string') return { problem: 'the token response has a malformed ID token' };
@@ -89,8 +96,8 @@ export const tokenResponseOf = (received: unknown, { refreshRequired }: { refres
   return {
     tokens: {
       access_token: accessToken,
-      token_type: tokenType,
-      expires_in: expiresIn,
+      ...(typeof tokenType === 'string' ? { token_type: tokenType } : {}),
+      expires_in: lifetimeSeconds,
       scope,
       ...(refreshToken === undefined ? {} : { refresh_token: refreshToken }),
       ...(idToken === undefined ? {} : { id_token: idToken }),

@@ -102,6 +102,23 @@ describe('a successful rotation (F8, I-C5)', () => {
     expect(record?.['id_token']).toBe(before?.['id_token']);
   });
 
+  it.each([
+    [{ kind: 'expires_in', seconds: 1800.75 }],
+    [{ kind: 'token_type', value: 'bearer' }],
+    [{ kind: 'token_type', value: undefined }],
+  ] as const)('adopts a refresh answer the service may send: %j', async (step) => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    const before = (await readRecord(h, 'work'))?.['access_token'];
+    h.auth.scriptToken('refresh_token', [step]);
+    toRefreshWindow(h, START_MS);
+    const read = await readWork(h);
+    const record = await readRecord(h, 'work');
+    expect(record?.['state']).toBe('active');
+    expect(record?.['access_token']).not.toBe(before);
+    expect(read.bearer).toBe(record?.['access_token']);
+  });
+
   it('adopts a refresh without earliest_refresh_at and keeps none', async () => {
     const h = await harness();
     await signedIn(h, 'work');
