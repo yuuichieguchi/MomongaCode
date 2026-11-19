@@ -39,6 +39,7 @@ import { announcePlainHttp } from '../plain-http.ts';
 import type { CliFiles, CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { alignedColumns } from '../aligned-columns.ts';
+import type { RowOf } from '../aligned-columns.ts';
 import { cliProbeInstance, managedProbeTimersOf } from './gateway.ts';
 
 type Writer = { write(text: string): void };
@@ -155,8 +156,15 @@ const billingCellOf = (model: ListedModel): string => (model.billing === 'local'
 const stateCellOf = (model: ListedModel, start: string | null): string =>
   [...(model.billing === 'plan' ? [model.health] : []), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(STATE_JOINER);
 
-const modelCellsOf = (model: ListedModel, start: string | null): string[] =>
-  [model.name, windowCellOf(model), billingCellOf(model), model.address ?? model.provider, stateCellOf(model, start)].map((cell) => (cell === '' ? NO_VALUE_CELL : escapeTerminalLine(cell)));
+const shownCellOf = (cell: string): string => (cell === '' ? NO_VALUE_CELL : escapeTerminalLine(cell));
+
+const modelCellsOf = (model: ListedModel, start: string | null): RowOf<typeof MODELS_TABLE_HEADER> => [
+  shownCellOf(model.name),
+  shownCellOf(windowCellOf(model)),
+  shownCellOf(billingCellOf(model)),
+  shownCellOf(model.address ?? model.provider),
+  shownCellOf(stateCellOf(model, start)),
+];
 
 export const formatModels = (document: ModelsDocument): string => {
   if (document.models.length === 0) return escapedLines([messageOf('noModelConnected', 'cli')]);

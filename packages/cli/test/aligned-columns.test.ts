@@ -2,20 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { alignedColumns } from '../src/aligned-columns.ts';
 
 describe('alignedColumns', () => {
-  it('pads each column to the widest of its header and its cells and joins the columns with two spaces', () => {
-    expect(alignedColumns(['a', 'bb', 'c'], [['long', 'x', 'y'], ['s', 'wider', 'z']])).toEqual(['a     bb     c', 'long  x      y', 's     wider  z']);
+  it('pads every cell but the last to the widest of its column and joins the cells with two spaces', () => {
+    expect(alignedColumns(['a', 'bb', 'c'], [['long', 'x', 'y'], ['s', 'wider', 'zz']])).toEqual(['a     bb     c', 'long  x      y', 's     wider  zz']);
   });
 
   it('measures wide characters by their display width', () => {
     expect(alignedColumns(['name', 'n'], [['日本', '1'], ['abcdef', '2']])).toEqual(['name    n', '日本    1', 'abcdef  2']);
   });
 
-  it('keeps an empty cell as blank space inside a line', () => {
+  it('pads an empty cell in the middle like any other cell', () => {
     expect(alignedColumns(['a', 'b', 'c'], [['x', '', 'z']])).toEqual(['a  b  c', 'x     z']);
   });
 
-  it('ends every line at its last non-empty cell, with no trailing space', () => {
-    expect(alignedColumns(['first', 'second', 'third'], [['1', '', ''], ['', '', '']])).toEqual(['first  second  third', '1', '']);
+  it('ends no line in whitespace when its last cell is empty', () => {
+    expect(alignedColumns(['first', 'second', 'third'], [['1', '2', ''], ['', '', '']])).toEqual(['first  second  third', '1      2', '']);
   });
 
   it('prints a single column unpadded', () => {
@@ -24,5 +24,12 @@ describe('alignedColumns', () => {
 
   it('prints the header alone when there is no row', () => {
     expect(alignedColumns(['model', 'state'], [])).toEqual(['model  state']);
+  });
+
+  it('takes rows of exactly the header length', () => {
+    // @ts-expect-error a row longer than the header is refused by the type
+    alignedColumns(['a'], [['x', 'y']]);
+    // @ts-expect-error a row shorter than the header is refused by the type
+    alignedColumns(['a', 'b'], [['x']]);
   });
 });
