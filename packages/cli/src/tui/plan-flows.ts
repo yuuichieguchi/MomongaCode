@@ -63,8 +63,7 @@ export type PlanFlows = {
 };
 
 const AGAIN = 'again';
-const BACK_TO_LIST = 'back to the list';
-type ModelChosen = typeof BACK_TO_LIST | undefined;
+type ModelChosen = { readonly backTo: string } | undefined;
 type ChosenRead = { readonly kind: 'read'; readonly entries: readonly MomongaModelEntry[]; readonly entry: MomongaModelEntry | undefined } | { readonly kind: 'cancelled' } | { readonly kind: 'failed'; readonly error: unknown };
 type Measured = { readonly kind: 'read'; readonly entry: MomongaModelEntry } | { readonly kind: 'failed'; readonly error: unknown };
 type Acted = typeof AGAIN | undefined;
@@ -119,7 +118,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const chosenWithEffort = async (model: string, atSwitch: () => Promise<void>): Promise<ModelChosen> => {
     const read = await chosenRead(model);
-    if (read.kind === 'cancelled') return BACK_TO_LIST;
+    if (read.kind === 'cancelled') return { backTo: model };
     if (read.kind === 'failed') {
       ports.warn(modelUnreadText(read.error));
       return undefined;
@@ -136,7 +135,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     }
     const sessionModel = ports.model();
     const chosen = await chooseEffort({ choose: ports.choose }, accepted, sentEffort(read.entries, model, sessionModel === undefined || sessionModel === model ? ports.effort() : undefined));
-    if (chosen === undefined) return BACK_TO_LIST;
+    if (chosen === undefined) return { backTo: model };
     await ports.switchedThen(model, chosen.level, async () => {
       await atSwitch();
       if (chosen.scope === 'saved') await writeModelEffort({ backend, info: ports.info, wait: ports.wait }, model, chosen.level);
@@ -507,7 +506,9 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const catalogNotCurrent = (account: string, reason: string): string => `the list of models of ${account} is not current: ${reason}`;
 
-  const modelPicker = async (current: string | undefined): Promise<void> => {
+  const modelPicker = async (current: string | undefined): Promise<void> => modelList(current, undefined);
+
+  const modelList = async (current: string | undefined, highlighted: string | undefined): Promise<void> => {
     const context = flowContext();
     const read = await ports.loading('Models', async () => {
       const [readListing, readHealth, readListed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
@@ -563,10 +564,11 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       }
       return undefined;
     };
+    const highlightedRow = listedRows.findIndex((row) => row.kind === 'configured' && row.entry.id === highlighted);
     const choice =
       allRows.length === 1
         ? await ports.choose({ title: 'Models', lines: [messageOf('noModelConnected', 'tui')], rows: allRows })
-        : await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: allRows, alt: { label: ALSO_AT_START_LABEL } });
+        : await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: allRows, alt: { label: ALSO_AT_START_LABEL }, ...(highlightedRow === -1 ? {} : { initial: highlightedRow }) });
     if (choice === undefined) return;
     if (choice.index === allRows.length - 1) {
       await runModelsHub(context);
@@ -574,7 +576,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       await modelPicker(ports.model());
       return;
     }
-    if ((await chosenRow(choice.index, choice.alt)) === BACK_TO_LIST) await modelPicker(current);
+    const chosen = await chosenRow(choice.index, choice.alt);
+    if (chosen !== undefined) await modelList(current, chosen.backTo);
   };
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {

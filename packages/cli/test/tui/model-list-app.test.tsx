@@ -55,6 +55,8 @@ const APPROVED_BLOCK = [
   HINT,
 ].join('\n');
 
+const LUNA_HIGHLIGHTED = APPROVED_BLOCK.replace('›  1. ollama/qwen3.8:27b (current)', '   1. ollama/qwen3.8:27b (current)').replace('   2. gpt-6-luna', '›  2. gpt-6-luna');
+
 const lineOf = (line: string): string => line.replace(/^│ /, '').replace(/│$/, '').trimEnd();
 
 const listBlock = (frame: string, title = 'Models'): string => {
@@ -320,10 +322,27 @@ describe('choosing a model in the /model list switches nothing until its effort 
     await untilFrame(app, pickerShown);
     app.stdin.write(KEYS.escape);
     const again = await untilFrame(app, (frame) => listShown(frame) && !pickerShown(frame));
-    expect(listBlock(again)).toBe(APPROVED_BLOCK);
+    expect(listBlock(again)).toBe(LUNA_HIGHLIGHTED);
     expect(switches(backend)).toEqual([]);
     expect(effortCalls(backend)).toEqual([]);
     expect(notesOf(app.lastFrame() ?? '')).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.enter);
+    await untilOutput(app, 'model: gpt-6-luna (effort: medium); applies from the next run');
+    expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
+    app.unmount();
+  });
+
+  it('esc while a configured model is read shows the model list again with that model highlighted', async () => {
+    const pending = Promise.withResolvers<void>();
+    const { app, backend } = await chooseLuna({ probing: [LUNA], modelPending: pending.promise });
+    await untilFrame(app, loadingShown);
+    app.stdin.write(KEYS.escape);
+    const again = await untilFrame(app, (frame) => listShown(frame) && !loadingShown(frame));
+    expect(listBlock(again)).toBe(LUNA_HIGHLIGHTED);
+    pending.resolve();
+    expect(switches(backend)).toEqual([]);
     app.unmount();
   });
 
@@ -471,11 +490,36 @@ describe('the effort step after a plan model that is not configured is chosen', 
     await untilFrame(app, loadingShown);
     app.stdin.write(KEYS.escape);
     const again = await untilFrame(app, (frame) => listShown(frame) && !loadingShown(frame));
-    expect(listBlock(again)).toContain('›  1. ollama/qwen3.8:27b (current)  local');
+    expect(listBlock(again)).toBe(
+      [
+        'Models',
+        'a change applies from the next run',
+        'filter:',
+        '   1. ollama/qwen3.8:27b (current)  local',
+        '   2. gpt-6-luna                    plan',
+        '›  3. gpt-6.2-sol                   metered',
+        '   4. gpt-6.2-astra                 plan',
+        '   5. gpt-6.2-nova                  plan',
+        '   6. gpt-6.2-terra                 plan',
+        '   7. gpt-6.2-luma                  plan',
+        '   8. gpt-6.2-vela                  plan',
+        '   9. gpt-6.2-orion                 plan',
+        '  10. gpt-6.2-lyra                  plan',
+        '  11. gpt-6.2-mira                  plan',
+        '  12. Model settings…',
+        HINT,
+      ].join('\n'),
+    );
     expect((await backend.models()).some((entry) => entry.id === SOL)).toBe(true);
     pending.resolve();
     expect(switches(backend)).toEqual([]);
     expect(notesOf(app.lastFrame() ?? '')).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    const picker = await untilFrame(app, pickerShown);
+    expect(listBlock(picker, 'Reasoning effort')).toBe(EFFORT_BLOCK);
+    app.stdin.write(KEYS.enter);
+    await untilOutput(app, 'model: gpt-6.2-sol (effort: medium); applies from the next run');
+    expect(switches(backend)).toEqual([`model:${SOL} effort:medium`]);
     app.unmount();
   });
 
