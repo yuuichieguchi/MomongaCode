@@ -1,6 +1,7 @@
 import { declaredCommandProblem, plainHttpWarningText } from '@momonga/config';
 import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
-import type { GatewayHealth } from '@momonga/protocol';
+import type { GatewayHealth, PlanAccountView } from '@momonga/protocol';
+import { planServesAccount } from './plan-account.ts';
 import { SEPARATOR, addressesOf, configuredWindowsOf, modelRowText, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
 import { runAddFlow } from './add.ts';
@@ -73,11 +74,11 @@ const firstChoosableFrom = (rows: readonly HubRow[], from: number): number => {
   return found < 0 ? from : found;
 };
 
-const keyedElsewhereOf = (edit: ModelsEdit): ReadonlySet<string> => {
+const keyedElsewhereOf = (edit: ModelsEdit, accounts: readonly PlanAccountView[]): ReadonlySet<string> => {
   const local = new Set(edit.resolved.views.filter((view) => view.naming === 'server').map((view) => view.provider));
   return new Set(
     edit.resolved.connections
-      .filter((connection) => connection.plan !== undefined || (!local.has(connection.provider) && (connection.apiKeyEnv !== undefined || connection.apiKeySecret !== undefined)))
+      .filter(({ plan, provider, apiKeyEnv, apiKeySecret }) => (plan !== undefined && accounts.some((account) => planServesAccount(plan, account))) || (!local.has(provider) && (apiKeyEnv !== undefined || apiKeySecret !== undefined)))
       .map((connection) => connection.provider),
   );
 };
@@ -127,8 +128,8 @@ export const runRenameServer = async (context: ModelsFlowContext, provider: stri
 
 export const runRemoveServer = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider);
 
-export const accountConnectionOf = async (context: ModelsFlowContext, profile: string, account: string): Promise<string | undefined> =>
-  (await openEdit(context)).edit.resolved.connections.find((connection) => connection.plan?.profile === profile && connection.plan.account === account)?.provider;
+export const accountConnectionOf = async (context: ModelsFlowContext, account: PlanAccountView): Promise<string | undefined> =>
+  (await openEdit(context)).edit.resolved.connections.find((connection) => connection.plan !== undefined && planServesAccount(connection.plan, account))?.provider;
 
 export const runServerActions = async (context: ModelsFlowContext, provider: string): Promise<void> => serverMenu(context, await openEdit(context), provider);
 
@@ -205,9 +206,9 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
   let at = 0;
   for (;;) {
     const opened = await openEdit(context);
-    const [listing, health] = await Promise.all([context.backend.modelList(), context.backend.health()]);
+    const [listing, health, { accounts }] = await Promise.all([context.backend.modelList(), context.backend.health(), context.backend.plan.accounts()]);
     const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
-    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit) });
+    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit, accounts) });
     const index = await chosenOf(context, {
       title: MODELS_TITLE,
       lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],

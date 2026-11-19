@@ -392,7 +392,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
 
     const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: false, breaker: 'closed', reason: 'sign_in_required' } } });
     await runModelsHub(plan.context);
-    expect(plan.picks()[0]?.rows.slice(0, 3)).toEqual(['Models', 'chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai/gpt-5.5  ·  400k tokens  ·  metered']);
+    expect(plan.picks()[0]?.rows.slice(0, 5)).toEqual(['Servers', 'chatgpt', 'Models', 'chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai/gpt-5.5  ·  400k tokens  ·  metered']);
 
     const plain = flowOf(context, { models: { connections: [{ adapter: 'chat-completions', provider: 'gpu-box', baseUrl: 'http://192.168.1.20:8080/v1', models: [{ id: 'm', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }] } }, []);
     await runModelsHub(plain.context);

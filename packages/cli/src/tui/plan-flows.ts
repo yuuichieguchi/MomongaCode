@@ -8,6 +8,7 @@ import { addBuiltIn, addFoundModel, addFromFound, addService, builtInRowOf, foun
 import type { Added } from './models/add.ts';
 import { openEdit } from './models/context.ts';
 import type { FoundServers, ModelsFlowContext } from './models/context.ts';
+import { planServesAccount } from './models/plan-account.ts';
 import { accountConnectionOf, runModelsHub, runRemoveServer, runRenameServer, runServerActions } from './models/hub.ts';
 import { modelListRows } from './models/model-list.ts';
 import { writeStart } from './models/order.ts';
@@ -134,7 +135,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const accountInUse = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
     const entries = await backend.models();
     const serving = entries.filter((entry) =>
-      entry.chain.some((member) => member.plan !== undefined && member.plan.profile === profile.id && (member.plan.account === undefined ? account.active : member.plan.account === account.label)),
+      entry.chain.some((member) => member.plan !== undefined && planServesAccount(member.plan, account)),
     );
     if (account.pinnedBy.length === 0 && serving.length === 0 && (await catalogPicker(profile, account.label))) return;
     await ports.refreshConnection();
@@ -278,7 +279,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const context = flowContext();
     const rows = await Promise.all(
       records.map(async (account): Promise<Choice[]> => {
-        const provider = await accountConnectionOf(context, profile.id, account.label);
+        const provider = await accountConnectionOf(context, account);
         if (provider === undefined) return [];
         const after = async (act: () => Promise<void>): Promise<void> => {
           await act();

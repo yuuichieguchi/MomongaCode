@@ -108,3 +108,48 @@ describe('the account picker renames and removes the connection of an account', 
     app.unmount();
   });
 });
+
+const openProfileOnly = async (accounts: ReturnType<typeof account>[]) => {
+  const place = freshPlace();
+  fs.mkdirSync(path.dirname(place.userFile), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(place.userFile, JSON.stringify({ models: { connections: [{ adapter: 'open-responses', plan: { profile: 'chatgpt' }, models: [{ id: 'gpt-6-luna', capabilities: { contextWindow: 32768, maxOutputTokens: 8192 } }] }] } }), { mode: 0o600 });
+  const started = await startPlan({ session: { model: PROFILE_MODEL }, models: [PROFILE_MODEL], planTargets: { [PROFILE_MODEL]: { profile: 'chatgpt' } }, accounts, settingsPlace: { home: place.home, projectDir: place.project } });
+  await untilFrame(started.app, 'mode: manual');
+  return { ...started, place };
+};
+
+const PROFILE_MODEL = 'chatgpt/gpt-6-luna';
+
+describe('a connection pinned only to its profile belongs to the active account of the profile', () => {
+  it('the active account carries its rename and remove rows, and remove removes it', async () => {
+    const { app, place } = await openProfileOnly([account({ label: 'work', pinnedBy: [PROFILE_MODEL] })]);
+    await submitLine(app, '/login');
+    await choose(app, '[subscription]');
+    const picker = await untilRow(app, 'Remove account work');
+    expect(picker).toContain('Rename account work');
+    await choose(app, 'Remove account work');
+    await untilFrame(app, 'Remove chatgpt and its model?');
+    await choose(app, 'Yes');
+    await eventually(() => connectionsIn(place.userFile).length === 0, 'the connection is removed');
+    app.unmount();
+  });
+
+  it('with two accounts only the active one carries the rows', async () => {
+    const { app } = await openProfileOnly([account({ label: 'work', pinnedBy: [PROFILE_MODEL] }), account({ label: 'home', active: false, pinnedBy: [] })]);
+    await submitLine(app, '/login');
+    await choose(app, '[subscription]');
+    const picker = await untilRow(app, 'Remove account work');
+    expect(picker).not.toContain('account home');
+    app.unmount();
+  });
+
+  it('with no active account the connection keeps its row in the Servers group of the model settings', async () => {
+    const { app } = await openProfileOnly([account({ label: 'work', active: false, state: 'needs_sign_in', pinnedBy: [] })]);
+    await submitLine(app, '/model');
+    await choose(app, 'Model settings…');
+    const screen = await untilRow(app, 'Check the servers');
+    expect(screen).toContain('Servers');
+    expect(screen).toMatch(/\d+\. chatgpt\s/);
+    app.unmount();
+  });
+});
