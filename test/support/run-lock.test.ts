@@ -5,7 +5,7 @@ import type { ChildProcess } from '@momonga/testkit/child-process';
 import { createTempDir, pollUntil, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { killGroup } from '../../scripts/support/cpu-budget.ts';
-import { RUN_LOCK_DEFAULT_WAIT_SECONDS, RUN_LOCK_EXIT, misplacedHeavyMessage } from '../../scripts/support/run-lock.ts';
+import { RUN_LOCK_DEFAULT_WAIT_SECONDS, RUN_LOCK_EXIT } from '../../scripts/support/run-lock.ts';
 import config from '../../vitest.config.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -128,10 +128,12 @@ const hold = async (runClass: 'heavy' | 'light'): Promise<{ run: Started; releas
   return { run, release, token: fs.readFileSync(tokenFile, 'utf8') };
 };
 
-const asWorktreeOn = (directory: string, branch: string): void => {
+const DETACHED_HEAD = '0123456789abcdef0123456789abcdef01234567\n';
+
+const asWorktreeAt = (directory: string, head: string): void => {
   const gitDir = path.join(root, 'common', 'worktrees', path.basename(directory));
   fs.mkdirSync(gitDir, { recursive: true });
-  fs.writeFileSync(path.join(gitDir, 'HEAD'), `ref: refs/heads/${branch}\n`);
+  fs.writeFileSync(path.join(gitDir, 'HEAD'), head);
   fs.writeFileSync(path.join(directory, '.git'), `gitdir: ${gitDir}\n`);
 };
 
@@ -155,19 +157,20 @@ describe('the run lock global setup classifies a vitest run and holds its lock',
     expect(fs.readFileSync(path.join(out, `${file}.child`), 'utf8')).toBe(token);
   });
 
-  it('refuses a heavy vitest run whose root is a worktree on a branch other than fix/integration or main, before any test file runs', async () => {
-    asWorktreeOn(fixture, 'fix/x');
+  it.each([
+    ['a worktree on fix/x', 'ref: refs/heads/fix/x\n'],
+    ['a worktree on a detached HEAD', DETACHED_HEAD],
+  ])('runs a heavy vitest run whose root is %s under the heavy lock', async (_case, head) => {
+    asWorktreeAt(fixture, head);
 
     const run = fixtureRun([]);
 
-    expect(await run.exit).not.toBe(0);
-    expect(run.output()).toContain(misplacedHeavyMessage('fix/x'));
-    expect(tokenFiles()).toEqual([]);
-    expect(lockEntries()).toEqual([]);
+    expect(await run.exit).toBe(0);
+    expect(fs.readFileSync(path.join(out, 'x.test.ts.token'), 'utf8')).toMatch(/^heavy\.[0-9a-f]{16}$/);
   });
 
   it('runs a light vitest run whose root is a worktree on any branch', async () => {
-    asWorktreeOn(fixture, 'fix/x');
+    asWorktreeAt(fixture, 'ref: refs/heads/fix/x\n');
 
     const run = fixtureRun(['a/x.test.ts']);
 
@@ -285,18 +288,20 @@ const pidIn = async (file: string, run: Started): Promise<number> => {
 };
 
 describe('the lock runner bounds the command it holds the lock for', () => {
-  it('ends a heavy wrapper started in a worktree on fix/x with exit 64 before it takes any lock, and runs a light one there', async () => {
+  it.each([
+    ['a worktree on fix/x', 'ref: refs/heads/fix/x\n'],
+    ['a worktree on a detached HEAD', DETACHED_HEAD],
+  ])('runs the command of a heavy wrapper started in %s and ends with its exit code', async (_case, head) => {
     const worktree = path.join(root, 'worktree');
+    const marker = path.join(root, 'ran');
     fs.mkdirSync(path.join(worktree, 'nested'), { recursive: true });
-    asWorktreeOn(worktree, 'fix/x');
-    const heavy = startProcess(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '5', '--', 'true'], path.join(worktree, 'nested'), baseEnv());
+    asWorktreeAt(worktree, head);
+    const heavy = startProcess(process.execPath, [WRAPPER, 'heavy', '--budget-cpu-seconds', '5', '--', 'sh', '-c', `echo ran > ${marker}; exit 3`], path.join(worktree, 'nested'), baseEnv());
 
-    expect(await heavy.exit).toBe(RUN_LOCK_EXIT.usage);
-    expect(heavy.output()).toContain(misplacedHeavyMessage('fix/x'));
-    expect(lockEntries()).toEqual([]);
-    expect(await startProcess(process.execPath, [WRAPPER, 'light', '--budget-cpu-seconds', '5', '--', 'true'], worktree, baseEnv()).exit).toBe(0);
+    expect(await heavy.exit).toBe(3);
+    expect(fs.readFileSync(marker, 'utf8')).toBe('ran\n');
+    expect(heavyIsFree()).toBe(0);
   });
-
 
   it('refuses a command with no CPU budget and leaves the lock free', async () => {
     const run = startProcess(process.execPath, [WRAPPER, 'heavy', '--', 'true'], root, baseEnv());

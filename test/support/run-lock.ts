@@ -11,7 +11,7 @@ import { CPU_BUDGET_ENV, breachLine, killTree, usageLine, watchTree } from '../.
 import { vitestProjectBudgetOf } from '../../scripts/support/run-budgets.ts';
 import { tierRunPlanOf } from '../formal/tier-budget.ts';
 import { reuseModeOf } from '../formal/reuse.ts';
-import { RUN_LOCK_ENV, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, isTlcRecordRun, parseBudgetSeconds, parseWaitSeconds, runLockDirsOf, unusableMessage, untilStopped } from '../../scripts/support/run-lock.ts';
+import { RUN_LOCK_ENV, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, parseBudgetSeconds, parseWaitSeconds, runLockDirsOf, unusableMessage, untilStopped } from '../../scripts/support/run-lock.ts';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const TIER_RUNNER = path.join(REPO_ROOT, 'test', 'formal', 'tier.ts');
@@ -129,8 +129,6 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const { result: outcome } = await untilStopped((signal) =>
     acquireRunLock({
       runClass,
-      repoRoot: project.vitest.config.root,
-      tlcRecord: isTlcRecordRun({ repoRoot: project.vitest.config.root, selected, env: process.env }),
       ...runLockDirsOf(dir),
       command: process.argv.slice(1).join(' '),
       cwd: process.cwd(),
