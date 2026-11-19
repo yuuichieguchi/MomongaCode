@@ -43,12 +43,15 @@ export type SiwcIdTokenFlaw =
   | 'missing_sub'
   | 'blank_sub';
 
+export type SiwcNullableTokenField = 'access_token' | 'refresh_token' | 'id_token';
+
 export type SiwcTokenStep =
   | { kind: 'error'; code: string }
   | { kind: 'http'; status: number; body?: string; headers?: Record<string, string> }
   | { kind: 'drop' }
   | { kind: 'lose_response' }
   | { kind: 'no_replacement_refresh_token' }
+  | { kind: 'null_fields'; fields: readonly SiwcNullableTokenField[] }
   | { kind: 'expires_in'; seconds: number }
   | { kind: 'hold'; reached: () => void; released: Promise<void> };
 
@@ -329,6 +332,9 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     };
   };
 
+  const withNullFields = (body: Record<string, unknown>, step: SiwcTokenStep | undefined): Record<string, unknown> =>
+    step?.kind === 'null_fields' ? { ...body, ...Object.fromEntries(step.fields.map((field) => [field, null])) } : body;
+
   const oauthError = (code: string, status = 400): Outcome => ({ status, body: { error: code, error_description: code } });
 
   const exchangeCode = (form: Record<string, string>, step: SiwcTokenStep | undefined): Outcome => {
@@ -354,7 +360,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
       scope: grant.scope,
       expiresIn,
     });
-    return { status: 200, body };
+    return { status: 200, body: withNullFields(body, step) };
   };
 
   const rotateRefresh = (form: Record<string, string>, step: SiwcTokenStep | undefined): Outcome => {
@@ -371,14 +377,14 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     if (grant.expired) return oauthError('refresh_token_expired');
     grant.state = 'consumed';
     const expiresIn = step?.kind === 'expires_in' ? step.seconds : ACCESS_TOKEN_SECONDS;
-    const withoutReplacement = step?.kind === 'no_replacement_refresh_token';
+    const withoutReplacement = step?.kind === 'no_replacement_refresh_token' || (step?.kind === 'null_fields' && step.fields.includes('refresh_token'));
     const body = tokenBody({
       access: issueAccess(grant.family, grant.clientId, grant.resource, grant.scope, expiresIn),
       ...(withoutReplacement ? {} : { refresh: issueRefresh(grant.family, grant.clientId, grant.resource, grant.scope) }),
       scope: grant.scope,
       expiresIn,
     });
-    return { status: 200, body };
+    return { status: 200, body: withNullFields(body, step) };
   };
 
   const write = (res: http.ServerResponse, outcome: Outcome): void => {

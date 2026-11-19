@@ -64,4 +64,17 @@ describe('a token response is built from its checked fields (GR-cast CA-3, CA-4)
     expect(tokenResponseOf(noRefresh, { refreshRequired: true })).toEqual({ problem: 'the token response has no refresh token' });
     expect(tokenResponseOf({ ...body, token_type: 'mac' }, { refreshRequired: true })).toEqual({ problem: 'the token response is not a Bearer token' });
   });
+
+  it('reads a member whose value is null as an absent member', () => {
+    expect(tokenResponseOf({ ...body, access_token: null }, { refreshRequired: true })).toEqual({ problem: 'the token response has no access token' });
+    expect(tokenResponseOf({ ...body, refresh_token: null }, { refreshRequired: true })).toEqual({ problem: 'the token response has no refresh token' });
+    const { refresh_token: _refresh, id_token: _id, unknown_member: _unknown, ...kept } = body;
+    expect(tokenResponseOf({ ...body, refresh_token: null, id_token: null, unknown_member: null }, { refreshRequired: false })).toEqual({ tokens: kept });
+  });
+
+  it('still refuses a present value of the wrong type as malformed', () => {
+    expect(tokenResponseOf({ ...body, refresh_token: 7 }, { refreshRequired: false })).toEqual({ problem: 'the token response has a malformed refresh token' });
+    expect(tokenResponseOf({ ...body, refresh_token: '' }, { refreshRequired: false })).toEqual({ problem: 'the token response has a malformed refresh token' });
+    expect(tokenResponseOf({ ...body, id_token: { nested: true } }, { refreshRequired: false })).toEqual({ problem: 'the token response has a malformed ID token' });
+  });
 });

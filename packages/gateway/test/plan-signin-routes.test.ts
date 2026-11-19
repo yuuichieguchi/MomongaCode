@@ -328,6 +328,9 @@ describe('the five sign-in failures settled in O-R5-4', () => {
   it.each([
     [{ kind: 'expires_in', seconds: 0 }, 'the token response has no positive integer expires_in'],
     [{ kind: 'no_replacement_refresh_token' }, 'the token response has no refresh token'],
+    [{ kind: 'null_fields', fields: ['access_token'] }, 'the token response has no access token'],
+    [{ kind: 'null_fields', fields: ['refresh_token'] }, 'the token response has no refresh token'],
+    [{ kind: 'null_fields', fields: ['id_token'] }, 'the token response has no ID token'],
   ] as const)('token_response_invalid: 502 naming the problem of %j, and nothing saved', async (step, reason) => {
     const gateway = await startPlanGateway();
     gateway.auth.scriptToken('authorization_code', [step]);

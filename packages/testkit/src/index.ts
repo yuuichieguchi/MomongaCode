@@ -240,6 +240,7 @@ export type {
   SiwcRegistration,
   SiwcJwksStep,
   SiwcRevokeStep,
+  SiwcNullableTokenField,
   SiwcTokenStep,
 } from './fake-siwc-auth.ts';
 export {

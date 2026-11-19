@@ -72,8 +72,11 @@ const keptEarliestRefreshAt = (value: unknown): string | undefined => {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : undefined;
 };
 
-export const tokenResponseOf = (body: unknown, { refreshRequired }: { refreshRequired: boolean }): TokenResponseReading => {
-  if (!isRecord(body)) return { problem: 'the token response is not a JSON object' };
+const withoutNullMembers = (body: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(body).filter(([, value]) => value !== null));
+
+export const tokenResponseOf = (received: unknown, { refreshRequired }: { refreshRequired: boolean }): TokenResponseReading => {
+  if (!isRecord(received)) return { problem: 'the token response is not a JSON object' };
+  const body = withoutNullMembers(received);
   const { access_token: accessToken, token_type: tokenType, scope, expires_in: expiresIn, refresh_token: refreshToken, id_token: idToken, earliest_refresh_at: receivedEarliestRefreshAt } = body;
   if (!nonEmptyText(accessToken)) return { problem: 'the token response has no access token' };
   if (tokenType !== 'Bearer') return { problem: 'the token response is not a Bearer token' };
