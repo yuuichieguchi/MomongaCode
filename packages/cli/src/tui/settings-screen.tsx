@@ -1,3 +1,4 @@
+import { STANDARD_REASONING_EFFORT } from '@momonga/protocol';
 import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
 import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsShadow, SettingsSnapshot } from '@momonga/config';
 import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
@@ -40,6 +41,7 @@ export type SettingPresentation = {
   readonly form?: readonly FormField[];
   readonly constants?: Readonly<Record<string, unknown>>;
   readonly line?: (entry: Readonly<Record<string, unknown>>) => string;
+  readonly standing?: unknown;
 };
 
 export type FormField = { readonly name: string; readonly label: string; readonly kind: 'text' | 'number' | 'list'; readonly required: boolean; readonly at?: readonly string[] };
@@ -125,7 +127,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP' },
   'mcp.connectTimeoutMs': { label: 'Connect timeout (ms)', section: 'MCP' },
   'models.dialects': { label: 'Schema dialects', section: 'Models' },
-  'models.effort': { label: 'Reasoning effort of a new session', section: 'Models' },
+  'models.effort': { label: 'Reasoning effort of a new session', section: 'Models', standing: STANDARD_REASONING_EFFORT },
   env: { label: 'Environment variables', section: 'Environment variables' },
   'credentials.env': { label: 'Variables treated as credentials', section: 'Credentials' },
   'credentials.keep': { label: 'Variables kept for commands', section: 'Credentials' },
@@ -289,7 +291,7 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
     }
     for (const { leaf, presentation } of settings) {
       const { value, source } = currentOf(snapshot, leaf.path);
-      rows.push({ label: presentation.label, value: settingRowValue(value, source), ...(written === leaf.key ? { kept: appliesLabelOf(leaf.key, SETTING_READ_POINTS) } : {}) });
+      rows.push({ label: presentation.label, value: settingRowValue(value ?? presentation.standing, source), ...(written === leaf.key ? { kept: appliesLabelOf(leaf.key, SETTING_READ_POINTS) } : {}) });
       listed.push({ kind: 'setting', leaf, presentation });
     }
     if (section === MANDATE_SECTION && mandate !== undefined) {

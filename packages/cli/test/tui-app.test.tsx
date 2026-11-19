@@ -291,7 +291,7 @@ describe('App input', () => {
     app.stdin.write(KEYS.ctrlC);
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'Commands\n');
+    await untilOutput(app, '/help  list the commands, the keys and the mouse actions');
     expect(backend.recorded).toEqual(['/help']);
     app.unmount();
   });
@@ -310,9 +310,11 @@ describe('App input', () => {
   });
 });
 
+const HELP_SCREEN_ROWS = 200;
+
 describe('App slash commands', () => {
   it('/help lists the commands', async () => {
-    const { app } = await start();
+    const { app } = await start({}, {}, { columns: WIDE_TEST_SCREEN.columns, rows: HELP_SCREEN_ROWS });
     await untilFrame(app, 'mode: manual');
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
