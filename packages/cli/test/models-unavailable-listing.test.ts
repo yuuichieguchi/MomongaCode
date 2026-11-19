@@ -95,7 +95,7 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
     expect(formatModels(modelsDocumentOf(LISTED, new Map([['lmstudio', 'http://127.0.0.1:1234/v1']]), new Set(), new Map()))).toBe(
       [
         'model                 window            billing  server                    state',
-        'plan-model            -                 plan     chatgpt                   available',
+        'plan-model            window not known  plan     chatgpt                   available',
         'lmstudio/local-model  32.8k             -        http://127.0.0.1:1234/v1  -',
         'apple/slow            window not known  -        apple                     -',
       ].join('\n'),

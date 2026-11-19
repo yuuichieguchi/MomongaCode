@@ -148,10 +148,7 @@ const MODELS_TABLE_HEADER = ['model', 'window', 'billing', 'server', 'state'] as
 
 const NO_VALUE_CELL = '-';
 
-const windowCellOf = (model: ListedModel): string => {
-  if (model.billing === 'plan') return '';
-  return model.contextWindow === null ? WINDOW_NOT_KNOWN : formatTokens(model.contextWindow);
-};
+const windowCellOf = (model: ListedModel): string => (model.contextWindow === null ? WINDOW_NOT_KNOWN : formatTokens(model.contextWindow));
 
 const billingCellOf = (model: ListedModel): string => (model.billing === 'local' ? '' : model.billing);
 

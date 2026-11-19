@@ -18,9 +18,21 @@ describe('momonga models prints one aligned table', () => {
   it('prints the header and a row per model for a local server and a plan', async (context) => {
     expect(await printed({ models: { connections: [ollama([QWEN]), LUNA_PLAN], start: 'ollama/qwen3.8:27b' } }, context)).toBe(
       [
+        'model               window            billing  server                  state',
+        'ollama/qwen3.8:27b  262.1k            -        http://127.0.0.1:11434  starts new sessions',
+        'gpt-6-luna          window not known  plan     chatgpt                 available',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('prints the window of a plan model whose numbers are known', async (context) => {
+    const knownPlan = { adapter: 'open-responses', plan: { profile: 'chatgpt' }, models: [{ id: 'gpt-6-luna', capabilities: { contextWindow: 400000, maxOutputTokens: 128000 } }] };
+    expect(await printed({ models: { connections: [ollama([QWEN]), knownPlan], start: 'ollama/qwen3.8:27b' } }, context)).toBe(
+      [
         'model               window  billing  server                  state',
         'ollama/qwen3.8:27b  262.1k  -        http://127.0.0.1:11434  starts new sessions',
-        'gpt-6-luna          -       plan     chatgpt                 available',
+        'gpt-6-luna          400k    plan     chatgpt                 available',
         '',
       ].join('\n'),
     );
@@ -73,9 +85,9 @@ describe('momonga models prints one aligned table', () => {
   it('joins the states of a plan model that also starts new sessions', async (context) => {
     expect(await printed({ models: { connections: [LUNA_PLAN, ollama([QWEN])], start: 'chatgpt/gpt-6-luna' } }, context)).toBe(
       [
-        'model               window  billing  server                  state',
-        'gpt-6-luna          -       plan     chatgpt                 available, starts new sessions',
-        'ollama/qwen3.8:27b  262.1k  -        http://127.0.0.1:11434  -',
+        'model               window            billing  server                  state',
+        'gpt-6-luna          window not known  plan     chatgpt                 available, starts new sessions',
+        'ollama/qwen3.8:27b  262.1k            -        http://127.0.0.1:11434  -',
         '',
       ].join('\n'),
     );
