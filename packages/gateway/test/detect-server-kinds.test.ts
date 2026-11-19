@@ -63,6 +63,14 @@ describe('a server kind is recognised by what the server answers (design-model-n
     expect(server.requests).toContain('GET /v1/models');
   });
 
+  it('answers for an LM Studio that lists no model only when the caller asks for every answer, and detection keeps dropping it otherwise', async () => {
+    const server = await serveRoutes(lmstudioRoutes([]));
+    expect(await detect([server.origin])).toEqual([]);
+    const answered = localOnly(await detectLocalServers({ candidates: [], typed: [server.origin], signal: new AbortController().signal, fetch: hostFetch, ...noManagedHost, includeWithoutModels: true }));
+    expect(answered).toHaveLength(1);
+    expect(answered[0]?.models).toEqual([]);
+  });
+
   it('asks Ollama for the details of a model only when that model is described, and once', async () => {
     const server = await serveRoutes(ollamaRoutes());
     const [found] = await detect([server.origin]);

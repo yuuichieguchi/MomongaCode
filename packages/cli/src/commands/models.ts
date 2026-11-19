@@ -42,7 +42,7 @@ import { cliProbeInstance, managedProbeTimersOf } from './gateway.ts';
 
 type Writer = { write(text: string): void };
 
-export type DetectRequest = { candidates: readonly string[]; typed: readonly string[]; signal: AbortSignal };
+export type DetectRequest = { candidates: readonly string[]; typed: readonly string[]; signal: AbortSignal; includeWithoutModels?: boolean };
 
 export type DeclaredProgram = { id: string; command: string; args: readonly string[]; readyPath: string; modelFile?: string };
 

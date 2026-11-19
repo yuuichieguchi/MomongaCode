@@ -13,6 +13,8 @@ import type {
   PlanAccountView,
   PlanAccountsResponse,
   PlanActiveRequest,
+  PlanRenameRequest,
+  PlanRenameResponse,
   PlanActiveResponse,
   PlanCatalogEntry,
   PlanHostResetResponse,
@@ -80,6 +82,7 @@ export type PlanGatewayClient = {
   signInCancel(request: PlanSignInCancelRequest): Promise<void>;
   signOut(request: PlanSignOutRequest): Promise<PlanSignOutResponse>;
   setActive(request: PlanActiveRequest): Promise<PlanActiveResponse>;
+  rename(request: PlanRenameRequest): Promise<PlanRenameResponse>;
   resume(account: string, request: PlanResumeRequest): Promise<PlanResumeResponse>;
   resetHost(): Promise<PlanHostResetResponse>;
   accountModels(account: string, request: PlanModelsRequest): Promise<PlanModelsResponse>;
@@ -267,6 +270,8 @@ const isCompleteResponse = (value: unknown): value is PlanSignInCompleteResponse
 
 const isSignOutResponse = (value: unknown): value is PlanSignOutResponse => isRecord(value) && oneOf(value['revocation'], PLAN_REVOCATIONS) && isString(value['usageUrl']);
 
+const isRenameResponse = (value: unknown): value is PlanRenameResponse => isRecord(value) && planAccountRefOf(value['renamed'])?.account !== undefined;
+
 const isActiveResponse = (value: unknown): value is PlanActiveResponse => isRecord(value) && planAccountRefOf(value['active'])?.account !== undefined;
 
 const isCatalogEntry = (value: unknown): value is PlanCatalogEntry =>
@@ -356,6 +361,7 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     },
     signOut: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.signOut}`, request, isSignOutResponse, 'a sign-out report'),
     setActive: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.accountsActive}`, request, isActiveResponse, 'an active account'),
+    rename: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.accountRename}`, request, isRenameResponse, 'a renamed account'),
     resume: (account, request) => checked('POST', accountRoute(PLAN_ROUTES.accountResume, account), request, isResumeResponse, 'a resume answer'),
     resetHost: () => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.hostReset}`, {}, isHostResetResponse, 'a host identity'),
     accountModels: (account, request) => checked('GET', `${accountRoute(PLAN_ROUTES.accountModels, account)}?${modelsQuery(request)}`, undefined, isModelsResponse, 'a model catalog'),

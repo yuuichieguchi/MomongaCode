@@ -1,11 +1,11 @@
 import { declaredCommandProblem, plainHttpWarningText } from '@momonga/config';
 import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
-import type { GatewayHealth, PlanAccountView } from '@momonga/protocol';
+import type { GatewayHealth, PlanAccountView, TargetHealth } from '@momonga/protocol';
 import { planServesAccount } from './plan-account.ts';
-import { SEPARATOR, addressesOf, configuredWindowsOf, modelRowText, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
+import { SEPARATOR, addressesOf, configuredWindowsOf, isLocalServer, modelRowText, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
 import { runAddFlow } from './add.ts';
-import { cancellable, chosenOf, hostOf, openEdit, proposeAndWrite } from './context.ts';
+import { cancellable, chosenOf, hostOf, openEdit, proposeAndWrite, proposeWrite, writeConfirmed } from './context.ts';
 import type { ModelsFlowContext, Opened } from './context.ts';
 import { runModelFields, runServerFields } from './fields.ts';
 import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from './order.ts';
@@ -41,13 +41,15 @@ type HubRow =
   | { readonly kind: 'heading'; readonly label: string }
   | { readonly kind: 'action'; readonly action: HubAction; readonly label: string };
 
-export type HubFacts = { document: ModelsDocument; plainHttp: readonly string[]; signInRequired: ReadonlySet<string>; keyedElsewhere: ReadonlySet<string> };
+export type HubFacts = { document: ModelsDocument; plainHttp: readonly string[]; signInRequired: ReadonlySet<string>; keyedElsewhere: ReadonlySet<string>; serverStates: ReadonlyMap<string, string> };
 
 const modelLabel = (model: ListedModel, facts: HubFacts): string => `${modelRowText(model, facts.document.start)}${facts.signInRequired.has(model.model) ? `${SEPARATOR}${SIGN_IN_REQUIRED_WORD}` : ''}`;
 
 const SERVERS_HEADING = 'Servers';
 const MODELS_HEADING = 'Models';
 const ACTIONS_HEADING = 'Change';
+
+const stateSuffixOf = (state: string | undefined): string => (state === undefined ? '' : `${SEPARATOR}${state}`);
 
 const grouped = (heading: string, rows: readonly HubRow[]): HubRow[] => (rows.length === 0 ? [] : [{ kind: 'heading', label: heading }, ...rows]);
 
@@ -57,7 +59,7 @@ export const hubRows = (facts: HubFacts): HubRow[] => {
   const servers = providers.flatMap((provider): HubRow[] => {
     const address = models.find((model) => model.provider === provider)?.address ?? null;
     return [
-      { kind: 'server', provider, label: address === null ? provider : `${provider}${SEPARATOR}${address}` },
+      { kind: 'server', provider, label: `${address === null ? provider : `${provider}${SEPARATOR}${address}`}${stateSuffixOf(facts.serverStates.get(provider))}` },
       ...(facts.plainHttp.includes(provider) ? [{ kind: 'warning' as const, label: plainHttpWarningText(provider) }] : []),
     ];
   });
@@ -83,21 +85,66 @@ const keyedElsewhereOf = (edit: ModelsEdit, accounts: readonly PlanAccountView[]
   );
 };
 
+const READY_STATE = 'ready';
+const NOT_RUNNING_STATE = 'not_running';
+const NOT_READY_STATE = 'not ready';
+
+const healthStateOf = (health: TargetHealth): string => (health.ok ? READY_STATE : health.reason ?? NOT_READY_STATE);
+
+const serverStateOf = async (
+  context: ModelsFlowContext,
+  signal: AbortSignal,
+  provider: string,
+  facts: { document: ModelsDocument; health: GatewayHealth; resolved: ModelsEdit['resolved']; declared: Readonly<Record<string, unknown>> },
+): Promise<string | undefined> => {
+  const connection = facts.resolved.connections.find((candidate) => candidate.provider === provider);
+  const managed = connection?.server !== undefined && Object.hasOwn(facts.declared, connection.server);
+  if (connection?.plan !== undefined || managed) {
+    const model = facts.document.models.find((listed) => listed.provider === provider);
+    const answer = model === undefined ? undefined : facts.health.models[model.model];
+    return answer === undefined ? undefined : healthStateOf(answer);
+  }
+  const address = addressesOf(facts.resolved).get(provider);
+  if (address === undefined) return undefined;
+  const answered = (await hostOf(context, signal).detect({ candidates: [], typed: [address], signal, includeWithoutModels: true })).some(isLocalServer);
+  return answered ? READY_STATE : NOT_RUNNING_STATE;
+};
+
+const untilAborted = <T>(signal: AbortSignal, work: Promise<T>): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const stop = (): void => reject(signal.reason);
+    if (signal.aborted) return stop();
+    signal.addEventListener('abort', stop, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
+  });
+
+const serverStatesOf = async (context: ModelsFlowContext, signal: AbortSignal, opened: Opened, document: ModelsDocument, health: GatewayHealth): Promise<ReadonlyMap<string, string>> => {
+  const declared = declaredOf(opened.edit);
+  const providers = [...new Set(document.models.map((model) => model.provider))];
+  const states = await Promise.all(
+    providers.map(async (provider): Promise<[string, string][]> => {
+      const state = await serverStateOf(context, signal, provider, { document, health, resolved: opened.edit.resolved, declared });
+      return state === undefined ? [] : [[provider, state]];
+    }),
+  );
+  return new Map(states.flat());
+};
+
 const signInRequiredOf = (document: ModelsDocument, health: GatewayHealth): ReadonlySet<string> =>
   new Set(document.models.filter((model) => health.models[model.model]?.reason === SIGN_IN_REQUIRED_CODE).map((model) => model.model));
 
 const removeModel = (context: ModelsFlowContext, opened: Opened, model: string) => proposeAndWrite(opened, context, 'remove', { args: [model], options: {} });
 
-const removeServer = async (context: ModelsFlowContext, opened: Opened, provider: string): Promise<void> => {
+const removeServer = async (context: ModelsFlowContext, opened: Opened, provider: string, write: typeof proposeAndWrite = proposeAndWrite): Promise<void> => {
   const connection = opened.edit.resolved.connections.find((candidate) => candidate.provider === provider);
   const declared = connection?.server !== undefined && Object.hasOwn(declaredOf(opened.edit), connection.server);
   if (!declared) {
-    await proposeAndWrite(opened, context, 'remove-server', { args: [provider], options: {} });
+    await write(opened, context, 'remove-server', { args: [provider], options: {} });
     return;
   }
   const way = await chosenOf(context, { title: provider, rows: [{ label: REMOVE_SERVER_ONLY_ROW }, { label: FORGET_PROGRAM_TOO_ROW }] });
   if (way === undefined) return;
-  await proposeAndWrite(opened, context, 'remove-server', { args: [provider], options: way === 1 ? { forgetProgram: true } : {} });
+  await write(opened, context, 'remove-server', { args: [provider], options: way === 1 ? { forgetProgram: true } : {} });
 };
 
 const nameServer = async (context: ModelsFlowContext, opened: Opened, provider: string): Promise<void> => {
@@ -124,9 +171,19 @@ const serverMenu = async (context: ModelsFlowContext, opened: Opened, provider: 
   if (action === 'Remove server') await removeServer(context, opened, provider);
 };
 
-export const runRenameServer = async (context: ModelsFlowContext, provider: string): Promise<void> => nameServer(context, await openEdit(context), provider);
+export const runRemoveServingConnection = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider, proposeWrite);
 
-export const runRemoveServer = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider);
+export const repointAccountConnections = async (context: ModelsFlowContext, profile: string, from: string, to: string): Promise<boolean> => {
+  const opened = await openEdit(context);
+  const repoint = (provider: string) => ({ kind: 'setConnectionField' as const, provider, path: ['plan', 'account'], value: to });
+  const [first, ...rest] = opened.edit.resolved.connections.filter((connection) => connection.plan?.profile === profile && connection.plan.account === from);
+  if (first === undefined) return true;
+  const written = await writeConfirmed(opened, context, {
+    operations: [repoint(first.provider), ...rest.map((connection) => repoint(connection.provider))],
+    confirm: () => '',
+  });
+  return written !== undefined;
+};
 
 export const accountConnectionOf = async (context: ModelsFlowContext, account: PlanAccountView): Promise<string | undefined> =>
   (await openEdit(context)).edit.resolved.connections.find((connection) => connection.plan !== undefined && planServesAccount(connection.plan, account))?.provider;
@@ -206,9 +263,16 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
   let at = 0;
   for (;;) {
     const opened = await openEdit(context);
-    const [listing, health, { accounts }] = await Promise.all([context.backend.modelList(), context.backend.health(), context.backend.plan.accounts()]);
-    const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
-    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit, accounts) });
+    const read = await cancellable(context, CHECKING_PHASE, (signal) =>
+      untilAborted(signal, (async () => {
+        const [listing, health, { accounts }] = await Promise.all([context.backend.modelList(), context.backend.health(), context.backend.plan.accounts()]);
+        const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
+        return { health, accounts, document, serverStates: await serverStatesOf(context, signal, opened, document, health) };
+      })()),
+    );
+    if (read === undefined) return;
+    const { health, accounts, document, serverStates } = read.value;
+    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit, accounts), serverStates });
     const index = await chosenOf(context, {
       title: MODELS_TITLE,
       lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],

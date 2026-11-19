@@ -18,8 +18,10 @@ export type FlowFakes = {
   programModel?: string;
   describe?: ModelsShell['describe'];
   health?: GatewayHealth['models'];
+  holdHealth?: boolean;
   accounts?: PlanAccountsResponse;
   cancelPhase?: string;
+  cancelOccurrence?: number;
   model?: string;
 };
 
@@ -94,7 +96,10 @@ export const flowOf = (context: TestContext, settings: unknown | undefined, step
         programModel: harness.shell.programModel,
       }),
       storeSecret: async (name, value) => void secrets.set(name, value),
-      health: async () => ({ ok: true, models: fakes.health ?? {}, version: '0.0.0', apiVersion: 1, pid: 1, startedAt: '2026-11-10T00:00:00.000Z', state: 'running', activeRequests: 0 }),
+      health: async () =>
+        fakes.holdHealth === true
+          ? new Promise<never>(() => undefined)
+          : { ok: true, models: fakes.health ?? {}, version: '0.0.0', apiVersion: 1, pid: 1, startedAt: '2026-11-10T00:00:00.000Z', state: 'running', activeRequests: 0 },
       plan: { accounts: async () => fakes.accounts ?? { profiles: [], accounts: [] } } as ModelsFlowContext['backend']['plan'],
     },
     overlays: { choose, promptText },
@@ -105,7 +110,7 @@ export const flowOf = (context: TestContext, settings: unknown | undefined, step
       phases.push(phase);
       const controller = new AbortController();
       const running = work(controller.signal);
-      if (phase === fakes.cancelPhase) controller.abort(new Error('cancelled'));
+      if (phase === fakes.cancelPhase && (fakes.cancelOccurrence === undefined || phases.filter((seen) => seen === phase).length === fakes.cancelOccurrence)) controller.abort(new Error('cancelled'));
       return running;
     },
   };

@@ -195,13 +195,13 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
   });
 
   it('row 6: removing a server names its models, and a declared program can be forgotten with it', async (context) => {
-    const one = flowOf(context, S2, [{ pick: `ollama  ·  ${OLLAMA_ADDRESS}` }, { pick: 'Remove server' }, YES]);
+    const one = flowOf(context, S2, [{ pick: `ollama  ·  ${OLLAMA_ADDRESS}  ·  not_running` }, { pick: 'Remove server' }, YES]);
     await runModelsHub(one.context);
     expect(one.picks()[1]?.rows).toEqual(['Edit server', 'Name this server', 'Remove server']);
     expect(one.picks()[2]?.title).toBe('Remove ollama and its model? Sessions that used it keep their history.');
     expect(writtenOf(one).models.connections.map((connection) => connection['provider'])).toEqual(['lmstudio']);
 
-    const two = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), [{ pick: `ollama  ·  ${OLLAMA_ADDRESS}` }, { pick: 'Remove server' }, NO]);
+    const two = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), [{ pick: `ollama  ·  ${OLLAMA_ADDRESS}  ·  not_running` }, { pick: 'Remove server' }, NO]);
     await runModelsHub(two.context);
     expect(two.picks()[2]?.title).toBe('Remove ollama and its 2 models? It is also the model for: new sessions. Sessions that used them keep their history.');
 
@@ -369,7 +369,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
   });
 
   it('row 16: the Models screen shows its servers, then its models with the start model and what needs a sign-in, then what can be changed, under three headings', async (context) => {
-    const harness = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), []);
+    const harness = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), [], { found: (request) => (request.typed[0] === OLLAMA_ADDRESS ? [ollamaFound(OLLAMA_ADDRESS, ['gemma-3-4b:latest'])] : []) });
     await runModelsHub(harness.context);
     expect(harness.picks()[0]).toEqual({
       kind: 'pick',
@@ -377,8 +377,8 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       lines: [],
       rows: [
         'Servers',
-        `ollama  ·  ${OLLAMA_ADDRESS}`,
-        'lmstudio  ·  http://127.0.0.1:1234/v1',
+        `ollama  ·  ${OLLAMA_ADDRESS}  ·  ready`,
+        'lmstudio  ·  http://127.0.0.1:1234/v1  ·  not_running',
         'Models',
         'ollama/gemma-3-4b  ·  32.8k tokens  ·  local',
         'ollama/qwen3.8:27b  ·  32.8k tokens  ·  local  ·  starts new sessions',
@@ -392,13 +392,13 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
 
     const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: false, breaker: 'closed', reason: 'sign_in_required' } } });
     await runModelsHub(plan.context);
-    expect(plan.picks()[0]?.rows.slice(0, 5)).toEqual(['Servers', 'chatgpt', 'Models', 'chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai/gpt-5.5  ·  400k tokens  ·  metered']);
+    expect(plan.picks()[0]?.rows.slice(0, 5)).toEqual(['Servers', 'chatgpt  ·  sign_in_required', 'Models', 'chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai/gpt-5.5  ·  400k tokens  ·  metered']);
 
     const plain = flowOf(context, { models: { connections: [{ adapter: 'chat-completions', provider: 'gpu-box', baseUrl: 'http://192.168.1.20:8080/v1', models: [{ id: 'm', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }] } }, []);
     await runModelsHub(plain.context);
     expect(plain.picks()[0]?.rows.slice(0, 5)).toEqual([
       'Servers',
-      'gpu-box  ·  http://192.168.1.20:8080/v1',
+      'gpu-box  ·  http://192.168.1.20:8080/v1  ·  not_running',
       'The address of gpu-box is plain http to another computer: what you send to it is not encrypted.',
       'Models',
       'gpu-box/m  ·  8.2k tokens  ·  metered  ·  starts new sessions',
@@ -441,12 +441,50 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const found = (): LocalServerDetection[] => [ollamaFound(OLLAMA_ADDRESS, ['gemma-3-4b:latest'])];
     const harness = flowOf(context, threeModels(), [{ pick: 'Check the servers' }], { found: (request) => (request.typed[0] === OLLAMA_ADDRESS ? found() : []) });
     await runModelsHub(harness.context);
-    expect(harness.phases).toEqual([CHECKING]);
+    expect(harness.phases).toEqual([CHECKING, CHECKING, CHECKING]);
     expect(harness.picks()[1]?.rows).toContain('ollama/qwen3.8:27b  ·  32.8k tokens  ·  local  ·  not listed by the server');
     expect(harness.picks()[1]?.rows).toContain('ollama/gemma-3-4b  ·  32.8k tokens  ·  local  ·  starts new sessions');
 
-    const cancelled = flowOf(context, threeModels(), [{ pick: 'Check the servers' }], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING });
+    let asked = 0;
+    const cancelled = flowOf(context, threeModels(), [{ pick: 'Check the servers' }], {
+      found: (request) => {
+        asked += 1;
+        return asked === 3 || asked === 4 ? untilAborted(request.signal) : [];
+      },
+      cancelPhase: CHECKING,
+      cancelOccurrence: 2,
+    });
     await runModelsHub(cancelled.context);
     expect(cancelled.picks()[1]?.rows.some((row) => row.includes('not listed by the server'))).toBe(false);
+  });
+
+  it('the Servers rows end with a state asked of the server itself: a managed program by its health answer, a plan connection by its health answer, an address by a probe, a row with no answer shows none', async (context) => {
+    const managed = flowOf(context, S4, [], { health: { 'llama-server/qwen3-coder-30b': { ok: true, breaker: 'closed' } } });
+    await runModelsHub(managed.context);
+    expect(managed.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', 'llama-server  ·  ready']);
+
+    const unhealthy = flowOf(context, S4, [], { health: { 'llama-server/qwen3-coder-30b': { ok: false, breaker: 'closed', reason: 'unhealthy' } } });
+    await runModelsHub(unhealthy.context);
+    expect(unhealthy.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', 'llama-server  ·  unhealthy']);
+
+    const unanswered = flowOf(context, S4, []);
+    await runModelsHub(unanswered.context);
+    expect(unanswered.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', 'llama-server']);
+    expect(unanswered.detections).toEqual([]);
+
+    const listsNothing = flowOf(context, threeModels(), [], { found: (request) => (request.typed[0] === OLLAMA_ADDRESS ? [ollamaFound(OLLAMA_ADDRESS, [])] : []) });
+    await runModelsHub(listsNothing.context);
+    expect(listsNothing.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', `ollama  ·  ${OLLAMA_ADDRESS}  ·  ready`]);
+    expect(listsNothing.detections[0]).toMatchObject({ typed: [OLLAMA_ADDRESS], includeWithoutModels: true });
+
+    const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: true, breaker: 'closed' } } });
+    await runModelsHub(plan.context);
+    expect(plan.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', 'chatgpt  ·  ready']);
+  });
+
+  it('the screen does not open when Esc cancels the wait that reads the servers, and Esc does not wait for a read that never answers', async (context) => {
+    const cancelled = flowOf(context, threeModels(), [], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING, holdHealth: true });
+    await runModelsHub(cancelled.context);
+    expect(cancelled.picks()).toEqual([]);
   });
 });

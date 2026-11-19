@@ -17,6 +17,7 @@ import type {
   PlanSignInCancelResponse,
   PlanSignInCompleteResponse,
   PlanSignOutResponse,
+  PlanRenameResponse,
 } from '@momonga/protocol';
 import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
 import { retryAfterSeconds } from '../core/retry.ts';
@@ -41,6 +42,7 @@ export type PlanApi = {
   complete(body: unknown, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanSignInCompleteResponse>;
   cancel(body: unknown): PlanSignInCancelResponse;
   signOut(body: unknown, signal: AbortSignal): Promise<PlanSignOutResponse>;
+  rename(body: unknown, signal: AbortSignal): Promise<PlanRenameResponse>;
   resume(account: string, body: unknown, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanResumeResponse>;
   resetHost(): Promise<PlanHostResetResponse>;
   models(account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse>;
@@ -239,6 +241,15 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
         if (!(await sessions.known(signal)).some((entry) => entry.profile === ref.profile && entry.account === ref.account)) throw accountNotFound(ref);
         const report = await sessions.signOut(ref, signal);
         return { revocation: report.revocation, usageUrl: report.usageUrl };
+      }),
+    rename: (body, signal) =>
+      translated(async () => {
+        const ref = accountRefOf(body);
+        profileOf(ref.profile);
+        const to = accountLabelOf(stringField(body, 'to'));
+        await sessions.load(ref, signal);
+        if (!(await sessions.known(signal)).some((entry) => entry.profile === ref.profile && entry.account === ref.account)) throw accountNotFound(ref);
+        return { renamed: await sessions.rename(ref, to, signal) };
       }),
     resume: (account, body, targets, signal) =>
       translated(async () => {

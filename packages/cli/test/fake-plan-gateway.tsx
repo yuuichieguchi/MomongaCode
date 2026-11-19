@@ -140,6 +140,11 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       accounts = accounts.map((existing) => (existing.label === request.account ? { ...existing, state: 'registered', active: false } : existing));
       return { revocation: options.signOutRevocation ?? 'confirmed', usageUrl: CHATGPT.usageUrl };
     },
+    rename: async (request) => {
+      called('accounts/rename', request);
+      accounts = accounts.map((existing) => (existing.label === request.account ? { ...existing, label: request.to } : existing));
+      return { renamed: { profile: request.profile, account: request.to } };
+    },
     setActive: async (request) => {
       called('accounts/active', request);
       accounts = accounts.map((existing) => ({ ...existing, active: existing.label === request.account }));

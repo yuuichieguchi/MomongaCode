@@ -103,6 +103,7 @@ export const PLAN_ROUTES = {
   signInComplete: '/sign-in/complete',
   signInCancel: '/sign-in/cancel',
   signOut: '/sign-out',
+  accountRename: '/accounts/rename',
   accounts: '/accounts',
   accountsActive: '/accounts/active',
   accountResume: '/accounts/:account/resume',
@@ -213,6 +214,10 @@ export type PlanSignInCancelRequest = { attemptId: string };
 export type PlanSignInCancelResponse = { cancelled: boolean };
 
 export type PlanSignOutRequest = NamedPlanAccountRef;
+
+export type PlanRenameRequest = NamedPlanAccountRef & { to: string };
+
+export type PlanRenameResponse = { renamed: NamedPlanAccountRef };
 
 export const PLAN_REVOCATION_CONFIRMED = 'confirmed' as const;
 export const PLAN_REVOCATION_UNCONFIRMED = 'unconfirmed' as const;

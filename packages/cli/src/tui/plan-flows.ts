@@ -9,7 +9,7 @@ import type { Added } from './models/add.ts';
 import { openEdit } from './models/context.ts';
 import type { FoundServers, ModelsFlowContext } from './models/context.ts';
 import { planServesAccount } from './models/plan-account.ts';
-import { accountConnectionOf, runModelsHub, runRemoveServer, runRenameServer, runServerActions } from './models/hub.ts';
+import { accountConnectionOf, repointAccountConnections, runModelsHub, runRemoveServingConnection, runServerActions } from './models/hub.ts';
 import { modelListRows } from './models/model-list.ts';
 import { writeStart } from './models/order.ts';
 import { effortAnswerText, writeModelEffort } from './commands/effort.ts';
@@ -275,28 +275,47 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     return signInFlow(profile, label, false);
   };
 
-  const connectionRows = async (profile: PlanProfileView, records: readonly PlanAccountView[]): Promise<Choice[]> => {
-    const context = flowContext();
-    const rows = await Promise.all(
-      records.map(async (account): Promise<Choice[]> => {
-        const provider = await accountConnectionOf(context, account);
-        if (provider === undefined) return [];
-        const after = async (act: () => Promise<void>): Promise<void> => {
-          await act();
-          await ports.refreshConnection();
-        };
-        return [
-          { row: { label: `Rename account ${account.label}` }, act: () => after(() => runRenameServer(context, provider)) },
-          { row: { label: `Remove account ${account.label}` }, act: () => after(() => runRemoveServer(context, provider)) },
-        ];
-      }),
-    );
-    return rows.flat();
+  const renameAccount = async (profile: PlanProfileView, listed: PlanAccountsResponse, account: PlanAccountView): Promise<void> => {
+    const taken = new Set(accountsOf(profile.id, listed.accounts).map((record) => record.label));
+    const to = await ports.promptText({
+      title: `Rename account ${account.label}`,
+      initial: account.label,
+      validate: (text) => {
+        if (!isPlanLabel(text)) return PLAN_LABEL_REFUSAL;
+        if (taken.has(text)) return `${text} is already saved; choose another label`;
+        return undefined;
+      },
+    });
+    if (to === undefined || to === account.label) return;
+    await backend.plan.rename({ profile: profile.id, account: account.label, to });
+    let repointed = false;
+    try {
+      repointed = await repointAccountConnections(flowContext(), profile.id, account.label, to);
+    } finally {
+      if (!repointed) await backend.plan.rename({ profile: profile.id, account: to, to: account.label });
+    }
+    await ports.refreshConnection();
   };
+
+  const removeAccount = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
+    const confirmed = await ports.pick({ title: `Remove account ${account.label}`, rows: [{ label: `Remove account ${account.label}` }], confirm: (_row, decideKey) => `press ${decideKey} again to sign out ${account.label}` });
+    if (confirmed === undefined) return;
+    const provider = await accountConnectionOf(flowContext(), account);
+    const report = await backend.plan.signOut({ profile: profile.id, account: account.label });
+    for (const line of signedOutLines(profile, account.label, report)) ports.info(line);
+    if (provider !== undefined) await runRemoveServingConnection(flowContext(), provider);
+    await ports.refreshConnection();
+  };
+
+  const accountActionRows = (profile: PlanProfileView, listed: PlanAccountsResponse, records: readonly PlanAccountView[]): Choice[] =>
+    records.flatMap((account): Choice[] => [
+      { row: { label: `Rename account ${account.label}` }, act: () => renameAccount(profile, listed, account) },
+      { row: { label: `Remove account ${account.label}` }, act: () => removeAccount(profile, account) },
+    ]);
 
   const accountPicker = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<void> => {
     const records = accountsOf(profile.id, listed.accounts);
-    const connections = await connectionRows(profile, records);
+    const actions = accountActionRows(profile, listed, records);
     await chooseFrom({ title: profile.messages.pickerLabel }, [
       ...records.map((account) => {
         const label = `${accountRowLabel(account)}${account.active ? ' (current)' : ''}`;
@@ -313,7 +332,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
             if (answer.resumed && account.active) await accountInUse(profile, account);
           },
         })),
-      ...connections,
+      ...actions,
       { row: { label: 'Add another account or workspace' }, act: () => newAccount(profile, listed) },
     ]);
   };
