@@ -40,25 +40,42 @@ type HubRow =
   | { readonly kind: 'heading'; readonly label: string }
   | { readonly kind: 'action'; readonly action: HubAction; readonly label: string };
 
-export type HubFacts = { document: ModelsDocument; plainHttp: readonly string[]; signInRequired: ReadonlySet<string> };
+export type HubFacts = { document: ModelsDocument; plainHttp: readonly string[]; signInRequired: ReadonlySet<string>; keyedElsewhere: ReadonlySet<string> };
 
 const modelLabel = (model: ListedModel, facts: HubFacts): string => `${modelRowText(model, facts.document.start)}${facts.signInRequired.has(model.model) ? `${SEPARATOR}${SIGN_IN_REQUIRED_WORD}` : ''}`;
 
+const SERVERS_HEADING = 'Servers';
+const MODELS_HEADING = 'Models';
 const ACTIONS_HEADING = 'Change';
+
+const grouped = (heading: string, rows: readonly HubRow[]): HubRow[] => (rows.length === 0 ? [] : [{ kind: 'heading', label: heading }, ...rows]);
 
 export const hubRows = (facts: HubFacts): HubRow[] => {
   const { models } = facts.document;
-  const providers = [...new Set(models.map((model) => model.provider))];
-  const blocks = providers.flatMap((provider): HubRow[] => {
-    const served = models.filter((model) => model.provider === provider);
-    const address = served[0]?.address ?? null;
+  const providers = [...new Set(models.map((model) => model.provider))].filter((provider) => !facts.keyedElsewhere.has(provider));
+  const servers = providers.flatMap((provider): HubRow[] => {
+    const address = models.find((model) => model.provider === provider)?.address ?? null;
     return [
       { kind: 'server', provider, label: address === null ? provider : `${provider}${SEPARATOR}${address}` },
       ...(facts.plainHttp.includes(provider) ? [{ kind: 'warning' as const, label: plainHttpWarningText(provider) }] : []),
-      ...served.map((model): HubRow => ({ kind: 'model', model: model.model, label: modelLabel(model, facts) })),
     ];
   });
-  return [...blocks, { kind: 'heading', label: ACTIONS_HEADING }, ...HUB_ACTIONS.map((action): HubRow => ({ kind: 'action', action, label: action }))];
+  return [
+    ...grouped(SERVERS_HEADING, servers),
+    ...grouped(MODELS_HEADING, models.map((model): HubRow => ({ kind: 'model', model: model.model, label: modelLabel(model, facts) }))),
+    { kind: 'heading', label: ACTIONS_HEADING },
+    ...HUB_ACTIONS.map((action): HubRow => ({ kind: 'action', action, label: action })),
+  ];
+};
+
+const firstChoosableFrom = (rows: readonly HubRow[], from: number): number => {
+  const found = rows.findIndex((row, index) => index >= from && row.kind !== 'heading' && row.kind !== 'warning');
+  return found < 0 ? from : found;
+};
+
+const keyedElsewhereOf = (edit: ModelsEdit): ReadonlySet<string> => {
+  const local = new Set(edit.resolved.views.filter((view) => view.naming === 'server').map((view) => view.provider));
+  return new Set(edit.resolved.connections.filter((connection) => !local.has(connection.provider) && (connection.apiKeyEnv !== undefined || connection.apiKeySecret !== undefined)).map((connection) => connection.provider));
 };
 
 const signInRequiredOf = (document: ModelsDocument, health: GatewayHealth): ReadonlySet<string> =>
@@ -179,12 +196,12 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
     const opened = await openEdit(context);
     const [listing, health] = await Promise.all([context.backend.modelList(), context.backend.health()]);
     const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
-    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health) });
+    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit) });
     const index = await chosenOf(context, {
       title: MODELS_TITLE,
       lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
-      rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'model' || row.kind === 'warning' ? { child: true } : {}), ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
-      initial: Math.min(at, rows.length - 1),
+      rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
+      initial: firstChoosableFrom(rows, Math.min(at, rows.length - 1)),
       filter: false,
     });
     const row = index === undefined ? undefined : rows[index];

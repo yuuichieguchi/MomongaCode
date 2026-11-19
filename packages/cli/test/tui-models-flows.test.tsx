@@ -368,7 +368,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     expect(harness.bytes()).toBe(before);
   });
 
-  it('row 16: the Models screen shows one block per server with its models, the start model and what needs a sign-in', async (context) => {
+  it('row 16: the Models screen shows its servers, then its models with the start model and what needs a sign-in, then what can be changed, under three headings', async (context) => {
     const harness = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), []);
     await runModelsHub(harness.context);
     expect(harness.picks()[0]).toEqual({
@@ -376,10 +376,12 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       title: 'Models',
       lines: [],
       rows: [
+        'Servers',
         `ollama  ·  ${OLLAMA_ADDRESS}`,
+        'lmstudio  ·  http://127.0.0.1:1234/v1',
+        'Models',
         'ollama/gemma-3-4b  ·  32.8k tokens  ·  local',
         'ollama/qwen3.8:27b  ·  32.8k tokens  ·  local  ·  starts new sessions',
-        'lmstudio  ·  http://127.0.0.1:1234/v1',
         'lmstudio/gemma-3-4b  ·  4.1k tokens  ·  local',
         'Change',
         ...HUB_ACTIONS,
@@ -390,13 +392,15 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
 
     const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: false, breaker: 'closed', reason: 'sign_in_required' } } });
     await runModelsHub(plan.context);
-    expect(plan.picks()[0]?.rows.slice(0, 4)).toEqual(['chatgpt', 'chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai  ·  https://api.openai.com/v1', 'openai/gpt-5.5  ·  400k tokens  ·  metered']);
+    expect(plan.picks()[0]?.rows.slice(0, 5)).toEqual(['Servers', 'chatgpt', 'Models', 'chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai/gpt-5.5  ·  400k tokens  ·  metered']);
 
     const plain = flowOf(context, { models: { connections: [{ adapter: 'chat-completions', provider: 'gpu-box', baseUrl: 'http://192.168.1.20:8080/v1', models: [{ id: 'm', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }] } }, []);
     await runModelsHub(plain.context);
-    expect(plain.picks()[0]?.rows.slice(0, 3)).toEqual([
+    expect(plain.picks()[0]?.rows.slice(0, 5)).toEqual([
+      'Servers',
       'gpu-box  ·  http://192.168.1.20:8080/v1',
       'The address of gpu-box is plain http to another computer: what you send to it is not encrypted.',
+      'Models',
       'gpu-box/m  ·  8.2k tokens  ·  metered  ·  starts new sessions',
     ]);
 

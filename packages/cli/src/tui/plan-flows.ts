@@ -61,12 +61,6 @@ const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
 const SANDBOX_OFF_CONTINUE = 0;
 const SANDBOX_OFF_CANCEL = 1;
 
-const healthText = (health: TargetHealth | undefined): string => {
-  if (health === undefined) return 'health unknown';
-  if (health.ok) return 'ready';
-  return health.reason ?? 'not ready';
-};
-
 const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.reason === SIGN_IN_REQUIRED_CODE;
 
 const CHANGE_EFFORT_LABEL = 'change the effort';

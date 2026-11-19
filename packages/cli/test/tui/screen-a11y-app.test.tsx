@@ -154,7 +154,7 @@ describe('the screen-reader display', () => {
     started.app.unmount();
   });
 
-  it('indents the child rows of a list with spaces, never with tree lines', async () => {
+  it('shows the rows of a grouped list flat, never with tree lines', async () => {
     const place = freshPlace();
     const started = await startWith({ ...READER, backend: { models: ['ollama/qwen3.8:27b', 'ollama/gemma-3-4b'], settingsPlace: { home: place.home, projectDir: place.project } }, screen: { screen: 'scrollback', columns: 100, rows: 40 } });
     started.app.stdin.write('/model');
@@ -166,9 +166,9 @@ describe('the screen-reader display', () => {
     started.app.stdin.write(KEYS.enter);
     const shown = (await untilFrame(started.app, 'Check the servers')).split('\n').map((line) => line.trimEnd());
     expect(shown.join('\n')).not.toMatch(/[├└]/);
-    expect(shown).toContain(' 1. ollama');
-    expect(shown.some((line) => /^ 2\. {4}ollama\/qwen3\.8:27b/.test(line))).toBe(true);
-    expect(shown.some((line) => /^ 3\. {4}ollama\/gemma-3-4b/.test(line))).toBe(true);
+    expect(shown.some((line) => /^ 1\. ollama/.test(line))).toBe(true);
+    expect(shown.some((line) => /^ 2\. ollama\/qwen3\.8:27b/.test(line))).toBe(true);
+    expect(shown.some((line) => /^ 3\. ollama\/gemma-3-4b/.test(line))).toBe(true);
     started.app.unmount();
   });
 

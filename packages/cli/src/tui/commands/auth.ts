@@ -6,7 +6,7 @@ export const planSlashCommands = (flows: PlanFlows): readonly SlashCommand[] => 
   {
     name: 'login',
     usage: '[provider]',
-    description: 'connect a model: sign in to a subscription, add an API key or a local server',
+    description: 'connect a model: sign in to a subscription or add an API key',
     needsSession: false,
     run: (args) => flows.login(args),
   },
