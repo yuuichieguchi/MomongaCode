@@ -33,6 +33,7 @@ const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
     invitationAnswered: () => undefined,
     untilNextKey: () => new AbortController().signal,
     info: harness.context.info,
+    failed: harness.context.info,
     toast: harness.context.info,
     connected: async (model) => void connected.push(model),
     effort: () => undefined,

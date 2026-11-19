@@ -51,7 +51,7 @@ const attempt = (auth: SiwcAuth, params: Record<string, string>, redirectUri = R
 const postForm = (url: string, form: Record<string, string>): Promise<Response> =>
   fetch(url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form).toString() });
 
-type Tokens = { access_token: string; refresh_token: string; id_token: string; token_type: string; expires_in: number; scope: string; earliest_refresh_at: string };
+type Tokens = { access_token: string; refresh_token: string; id_token: string; token_type: string; expires_in: number; scope: string; earliest_refresh_at?: unknown };
 
 type SignedIn = { clientId: string; tokens: Tokens; attempt: Attempt };
 
@@ -237,13 +237,20 @@ describe('fake Sign in with ChatGPT authorization server: the browser', () => {
 });
 
 describe('fake Sign in with ChatGPT authorization server: the code exchange', () => {
+  it('sends earliest_refresh_at as a number, a string, null or not at all, as asked', async () => {
+    expect(typeof (await signIn(await start({ earliestRefreshAtForm: 'number' }))).tokens.earliest_refresh_at).toBe('number');
+    expect(typeof (await signIn(await start({ earliestRefreshAtForm: 'string' }))).tokens.earliest_refresh_at).toBe('string');
+    expect((await signIn(await start({ earliestRefreshAtForm: 'null' }))).tokens.earliest_refresh_at).toBeNull();
+    expect('earliest_refresh_at' in (await signIn(await start({ earliestRefreshAtForm: 'absent' }))).tokens).toBe(false);
+  });
+
   it('returns the seven fields of the token reference, with an access token that carries the documented claims', async () => {
     const auth = await start();
     const { clientId, tokens } = await signIn(auth);
     expect(Object.keys(tokens).sort()).toEqual(['access_token', 'earliest_refresh_at', 'expires_in', 'id_token', 'refresh_token', 'scope', 'token_type']);
     expect(tokens.token_type).toBe('Bearer');
     expect(tokens.expires_in).toBe(3600);
-    expect(typeof tokens.earliest_refresh_at).toBe('string');
+    expect(typeof tokens.earliest_refresh_at).toBe('number');
     const { claims } = segments(tokens.access_token);
     expect(claims['aud']).toBe(SIWC_RESOURCE);
     expect(claims['client_id']).toBe(clientId);

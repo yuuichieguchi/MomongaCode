@@ -71,6 +71,36 @@ describe('a successful rotation (F8, I-C5)', () => {
     expect(h.sleeps).toEqual([]);
   });
 
+  it.each([
+    [1_800_000_123, '1800000123'],
+    [null, undefined],
+    [{ at: 1 }, undefined],
+  ])('adopts a refresh whose earliest_refresh_at is %j and keeps %j', async (sent, kept) => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    const before = (await readRecord(h, 'work'))?.['access_token'];
+    h.rewriteRefresh((body) => ({ ...body, earliest_refresh_at: sent }));
+    toRefreshWindow(h, START_MS);
+    await readWork(h);
+    const record = await readRecord(h, 'work');
+    expect(record?.['state']).toBe('active');
+    expect(record?.['access_token']).not.toBe(before);
+    expect(record?.['earliestRefreshAt']).toBe(kept);
+  });
+
+  it('adopts a refresh without earliest_refresh_at and keeps none', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    const before = (await readRecord(h, 'work'))?.['access_token'];
+    h.rewriteRefresh(({ earliest_refresh_at: _earliest, ...body }) => body);
+    toRefreshWindow(h, START_MS);
+    await readWork(h);
+    const record = await readRecord(h, 'work');
+    expect(record?.['state']).toBe('active');
+    expect(record?.['access_token']).not.toBe(before);
+    expect(record?.['earliestRefreshAt']).toBeUndefined();
+  });
+
   it('feeds every issued access, refresh and ID token to the redactor', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');

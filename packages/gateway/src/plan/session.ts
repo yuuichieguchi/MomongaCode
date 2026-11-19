@@ -319,6 +319,11 @@ const withoutPending = (record: PlanRecord): PlanRecord => {
   return kept;
 };
 
+const withoutAnswerFacts = (record: PlanRecord): PlanRecord => {
+  const { earliestRefreshAt: _earliestRefreshAt, ...kept } = withoutPending(record);
+  return kept;
+};
+
 const withoutPause = (record: PlanRecord): PlanRecord => {
   const { paused: _paused, ...kept } = record;
   return kept;
@@ -744,7 +749,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const intentKept = !replaced && interrupted;
     const lifetimeMs = tokens.expires_in * 1000;
     const next: PlanRecord = {
-      ...withoutPending(record),
+      ...withoutAnswerFacts(record),
       ...(intentKept ? optional('pendingRefresh', record.pendingRefresh) : {}),
       state: grantsScope(scope, account.profile.oauth.requiredScope) ? 'active' : PLAN_DISABLED_STATE,
       access_token: tokens.access_token,

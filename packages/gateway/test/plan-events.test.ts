@@ -99,7 +99,7 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
       claimNames: Object.keys(claims).sort(),
     });
     expect(typeof event.data['durationMs']).toBe('number');
-    expect(event.data['earliestRefreshAt']).toMatch(/^opaque-\d+-[0-9a-f]{8}$/);
+    expect(event.data['earliestRefreshAt']).toMatch(/^\d+$/);
     expectNoSecret(observation);
     await observation.gateway.close();
   });
@@ -118,7 +118,7 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
     expect(event.data).toMatchObject({ profile: PROFILE_ID, account: ACCOUNT, outcome: 'adopted', attempts: 1, at: new Date(clock.now()).toISOString() });
     expect(typeof event.data['latencyMs']).toBe('number');
     expect(typeof event.data['remainingMs']).toBe('number');
-    expect(event.data['earliestRefreshAt']).toMatch(/^opaque-\d+-[0-9a-f]{8}$/);
+    expect(event.data['earliestRefreshAt']).toMatch(/^\d+$/);
     expectNoSecret(observation);
     await observation.gateway.close();
   });

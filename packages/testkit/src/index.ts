@@ -227,6 +227,7 @@ export {
 } from './fake-siwc-auth.ts';
 export type {
   SiwcAccessTokenForm,
+  SiwcEarliestRefreshAtForm,
   SiwcAuth,
   SiwcAuthOptions,
   SiwcAuthorizeMode,

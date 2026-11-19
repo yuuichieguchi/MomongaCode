@@ -3,7 +3,7 @@ import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaLayout, mo
 import type { JsonLogger, ListableCredentialStore } from '@momonga/foundation';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { createFakeClock, createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth, testKernelLock } from '@momonga/testkit';
-import type { FakeClock, FakePlanResponses, FakeSecretStore, PlanResponsesOptions, SiwcAccessTokenForm, SiwcAuth } from '@momonga/testkit';
+import type { FakeClock, FakePlanResponses, FakeSecretStore, PlanResponsesOptions, SiwcAccessTokenForm, SiwcAuth, SiwcEarliestRefreshAtForm } from '@momonga/testkit';
 import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import type { GatewayTimers } from '../src/types.ts';
@@ -58,6 +58,7 @@ export type PlanGatewayOptions = {
   declaredCapabilities?: boolean;
   clock?: FakeClock;
   accessTokenForm?: SiwcAccessTokenForm;
+  earliestRefreshAtForm?: SiwcEarliestRefreshAtForm;
   plaintextTokenFiles?: boolean;
   logger?: JsonLogger;
   verifyBearer?: PlanResponsesOptions['verifyBearer'];
@@ -92,7 +93,7 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
   });
   registerCleanup(() => upstream.close());
   const loopback = `${upstream.origin}/v1`;
-  const auth = await startFakeSiwcAuth({ resource: loopback, ...(options.accessTokenForm === undefined ? {} : { accessTokenForm: options.accessTokenForm }) });
+  const auth = await startFakeSiwcAuth({ resource: loopback, ...(options.accessTokenForm === undefined ? {} : { accessTokenForm: options.accessTokenForm }), ...(options.earliestRefreshAtForm === undefined ? {} : { earliestRefreshAtForm: options.earliestRefreshAtForm }) });
   registerCleanup(() => auth.close());
   const shipped = profileFor(auth);
   const profile: PlanProfile = {

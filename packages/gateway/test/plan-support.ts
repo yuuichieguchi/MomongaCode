@@ -10,6 +10,7 @@ import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from '../src/plan/session.ts';
 import type { PlanSessions, PlanSleep, PlanTokenResponse } from '../src/plan/session.ts';
+import { tokenResponseOf } from '../src/plan/refresh.ts';
 import type { PlanFetch } from '../src/plan/refresh.ts';
 import { createSerial } from '../src/plan/serial.ts';
 import type { Serial } from '../src/plan/serial.ts';
@@ -474,7 +475,9 @@ export const signInAtFake = async (h: Harness, options: { clientId?: string; res
       resource,
     }).toString(),
   });
-  const tokens = (await response.json()) as PlanTokenResponse & { id_token: string };
+  const reading = tokenResponseOf(await response.json(), { refreshRequired: true });
+  if ('problem' in reading) throw new Error(`the fake token response was refused: ${reading.problem}`);
+  const tokens = reading.tokens as PlanTokenResponse & { id_token: string };
   return { clientId, hostId: host.hostId, idToken: tokens.id_token, subject: h.auth.identity.sub, email: h.auth.identity.email, tokens };
 };
 

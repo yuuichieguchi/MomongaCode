@@ -158,6 +158,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     invitationAnswered: () => undefined,
     untilNextKey: () => new AbortController().signal,
       info: harness.context.info,
+      failed: harness.context.info,
       toast: harness.context.info,
       connected: async (model) => void connected.push(model),
       effort: () => undefined,

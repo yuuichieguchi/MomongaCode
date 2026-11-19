@@ -40,4 +40,28 @@ describe('a token response is built from its checked fields (GR-cast CA-3, CA-4)
     expect(tokenResponseOf({ ...body, expires_in: 0 }, { refreshRequired: false })).toEqual({ problem: 'the token response has no positive integer expires_in' });
     expect(tokenResponseOf('text', { refreshRequired: false })).toEqual({ problem: 'the token response is not a JSON object' });
   });
+
+  it('keeps earliest_refresh_at as text when it is a string or a finite number and drops any other shape, never refusing for it', () => {
+    const earliestOf = (value: unknown): unknown => {
+      const reading = tokenResponseOf({ ...body, earliest_refresh_at: value }, { refreshRequired: true });
+      if ('problem' in reading) throw new Error(reading.problem);
+      return reading.tokens.earliest_refresh_at;
+    };
+    expect(earliestOf('opaque')).toBe('opaque');
+    expect(earliestOf(1_800_000_123)).toBe('1800000123');
+    expect(earliestOf(1_800_000_123.5)).toBe('1800000123.5');
+    expect(earliestOf(null)).toBeUndefined();
+    expect(earliestOf(undefined)).toBeUndefined();
+    expect(earliestOf({ at: 1 })).toBeUndefined();
+    expect(earliestOf([1])).toBeUndefined();
+    expect(earliestOf(true)).toBeUndefined();
+  });
+
+  it('still refuses a response that lacks a field the product needs', () => {
+    const { access_token: _access, ...noAccess } = body;
+    expect(tokenResponseOf(noAccess, { refreshRequired: true })).toEqual({ problem: 'the token response has no access token' });
+    const { refresh_token: _refresh, ...noRefresh } = body;
+    expect(tokenResponseOf(noRefresh, { refreshRequired: true })).toEqual({ problem: 'the token response has no refresh token' });
+    expect(tokenResponseOf({ ...body, token_type: 'mac' }, { refreshRequired: true })).toEqual({ problem: 'the token response is not a Bearer token' });
+  });
 });

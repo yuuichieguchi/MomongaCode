@@ -24,6 +24,7 @@ import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
 export type PlanFlowPorts = OverlayPorts & {
   readonly backend: TuiBackend;
   info(text: string): void;
+  failed(text: string): void;
   toast(text: string): void;
   connected(model: string, effort?: ReasoningEffort): Promise<void>;
   readonly effort: () => ReasoningEffort | undefined;
@@ -198,11 +199,11 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return AGAIN;
       }
       if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError) {
-        ports.info(error.message);
+        ports.failed(error.message);
         return undefined;
       }
       if (error instanceof SignInNotFinishedError) {
-        ports.info(signInFailureLine('tui', { profile: profile.id, account }, error));
+        ports.failed(signInFailureLine('tui', { profile: profile.id, account }, error));
         return undefined;
       }
       throw error;
@@ -211,7 +212,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     }
     switch (answer.outcome) {
       case RETRY_OUTCOME:
-        ports.info(codeNotAcceptedLine('tui', profile, account));
+        ports.failed(codeNotAcceptedLine('tui', profile, account));
         return AGAIN;
       case IDENTITY_UNCONFIRMED_OUTCOME:
         ports.info(identityNotConfirmedLine('tui', { profile: profile.id, account }, answer.identity));

@@ -100,7 +100,9 @@ export type SiwcAuth = {
 
 export type SiwcAccessTokenForm = 'jwt' | 'opaque';
 
-export type SiwcAuthOptions = { now?: () => number; resource?: string; accessTokenForm?: SiwcAccessTokenForm };
+export type SiwcEarliestRefreshAtForm = 'number' | 'string' | 'null' | 'absent';
+
+export type SiwcAuthOptions = { now?: () => number; resource?: string; accessTokenForm?: SiwcAccessTokenForm; earliestRefreshAtForm?: SiwcEarliestRefreshAtForm };
 
 type SigningKey = { kid: string; privateKey: KeyObject; jwk: SiwcJwk };
 
@@ -157,6 +159,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
   const now = options.now ?? Date.now;
   const resource = options.resource ?? SIWC_RESOURCE;
   const accessTokenForm = options.accessTokenForm ?? 'jwt';
+  const earliestRefreshAtForm = options.earliestRefreshAtForm ?? 'number';
   const keys = await sharedKeyPair();
   const published: SigningKey[] = [keys.signing];
   let signing: SigningKey = keys.signing;
@@ -300,8 +303,21 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     return token;
   };
 
-  const tokenBody = (parts: { access: string; refresh?: string; idToken?: string; scope: string; expiresIn: number }): Record<string, unknown> => {
+  const earliestRefreshAt = (): Record<string, unknown> => {
     earliestRefreshCounter += 1;
+    switch (earliestRefreshAtForm) {
+      case 'number':
+        return { earliest_refresh_at: Math.floor(now() / 1000) + earliestRefreshCounter };
+      case 'string':
+        return { earliest_refresh_at: `opaque-${earliestRefreshCounter}-${randomBytes(4).toString('hex')}` };
+      case 'null':
+        return { earliest_refresh_at: null };
+      case 'absent':
+        return {};
+    }
+  };
+
+  const tokenBody = (parts: { access: string; refresh?: string; idToken?: string; scope: string; expiresIn: number }): Record<string, unknown> => {
     return {
       access_token: parts.access,
       ...(parts.refresh === undefined ? {} : { refresh_token: parts.refresh }),
@@ -309,7 +325,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
       token_type: 'Bearer',
       expires_in: parts.expiresIn,
       scope: parts.scope,
-      earliest_refresh_at: `opaque-${earliestRefreshCounter}-${randomBytes(4).toString('hex')}`,
+      ...earliestRefreshAt(),
     };
   };
 

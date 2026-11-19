@@ -67,9 +67,14 @@ export type TokenResponseReading = { tokens: RefreshTokens } | { problem: string
 
 const nonEmptyText = (value: unknown): value is string => typeof value === 'string' && value !== '';
 
+const keptEarliestRefreshAt = (value: unknown): string | undefined => {
+  if (typeof value === 'string') return value;
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : undefined;
+};
+
 export const tokenResponseOf = (body: unknown, { refreshRequired }: { refreshRequired: boolean }): TokenResponseReading => {
   if (!isRecord(body)) return { problem: 'the token response is not a JSON object' };
-  const { access_token: accessToken, token_type: tokenType, scope, expires_in: expiresIn, refresh_token: refreshToken, id_token: idToken, earliest_refresh_at: earliestRefreshAt } = body;
+  const { access_token: accessToken, token_type: tokenType, scope, expires_in: expiresIn, refresh_token: refreshToken, id_token: idToken, earliest_refresh_at: receivedEarliestRefreshAt } = body;
   if (!nonEmptyText(accessToken)) return { problem: 'the token response has no access token' };
   if (tokenType !== 'Bearer') return { problem: 'the token response is not a Bearer token' };
   if (typeof scope !== 'string') return { problem: 'the token response has no granted scope' };
@@ -77,7 +82,7 @@ export const tokenResponseOf = (body: unknown, { refreshRequired }: { refreshReq
   if (refreshRequired && !nonEmptyText(refreshToken)) return { problem: 'the token response has no refresh token' };
   if (refreshToken !== undefined && !nonEmptyText(refreshToken)) return { problem: 'the token response has a malformed refresh token' };
   if (idToken !== undefined && typeof idToken !== 'string') return { problem: 'the token response has a malformed ID token' };
-  if (earliestRefreshAt !== undefined && typeof earliestRefreshAt !== 'string') return { problem: 'the token response has a malformed earliest_refresh_at' };
+  const earliestRefreshAt = keptEarliestRefreshAt(receivedEarliestRefreshAt);
   return {
     tokens: {
       access_token: accessToken,
