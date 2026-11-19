@@ -2,6 +2,10 @@ export const SITE_ORIGIN = 'https://momongacode.com';
 
 export const SITE_BRANCH = 'site';
 
+export const WORKER_NAME = 'momongacode';
+
+export const SITE_OUTPUT = 'dist/site';
+
 export type Installer = { file: string; source: string; tab: string; language: string; command: string };
 
 export const INSTALLERS: readonly Installer[] = [

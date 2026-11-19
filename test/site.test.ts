@@ -7,7 +7,7 @@ import { repoRoot } from '../scripts/bundle.ts';
 import { readEmbeddedReleaseRepo } from '../scripts/release-key.ts';
 import { createTempRoot, removeTempRoot } from '../scripts/support/temp.ts';
 import { buildSite, llmsLinkText, siteOutput, writeSite } from '../scripts/site.ts';
-import { INSTALLERS, SITE_BRANCH, SITE_ORIGIN } from '../scripts/site-target.ts';
+import { INSTALLERS, SITE_BRANCH, SITE_ORIGIN, SITE_OUTPUT, WORKER_NAME } from '../scripts/site-target.ts';
 import type { SearchRecord } from '../site/client/search.ts';
 import { ART_WIDTH, FIGURE, TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../packages/cli/src/tui/figure.ts';
 import { STYLE } from '../packages/cli/src/tui/screen/theme.ts';
@@ -324,6 +324,22 @@ describe('the website', () => {
 
   afterAll(async () => {
     await removeTempRoot(root);
+  });
+
+  it('is served by the Worker of wrangler.jsonc, which names the build output, the 404 page and the domain of the origin', () => {
+    const config: unknown = JSON.parse(fs.readFileSync(path.join(repoRoot, 'wrangler.jsonc'), 'utf8'));
+    expect(config).toEqual({
+      name: WORKER_NAME,
+      compatibility_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      assets: { directory: expect.any(String), not_found_handling: '404-page' },
+      routes: [{ pattern: new URL(SITE_ORIGIN).host, custom_domain: true }],
+    });
+    expect(Object.keys(config as object).sort()).toEqual(['assets', 'compatibility_date', 'name', 'routes']);
+    const { assets } = config as { assets: { directory: string } };
+    expect(path.resolve(repoRoot, assets.directory)).toBe(siteOutput([], repoRoot));
+    expect(siteOutput([], repoRoot)).toBe(path.join(repoRoot, SITE_OUTPUT));
+    expect(WORKER_NAME).toBe('momongacode');
+    expect(site.has('404.html')).toBe(true);
   });
 
   it('names its target in one place', () => {

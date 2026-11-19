@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
 import { readEmbeddedReleaseRepo } from './release-key.ts';
-import { INSTALLERS, INSTALLER_CONTENT_TYPE, SITE_ORIGIN } from './site-target.ts';
+import { INSTALLERS, INSTALLER_CONTENT_TYPE, SITE_ORIGIN, SITE_OUTPUT } from './site-target.ts';
 import { iconFigure, landingFigure } from './site/figure.ts';
 import { docsLayout, groupHeading, hasGroupList, page } from './site/layout.ts';
 import type { Assets, Chrome } from './site/layout.ts';
@@ -210,21 +210,21 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
 };
 
 export const siteOutput = (args: readonly string[], root: string): string | undefined => {
-  if (args.length === 0) return path.join(root, 'dist/site');
+  if (args.length === 0) return path.join(root, SITE_OUTPUT);
   const [flag, output] = args;
   if (args.length !== 2 || flag !== '--output' || output === undefined || output === '') return undefined;
   return path.resolve(output);
 };
 
 const isRepositoryOutput = (output: string, root: string): boolean => {
-  const own = path.join(root, 'dist/site');
+  const own = path.join(root, SITE_OUTPUT);
   return path.resolve(output) === own || (fs.existsSync(output) && fs.existsSync(own) && fs.realpathSync(output) === fs.realpathSync(own));
 };
 
 export const writeSite = (files: ReadonlyMap<string, Uint8Array>, output: string, root: string): void => {
   if (isRepositoryOutput(output, root)) fs.rmSync(output, { recursive: true, force: true });
   else if (fs.existsSync(output) && fs.readdirSync(output).length > 0)
-    throw new Error(`site.ts: the output directory ${output} is not empty; name an absent or empty directory, or build into ${path.join(root, 'dist/site')}`);
+    throw new Error(`site.ts: the output directory ${output} is not empty; name an absent or empty directory, or build into ${path.join(root, SITE_OUTPUT)}`);
   for (const [key, bytes] of files) {
     const file = path.join(output, key);
     fs.mkdirSync(path.dirname(file), { recursive: true });
