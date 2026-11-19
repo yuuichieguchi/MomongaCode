@@ -38,6 +38,17 @@ const PRESENT_RENAMES: Readonly<Record<string, Counts>> = {
   'packages/verify/src/z3-distribution.ts': { 'rename': 1 },
 };
 
+const ACCOUNT_RENAMES: Readonly<Record<string, { counts: Counts; reason: string }>> = {
+  'packages/cli/src/tui/backend.ts': { counts: { 'rename': 1 }, reason: 'the backend passes the /login account rename to the gateway client: it renames a plan account, no file' },
+  'packages/cli/src/tui/plan-flows.ts': { counts: { 'rename': 2 }, reason: 'the /login picker renames a plan account and renames it back when its connection cannot be pointed to it: no file' },
+  'packages/gateway/src/plan/api.ts': { counts: { 'rename': 1 }, reason: 'the accountRename route renames a plan account in the plan sessions: no file' },
+};
+
+const PRESENT_CALLS_NAMED_RENAME: Readonly<Record<string, Counts>> = {
+  ...PRESENT_RENAMES,
+  ...Object.fromEntries(Object.entries(ACCOUNT_RENAMES).map(([file, { counts }]) => [file, counts])),
+};
+
 const outside = (table: Readonly<Record<string, string>>): string[] => productSources().filter((file) => !(relativeOf(file) in table));
 
 describe('one wait: a loop that sleeps until a deadline is waitUntil', () => {
@@ -66,8 +77,8 @@ describe('one atomic write: a rename publishes a file only in writeFileAtomicall
     expect(counted('interface Files {\n  rename(from: string, to: string): Promise<void>;\n}\nconst renamed = rename;', countRenames)).toEqual({});
   });
 
-  it('keeps the rename only in the one atomic write, apart from the listed present renames', () => {
-    expect(perFile(outside(THE_ONE_PUBLISH), countRenames)).toEqual(PRESENT_RENAMES);
+  it('keeps the rename only in the one atomic write, apart from the listed present renames and the plan account renames, which move no file', () => {
+    expect(perFile(outside(THE_ONE_PUBLISH), countRenames)).toEqual(PRESENT_CALLS_NAMED_RENAME);
   });
 
   it('gives every permitted file its reason', () => {
