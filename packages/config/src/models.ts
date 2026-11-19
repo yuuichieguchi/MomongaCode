@@ -52,6 +52,7 @@ import type {
   ResolvedOpenResponsesTarget,
   ResolvedPlanTarget,
   DeclaredTargetCapabilities,
+  PlanTargetCapabilities,
   TargetCapabilities,
   TargetCapabilitiesCore,
 } from './settings.ts';
@@ -172,13 +173,13 @@ export function* refusingOwnSockets({ connections }: SocketAddresses, home: stri
   }
 }
 
-type RemoteTargetInput = {
+type RemoteTargetInput<Declared extends PlanTargetCapabilities> = {
   baseUrl?: string;
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
   billing?: TargetBilling;
-  capabilities: DeclaredTargetCapabilities;
+  capabilities: Declared;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
@@ -207,8 +208,8 @@ const checkSamplingRange = (capabilities: Pick<TargetCapabilitiesCore, 'sampling
   }
 };
 
-const resolveRemote = (
-  target: RemoteTargetInput,
+const resolveRemote = <Declared extends PlanTargetCapabilities>(
+  target: RemoteTargetInput<Declared>,
   adapter: Exclude<AdapterKind, 'managed'>,
   { connection, entry: where }: Where,
   serving: { billing: TargetBilling; maxConcurrency: number } = REMOTE_SERVING,
@@ -334,7 +335,7 @@ const resolveAnthropic = (target: AnthropicTarget, place: Where, warnings: strin
 const resolveOllama = (target: OllamaTarget, where: Where): ResolvedOllamaTarget => ({
   adapter: 'ollama',
   model: target.model,
-  ...resolveRemote(target, 'ollama', where, LOCAL_SERVER_DEFAULTS),
+  ...resolveRemote({ ...target, capabilities: target.capabilities ?? {} }, 'ollama', where, LOCAL_SERVER_DEFAULTS),
 });
 
 const checkJsonMode = (target: ModelTarget, where: string): void => {

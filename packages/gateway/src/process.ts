@@ -112,6 +112,7 @@ import { isMeteredTarget, meteredPrecondition } from './probe/consent.ts';
 import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest, readOllamaReported } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
+import type { OllamaDeclaredCapabilities } from './probe/ollama-target.ts';
 import { DeclaredWindowAboveReportedError, refusingAdapter, reportedWindowAt } from './probe/declared-window.ts';
 import { preconditionText } from './precondition-text.ts';
 import { keyReadLimitOf } from './key-read-limit.ts';
@@ -250,9 +251,14 @@ type RemoteTarget = Exclude<ServedTarget, { adapter: 'managed' }>;
 type KeyedTarget = Exclude<RemoteTarget, { adapter: 'ollama' }>;
 type OllamaDetectable = Extract<RemoteTarget, { adapter: 'chat-completions' | 'open-responses' }>;
 
-const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): DeclaredCapabilities => ({ ...target.capabilities, toolCalling: mode });
+const declaredCapabilitiesOf = (target: KeyedTarget, mode: ToolCallingMode): DeclaredCapabilities => ({ ...target.capabilities, toolCalling: mode });
 
-const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => withImageDefault(declaredCapabilitiesOf(target, mode));
+const ollamaDeclaredOf = (target: Extract<RemoteTarget, { adapter: 'ollama' }>): OllamaDeclaredCapabilities => {
+  const { contextWindow: _stated, maxOutputTokens: _statedOutput, ...declared } = target.capabilities;
+  return { ...declared, toolCalling: 'native' };
+};
+
+const capabilitiesOf = (target: KeyedTarget, mode: ToolCallingMode): Capabilities => withImageDefault(declaredCapabilitiesOf(target, mode));
 
 const READ_AGAIN_ON_THE_NEXT_REQUEST = 'the gateway reads the secret again on the next request';
 
@@ -678,38 +684,41 @@ const createProbedOllamaAdapter = async (
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
   const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency, displayOf()), key);
   const loaded = await readRecord();
-  const metered = isMeteredTarget(target) ? { displayOf, declaredContextWindow: target.capabilities.contextWindow } : undefined;
-  const subject = ollamaProbeSubject({
-    target: endpointLockKeyOf(key).target,
-    key,
-    probeRecordDir,
-    lock: probes.lock,
-    precondition: ollamaPrecondition(upstream, probes.ports, target.model),
-    measure:
-      (probes.measureOllama === undefined ? undefined : onRecordKey(probes.measureOllama)) ??
-      measureOllama({
-        ports: measuringPorts(probes, endpoint),
-        upstream,
-        model: target.model,
-        contextWindow: target.capabilities.contextWindow,
-        userDialects,
-        ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
-        ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, DEFAULT_SAMPLES) }),
-      }),
-    currency,
-    ...(metered === undefined ? {} : { metered: { measurement: metered, samples: DEFAULT_SAMPLES } }),
-  });
+  const statedWindow = target.writtenCapabilities.contextWindow;
+  const subjectFor = (contextWindow: number) => {
+    const metered = isMeteredTarget(target) ? { displayOf, declaredContextWindow: contextWindow } : undefined;
+    return ollamaProbeSubject({
+      target: endpointLockKeyOf(key).target,
+      key,
+      probeRecordDir,
+      lock: probes.lock,
+      precondition: ollamaPrecondition(upstream, probes.ports, target.model),
+      measure:
+        (probes.measureOllama === undefined ? undefined : onRecordKey(probes.measureOllama)) ??
+        measureOllama({
+          ports: measuringPorts(probes, endpoint),
+          upstream,
+          model: target.model,
+          ...(statedWindow === undefined ? {} : { contextWindow: statedWindow }),
+          userDialects,
+          ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+          ...(metered === undefined ? {} : { metered: meteredGateOf(probeRecordDir, key, metered, DEFAULT_SAMPLES) }),
+        }),
+      currency,
+      ...(metered === undefined ? {} : { metered: { measurement: metered, samples: DEFAULT_SAMPLES } }),
+    });
+  };
   const probed = createProbedOllamaTarget({
     displayOf,
     endpoint,
     model: target.model,
-    declared: declaredCapabilitiesOf(target, 'native'),
+    declared: ollamaDeclaredOf(target),
     written: target.writtenCapabilities,
     toolCalling: 'auto',
     record: loaded,
     readRecord,
     readReported: () => readOllamaReported(upstream, probes.ports, target.model),
-    startProbe: (ask) => probes.autoProbe.ensure({ ...subject, unknown: ask }, endpointLockKeyOf(key)),
+    startProbe: (ask, contextWindow) => probes.autoProbe.ensure({ ...subjectFor(contextWindow), unknown: ask }, endpointLockKeyOf(key)),
     readDigest: (signal) => readOllamaDigest(upstream, probes.ports, target.model, signal),
   });
   const adapter = personGatedAdapter(createOllamaAdapter({
@@ -718,6 +727,7 @@ const createProbedOllamaAdapter = async (
       return upstream;
     },
     capabilities: () => probed.capabilities(),
+    statedWindow,
     clock,
     userDialects,
     liveness,

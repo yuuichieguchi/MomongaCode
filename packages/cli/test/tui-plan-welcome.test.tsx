@@ -173,21 +173,17 @@ describe('local servers from the welcome', () => {
     app.unmount();
   });
 
-  it('asks an Ollama model for its context window with the ceiling the server reports and no prefilled value, then writes it after the confirm row and opens the session', async () => {
+  it('adds an Ollama model whose server reports its maximum without asking for a window, writes no window after the confirm row and opens the session', async () => {
     const { app, backend } = await startPlan({ models: [], accounts: [], detected: [ollama] }, { initialPrompt: 'hello there' });
     await choose(app, 'Use a local server');
     await choose(app, `ollama  ·  ${ADDRESS}`);
     await choose(app, 'llama3.2');
-    await untilFrame(app, 'Context window for ollama/llama3.2 (at most 131072):');
-    app.stdin.write(KEYS.enter);
-    await untilFrame(app, 'Enter a whole number from 1 to 131072.');
-    expect(writtenBy(backend)).toBeUndefined();
-    await submitLine(app, '8192');
     await untilFrame(app, 'Add ollama/llama3.2 to your settings?');
     expect(writtenBy(backend)).toBeUndefined();
     await choose(app, 'Yes');
     await backend.called('openSession');
-    expect(writtenBy(backend)?.models.connections).toMatchObject([{ adapter: 'ollama', baseUrl: ADDRESS, models: [{ id: 'llama3.2:latest', capabilities: { contextWindow: 8192 } }] }]);
+    expect(writtenBy(backend)?.models.connections).toMatchObject([{ adapter: 'ollama', baseUrl: ADDRESS }]);
+    expect(writtenBy(backend)?.models.connections[0]?.['models']).toEqual([{ id: 'llama3.2:latest' }]);
     expect(backend.opened[0]?.model).toBe('ollama/llama3.2:latest');
     await eventually(() => backend.started.length > 0, 'the initial prompt');
     expect(backend.started.map((run) => run.text)).toEqual(['hello there']);

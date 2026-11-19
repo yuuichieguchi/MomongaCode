@@ -142,10 +142,10 @@ const imageInputTextOf = (report: OllamaProbe['report']): string => {
   return `true (${report.imageTokens.pixelsPerToken.toFixed(1)} pixels per token, ${report.imageTokens.minTokens} to ${report.imageTokens.maxTokens} tokens)`;
 };
 
-export const probeOllamaText = (name: string, endpoint: string, recordPath: string, report: OllamaProbe['report'], contextWindow: number): string =>
+export const probeOllamaText = (name: string, endpoint: string, recordPath: string, report: OllamaProbe['report'], statedWindow: number | undefined): string =>
   `${escapedLines([
     `probed ${name}: model ${report.modelId} at ${endpoint}, Ollama ${report.serverVersion}`,
-    `  trained context length ${report.contextWindow.value} (${report.contextWindow.method}), configured context window ${contextWindow}`,
+    `  trained context length ${report.contextWindow.value} (${report.contextWindow.method})${statedWindow === undefined ? '' : `, configured context window ${statedWindow}`}`,
     `  tool calling: ${report.nativeTools.accepted ? 'native' : 'none'}, image input: ${imageInputTextOf(report)}, thinking: ${report.thinkingSupported}`,
     `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
@@ -210,28 +210,33 @@ const probeOllama = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { DEFAULT_SAMPLES, isMeteredTarget, measurementBoundOf, probeOllamaTarget, reachableEndpoint, saveMeasurementConsent, PERSON_TRAFFIC } = await import('@momonga/gateway');
+  const { DEFAULT_SAMPLES, countedWindowOf, isMeteredTarget, measurementBoundOf, probeOllamaTarget, reachableEndpoint, readOllamaReported, saveMeasurementConsent, PERSON_TRAFFIC } = await import('@momonga/gateway');
   const key = endpointRecordKeyOf(subject, target);
-  const metered = isMeteredTarget(target) ? { displayOf: () => subject.display, declaredContextWindow: target.capabilities.contextWindow } : undefined;
+  const statedWindow = target.writtenCapabilities.contextWindow;
+  const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
+  const probePorts = probePortsOf(ports, PERSON_TRAFFIC);
+  const metered = isMeteredTarget(target)
+    ? { displayOf: () => subject.display, declaredContextWindow: statedWindow ?? countedWindowOf(undefined, await readOllamaReported(upstream, probePorts, target.model), subject.display, key.endpoint) }
+    : undefined;
   if (metered !== undefined && options.consented) {
     await saveMeasurementConsent(paths.probe, key, measurementBoundOf(metered.declaredContextWindow, options.samples ?? DEFAULT_SAMPLES), resolveLayoutLocks(paths).mechanism);
   }
   const { report } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
     ...(metered === undefined ? {} : { metered }),
-    ports: probePortsOf(ports, PERSON_TRAFFIC),
+    ports: probePorts,
     lock: resolveLayoutLocks(paths).mechanism,
-    upstream: reachableEndpoint(upstreamEndpointOf(target), network),
+    upstream,
     key,
     model: target.model,
-    contextWindow: target.capabilities.contextWindow,
+    ...(statedWindow === undefined ? {} : { contextWindow: statedWindow }),
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
     userDialects,
     signal: options.interrupt,
     stepTimeoutMs: options.stepTimeoutMs,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(probeOllamaText(subject.display, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
+  ports.stdout.write(probeOllamaText(subject.display, key.endpoint, paths.probe, report, statedWindow));
   await restartDaemon(ports, paths);
   return 0;
 };

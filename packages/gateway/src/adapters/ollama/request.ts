@@ -18,7 +18,7 @@ export type OllamaChatBody = {
   messages: OllamaMessage[];
   stream: boolean;
   truncate: false;
-  options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number; frequency_penalty?: number; presence_penalty?: number };
+  options: { num_ctx?: number; num_predict: number; temperature?: number; top_p?: number; frequency_penalty?: number; presence_penalty?: number };
   tools?: unknown[];
   format?: unknown;
   think?: boolean;
@@ -55,13 +55,14 @@ const formatOf = (plan: JsonReplyPlan | undefined, dialect: ResolvedDialect): { 
 const thinkOf = (effort: ReasoningEffort | undefined, reasoning: ReasoningCapability | undefined): { think?: boolean } =>
   effort === undefined || reasoning?.control !== 'reasoning_effort' ? {} : { think: clampReasoningEffort(effort, acceptedReasoningEfforts(reasoning)) !== 'none' };
 
-export type OllamaBodyCapabilities = Pick<Capabilities, 'contextWindow' | 'maxOutputTokens' | 'reasoning'>;
+export type OllamaBodyCapabilities = Pick<Capabilities, 'maxOutputTokens' | 'reasoning'>;
 
 export type OllamaRendering = { userDialects?: UserDialects; ledger?: RenderLedger; jsonReply?: JsonReplyPlan | undefined };
 
 export const buildOllamaChatBody = (
   request: AdapterRequest,
   capabilities: OllamaBodyCapabilities & { schemaDialect?: Capabilities['schemaDialect'] },
+  statedWindow: number | undefined,
   stream: boolean,
   origin: ReasoningOrigin,
   rendering: OllamaRendering = {},
@@ -77,7 +78,7 @@ export const buildOllamaChatBody = (
     stream,
     truncate: false,
     options: {
-      num_ctx: capabilities.contextWindow,
+      ...(statedWindow === undefined ? {} : { num_ctx: statedWindow }),
       num_predict: request.max_output_tokens ?? capabilities.maxOutputTokens,
       ...carriedSamplingOf(request),
     },
@@ -87,5 +88,10 @@ export const buildOllamaChatBody = (
   };
 };
 
-export const buildOllamaBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities & { schemaDialect?: Capabilities['schemaDialect'] }, origin: ReasoningOrigin, rendering?: OllamaRendering): OllamaChatBody =>
-  buildOllamaChatBody(request, capabilities, true, origin, rendering);
+export const buildOllamaBody = (
+  request: AdapterRequest,
+  capabilities: OllamaBodyCapabilities & { schemaDialect?: Capabilities['schemaDialect'] },
+  statedWindow: number | undefined,
+  origin: ReasoningOrigin,
+  rendering?: OllamaRendering,
+): OllamaChatBody => buildOllamaChatBody(request, capabilities, statedWindow, true, origin, rendering);

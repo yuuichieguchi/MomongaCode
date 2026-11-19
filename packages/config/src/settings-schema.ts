@@ -309,7 +309,7 @@ const PLAN_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE, RO
 
 const CHAT_COMPLETIONS_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE, { outputBoundField: OUTPUT_BOUND_FIELD_SCHEMA });
 
-const OLLAMA_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(OLLAMA_PROMPT_CACHE);
+const OLLAMA_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(OLLAMA_PROMPT_CACHE, {}, [], []);
 
 const API_KEY_PROPERTIES = {
   apiKeyEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
@@ -414,7 +414,7 @@ const OLLAMA_CONNECTION_SCHEMA = {
     adapter: { const: 'ollama' },
     ...CONNECTION_COMMON_PROPERTIES,
     ...ADDRESS_PROPERTIES,
-    models: entriesOf({ capabilities: OLLAMA_CAPABILITIES_SCHEMA }, ['capabilities']),
+    models: entriesOf({ capabilities: OLLAMA_CAPABILITIES_SCHEMA }, []),
   },
   required: ['adapter'],
   additionalProperties: false,

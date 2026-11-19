@@ -51,6 +51,7 @@ export type FakeOllamaOptions = {
   chat?: OllamaChatReply[];
   version?: { status: number; body: unknown };
   show?: unknown;
+  showStatus?: () => number;
   tags?: () => unknown;
   completions?: readonly string[];
   cacheProbe?: 'automatic' | 'none' | 'unreported' | 'malformed';
@@ -122,7 +123,8 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
       return;
     }
     if (url.pathname === '/api/show' && req.method === 'POST') {
-      sendJson(res, 200, options.show ?? fixtureJson('api-show.json'));
+      const status = options.showStatus?.() ?? 200;
+      sendJson(res, status, status === 200 ? (options.show ?? fixtureJson('api-show.json')) : { error: 'the fake Ollama answers this read with an error' });
       return;
     }
     if (url.pathname === '/api/tags' && req.method === 'GET') {
@@ -215,6 +217,7 @@ export const makeOllamaAdapter = (fake: FakeOllama, overrides: Partial<OllamaAda
   const adapter = createOllamaAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }),
     capabilities: async () => OLLAMA_CAPABILITIES,
+    statedWindow: OLLAMA_CAPABILITIES.contextWindow,
     clock: createFakeClock(START_MS),
     ...overrides,
   });

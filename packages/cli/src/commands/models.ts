@@ -474,6 +474,8 @@ export const kindOf = (server: DetectedLocalServer): ServerKind => {
   return kind;
 };
 
+export const serverChoosesWindow = (kind: ServerKind | undefined): boolean => kind?.read?.lengthIsMaximum === true;
+
 const detectedConnectionOf = (server: DetectedLocalServer, kind: ServerKind): Json => ({ adapter: kind.adapter, baseUrl: server.address, provider: server.provider, ...kind.settings });
 
 export const detectedChoiceOf = (server: DetectedLocalServer, model: DetectedModel, window: number | undefined): AddModelChoice =>
@@ -489,8 +491,9 @@ export const foundProposalOf = (edit: ModelsEdit, input: FormInput, server: Dete
     ...(service === undefined ? {} : { provider: service }),
     ...keyReferenceOf(input),
   };
-  const window = windowOf(input, model.ceiling) ?? model.contextWindow ?? model.ceiling;
-  if (window === undefined) throw missingFactsRefusal(input, model.id, (them) => `${server.provider} at ${server.address} does not report ${them}`, REQUIRED_FACTS);
+  const serverChooses = serverChoosesWindow(kind);
+  const window = windowOf(input, model.ceiling) ?? (serverChooses ? undefined : (model.contextWindow ?? model.ceiling));
+  if (window === undefined && !serverChooses) throw missingFactsRefusal(input, model.id, (them) => `${server.provider} at ${server.address} does not report ${them}`, REQUIRED_FACTS);
   return addProposalOf(edit, connection, entryOf(model.id, window));
 };
 
@@ -521,7 +524,9 @@ const proposeAddressedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: F
     const service = optionText(input, 'service');
     const connection = { adapter: adapterOfApi(api), baseUrl: address, ...(service === undefined ? {} : { provider: service }), ...keyReferenceOf(input) };
     const window = windowOf(input, undefined);
-    if (window === undefined) throw missingFactsRefusal(input, id, () => `no model server answered at ${address}`, REQUIRED_FACTS);
+    if (window === undefined && !serverChoosesWindow(edit.ports.kinds.find((kind) => kind.impliedByAdapter === connection.adapter))) {
+      throw missingFactsRefusal(input, id, () => `no model server answered at ${address}`, REQUIRED_FACTS);
+    }
     return addProposalOf(edit, connection, entryOf(id, window), noServerAnsweredAtText(address));
   }
   if (id === undefined) {
@@ -967,6 +972,7 @@ export const modelDescriber =
   async (server, model, signal) => {
     const { describeModel, reportedWindowOf } = await import('@momonga/gateway');
     const described = await describeModel({ server, model, signal, fetch });
+    if (serverChoosesWindow(kindOf(server))) return described;
     const window = reportedWindowOf(described);
     return window === undefined ? described : { ...described, contextWindow: window };
   };

@@ -51,7 +51,7 @@ const adapterFor = (kind: AdapterKind, socketPath: string): ProviderAdapter => {
     kind === 'chat-completions'
       ? createChatCompletionsAdapter({ ...shared, capabilities: async () => REMOTE_CAPABILITIES, schemaDialect: () => REMOTE_CAPABILITIES.schemaDialect, authSource: unauthenticatedSource })
       : kind === 'ollama'
-        ? createOllamaAdapter({ ...shared, capabilities: async () => OLLAMA_CAPABILITIES })
+        ? createOllamaAdapter({ ...shared, capabilities: async () => OLLAMA_CAPABILITIES, statedWindow: OLLAMA_CAPABILITIES.contextWindow })
         : kind === 'anthropic'
           ? createAnthropicAdapter({ ...shared, capabilities: async () => REMOTE_CAPABILITIES, apiVersion: '2026-10-21', authSource: keyAuthSource(async () => 'test-key') })
           : createOpenResponsesAdapter({ ...shared, capabilities: async () => REMOTE_CAPABILITIES, authSource: unauthenticatedSource });

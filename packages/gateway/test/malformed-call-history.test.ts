@@ -96,7 +96,7 @@ describe.each(MALFORMED_ARGUMENTS)('a history holding a model call with %s', (_l
   });
 
   it('reaches an Ollama upstream without the call and its output', () => {
-    const body = buildOllamaChatBody(requestWith(args, [WRITE_TOOL]), { contextWindow: 4096, maxOutputTokens: 1024 }, true, EVERY_REASONING_IS_OWN);
+    const body = buildOllamaChatBody(requestWith(args, [WRITE_TOOL]), { maxOutputTokens: 1024 }, 4096, true, EVERY_REASONING_IS_OWN);
 
     const rendered = (body.messages as unknown[]).flatMap((message) => (message as { tool_calls?: unknown[] }).tool_calls ?? []);
     expect(rendered).toEqual([]);

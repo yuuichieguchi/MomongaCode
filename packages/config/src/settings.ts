@@ -138,7 +138,7 @@ export type OllamaTarget = {
   baseUrl?: string;
   socketPath?: string;
   billing?: TargetBilling;
-  capabilities: RemoteTargetCapabilities;
+  capabilities?: OllamaTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
@@ -146,6 +146,8 @@ export type OllamaTarget = {
 export type PlanReference = { profile: string; account?: string };
 
 export type PlanTargetCapabilities = Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };
+
+export type OllamaTargetCapabilities = PlanTargetCapabilities;
 
 export type PlanOpenResponsesTarget = {
   adapter: 'open-responses';
@@ -274,6 +276,8 @@ export type ResolvedAnthropicTarget = {
   admissionTimeoutMs: number;
 };
 
+export type ResolvedOllamaTargetCapabilities = ResolvedPlanTargetCapabilities;
+
 export type ResolvedOllamaTarget = {
   adapter: 'ollama';
   answers?: TargetAnswers;
@@ -282,8 +286,8 @@ export type ResolvedOllamaTarget = {
   baseUrl?: string;
   socketPath?: string;
   billing: TargetBilling;
-  capabilities: TargetCapabilities & { maxConcurrency: number };
-  writtenCapabilities: DeclaredTargetCapabilities;
+  capabilities: ResolvedOllamaTargetCapabilities;
+  writtenCapabilities: OllamaTargetCapabilities;
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };

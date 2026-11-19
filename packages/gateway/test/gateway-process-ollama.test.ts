@@ -7,6 +7,7 @@ import { getJson, outputText, postJson, readJson, userInput, listedCountersOf } 
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import {
   OLLAMA_LISTED,
+  OLLAMA_MODEL,
   DEVSTRAL_DIGEST,
   QWEN_DIGEST,
   chunkLine,
@@ -32,6 +33,12 @@ const ollamaTarget = (baseUrl: string) => ({
   baseUrl,
   capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 2048 },
 });
+
+const unstatedTarget = (baseUrl: string) => ({ adapter: 'ollama', model: OLLAMA_LISTED, baseUrl, capabilities: null });
+
+const SHOW_WITHOUT_LENGTH = { capabilities: ['completion', 'tools'], model_info: {} };
+
+const TRAINED_LENGTH = 393216;
 
 const textReply = (text: string) => ({ kind: 'ndjson' as const, lines: [chunkLine({ content: text }), doneLine({ prompt_eval_count: 33, eval_count: 4 })] });
 
@@ -75,6 +82,61 @@ describe('an ollama target in a started gateway', () => {
     const bodies = fake.chatBodies();
     expect(bodies).toHaveLength(1);
     expect(bodies[0].options).toMatchObject({ num_ctx: CONTEXT_WINDOW, num_predict: 100 });
+  });
+
+  it('answers through /api/chat without num_ctx when no window is stated, and lists the length /api/show reports', async () => {
+    const fake = await startFakeOllama({ chat: [textReply('hello')] });
+    const home = makeHome();
+    writeSettings(home, { models: modelsOf({ local: unstatedTarget(fake.origin) }) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureOllama: () => new Promise(() => undefined) });
+
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi'), max_output_tokens: 100 }));
+
+    expect(response.status).toBe(200);
+    expect(outputText(response.body)).toBe('hello');
+    const bodies = fake.chatBodies();
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].options).toEqual({ num_predict: 100 });
+    const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
+    const entry = models.body.data.find((model: { id: string }) => model.id === `local/${OLLAMA_LISTED}`);
+    expect(entry.capabilities.contextWindow).toBe(TRAINED_LENGTH);
+    expect(fake.requests.filter((request) => request.path === '/api/generate' || request.path === '/api/ps')).toEqual([]);
+  });
+
+  it('reads /api/show again after a read that the server refused, and serves the model once it answers', async () => {
+    let showAnswers = false;
+    const fake = await startFakeOllama({ chat: [textReply('hello')], showStatus: () => (showAnswers ? 200 : 500) });
+    const home = makeHome();
+    writeSettings(home, { models: modelsOf({ local: unstatedTarget(fake.origin) }) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureOllama: () => new Promise(() => undefined) });
+    const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi'), max_output_tokens: 100 }));
+
+    const refused = await ask();
+    showAnswers = true;
+    const served = await ask();
+
+    expect(refused.status).toBe(412);
+    expect(refused.body.error.message).toContain('capabilities.contextWindow');
+    expect(served.status).toBe(200);
+    expect(outputText(served.body)).toBe('hello');
+    expect(fake.chatBodies()).toHaveLength(1);
+    expect(fake.chatBodies()[0].options).toEqual({ num_predict: 100 });
+  });
+
+  it('refuses a model with no stated window whose /api/show gives no context length, naming capabilities.contextWindow, and sends no chat', async () => {
+    const fake = await startFakeOllama({ chat: [textReply('never sent')], show: SHOW_WITHOUT_LENGTH });
+    const home = makeHome();
+    writeSettings(home, { models: modelsOf({ local: unstatedTarget(fake.origin) }) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureOllama: () => new Promise(() => undefined) });
+
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: `local/${OLLAMA_LISTED}`, input: userInput('hi') }));
+    const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
+    const entry = models.body.data.find((model: { id: string }) => model.id === `local/${OLLAMA_LISTED}`);
+
+    expect({ status: response.status, code: response.body.error.code }).toEqual({ status: 412, code: 'precondition_failed' });
+    expect(response.body.error.message).toBe(`the model "local/${OLLAMA_MODEL}": no capabilities.contextWindow is declared, and the server at ${fake.origin} answered no context length for it\nremedy: declare capabilities.contextWindow`);
+    expect(entry.capabilities.toolCalling.state).toBe('unavailable');
+    expect(fake.chatBodies()).toEqual([]);
   });
 
   it('derives the target counter from the digest of its probe record', async () => {

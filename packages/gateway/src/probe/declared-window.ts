@@ -41,6 +41,13 @@ export class DeclaredWindowAboveReportedError extends PreconditionFailedError {
   }
 }
 
+export class ReportedWindowMissingError extends PreconditionFailedError {
+  constructor(display: string, address: string) {
+    super(aboutModel(display, `no capabilities.contextWindow is declared, and the server at ${address} answered no context length for it`), undefined, 'declare capabilities.contextWindow');
+    this.name = 'ReportedWindowMissingError';
+  }
+}
+
 export const refusingAdapter = (adapter: ProviderAdapter, refusalAt: () => PreconditionFailedError): ProviderAdapter => ({
   ...adapter,
   capabilities: async () => {

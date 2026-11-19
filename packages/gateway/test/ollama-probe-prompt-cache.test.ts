@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
+import { maxOutputTokensFor } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { isOllamaProbeReport } from '../src/probe/report-schema.ts';
 import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
@@ -10,10 +11,12 @@ import { NO_PROBE_START } from './fm-record-support.ts';
 import { UNCONFIGURED_NETWORK, testKernelLock } from '@momonga/testkit';
 import { hostProbePorts } from './probe-ports-support.ts';
 
-const probeWith = async (cacheProbe: 'automatic' | 'none' | 'unreported') => {
+const TRAINED_LENGTH = 393216;
+
+const probeWith = async (cacheProbe: 'automatic' | 'none' | 'unreported', stated: { contextWindow?: number } = { contextWindow: 32768 }) => {
   const fake = await startFakeOllama({ cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 });
+  const result = await probeOllamaTarget({ ports: hostProbePorts, lock: testKernelLock(), probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, ...stated });
   return { fake, dir, result };
 };
 
@@ -51,6 +54,21 @@ describe('the Ollama cache probe builds its chat body with the adapter body buil
       expect(body.options.num_ctx).toBe(32768);
       expect(body.options.num_predict).toBe(1);
     }
+  });
+
+  it('sends no num_ctx in any probe step when no window is stated, sizes the JSON and dialect steps from the trained length, and sends no load', async () => {
+    const { fake, result } = await probeWith('automatic', {});
+    const chats = fake.requests.filter((request) => request.path === '/api/chat').map((request) => request.body as { options: Record<string, unknown>; format?: unknown; messages: unknown[] });
+    expect(chats.length).toBeGreaterThan(3);
+    for (const chat of chats) {
+      expect(chat.options).not.toHaveProperty('num_ctx');
+      expect(Number.isSafeInteger(chat.options['num_predict'])).toBe(true);
+    }
+    const formatted = chats.filter((chat) => chat.format !== undefined);
+    expect(formatted.length).toBeGreaterThan(0);
+    for (const chat of formatted) expect(chat.options['num_predict']).toBe(maxOutputTokensFor(TRAINED_LENGTH));
+    expect(fake.requests.filter((request) => request.path === '/api/generate' || request.path === '/api/ps')).toEqual([]);
+    expect(result.report.contextWindow).toEqual({ value: TRAINED_LENGTH, method: 'reported' });
   });
 });
 
