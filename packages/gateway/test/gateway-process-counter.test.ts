@@ -108,4 +108,26 @@ describe('the counters a started gateway lists', () => {
     expect(two.counters).toEqual({ 'primary/system': targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two', outputPolicy: two.outputPolicy }) });
     expect(two.counters['primary/system']).not.toBe(one.counters['primary/system']);
   });
+
+  it('lists the effort a model saves for itself and models.effort beside it, and neither changes the counter of the target', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    const reasoning = { contextWindow: 4096, maxOutputTokens: 1024, reasoning: { control: 'reasoning_effort', lowest: 'low' } };
+    const launchWith = async (effort: Record<string, unknown>, every: Record<string, unknown>) => {
+      const home = makeHome();
+      writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath, { toolCalling: 'native', capabilities: reasoning, ...effort }) }, every) });
+      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+      const listed = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
+      const entry = (listed.body as { data: { id: string; effort?: string }[] }).data.find((candidate) => candidate.id === 'primary/system');
+      const counters = listedCountersOf(listed.body, 'primary/system');
+      await handle.close();
+      return { effort: entry?.effort, counters };
+    };
+    const plain = await launchWith({}, {});
+    const own = await launchWith({ entry: { effort: 'high' } }, { effort: 'low' });
+    const every = await launchWith({}, { effort: 'low' });
+    expect(plain.effort).toBeUndefined();
+    expect(own.effort).toBe('high');
+    expect(every.effort).toBe('low');
+    expect(own.counters).toEqual(plain.counters);
+  });
 });

@@ -658,6 +658,7 @@ export function App(props: AppProps) {
     rememberProfiles(await backend.plan.accounts());
     if (sessionModelRef.current !== undefined) {
       await readDisplays();
+      rereadModel();
       return;
     }
     if ((await backend.models()).length > 0) await openSession(undefined);

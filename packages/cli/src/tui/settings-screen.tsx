@@ -774,6 +774,7 @@ export const DIALECTS_KEY = 'models.dialects';
 const writeEveryModelEffort = async (context: SlashContext, effort: ReasoningEffort | undefined): Promise<Outcome> => {
   const host = context.backend.modelsHost(new AbortController().signal, context.info);
   await context.background(SAVING_SETTING, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setEffort', effort }], { lock: host.lock(), signal }));
+  await context.refreshConnection();
   return { kind: 'written' };
 };
 

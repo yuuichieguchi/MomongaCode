@@ -232,4 +232,15 @@ describe('the footer names the model and its effort', () => {
     await app.type(`/effort high --session${KEYS.enter}`, shows('scripted-model · effort: high'), 'the footer follows');
     app.close();
   });
+
+  it('follows a level written by a settings flow, not only by /effort', async () => {
+    const place = freshPlace();
+    settingsWith(place, {});
+    const app = await opened({ reasoning: DECLARED }, place);
+    await app.type('', shows('scripted-model · effort: medium'), 'the standard level is in the footer');
+    settingsWith(place, { own: { [SCRIPTED_MODEL]: 'xhigh' } });
+    await app.type(`/models${KEYS.enter}`, shows('Models'), 'the models hub opens');
+    await app.type(KEYS.ctrlC, shows('scripted-model · effort: xhigh'), 'the footer follows the written level');
+    app.close();
+  });
 });

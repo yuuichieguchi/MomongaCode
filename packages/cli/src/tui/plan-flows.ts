@@ -393,11 +393,9 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const useConfigured = async (entry: MomongaModelEntry, health: GatewayHealth, listed: PlanAccountsResponse, atStart: boolean, display: string, effort: ReasoningEffort | undefined): Promise<void> => {
     const plan = blockedPlanOf(entry, health);
     if (plan !== undefined) await targetSignIn(listed, plan);
+    if (effort !== undefined) await writeModelEffort(flowContext(), entry.id, effort);
     await ports.connected(entry.id, effort);
-    if (effort !== undefined) {
-      await writeModelEffort(flowContext(), entry.id, effort);
-      ports.info(effortAnswerText(effort, display, 'saved'));
-    }
+    if (effort !== undefined) ports.info(effortAnswerText(effort, display, 'saved'));
     if (!atStart) return;
     await writeStart(flowContext(), entry.id);
     ports.toast(startingModelSetText(display));

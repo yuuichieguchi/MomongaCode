@@ -26,8 +26,8 @@ export const writeModelEffort = async (context: { readonly backend: Pick<TuiBack
 };
 
 export const applyEffort = async (context: SlashContext, model: string, level: ReasoningEffort, scope: EffortScope): Promise<void> => {
-  await context.setEffort(level);
   if (scope === 'saved') await writeModelEffort(context, model, level);
+  await context.setEffort(level);
   context.info(effortAnswerText(level, context.shownModel(model), scope));
 };
 

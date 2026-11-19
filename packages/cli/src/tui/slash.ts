@@ -254,11 +254,9 @@ export const switchModel = async (args: string, entries: readonly MomongaModelEn
     return;
   }
   if (level !== undefined && !acceptedLevelOf(entries, chosen, level, context)) return;
+  if (level !== undefined) await writeModelEffort(context, chosen, level);
   await context.setModel(chosen, level);
-  if (level !== undefined) {
-    await writeModelEffort(context, chosen, level);
-    context.info(effortAnswerText(level, context.shownModel(chosen), 'saved'));
-  }
+  if (level !== undefined) context.info(effortAnswerText(level, context.shownModel(chosen), 'saved'));
   if (!started) return;
   await writeStart(context, chosen);
   context.toast(startingModelSetText(displayMapOf(listingViewsOf(entries)).get(chosen) ?? chosen));
