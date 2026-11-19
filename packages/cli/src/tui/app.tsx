@@ -801,9 +801,9 @@ export function App(props: AppProps) {
           views.event(event);
           if (key !== undefined) replay?.notes?.after(key);
         }),
-      onChildStarted: (agent, childRunId, backlog) =>
+      onChildStarted: (agent, childRunId, backlog, model) =>
         deliver(() => {
-          views.started(agent, childRunId, backlog);
+          views.started(agent, childRunId, backlog, model);
           subagentStarted(store, agent, childRunId, now());
         }),
       onChildEnded: (_agent, childRunId, end) =>
@@ -1710,7 +1710,14 @@ export function App(props: AppProps) {
   const headerText =
     shownAgent === undefined
       ? undefined
-      : `${agentHeader(shownAgent.agent)} · ${shownAgent.loading !== undefined ? loadingText(shownAgent.loading.applied, shownAgent.loading.backlog) : shownAgent.end !== undefined ? endStateOf(shownAgent.end) : awaitingApproval ? 'waiting for approval' : 'running'}`;
+      : agentHeader(
+          {
+            agent: shownAgent.agent,
+            state: shownAgent.loading !== undefined ? loadingText(shownAgent.loading.applied, shownAgent.loading.backlog) : shownAgent.end !== undefined ? endStateOf(shownAgent.end) : awaitingApproval ? 'waiting for approval' : 'running',
+            model: shownModel(viewed.state().answeringTarget ?? shownAgent.model),
+          },
+          columns,
+        );
   const rowRequests: RowRequests = {
     header: headerText === undefined ? 0 : 1,
     waiting: waiting === undefined || a11y.screenReader ? 0 : 1,

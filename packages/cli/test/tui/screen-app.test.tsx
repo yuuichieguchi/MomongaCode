@@ -14,7 +14,7 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { runView } from '../fake-backend.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
-import { createTempDir } from '@momonga/testkit';
+import { SCRIPTED_MODEL, createTempDir } from '@momonga/testkit';
 
 const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', name, ...plain, ...mods });
@@ -138,9 +138,9 @@ describe('the layout of the full screen', () => {
     const { app, backend } = await start({}, { now: () => now }, { columns: 60, rows: 30 });
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
-    backend.following().onChildStarted('reviewer', 'child-1', 0);
+    backend.following().onChildStarted('reviewer', 'child-1', 0, SCRIPTED_MODEL);
     now = 13_000;
-    backend.following().onChildStarted('tester', 'child-2', 0);
+    backend.following().onChildStarted('tester', 'child-2', 0, SCRIPTED_MODEL);
     const lines = linesOf(await untilFrame(app, 'tester · starting · 0s'));
     expect(lines).toHaveLength(30);
     expect(lines.slice(24)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: steer after the next tool call'), '● main', '  reviewer · starting · 12s', '  tester · starting · 0s', 'down on an empty input: choose a view · enter: open']);

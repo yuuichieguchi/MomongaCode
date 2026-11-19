@@ -10,7 +10,7 @@ import { runView } from '../fake-backend.ts';
 import type { FakeBackendOptions, FakeConversation } from '../fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { frame, runStarted, start, startStillStarting, type } from '../tui-harness.tsx';
-import { waitFor, afterMicrotasks } from '@momonga/testkit';
+import { SCRIPTED_MODEL, waitFor, afterMicrotasks } from '@momonga/testkit';
 
 const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*steer after)[\s\S]*mode: \w+ \(shift\+tab\)/;
 
@@ -426,7 +426,7 @@ describe('a handover while a subagent view is shown (cli-tui 3.3)', () => {
     const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID } });
     await untilFrame(old.app, 'Found two files, now checking');
     const follow = old.backend.following();
-    follow.onChildStarted('reviewer', 'child-1', 0);
+    follow.onChildStarted('reviewer', 'child-1', 0, SCRIPTED_MODEL);
     follow.onChildEvent({ id: 1, event: 'agent.message.delta', data: { runId: 'child-1', sessionId: SESSION_ID, step: 1, createdAt: 1000, id: 1, seq: 1, type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'child words' } as PublicRunEvent }, 'reviewer');
     await untilFrame(old.app, 'reviewer · starting');
     old.terminal.emit({ type: 'key', name: 'down', ...plain });

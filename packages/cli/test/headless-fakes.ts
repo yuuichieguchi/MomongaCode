@@ -5,6 +5,7 @@ import type { RunEventFrame, RuntimeClient } from '../src/client/runtime-client.
 import type { RunView } from '../src/client/views.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { terminalPorts } from '../src/terminal-writer.ts';
+import { SESSION } from './fake-backend.ts';
 import { virtualClock } from './fake-supervisor.ts';
 
 export const eventFrame = (seq: number, event: Record<string, unknown>, runId = 'run-1'): RunEventFrame => ({
@@ -40,6 +41,7 @@ export const watchedRun = (home: string, frames: readonly RunEventFrame[], ended
       await aborted.promise;
     },
     getRun: async () => ended,
+    getSession: async (sessionId: string) => ({ ...SESSION, id: sessionId }),
     childRuns: async () => [],
   } as unknown as RuntimeClient;
   const raw = { version: '1.2.3', home, env: process.env, clock: virtualClock(), random: () => 0.5, stdout: { write: (text: string) => void stdout.push(text) }, stderr: { write: (text: string) => void stderr.push(text) } } as unknown as CliPorts;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { SCRIPTED_MODEL } from '@momonga/testkit';
 import { SETTINGS_TITLE } from '../../src/tui/settings-screen.tsx';
 import { KEYS, TUI_TEST_TIMEOUT_MS } from '../ink-helpers.ts';
 import { freshPlace } from './settings-harness.tsx';
@@ -25,7 +26,7 @@ const withChild = async (): Promise<TerminalApp> => {
   await app.type(KEYS.enter, () => true, 'the prompt is sent');
   await app.backend.called('openSession');
   const follow = app.backend.following();
-  follow.onChildStarted?.('general-purpose', 'child-1', 0);
+  follow.onChildStarted?.('general-purpose', 'child-1', 0, SCRIPTED_MODEL);
   await app.type('', (lines) => lines.some((line) => line.includes('general-purpose · starting')), 'the child is listed');
   return app;
 };

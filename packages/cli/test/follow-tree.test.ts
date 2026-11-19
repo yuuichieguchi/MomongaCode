@@ -4,7 +4,7 @@ import type { RunEventFrame, RuntimeClient } from '../src/client/runtime-client.
 import type { ChildFrameHandler, FollowOptions } from '../src/run/follow.ts';
 import { followRun } from '../src/run/follow.ts';
 import type { RunView } from '../src/client/views.ts';
-import { runView } from './fake-backend.ts';
+import { SESSION, runView } from './fake-backend.ts';
 import { virtualClock } from './fake-supervisor.ts';
 
 const frameOf = (runId: string, id: number, payload: Record<string, unknown>): RunEventFrame => ({
@@ -33,7 +33,8 @@ const clientOf = (streams: Streams, failing: ReadonlySet<string> = new Set(), ch
       if (failing.has(runId)) throw new Error(`stream of ${runId} is broken`);
       for (const frame of streams[runId] ?? []) yield frame;
     },
-    getRun: async (runId: string) => runView({ id: runId, status: 'COMPLETED', lastSeq: (streams[runId] ?? []).at(-1)?.id ?? 0 }),
+    getRun: async (runId: string) => runView({ id: runId, sessionId: `session of ${runId}`, status: 'COMPLETED', lastSeq: (streams[runId] ?? []).at(-1)?.id ?? 0 }),
+    getSession: async (sessionId: string) => ({ ...SESSION, id: sessionId, model: `model of ${sessionId}` }),
     childRuns: async (runId: string) => children.filter((child) => child.parentRunId === runId),
   } as unknown as RuntimeClient;
   return { client, opened };
@@ -173,6 +174,13 @@ describe('followRun tells the caller which subagents are running (design-screens
     const backlogs: number[] = [];
     await followRun(optionsOf(client, { onChildEvent: () => undefined, onChildStarted: (_agent, _runId, backlog) => backlogs.push(backlog) }));
     expect(backlogs).toEqual([2]);
+  });
+
+  it('tells onChildStarted the model the child run runs on, read from the child session the runtime reports', async () => {
+    const { client } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer')], child: [text('child', 1)] });
+    const models: string[] = [];
+    await followRun(optionsOf(client, { onChildEvent: () => undefined, onChildStarted: (_agent, _runId, _backlog, model) => models.push(model) }));
+    expect(models).toEqual(['model of session of child']);
   });
 
   it('reports a grandchild that the child waits on, started and ended inside the child', async () => {

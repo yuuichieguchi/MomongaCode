@@ -141,7 +141,7 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
 
 export type ChildFrameHandler = (frame: RunEventFrame, agent: string) => void;
 
-export type ChildStartHandler = (agent: string, runId: string, backlog: number) => void;
+export type ChildStartHandler = (agent: string, runId: string, backlog: number, model: string) => void;
 
 export type ChildEnd = { readonly kind: 'finished'; readonly run: RunView } | { readonly kind: 'failed'; readonly error: unknown };
 
@@ -187,9 +187,10 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
     followed.add(childRunId);
     let started = false;
     const opened = async (): Promise<RunView> => {
-      const { lastSeq } = await client.getRun(childRunId);
+      const { lastSeq, sessionId } = await client.getRun(childRunId);
+      const { model } = await client.getSession(sessionId);
       started = true;
-      options.onChildStarted?.(agent, childRunId, lastSeq);
+      options.onChildStarted?.(agent, childRunId, lastSeq, model);
       return followRun({
         client,
         clock: options.clock,

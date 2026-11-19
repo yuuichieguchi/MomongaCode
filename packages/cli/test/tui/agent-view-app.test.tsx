@@ -12,7 +12,7 @@ import { frame, runStarted, start } from '../tui-harness.tsx';
 import { realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createTempDir } from '@momonga/testkit';
+import { SCRIPTED_MODEL, SCRIPTED_MODEL_ID as SHOWN_MODEL, createTempDir } from '@momonga/testkit';
 
 const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const named = (name: KeyName): TerminalEvent => ({ type: 'key', name, ...plain });
@@ -32,12 +32,12 @@ const running = async (size = SIZE) => {
   backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: 'main says hello' }));
   await untilFrame(app, 'main says hello');
   const follow = backend.following();
-  follow.onChildStarted('reviewer', 'child-1', 0);
+  follow.onChildStarted('reviewer', 'child-1', 0, SCRIPTED_MODEL);
   follow.onChildEvent(childFrame('child-1', { type: 'user.message', text: 'review the change' }), 'reviewer');
   follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'child one looks' }), 'reviewer');
   follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c2', text: 'child two checks' }), 'reviewer');
   now = 4000;
-  follow.onChildStarted('tester', 'child-2', 0);
+  follow.onChildStarted('tester', 'child-2', 0, SCRIPTED_MODEL);
   await untilFrame(app, 'tester · starting · 0s');
   return { ...started, follow, setNow: (value: number) => (now = value) };
 };
@@ -127,7 +127,7 @@ describe('the list of the running subagents (design cli-tui 3.3)', () => {
     const { app, backend, terminal } = started;
     await untilFrame(app, (shown) => shown.includes('>'));
     await runStarted(backend, app, 'go');
-    backend.following().onChildStarted('reviewer', 'child-1', 0);
+    backend.following().onChildStarted('reviewer', 'child-1', 0, SCRIPTED_MODEL);
     backend.following().onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'child one looks' }), 'reviewer');
     await untilFrame(app, 'reviewer · starting');
     now = 9000;
@@ -312,8 +312,8 @@ describe('the conversations kept for the views', () => {
 
   it('keeps one per running subagent and the one finished view being shown, and drops it when the view is left', () => {
     const views = createAgentViews();
-    views.started('reviewer', 'child-1', 0);
-    views.started('tester', 'child-2', 0);
+    views.started('reviewer', 'child-1', 0, SCRIPTED_MODEL);
+    views.started('tester', 'child-2', 0, SCRIPTED_MODEL);
     views.ended('child-2', finished('child-2'));
     expect(views.kept()).toBe(1);
     views.open('child-1');
@@ -334,7 +334,7 @@ describe('the parts of a subagent view (design cli-tui 3.3, 2.6)', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     const follow = backend.following();
-    follow.onChildStarted('reviewer', 'child-1', 0);
+    follow.onChildStarted('reviewer', 'child-1', 0, SCRIPTED_MODEL);
     follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', attempt: 0, itemId: 'c1', text: 'Open `gomoku.html` now' }), 'reviewer');
     follow.onChildEvent(childFrame('child-1', { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }), 'reviewer');
     await untilFrame(app, 'reviewer · starting');
@@ -351,7 +351,7 @@ describe('the parts of a subagent view (design cli-tui 3.3, 2.6)', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     const follow = backend.following();
-    follow.onChildStarted('reviewer', 'child-1', 3);
+    follow.onChildStarted('reviewer', 'child-1', 3, SCRIPTED_MODEL);
     follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', seq: 1, attempt: 0, itemId: 'c1', text: 'backlog one' }), 'reviewer');
     await untilFrame(app, 'reviewer · starting');
     terminal.emit(named('down'));
@@ -376,12 +376,12 @@ describe('the parts of a subagent view (design cli-tui 3.3, 2.6)', () => {
     for (let index = 0; index < 60; index += 1) follow.onChildEvent(childFrame('child-1', { type: 'notice', level: 'info', message: `child line ${index}` }), 'reviewer');
     await openWithKeys(started, 2);
     const shown = await untilFrame(app, 'child line 59');
-    expect(linesOf(shown)[0]).toBe('Subagent reviewer · running');
+    expect(linesOf(shown)[0]).toBe(`Subagent reviewer · running · model: ${SHOWN_MODEL}`);
     follow.onChildEvent(childFrame('child-1', { type: 'tool.call', callId: 'k1', providerCallId: 'p-k1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: {} }), 'reviewer');
     follow.onChildEvent(childFrame('child-1', { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'k1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'Bash ls', input: {} } }), 'reviewer');
-    await untilFrame(app, (now) => linesOf(now)[0] === 'Subagent reviewer · waiting for approval');
+    await untilFrame(app, (now) => linesOf(now)[0] === `Subagent reviewer · waiting for approval · model: ${SHOWN_MODEL}`);
     follow.onChildEnded('reviewer', 'child-1', { kind: 'finished', run: runView({ id: 'child-1', status: 'CANCELLED' }) });
-    await untilFrame(app, (now) => linesOf(now)[0] === 'Subagent reviewer · CANCELLED');
+    await untilFrame(app, (now) => linesOf(now)[0] === `Subagent reviewer · CANCELLED · model: ${SHOWN_MODEL}`);
     app.unmount();
   });
 
@@ -396,7 +396,7 @@ describe('the parts of a subagent view (design cli-tui 3.3, 2.6)', () => {
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     const follow = backend.following();
-    for (let index = 1; index <= 7; index += 1) follow.onChildStarted(`agent${index}`, `child-${index}`, 0);
+    for (let index = 1; index <= 7; index += 1) follow.onChildStarted(`agent${index}`, `child-${index}`, 0, SCRIPTED_MODEL);
     const idle = await untilFrame(app, 'and 4 more');
     expect(linesOf(idle).slice(35)).toEqual(['● main', '  agent1 · starting · 0s', '  agent2 · starting · 0s', '  agent3 · starting · 0s', 'and 4 more']);
     for (let index = 0; index < 8; index += 1) terminal.emit(named('down'));
