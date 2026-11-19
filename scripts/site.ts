@@ -11,7 +11,9 @@ import type { Block } from './site/markdown.ts';
 import { assertDistinctAddresses, linkResolver, readSources, urlOfKey } from './site/pages.ts';
 import type { DocPage, SiteFacts, SourceSet } from './site/pages.ts';
 import { iconCss, themeCss } from './site/style.ts';
-import { contentHash, escapeHtml } from './site/text.ts';
+import { firstSentence, sentenceHtml } from './site/sentence.ts';
+import type { Segment } from './site/sentence.ts';
+import { contentHash, escapeHtml, shownTitle } from './site/text.ts';
 
 const FOOTER_SECTIONS = ['Contributing', 'License', 'Disclaimer'] as const;
 
@@ -71,20 +73,47 @@ const installBlock = (): string => {
   return ['<div class="install">', `<div class="tabs" role="tablist" hidden data-needs-script>${tabs.join('')}</div>`, ...panels, '</div>'].join('\n');
 };
 
+type Card = { href: string; title: string; sentence: readonly Segment[] };
+
+const cardHtml = (card: Card): string =>
+  `<a class="card" href="${escapeHtml(card.href)}"><h3 class="card-title" data-source>${escapeHtml(card.title)}</h3><p class="card-text" data-source>${sentenceHtml(card.sentence)}</p></a>`;
+
+const tileHtml = (href: string, title: string): string => `<a class="tile" href="${escapeHtml(href)}"><span class="tile-title" data-source>${escapeHtml(title)}</span></a>`;
+
 const featureLeads = (source: SourceSet, features: DocPage): string[] =>
   features.blocks.flatMap(({ token }) => {
     if (token.type !== 'list') return [];
-    return token.items.flatMap((item) => {
+    return token.items.map((item) => {
       const [first] = item.tokens;
-      if (first === undefined) return [];
-      const block = marked(source.spec.file, first);
-      if ((block.type !== 'text' && block.type !== 'paragraph') || block.tokens === undefined) return [];
+      const block = first === undefined ? undefined : marked(source.spec.file, first);
+      if (block === undefined || (block.type !== 'text' && block.type !== 'paragraph') || block.tokens === undefined) throw new Error(`${source.spec.file}: a feature item has no text`);
       const [lead] = block.tokens;
-      if (lead === undefined) return [];
-      const inline = marked(source.spec.file, lead);
-      return inline.type === 'strong' ? [squash(plainText(source.spec.file, inline.tokens)).replace(/\.$/, '')] : [];
+      const strong = lead === undefined ? undefined : marked(source.spec.file, lead);
+      if (strong?.type !== 'strong') throw new Error(`${source.spec.file}: a feature item has no bold lead`);
+      return squash(plainText(source.spec.file, strong.tokens)).replace(/\.$/, '');
     });
   });
+
+const areaCards = (source: SourceSet, why: DocPage): Card[] =>
+  why.blocks.flatMap(({ token }, index) => {
+    if (token.type !== 'heading' || token.depth !== 3) return [];
+    const id = source.document.headingIds.get(token);
+    const paragraph = why.blocks.slice(index + 1).find((block) => block.token.type !== 'space')?.token;
+    if (id === undefined || paragraph?.type !== 'paragraph') throw new Error(`${source.spec.file}: the area ${token.text} has no id or no paragraph under it`);
+    return [{ href: `${why.url}#${id}`, title: squash(plainText(source.spec.file, token.tokens)), sentence: firstSentence(source.spec.file, paragraph.tokens) }];
+  });
+
+const sectionHeading = (source: SourceSet, section: DocPage): string => {
+  const heading = section.blocks.find((block) => block.token.type === 'heading')?.token;
+  if (heading?.type !== 'heading') throw new Error(`${source.spec.file}: the section ${section.title} has no heading`);
+  return `<h2 data-source>${escapeHtml(shownTitle(squash(plainText(source.spec.file, heading.tokens))))}</h2>`;
+};
+
+const introOf = (source: SourceSet, section: DocPage): string => {
+  const paragraph = section.blocks.find((block) => block.token.type === 'paragraph')?.token;
+  if (paragraph?.type !== 'paragraph') throw new Error(`${source.spec.file}: the section ${section.title} has no paragraph`);
+  return `<p class="landing-intro" data-source>${sentenceHtml(firstSentence(source.spec.file, paragraph.tokens))}</p>`;
+};
 
 type Front = { title: Block; lead: Block; name: string; description: string };
 
@@ -114,10 +143,12 @@ const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFact
     installBlock(),
     rendered(after),
     '</section>',
-    `<section class="landing-section">${rendered(why.blocks)}</section>`,
-    `<section class="landing-section">${rendered(features.blocks.slice(0, 1))}<ul class="feature-links">${featureLeads(guide, features)
-      .map((lead) => `<li><a href="${escapeHtml(features.url)}" data-source>${escapeHtml(lead)}</a></li>`)
-      .join('')}</ul></section>`,
+    `<section class="landing-section">${sectionHeading(guide, why)}${introOf(guide, why)}<div class="cards">${areaCards(guide, why)
+      .map((card) => cardHtml(card))
+      .join('')}</div></section>`,
+    `<section class="landing-section">${sectionHeading(guide, features)}<div class="tiles">${featureLeads(guide, features)
+      .map((lead) => tileHtml(features.url, lead))
+      .join('')}</div></section>`,
     '</main>',
   ].join('\n');
   return page(chrome, { title: front.name, body, menu: false, className: 'page-landing' });

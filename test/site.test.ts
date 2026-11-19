@@ -6,7 +6,10 @@ import { createTempDir } from '@momonga/testkit';
 import { repoRoot } from '../scripts/bundle.ts';
 import { readEmbeddedReleaseRepo } from '../scripts/release-key.ts';
 import { createTempRoot, removeTempRoot } from '../scripts/support/temp.ts';
+import { lexer } from 'marked';
+import type { Tokens } from 'marked';
 import { buildSite, llmsLinkText, siteOutput, writeSite } from '../scripts/site.ts';
+import { firstSentence, sentenceHtml } from '../scripts/site/sentence.ts';
 import { INSTALLERS, SITE_BRANCH, SITE_ORIGIN, SITE_OUTPUT, WORKER_NAME } from '../scripts/site-target.ts';
 import type { SearchRecord } from '../site/client/search.ts';
 import { ART_WIDTH, FIGURE, TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../packages/cli/src/tui/figure.ts';
@@ -644,18 +647,88 @@ describe('the website', () => {
     expect(landing).toContain(inlineText(after.join(' ')));
   });
 
-  it('links each bold lead of README section 4, without its trailing full stop, from the landing page into /docs/features', () => {
+  type Card = { href: string; heading: boolean; title: string; text: string };
+  const cardsOf = (html: string): Card[] =>
+    [...html.matchAll(/<a\b[^>]*\sclass="card"[^>]*>([\s\S]*?)<\/a>/g)].map((match) => {
+      const inner = match[1] as string;
+      const title = /<(h3|p) class="card-title" data-source>([\s\S]*?)<\/\1>/.exec(inner);
+      const body = /<p class="card-text" data-source>([\s\S]*?)<\/p>/.exec(inner);
+      if (title === null || body === null) throw new Error(`a card has no title or text: ${match[0]}`);
+      return { href: attributeOf(match[0], 'href') ?? '', heading: title[1] === 'h3', title: squash(stripTags(title[2] as string)), text: squash(stripTags(body[1] as string)) };
+    });
+  const mainOf = (html: string): string => /<main\b[\s\S]*<\/main>/.exec(html)?.[0] ?? '';
+
+  const AREA_CARDS = [
+    { anchor: 'adaptive-agent-memory--context-orchestration', title: 'Adaptive Agent Memory & Context Orchestration', text: 'In MomongaCode, memory and context are built by the runtime from recorded events, not left to the model alone.' },
+    { anchor: 'agent-token-efficiency-engineering', title: 'Agent Token Efficiency Engineering', text: 'Every token-saving mechanism is on by default; each has a setting only so you can turn it off, and momonga eval measures it against a base with it off.' },
+  ];
+  const FEATURE_TITLES = ['Terminal UI and headless mode', 'Models', 'Built-in tools', 'Permission modes', 'Policy verification', 'Verifiable completion', 'Auto mode', 'Sandbox', 'Memory and rules', 'Skills and agents', 'MCP', 'Hooks', 'Editor integration', 'Observability', 'Background jobs and runs', 'Delegated work', 'Measured reliability'];
+
+  it('shows on the landing page one card per area of README section 2, its heading and first sentence, linked to that heading', () => {
+    const html = text('index.html');
+    const areas = headingsOf('README.md').filter((heading) => heading.level === 3 && pageOfHeading('README.md', heading) === 'docs/why-momongacode.html');
+    expect(areas.map((heading) => inlineText(heading.text))).toEqual(AREA_CARDS.map((card) => card.title));
+    const cards = cardsOf(html).filter((card) => card.href.startsWith('/docs/why-momongacode'));
+    expect(cards).toEqual(AREA_CARDS.map((card) => ({ href: `/docs/why-momongacode#${card.anchor}`, heading: true, title: card.title, text: card.text })));
+    for (const card of cards) expect(resolves('index.html', card.href), card.href).toBe(true);
+    const lines = sourceOf('README.md').split('\n');
+    const intro = lines.slice(lines.findIndex((line) => line.startsWith('## 2. ')) + 1).find((line) => line.trim() !== '') as string;
+    expect(squash(stripTags(mainOf(html)))).toContain(inlineText(intro));
+    for (const card of AREA_CARDS) {
+      const at = lines.findIndex((line) => line === `### ${card.title}`);
+      const first = inlineText(lines.slice(at + 1).find((line) => line.trim() !== '') as string);
+      expect(first.startsWith(card.text), card.title).toBe(true);
+    }
+  });
+
+  it('shows on the landing page one tile per item of README section 4, only its bold lead without the full stop, linked to /docs/features', () => {
     const lines = sourceOf('README.md').split('\n');
     const section = lines.slice(lines.findIndex((line) => line.startsWith('## 4. ')), lines.findIndex((line) => line.startsWith('## 5. ')));
     const leads = section.flatMap((line) => {
       const match = /^- \*\*(.+?)\*\*/.exec(line);
       return match === null ? [] : [inlineText(match[1] as string).replace(/\.$/, '')];
     });
-    expect(leads.length).toBeGreaterThan(10);
-    const links = [...text('index.html').matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
-      .filter((match) => (attributeOf(match[0], 'href') ?? '').startsWith('/docs/features'))
-      .map((match) => squash(stripTags(match[2] as string)));
-    expect(links).toEqual(leads);
+    expect(leads).toEqual(FEATURE_TITLES);
+    const html = mainOf(text('index.html'));
+    const tiles = [...html.matchAll(/<a\b[^>]*\sclass="tile"[^>]*>([\s\S]*?)<\/a>/g)];
+    expect(tiles.map((tile) => attributeOf(tile[0], 'href'))).toEqual(FEATURE_TITLES.map(() => '/docs/features'));
+    for (const tile of tiles) {
+      expect(tile[1], tile[0]).toMatch(/^<span class="tile-title" data-source>[^<]*<\/span>$/);
+      expect(tile[1], tile[0]).not.toMatch(/<a\b/);
+    }
+    expect(tiles.map((tile) => squash(stripTags(tile[1] as string)))).toEqual(FEATURE_TITLES);
+    expect(resolves('index.html', '/docs/features')).toBe(true);
+    expect(html).not.toContain('class="card-text" data-source>An interactive session');
+  });
+
+  it('makes each area card one link and nests no link in it', () => {
+    const html = mainOf(text('index.html'));
+    const anchors = [...html.matchAll(/<a\b[^>]*\sclass="card"[^>]*>([\s\S]*?)<\/a>/g)];
+    expect(anchors).toHaveLength(AREA_CARDS.length);
+    for (const anchor of anchors) expect(anchor[1], anchor[0]).not.toMatch(/<a\b/);
+    expect(html).toContain('and <code>momonga eval</code> measures it');
+  });
+
+  it('carries no list of README prose and no heading but the name, the two section titles and the area titles on the landing page', () => {
+    const html = mainOf(text('index.html'));
+    expect(html).not.toMatch(/<(?:ul|ol|li)\b/);
+    const headings = [...html.matchAll(/<h(\d)\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((match) => ({ level: Number(match[1]), title: squash(stripTags(match[2] as string)) }));
+    expect(headings).toEqual([
+      { level: 1, title: 'MomongaCode' },
+      { level: 2, title: 'Why MomongaCode?' },
+      ...AREA_CARDS.map((card) => ({ level: 3, title: card.title })),
+      { level: 2, title: 'Features' },
+    ]);
+    const outside = text('index.html').replace(/<main\b[\s\S]*<\/main>/, '');
+    const items = [...outside.matchAll(/<li\b/g)];
+    for (const item of items) {
+      const before = outside.slice(0, item.index);
+      const list = [...before.matchAll(/<(ul|ol)\b[^>]*>/g)].filter((open) => before.slice(open.index).split(new RegExp(`</${open[1]}>`)).length === 1).at(-1);
+      expect(list, 'li without a list').toBeDefined();
+      const isSearch = /\sclass="search-results"/.test(list?.[0] ?? '');
+      const inNav = before.lastIndexOf('<nav') > before.lastIndexOf('</nav>');
+      expect(isSearch || inNav, `li in ${list?.[0]}`).toBe(true);
+    }
   });
 
   it('lists the documentation pages on /docs/ in sidebar order', () => {
@@ -834,5 +907,57 @@ describe('llmsLinkText', () => {
   it('escapes the brackets and backslashes of a link title in llms.txt', () => {
     expect(llmsLinkText('Plain title')).toBe('Plain title');
     expect(llmsLinkText('[x] and a\\b')).toBe('\\[x\\] and a\\\\b');
+  });
+});
+
+describe('firstSentence', () => {
+  const sentenceOf = (markdown: string): string => {
+    const [paragraph] = lexer(markdown) as Tokens.Paragraph[];
+    if (paragraph === undefined) throw new Error('no paragraph');
+    return firstSentence('test.md', paragraph.tokens)
+      .map((segment) => (segment.kind === 'code' ? `\`${segment.text}\`` : segment.text))
+      .join('');
+  };
+
+  it('keeps a paragraph that is one sentence, with a full stop followed by a number', () => {
+    expect(sentenceOf('MomongaCode puts particular effort into the following areas and aims to be No. 1 in them.')).toBe('MomongaCode puts particular effort into the following areas and aims to be No. 1 in them.');
+  });
+
+  it('ends at a full stop followed by a space and an upper-case letter, also when the stop follows a code span', () => {
+    expect(sentenceOf("Connections to Ollama, and server programs, such as Apple's `fm`. A model is called by the name its server gives it.")).toBe("Connections to Ollama, and server programs, such as Apple's `fm`.");
+    expect(sentenceOf('On by default; turn off with `context.cachePrefix: false`. It keeps the leading part stable.')).toBe('On by default; turn off with `context.cachePrefix: false`.');
+  });
+
+  it('ends at a full stop followed by a link whose text starts upper-case, and shows a link as its text', () => {
+    expect(sentenceOf('`Agent` (subagents: `general-purpose` is built in), and the approval names it. [The reference](docs/reference.md) lists every tool.')).toBe('`Agent` (subagents: `general-purpose` is built in), and the approval names it.');
+    expect(sentenceOf('`momonga memory` and `momonga rule` (see [Why MomongaCode?](#2-why-momongacode)).')).toBe('`momonga memory` and `momonga rule` (see Why MomongaCode?).');
+  });
+
+  it('never ends inside a code span, a number, an abbreviation or a file name', () => {
+    expect(sentenceOf('Skills are `SKILL.md` files found in `.momonga/skills` and `~/.agents/skills`. Project skills are loaded only for trusted folders.')).toBe('Skills are `SKILL.md` files found in `.momonga/skills` and `~/.agents/skills`.');
+    expect(sentenceOf('A budget of 1.5 times, e.g. Ollama, read from README.md and more. Then the rest.')).toBe('A budget of 1.5 times, e.g. Ollama, read from README.md and more.');
+  });
+
+  it('ends at a question mark followed by a space and an upper-case letter', () => {
+    expect(sentenceOf('Why is it so? Because it is.')).toBe('Why is it so?');
+  });
+
+  it('keeps the whole text as the sentence when no sentence end is found', () => {
+    expect(sentenceOf('The mode decides what a call that no rule decides does:')).toBe('The mode decides what a call that no rule decides does:');
+  });
+
+  it('stops on an inline token it does not build, naming the file', () => {
+    expect(() => sentenceOf('A *stressed* word.')).toThrow(/^test\.md: the inline token em /);
+  });
+
+  it('escapes text and code exactly once in the emitted HTML', () => {
+    const [paragraph] = lexer('Run `momonga mcp login <server>` for a & b "quoted". Then more.') as Tokens.Paragraph[];
+    if (paragraph === undefined) throw new Error('no paragraph');
+    expect(sentenceHtml(firstSentence('test.md', paragraph.tokens))).toBe('Run <code>momonga mcp login &lt;server&gt;</code> for a &amp; b &quot;quoted&quot;.');
+  });
+
+  it('ends at a full stop followed by a space and a code span', () => {
+    expect(sentenceOf('Servers over stdio or HTTP with OAuth. `momonga mcp list` and `momonga mcp login <server>`.')).toBe('Servers over stdio or HTTP with OAuth.');
+    expect(sentenceOf('A model reads `a.b`. `c` follows.')).toBe('A model reads `a.b`.');
   });
 });
