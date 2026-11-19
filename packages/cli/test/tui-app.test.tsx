@@ -353,7 +353,7 @@ describe('App slash commands', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/model qwen3.8:27b', '> /model qwen3.8:27b');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: ollama/qwen3.8:27b · effort: not available; applies from the next run');
+    await untilOutput(app, 'model: ollama/qwen3.8:27b (effort: not available); applies from the next run');
     expect(backend.calls).toContain(`model:${QWEN}`);
     await runStarted(backend, app, 'what is here');
     backend.emit(frame({ type: 'model.responded', attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1500, output_tokens: 100, total_tokens: 1600 } } }));
@@ -378,7 +378,7 @@ describe('App slash commands', () => {
     await runStarted(backend, app, 'long task');
     await type(app, '/model qwen3.8:27b', '> /model qwen3.8:27b');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: ollama/qwen3.8:27b · effort: not available; the run that is working keeps scripted-model, the next run uses ollama/qwen3.8:27b');
+    await untilOutput(app, 'model: ollama/qwen3.8:27b (effort: not available); the run that is working keeps scripted-model, the next run uses ollama/qwen3.8:27b');
     app.unmount();
   });
 

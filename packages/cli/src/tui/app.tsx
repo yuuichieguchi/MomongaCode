@@ -651,7 +651,7 @@ export function App(props: AppProps) {
   const noteModelSwitch = async (model: string, previous: string | undefined): Promise<void> => {
     const name = shownModel(model);
     const shown = shownEffort(await backend.models(), model, sessionEffortRef.current);
-    const named = shown === undefined ? name : `${name} · ${effortLine(shown, 'short')}`;
+    const named = shown === undefined ? name : `${name} (${effortLine(shown, 'short')})`;
     note(busyRef.current ? `model: ${named}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${named}; applies from the next run`);
   };
 

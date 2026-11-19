@@ -207,7 +207,7 @@ describe('the effort step after a configured model is chosen', () => {
     await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('tab: this session only'));
     await backend.called(`model:${LUNA}`);
     app.stdin.write(KEYS.escape);
-    await untilOutput(app, 'model: gpt-6-luna · effort: medium; applies from the next run');
+    await untilOutput(app, 'model: gpt-6-luna (effort: medium); applies from the next run');
     expect(backend.calls.filter((call) => call.startsWith('effort:'))).toEqual([]);
     expect(app.lastFrame()).not.toContain('Reasoning effort');
     app.unmount();
@@ -224,7 +224,7 @@ describe('the effort step after a plan model that is not configured is chosen', 
     await backend.called('model:chatgpt/gpt-6.2-sol');
     expect(backend.planCalls.some((call) => call.route === 'accounts/chatgpt/targets')).toBe(true);
     app.stdin.write(KEYS.escape);
-    const output = await untilOutput(app, 'model: gpt-6.2-sol · effort: medium; applies from the next run');
+    const output = await untilOutput(app, 'model: gpt-6.2-sol (effort: medium); applies from the next run');
     expect(output.split('model: gpt-6.2-sol').length - 1).toBe(1);
     expect(backend.calls.filter((call) => call.startsWith('effort:'))).toEqual([]);
     app.unmount();
@@ -269,7 +269,7 @@ describe('the effort step after a plan model that is not configured is chosen', 
     const { app } = await chosenWhileMeasured({ reasoning: {}, modelPending: pending.promise });
     await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
     pending.resolve();
-    const output = await untilOutput(app, 'model: gpt-6.2-sol · effort: not available; applies from the next run');
+    const output = await untilOutput(app, 'model: gpt-6.2-sol (effort: not available); applies from the next run');
     expect(output).not.toContain('Reasoning effort');
     expect(app.lastFrame()).not.toContain('reading…');
     app.unmount();
