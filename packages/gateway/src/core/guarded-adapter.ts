@@ -1,11 +1,13 @@
 import { planAccountRefOf } from '@momonga/protocol';
-import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, PlanAccountRef, ProviderAdapter, ResponseError, StreamEvent } from '@momonga/protocol';
+import type { AdapterContext, AdapterTarget, ClassifiedError, ErrorBody, HealthResult, PlanAccountRef, ProviderAdapter, ResponseError, StreamEvent } from '@momonga/protocol';
 import { isRecord } from '@momonga/foundation';
 import { describeError } from './describe-error.ts';
 import { ClientDisconnectedError, GatewayError } from './errors.ts';
 import { sealedEventOf } from './sealed-events.ts';
 import type { Redactor } from './redaction.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
+import { carryRequestIds } from './response-request-ids.ts';
+import type { RequestIds } from './response-request-ids.ts';
 
 const guardBrand: unique symbol = Symbol('guardedAdapter');
 
@@ -73,6 +75,21 @@ export const redactedEvent = (redactor: Redactor, event: StreamEvent): StreamEve
   return { ...event, response: { ...event.response, error: { ...error, message, code } } };
 };
 
+type ResponseRecord = { ctx: AdapterContext; requestIds: () => RequestIds };
+
+const responseRecordOf = (ctx: AdapterContext): ResponseRecord => {
+  let requestIds: RequestIds = {};
+  return {
+    ctx: {
+      ...ctx,
+      response: (found) => {
+        requestIds = found;
+      },
+    },
+    requestIds: () => requestIds,
+  };
+};
+
 export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoningOrigin: ReasoningOriginCodec): GuardedAdapter => {
   const shaped = (value: unknown, shape: RegExp): string | null =>
     typeof value === 'string' && shape.test(value) && redactor.text(value) === value ? value : null;
@@ -101,13 +118,17 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message, ...plan });
   };
 
-  const guardedError = (error: unknown): unknown => {
+  const guardedError = (error: unknown, requestIds: RequestIds = {}): unknown => {
     if (error instanceof ClientDisconnectedError || error instanceof GuardedAdapterError) return error;
     if (error instanceof GatewayError) return guardedGatewayError(error);
+    carryRequestIds(error, requestIds);
     return new GuardedAdapterError(classify(error));
   };
 
-  const guardedEvent = (event: StreamEvent): StreamEvent => {
+  const redactedIds = (requestIds: RequestIds): Record<string, string> =>
+    Object.fromEntries(Object.entries(requestIds).map(([name, id]) => [name, redactor.text(id)]));
+
+  const guardedEvent = (event: StreamEvent, requestIds: RequestIds): StreamEvent => {
     if (event.type === 'error') return { ...event, error: guardedBody(event.error) };
     if (event.type !== 'response.failed') return event;
     const { error } = event.response;
@@ -118,17 +139,17 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
       message: redactor.text(error.message),
       param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
       ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
-      ...(error.requestIds === undefined ? {} : { requestIds: Object.fromEntries(Object.entries(error.requestIds).map(([name, id]) => [name, redactor.text(id)])) }),
+      ...(Object.keys(requestIds).length === 0 ? {} : { requestIds: redactedIds(requestIds) }),
       ...shapedPlan(error.plan),
     };
     return { ...event, response: { ...event.response, error: guarded } };
   };
 
-  const converting = async <T>(step: () => Promise<T>): Promise<T> => {
+  const converting = async <T>(step: () => Promise<T>, response?: ResponseRecord): Promise<T> => {
     try {
       return await step();
     } catch (error) {
-      throw guardedError(error);
+      throw guardedError(error, response?.requestIds());
     }
   };
 
@@ -140,16 +161,16 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     }
   };
 
-  const guardedIterator = (source: AsyncIterator<StreamEvent>, model: string): AsyncIterator<StreamEvent> => {
+  const guardedIterator = (source: AsyncIterator<StreamEvent>, model: string, response: ResponseRecord): AsyncIterator<StreamEvent> => {
     const { return: sourceReturn, throw: sourceThrow } = source;
     return {
       next: async (...args) => {
-        const result = await converting(() => source.next(...args));
-        return result.done === true ? result : { done: false, value: sealedEventOf(reasoningOrigin, inner.kind, model, guardedEvent(result.value)) };
+        const result = await converting(() => source.next(...args), response);
+        return result.done === true ? result : { done: false, value: sealedEventOf(reasoningOrigin, inner.kind, model, guardedEvent(result.value, response.requestIds())) };
       },
       return: async (value) =>
-        sourceReturn === undefined ? { done: true, value } : converting(() => sourceReturn.call(source, value)),
-      ...(sourceThrow === undefined ? {} : { throw: (reason: unknown) => converting(() => sourceThrow.call(source, reason)) }),
+        sourceReturn === undefined ? { done: true, value } : converting(() => sourceReturn.call(source, value), response),
+      ...(sourceThrow === undefined ? {} : { throw: (reason: unknown) => converting(() => sourceThrow.call(source, reason), response) }),
     };
   };
 
@@ -174,13 +195,21 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     relaysClientBody: inner.relaysClientBody,
     capabilities: (target) => converting(() => inner.capabilities(target)),
     create: (request, ctx) => {
-      const source = convertingSync(() => inner.create(request, ctx));
-      return { [Symbol.asyncIterator]: () => guardedIterator(convertingSync(() => source[Symbol.asyncIterator]()), ctx.target.model) };
+      const response = responseRecordOf(ctx);
+      const source = convertingSync(() => inner.create(request, response.ctx));
+      return { [Symbol.asyncIterator]: () => guardedIterator(convertingSync(() => source[Symbol.asyncIterator]()), ctx.target.model, response) };
     },
     classify,
     ...(countTokens === undefined ? {} : { countTokens: (request, ctx) => converting(() => countTokens.call(inner, request, ctx)) }),
     ...(countWire === undefined ? {} : { countWire: (wire, ctx) => converting(() => countWire.call(inner, wire, ctx)) }),
-    ...(compact === undefined ? {} : { compact: (request, ctx) => converting(() => compact.call(inner, request, ctx)) }),
+    ...(compact === undefined
+      ? {}
+      : {
+          compact: (request, ctx) => {
+            const response = responseRecordOf(ctx);
+            return converting(() => compact.call(inner, request, response.ctx), response);
+          },
+        }),
     ...(renderWire === undefined ? {} : { renderWire: (request, target, options) => convertingSync(() => renderWire.call(inner, request, target, options)) }),
     ...(renderCompactWire === undefined
       ? {}

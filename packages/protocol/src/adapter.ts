@@ -50,6 +50,7 @@ export type UpstreamRoute =
 
 export type AdapterContext = {
   route?: (route: UpstreamRoute) => void;
+  response?: (requestIds: Record<string, string>) => void;
   signal: AbortSignal;
   target: AdapterTarget;
   attempt: number;

@@ -3,6 +3,7 @@ import { createOutboundDispatcher, createUdsClient, fixedSocket, routeOf } from 
 import type { OutboundNetwork, Route } from '@momonga/foundation';
 import type { AdapterContext, UpstreamRoute } from '@momonga/protocol';
 import type { GatewayTimers } from '../../types.ts';
+import { requestIdsOf } from './http-error.ts';
 
 export type UpstreamEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string; network: OutboundNetwork };
 
@@ -28,9 +29,18 @@ export type CompletionPost = {
   subpath?: string;
   streamed?: true;
   onRoute?: (route: UpstreamRoute) => void;
+  onResponse?: (requestIds: Record<string, string>) => void;
 };
 
-export const routeReportOf = (ctx: Pick<AdapterContext, 'route'>): Pick<CompletionPost, 'onRoute'> => (ctx.route === undefined ? {} : { onRoute: ctx.route });
+export const routeReportOf = (ctx: Pick<AdapterContext, 'route' | 'response'>): Pick<CompletionPost, 'onRoute' | 'onResponse'> => ({
+  ...(ctx.route === undefined ? {} : { onRoute: ctx.route }),
+  ...(ctx.response === undefined ? {} : { onResponse: ctx.response }),
+});
+
+const reported = (response: CompletionResponse, onResponse: CompletionPost['onResponse']): CompletionResponse => {
+  onResponse?.(requestIdsOf(response.headers));
+  return response;
+};
 
 const upstreamRouteOf = (route: Route): UpstreamRoute => {
   if (route.kind === 'proxy' || route.kind === 'unsupported') return { kind: route.kind, proxy: route.display };
@@ -56,9 +66,9 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
 const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
   const client = createUdsClient(fixedSocket(socketPath), { connectTimeoutMs: liveness.headersTimeoutMs, headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
   return {
-    post: ({ subpath, streamed, onRoute, ...options }) => {
+    post: async ({ subpath, streamed, onRoute, onResponse, ...options }) => {
       onRoute?.({ kind: 'direct' });
-      return client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options, ...(streamed === undefined ? {} : { bodyTimeoutMs: STREAMED_BODY_TIMEOUT_MS }) });
+      return reported(await client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options, ...(streamed === undefined ? {} : { bodyTimeoutMs: STREAMED_BODY_TIMEOUT_MS }) }), onResponse);
     },
     close: () => client.close(),
   };
@@ -85,7 +95,7 @@ const tcpClient = (endpoint: Extract<UpstreamEndpoint, { kind: 'tcp' }>, route: 
         signal: options.signal,
         ...(options.streamed === undefined ? {} : { bodyTimeout: STREAMED_BODY_TIMEOUT_MS }),
       });
-      return { status: response.statusCode, headers: lowercased(response.headers), body: response.body };
+      return reported({ status: response.statusCode, headers: lowercased(response.headers), body: response.body }, options.onResponse);
     },
     close: () => {
       closing ??= agent.close();

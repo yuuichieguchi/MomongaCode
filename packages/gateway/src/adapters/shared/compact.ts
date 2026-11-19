@@ -137,7 +137,7 @@ export const summaryOfTerminal = (event: StreamEvent, cap: number): CollectedSum
   if (event.type === 'response.failed') {
     const failure = event.response.error;
     if (failure === null) throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream failed without an error');
-    throw new StreamFailure(failure.code, failure.type ?? 'model_error', failure.message, failure.requestIds);
+    throw new StreamFailure(failure.code, failure.type ?? 'model_error', failure.message);
   }
   if (event.type === 'response.incomplete') {
     if (event.response.incomplete_details?.reason === 'content_filter') {

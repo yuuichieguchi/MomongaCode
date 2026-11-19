@@ -43,10 +43,9 @@ export const requestIdsOf = (headers: Record<string, string>): Record<string, st
 export const retryAfterOf = (response: { headers: Record<string, string> }, clock: Clock): number | undefined =>
   parseRetryAfter(response.headers['retry-after'], clock.now());
 
-export const retryAfterHint = (response: { headers: Record<string, string> }, clock: Clock): { retryAfterMs?: number; requestIds: Record<string, string> } => {
+export const retryAfterHint = (response: { headers: Record<string, string> }, clock: Clock): { retryAfterMs?: number } => {
   const retryAfterMs = retryAfterOf(response, clock);
-  const requestIds = requestIdsOf(response.headers);
-  return retryAfterMs === undefined ? { requestIds } : { retryAfterMs, requestIds };
+  return retryAfterMs === undefined ? {} : { retryAfterMs };
 };
 
 export const nestedErrorDetail: ErrorDetailReader = (parsed) => {

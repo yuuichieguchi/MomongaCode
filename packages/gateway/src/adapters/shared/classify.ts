@@ -5,6 +5,8 @@ import type { ClassifiedError, ErrorBody, ErrorMatch, ErrorRule, ErrorRules } fr
 import { preconditionText } from '../../precondition-text.ts';
 import { retryableFailureOf } from '../../core/breaker-verdict.ts';
 import { PlanCredentialError, credentialErrorType } from '../../plan/auth-source.ts';
+import { requestIdsCarriedBy } from '../../core/response-request-ids.ts';
+import type { RequestIds } from '../../core/response-request-ids.ts';
 import {
   CONTEXT_WINDOW_EXCEEDED,
   CompactionReplyError,
@@ -114,18 +116,23 @@ const ruleFor = (rules: ErrorRules, facts: UpstreamFacts): { rule: ErrorRule; by
   return byStatus === undefined ? undefined : { rule: byStatus, by: 'status' };
 };
 
-const ruleMessage = (rule: ErrorRule, by: ErrorMatch['kind'], code: string | null, requestIds: Record<string, string>): string => {
+const ruleMessage = (rule: ErrorRule, by: ErrorMatch['kind'], code: string | null, requestIds: RequestIds): string => {
   const upstreamCode = by === 'status' && code !== null ? ` (upstream code ${code})` : '';
   const [requestId] = Object.values(requestIds);
   return `${rule.message}${upstreamCode}.${requestId === undefined ? '' : ` Request id: ${requestId}`}`;
 };
 
-const withRequestId = (message: string, requestIds: Readonly<Record<string, string>>): string => {
+const withRequestId = (message: string, requestIds: RequestIds): string => {
   const [requestId] = Object.values(requestIds);
   return requestId === undefined ? message : `${message.replace(/\.$/, '')}. Request id: ${requestId}`;
 };
 
-const ruledError = (matched: { rule: ErrorRule; by: ErrorMatch['kind'] }, facts: UpstreamFacts, requestIds: Record<string, string>, param: string | null): ClassifiedError => {
+const withRequestIdOf = (classified: ClassifiedError, requestIds: RequestIds): ClassifiedError => ({
+  ...classified,
+  error: { ...classified.error, message: withRequestId(classified.error.message, requestIds) },
+});
+
+const ruledError = (matched: { rule: ErrorRule; by: ErrorMatch['kind'] }, facts: UpstreamFacts, requestIds: RequestIds, param: string | null): ClassifiedError => {
   const { rule, by } = matched;
   return {
     retryable: rule.retryable,
@@ -139,33 +146,32 @@ const ruledError = (matched: { rule: ErrorRule; by: ErrorMatch['kind'] }, facts:
 
 const retryAfterOf = (error: UpstreamHttpError): { retryAfterMs?: number } => (error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs });
 
-const classifyUpstreamHttp = (error: UpstreamHttpError, rules: ErrorRules): ClassifiedError => {
+const classifyUpstreamHttp = (error: UpstreamHttpError, rules: ErrorRules, streamed: RequestIds): ClassifiedError => {
   const facts: UpstreamFacts = { status: error.status, code: error.upstreamCode };
   const { shape } = error;
   const matched = ruleFor(rules, facts);
-  const classified = matched === undefined ? classifyHttp(error) : { ...ruledError(matched, facts, shape?.requestIds ?? {}, shape?.param ?? null), ...retryAfterOf(error) };
-  if (shape === undefined) return classified;
+  if (shape === undefined) return matched === undefined ? withRequestIdOf(classifyHttp(error), streamed) : { ...ruledError(matched, facts, streamed, null), ...retryAfterOf(error) };
+  const classified = matched === undefined ? classifyHttp(error) : { ...ruledError(matched, facts, shape.requestIds, shape.param), ...retryAfterOf(error) };
   return { ...classified, upstream: { status: error.status, bodyKeys: shape.bodyKeys, code: error.upstreamCode, requestIds: shape.requestIds } };
 };
 
-const classifyStream = (error: StreamFailure, rules: ErrorRules): ClassifiedError => {
+const classifyStream = (error: StreamFailure, rules: ErrorRules, streamed: RequestIds): ClassifiedError => {
   const facts: UpstreamFacts = { status: null, code: error.code === '' ? null : error.code };
+  const requestIds = Object.keys(error.requestIds).length === 0 ? streamed : error.requestIds;
   const matched = ruleFor(rules, facts);
-  if (matched !== undefined) return ruledError(matched, facts, error.requestIds, null);
-  return { retryable: retryableFailureOf(error.errorType, error.code), error: body(error.errorType, error.code, withRequestId(error.message, error.requestIds)) };
+  if (matched !== undefined) return ruledError(matched, facts, requestIds, null);
+  return { retryable: retryableFailureOf(error.errorType, error.code), error: body(error.errorType, error.code, withRequestId(error.message, requestIds)) };
 };
 
-export const createUpstreamClassifier =
-  (label: string, rules: ErrorRules = []) =>
+const classifierOf =
+  (label: string) =>
   (error: unknown): ClassifiedError => {
-    if (error instanceof UpstreamHttpError) return classifyUpstreamHttp(error, rules);
     if (error instanceof CompactionReplyError) {
       return { retryable: error.retryable, error: body('model_error', error.code, error.message) };
     }
     if (error instanceof UpstreamStall) {
       return { retryable: true, stalled: true, error: body(error.errorType, error.code, error.message) };
     }
-    if (error instanceof StreamFailure) return classifyStream(error, rules);
     if (error instanceof PlanCredentialError) {
       return {
         retryable: error.retryable,
@@ -203,3 +209,13 @@ export const createUpstreamClassifier =
     const message = error instanceof Error ? error.message : String(error);
     return { retryable: false, error: body('server_error', 'adapter_error', message) };
   };
+
+export const createUpstreamClassifier = (label: string, rules: ErrorRules = []): ((error: unknown) => ClassifiedError) => {
+  const classifyOther = classifierOf(label);
+  return (error: unknown): ClassifiedError => {
+    const streamed = requestIdsCarriedBy(error);
+    if (error instanceof UpstreamHttpError) return classifyUpstreamHttp(error, rules, streamed);
+    if (error instanceof StreamFailure) return classifyStream(error, rules, streamed);
+    return withRequestIdOf(classifyOther(error), streamed);
+  };
+};
