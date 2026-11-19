@@ -472,13 +472,18 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     expect(unanswered.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', 'llama-server']);
     expect(unanswered.detections).toEqual([]);
 
+    const listsNothing = flowOf(context, threeModels(), [], { found: (request) => (request.typed[0] === OLLAMA_ADDRESS ? [ollamaFound(OLLAMA_ADDRESS, [])] : []) });
+    await runModelsHub(listsNothing.context);
+    expect(listsNothing.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', `ollama  ·  ${OLLAMA_ADDRESS}  ·  ready`]);
+    expect(listsNothing.detections[0]).toMatchObject({ typed: [OLLAMA_ADDRESS], includeWithoutModels: true });
+
     const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: true, breaker: 'closed' } } });
     await runModelsHub(plan.context);
     expect(plan.picks()[0]?.rows.slice(0, 2)).toEqual(['Servers', 'chatgpt  ·  ready']);
   });
 
-  it('the screen does not open when Esc cancels the wait that reads the servers', async (context) => {
-    const cancelled = flowOf(context, threeModels(), [], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING });
+  it('the screen does not open when Esc cancels the wait that reads the servers, and Esc does not wait for a read that never answers', async (context) => {
+    const cancelled = flowOf(context, threeModels(), [], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING, holdHealth: true });
     await runModelsHub(cancelled.context);
     expect(cancelled.picks()).toEqual([]);
   });

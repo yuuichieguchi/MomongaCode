@@ -106,9 +106,17 @@ const serverStateOf = async (
   }
   const address = addressesOf(facts.resolved).get(provider);
   if (address === undefined) return undefined;
-  const answered = (await hostOf(context, signal).detect({ candidates: [], typed: [address], signal })).some(isLocalServer);
+  const answered = (await hostOf(context, signal).detect({ candidates: [], typed: [address], signal, includeWithoutModels: true })).some(isLocalServer);
   return answered ? READY_STATE : NOT_RUNNING_STATE;
 };
+
+const untilAborted = <T>(signal: AbortSignal, work: Promise<T>): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const stop = (): void => reject(signal.reason);
+    if (signal.aborted) return stop();
+    signal.addEventListener('abort', stop, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
+  });
 
 const serverStatesOf = async (context: ModelsFlowContext, signal: AbortSignal, opened: Opened, document: ModelsDocument, health: GatewayHealth): Promise<ReadonlyMap<string, string>> => {
   const declared = declaredOf(opened.edit);
@@ -245,11 +253,13 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
   let at = 0;
   for (;;) {
     const opened = await openEdit(context);
-    const read = await cancellable(context, CHECKING_PHASE, async (signal) => {
-      const [listing, health, { accounts }] = await Promise.all([context.backend.modelList(), context.backend.health(), context.backend.plan.accounts()]);
-      const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
-      return { health, accounts, document, serverStates: await serverStatesOf(context, signal, opened, document, health) };
-    });
+    const read = await cancellable(context, CHECKING_PHASE, (signal) =>
+      untilAborted(signal, (async () => {
+        const [listing, health, { accounts }] = await Promise.all([context.backend.modelList(), context.backend.health(), context.backend.plan.accounts()]);
+        const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
+        return { health, accounts, document, serverStates: await serverStatesOf(context, signal, opened, document, health) };
+      })()),
+    );
     if (read === undefined) return;
     const { health, accounts, document, serverStates } = read.value;
     const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit, accounts), serverStates });

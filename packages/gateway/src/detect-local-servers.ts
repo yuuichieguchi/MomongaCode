@@ -24,6 +24,7 @@ export type DetectLocalServersOptions = {
   exec: ExecFn;
   exists(path: string): Promise<boolean>;
   kinds?: ServerKinds;
+  includeWithoutModels?: boolean;
 };
 
 export type DescribeModelOptions = { server: DetectedLocalServer; model: DetectedModel; signal: AbortSignal; fetch: DetectFetch; kinds?: ServerKinds };
@@ -224,7 +225,7 @@ export const detectLocalServers = async (options: DetectLocalServersOptions): Pr
   const loopback = options.candidates.filter((candidate) => claimsLoopback(new URL(candidate).hostname));
   const addresses = [...new Set([...loopback, ...options.typed])];
   const answered = await Promise.all(addresses.map((address) => detectOne(address, options.fetch, options.signal, kinds)));
-  const found = answered.flatMap((server) => (server === undefined || server.models.length === 0 ? [] : [server]));
+  const found = answered.flatMap((server) => (server === undefined || (options.includeWithoutModels !== true && server.models.length === 0) ? [] : [server]));
   const managed: DetectedManagedServer[] = [];
   for (const description of options.servers) {
     const server = await detectManaged(description, options);
