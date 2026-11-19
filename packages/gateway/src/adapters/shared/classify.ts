@@ -215,7 +215,7 @@ export const createUpstreamClassifier = (label: string, rules: ErrorRules = []):
   return (error: unknown): ClassifiedError => {
     const streamed = requestIdsCarriedBy(error);
     if (error instanceof UpstreamHttpError) return classifyUpstreamHttp(error, rules, streamed);
-    if (error instanceof StreamFailure) return classifyStream(error, rules, streamed);
+    if (error instanceof StreamFailure && !(error instanceof UpstreamStall)) return classifyStream(error, rules, streamed);
     return withRequestIdOf(classifyOther(error), streamed);
   };
 };
