@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { EntryIo } from '@momonga/foundation';
 import { listJobs } from '../src/commands/jobs.ts';
 import { showReport } from '../src/commands/report.ts';
 import { activeRunIdOf, latestRunIdOf } from '../src/commands/targets.ts';
+import type { CliPorts } from '../src/ports.ts';
+import { buildProgram } from '../src/program.ts';
 import { continuedSession } from '../src/run/resolve-session.ts';
+import type { UpdatePorts } from '../src/update/ports.ts';
+import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
+import { NO_HELPER } from './no-helper.ts';
 import { startRealRuntime } from './real-runtime.ts';
 import type { RealRuntime } from './real-runtime.ts';
 
@@ -53,18 +59,29 @@ describe('the latest run of a folder is the run made last, whichever session it 
     expect(await activeRunIdOf(runtime.client, runtime.service.layout.project)).toBe(runOfOlder.id);
   });
 
-  it('report without an id shows that run', async () => {
-    const { runtime, runOfOlder } = await olderSessionWithNewerRun();
+  it('report without an id shows that run, and jobs without an id lists the session of that run', async () => {
+    const { runtime, older, runOfOlder } = await olderSessionWithNewerRun();
 
     expect(await showReport(runtime.ports, runtime.paths, undefined, true)).toBe(0);
     expect(JSON.parse(runtime.stdout.join(''))).toMatchObject({ runId: runOfOlder.id });
+    runtime.stdout.length = 0;
+    expect(await listJobs(runtime.ports, runtime.paths, undefined, false)).toBe(0);
+    expect(runtime.stdout.join('')).toBe(`session ${older.id} has no background jobs\n`);
   });
 
-  it('jobs without an id lists the newest session of the folder, as its help says, not the session whose run is newest', async () => {
-    const { runtime, newer } = await olderSessionWithNewerRun();
+  it('the help of jobs names the session it lists without an id as the session of the latest run of this directory', () => {
+    const entry = async (): Promise<number> => 0;
+    const program = buildProgram({
+      ports: { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined } as unknown as CliPorts,
+      entries: { supervise: entry, gateway: entry, runtime: entry },
+      update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
+      interrupt: new AbortController().signal,
+      helper: NO_HELPER,
+      entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
+      complete: () => undefined,
+    });
 
-    expect(await listJobs(runtime.ports, runtime.paths, undefined, false)).toBe(0);
-    expect(runtime.stdout.join('')).toBe(`session ${newer.id} has no background jobs\n`);
+    expect(program.commands.find((command) => command.name() === 'jobs')?.description()).toMatch(/; the session of the latest run of this directory when no id is given$/);
   });
 
   it('--continue reopens the session worked in last', async () => {

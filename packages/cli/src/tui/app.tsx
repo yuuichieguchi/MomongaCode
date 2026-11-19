@@ -1212,7 +1212,7 @@ export function App(props: AppProps) {
         await runPrompt(task, runOptions);
       },
       compact: runCompaction,
-      sessions: { startNew: startNewSession, resume: resumeSession, now, columns: () => terminal.state().size.columns },
+      sessions: { startNew: startNewSession, resume: resumeSession, current: () => openedSession.current?.id, now, columns: () => terminal.state().size.columns },
       exit: () => finish({}),
       background: (label, work) => waitFor(commandPhaseText(label), work),
       autoMode: props.autoMode ?? unavailableAutoMode,

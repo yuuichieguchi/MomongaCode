@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import { App } from '../../src/tui/app.tsx';
+import { shellFormOf } from '../../src/tui/commands/shell-commands.ts';
+import { NEEDS_SESSION_NOTE } from '../../src/tui/slash.ts';
 import type { ShellPort } from '../../src/tui/slash.ts';
 import { fakeBackend, runView } from '../fake-backend.ts';
 import type { FakeBackendOptions, FakeConversation } from '../fake-backend.ts';
 import { KEYS, renderObservable, untilFrame } from '../ink-helpers.ts';
 import { runStarted, type } from '../tui-harness.tsx';
 import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
+import { contextOf } from './slash-context.ts';
 
 const OWN_SESSION = 'bbbbbbbb22222222';
 const OTHER_SESSION = 'cccccccc33333333';
@@ -71,5 +74,38 @@ describe('/jobs typed in the terminal UI lists the jobs of the session it is typ
 
     expect(argvs).toEqual([['jobs', OWN_SESSION]]);
     app.unmount();
+  });
+
+  it('lists nothing and says a session is needed when no session is open, never another session', async () => {
+    const { shell, argvs } = recordingShell();
+    const { context, recorded } = contextOf({ shell });
+
+    await shellFormOf('jobs').run('', context);
+
+    expect(argvs).toEqual([]);
+    expect(recorded.infos).toEqual([NEEDS_SESSION_NOTE]);
+  });
+
+  it.each([
+    ['before', `${OTHER_SESSION} --json`, ['jobs', OTHER_SESSION, '--json']],
+    ['after', `--json ${OTHER_SESSION}`, ['jobs', '--json', OTHER_SESSION]],
+  ])('passes an id typed with it unchanged, %s an option', async (_place, typed, expected) => {
+    const { shell, argvs } = recordingShell();
+    const { context } = contextOf({ shell, sessions: { ...contextOf().context.sessions, current: () => OWN_SESSION } });
+
+    await shellFormOf('jobs').run(typed, context);
+    for (let tries = 0; tries < 200 && argvs.length === 0; tries += 1) await new Promise((resolve) => setImmediate(resolve));
+
+    expect(argvs).toEqual([expected]);
+  });
+
+  it('passes its own session before an option typed alone', async () => {
+    const { shell, argvs } = recordingShell();
+    const { context } = contextOf({ shell, sessions: { ...contextOf().context.sessions, current: () => OWN_SESSION } });
+
+    await shellFormOf('jobs').run('--json', context);
+    for (let tries = 0; tries < 200 && argvs.length === 0; tries += 1) await new Promise((resolve) => setImmediate(resolve));
+
+    expect(argvs).toEqual([['jobs', OWN_SESSION, '--json']]);
   });
 });

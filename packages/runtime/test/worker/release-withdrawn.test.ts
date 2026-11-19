@@ -116,7 +116,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error')).toEqual([]);
   });
 
-  it('releases it when the user cancels while the tool is asking, so the run reaches CANCELLING instead of WAITING_HUMAN', async () => {
+  it('releases it when the user cancels while the tool is asking, and the run asks nobody and ends CANCELLED in the same claim', async () => {
     const env = await makeEnv();
     const released: Array<Record<string, unknown>> = [];
     env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
@@ -127,12 +127,9 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [askTool(released, cancelWhileAsking)] }));
 
-    expect(env.run(run.id)).toMatchObject({ status: 'CANCELLING', leaseOwner: null });
-    expect(released).toEqual([]);
-
-    await env.runOnce(env.worker('worker-2', { toolList: () => [askTool(released)] }));
-
-    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect(env.run(run.id)).toMatchObject({ status: 'CANCELLED', leaseOwner: null });
+    expect(env.ofType(run.id, 'tool.elicitation.requested')).toEqual([]);
+    expect(env.store.approvals.listPending(run.id)).toEqual([]);
     expect(released).toEqual([CHECKPOINT]);
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error')).toEqual([]);
   });

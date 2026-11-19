@@ -111,4 +111,50 @@ describe('a run whose cancellation was requested never asks a person', () => {
     expect(env.store.approvals.listPending(run.id)).toEqual([]);
     expect(env.run(run.id).status).toBe('CANCELLED');
   });
+
+  it('a command whose worker shut down while it ran, cancelled under the next claim, ends CANCELLED with no approval', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const started = blockUntilAborted(env, 'Bash');
+    env.gateway.script.push(callsStep([{ callId: 'call_sleep', name: 'Bash', args: { command: 'sleep 25' } }]), textStep('never sent'));
+    const run = await env.enqueue('Sleep');
+    const first = env.worker('worker-a');
+    const running = env.runOnce(first);
+    await env.settled(started, 'the command to start');
+    await first.abort('shutdown');
+    await env.settled(running, 'the first worker to yield');
+    expect(env.run(run.id).status).toBe('QUEUED');
+    const queued = env.raw().prepare('SELECT available_at FROM runs WHERE id = ?').get(run.id) as { available_at: number };
+    if (queued.available_at > env.clock.now()) env.clock.advance(queued.available_at - env.clock.now());
+
+    const again = env.runOnce(env.worker('worker-b'));
+    await env.passTime(() => (env.raw().prepare('SELECT lease_owner FROM runs WHERE id = ?').get(run.id) as { lease_owner: string | null }).lease_owner === 'worker-b', 'the next claim');
+    await env.store.requestCancel(run.id);
+    await env.settled(again, 'the next claim to finish after cancel');
+
+    expect(env.ofType(run.id, 'tool.unknown.requested')).toEqual([]);
+    expect(env.store.approvals.listPending(run.id)).toEqual([]);
+    expect(env.run(run.id).status).toBe('CANCELLED');
+  });
+
+  it('a command whose worker shut down while it ran, cancelled while it waits queued, is left to the sweep, which ends it CANCELLED with no approval', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const started = blockUntilAborted(env, 'Bash');
+    env.gateway.script.push(callsStep([{ callId: 'call_sleep', name: 'Bash', args: { command: 'sleep 25' } }]), textStep('never sent'));
+    const run = await env.enqueue('Sleep');
+    const first = env.worker('worker-a');
+    const running = env.runOnce(first);
+    await env.settled(started, 'the command to start');
+    await first.abort('shutdown');
+    await env.settled(running, 'the first worker to yield');
+
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
+    expect(await env.settled(env.runOnce(env.worker('worker-b')), 'the next worker to leave the run to the sweep')).toBe('idle');
+    expect(env.run(run.id).status).toBe('CANCELLING');
+    const failures: unknown[] = [];
+    expect(await env.store.finishCancelled((error) => void failures.push(error))).toEqual([run.id]);
+    expect(failures).toEqual([]);
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect(env.ofType(run.id, 'tool.unknown.requested')).toEqual([]);
+    expect(env.store.approvals.listPending(run.id)).toEqual([]);
+  });
 });

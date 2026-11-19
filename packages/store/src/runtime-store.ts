@@ -67,6 +67,7 @@ import type {
   JobStore,
   LeaseFence,
   LeaseLost,
+  RunCancelled,
   Run,
   RequestApprovalResult,
   RequestCancelResult,
@@ -924,6 +925,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const leaseLost: LeaseLost = { kind: 'lease_lost' };
+  const runCancelled: RunCancelled = { kind: 'run_cancelled' };
 
   const releaseUntouched = (run: Run, claim: LeaseFence, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult => {
     requestBodies.delete(run.id);
@@ -1842,6 +1844,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
+        if (run.cancelRequested) return runCancelled;
         const requested = approvalOps.request({
           runId: run.id,
           callId: input.callId,
@@ -1882,6 +1885,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
+        if (run.cancelRequested) return runCancelled;
         const options = unknownEffectOptions();
         const subjectDigest = sha256Hex(canonicalJson({ unknownEffect: input.callIds }));
         const requested = approvalOps.request({ runId: run.id, callId: firstCallId, options, subjectDigest, kind: 'unknown_effect' });
@@ -1907,6 +1911,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
+        if (run.cancelRequested) return runCancelled;
         const requested = approvalOps.request({
           runId: run.id,
           callId: input.callId,

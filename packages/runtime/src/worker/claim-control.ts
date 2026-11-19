@@ -1,7 +1,7 @@
 import type { RolePort } from '@momonga/foundation';
 import type { Claim, RuntimeStore } from '@momonga/store';
 import type { ServiceTimers } from '../service/timers.ts';
-import { LeaseLostError, ShutdownError } from './errors.ts';
+import { CancelRequestedError, LeaseLostError, ShutdownError } from './errors.ts';
 
 export type ClaimControl = {
   readonly signal: AbortSignal;
@@ -10,6 +10,7 @@ export type ClaimControl = {
   noteLeaseLost(): void;
   leaseLost(): boolean;
   cancelRequested(): boolean;
+  cancelled(): never;
   shuttingDown(): boolean;
   readonly shutdownRequested: Promise<void>;
   shutdown(): void;
@@ -129,6 +130,10 @@ export const startClaimControl = ({ store, timers, claim, role, heartbeatMs, can
     noteLeaseLost: markLost,
     leaseLost: () => leaseLost,
     cancelRequested: () => cancelRequested,
+    cancelled: () => {
+      markCancel();
+      throw new CancelRequestedError();
+    },
     shuttingDown: () => shuttingDown,
     shutdownRequested: shutdownRequested.promise,
     shutdown,

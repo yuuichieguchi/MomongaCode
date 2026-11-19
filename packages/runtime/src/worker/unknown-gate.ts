@@ -15,6 +15,7 @@ export const unknownGate = async (ctx: ClaimContext): Promise<Flow> => {
   if (decision.ask.length > 0) {
     const asked = await ctx.options.store.requestUnknownAck(ctx.claim, { callIds: decision.ask });
     if (asked.kind === 'lease_lost') ctx.control.lost();
+    if (asked.kind === 'run_cancelled') ctx.control.cancelled();
     ctx.journal.sync();
   }
   return ctx.terminals.yieldTo('WAITING_HUMAN');

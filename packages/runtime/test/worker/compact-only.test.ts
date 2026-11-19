@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NOTHING_TO_COMPACT_CODE } from '@momonga/protocol';
+import { NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { compactInputOf, compactPinOf } from '../../src/worker/compact-pin.ts';
 import { capabilitiesFor, createdRun, makeEnv } from './harness.ts';
@@ -185,7 +185,7 @@ describe('a compact command over a short session', () => {
     expect(env.gateway.compacts).toEqual([]);
     expect(env.gateway.streams).toHaveLength(streamsBefore);
     const notices = env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE);
-    expect(notices.map((notice) => notice.message)).toEqual(['Nothing to compact: the conversation is already small.']);
+    expect(notices.map((notice) => notice.message)).toEqual([NOTHING_TO_COMPACT_MESSAGE]);
     expect(notices[0]?.message).not.toMatch(/-\d/);
     expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
   });

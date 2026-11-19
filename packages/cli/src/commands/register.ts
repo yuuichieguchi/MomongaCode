@@ -754,7 +754,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
   program
     .command('jobs [session-id]')
-    .description('list the background jobs of a session, including those of its subagents; the newest session of this directory when no id is given')
+    .description('list the background jobs of a session, including those of its subagents; the session of the latest run of this directory when no id is given')
     .option('--json', 'print the jobs as JSON')
     .action(async (sessionId: string | undefined, options: { json?: true }) => {
       deps.complete(await listJobs(deps.ports, await pathsOf(deps.ports), sessionId, options.json === true));

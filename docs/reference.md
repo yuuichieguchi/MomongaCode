@@ -59,7 +59,7 @@ momonga [options] [prompt]
 | `momonga auth resume <account>` | resume plan use of an account paused by a usage limit |
 | `momonga auth reset-host` | register this computer as a new host; asks first, or needs --yes without a terminal |
 | `momonga status [run-id]` | show a run, the subagent runs under it and the approvals waiting in them; the latest run of this directory when no id is given |
-| `momonga jobs [session-id]` | list the background jobs of a session, including those of its subagents; the newest session of this directory when no id is given |
+| `momonga jobs [session-id]` | list the background jobs of a session, including those of its subagents; the session of the latest run of this directory when no id is given |
 | `momonga memory` | add, review and retire the memories of this folder and of all folders |
 | `momonga memory add <text...>` | add a memory as a person; --path binds it to a file of this folder, so it shows as stale once the file changes |
 | `momonga memory list` | list the memories |

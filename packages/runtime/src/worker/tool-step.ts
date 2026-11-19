@@ -162,6 +162,7 @@ const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome,
     ...(held === undefined ? {} : { held: { footprint: { reads: [...outcome.footprint.reads], writes: [...outcome.footprint.writes] }, ...(held.late ? {} : { placeholder: heldOutput }) } }),
   });
   if (created.kind === 'lease_lost') return ctx.control.lost();
+  if (created.kind === 'run_cancelled') return ctx.control.cancelled();
   journal.sync();
   return created.approval.id;
 };
@@ -175,6 +176,7 @@ const requestInput = async (ctx: ClaimContext, outcome: NeedsInputOutcome): Prom
     requests: outcome.requests,
   });
   if (created.kind === 'lease_lost') ctx.control.lost();
+  if (created.kind === 'run_cancelled') ctx.control.cancelled();
   journal.sync();
 };
 

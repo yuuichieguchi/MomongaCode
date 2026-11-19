@@ -15,7 +15,7 @@ import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { MEASURING_SAME_STATE_WAITS, dispositionOf, observedCodeOf, retireDecisionOf, terminalOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
-import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
+import { CancelRequestedError, describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
 import { compactOnly, governingFailureAtStart, measurePinnedFor } from './context-step.ts';
 import { readCompactPin } from './compact-pin.ts';
@@ -323,7 +323,54 @@ const requeueOrStop = async (
   await terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
+const endCancelled = async (options: WorkerOptions, claim: Claim, journal: Journal, control: ClaimContext['control'], terminals: ClaimContext['terminals']): Promise<void> => {
+  const run = options.store.getRun(claim.runId);
+  if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
+  const session = heldSessionOf(options.store, run.sessionId);
+  if (control.shuttingDown()) {
+    await terminals.yieldLease();
+    return;
+  }
+  if (control.leaseLost()) control.lost();
+  const inFlight = journal.state.inFlightModelRequest;
+  const keys = inFlight === undefined ? [] : [modelKey(run.id, inFlight.step, inFlight.attempt)];
+  const recovering = releaseWaitingOnCancel({ options, claim, run, session, journal, control }).then(() =>
+    reconcileStartedCalls({ options, claim, run, session, journal, control }),
+  );
+  const upstream = cancelUpstream(options, control, keys);
+  const settled = Promise.all([upstream, recovering]);
+  await Promise.race([settled, control.shutdownRequested]);
+  if (control.shuttingDown()) {
+    settled.catch((error: unknown) => {
+      if (error instanceof LeaseLostError || error instanceof ShutdownError) return;
+      reportError(options, error, { workerId: options.workerId, runId: run.id });
+    });
+    await terminals.yieldLease();
+    return;
+  }
+  recordUpstreamFailures(journal, await upstream);
+  await terminals.cancel();
+};
+
 const drive = async (
+  options: WorkerOptions,
+  claim: Claim,
+  journal: Journal,
+  control: ClaimContext['control'],
+  terminals: ClaimContext['terminals'],
+  agentSpan: ClaimContext['agentSpan'],
+  tracer: TracerPort,
+  memory: RunMemory,
+): Promise<void> => {
+  try {
+    await driveClaim(options, claim, journal, control, terminals, agentSpan, tracer, memory);
+  } catch (error) {
+    if (!(error instanceof CancelRequestedError)) throw error;
+    await endCancelled(options, claim, journal, control, terminals);
+  }
+};
+
+const driveClaim = async (
   options: WorkerOptions,
   claim: Claim,
   journal: Journal,
@@ -344,29 +391,7 @@ const drive = async (
     if (inherited.kind !== 'none') journal.sync();
   }
   if (claim.status === 'CANCELLING' || run.cancelRequested) {
-    if (control.shuttingDown()) {
-      await terminals.yieldLease();
-      return;
-    }
-    if (control.leaseLost()) control.lost();
-    const inFlight = journal.state.inFlightModelRequest;
-    const keys = inFlight === undefined ? [] : [modelKey(run.id, inFlight.step, inFlight.attempt)];
-    const recovering = releaseWaitingOnCancel({ options, claim, run, session, journal, control }).then(() =>
-      reconcileStartedCalls({ options, claim, run, session, journal, control }),
-    );
-    const upstream = cancelUpstream(options, control, keys);
-    const settled = Promise.all([upstream, recovering]);
-    await Promise.race([settled, control.shutdownRequested]);
-    if (control.shuttingDown()) {
-      settled.catch((error: unknown) => {
-        if (error instanceof LeaseLostError || error instanceof ShutdownError) return;
-        reportError(options, error, { workerId: options.workerId, runId: run.id });
-      });
-      await terminals.yieldLease();
-      return;
-    }
-    recordUpstreamFailures(journal, await upstream);
-    await terminals.cancel();
+    await endCancelled(options, claim, journal, control, terminals);
     return;
   }
   if (clock.now() >= run.deadlineAt) {

@@ -1,5 +1,6 @@
 import { describeFailure } from '../../failure.ts';
 import { commandWords } from '../command-words.ts';
+import { NEEDS_SESSION_NOTE } from '../slash.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 type ShellSubcommand = { readonly name: string; readonly description: string };
@@ -10,6 +11,7 @@ type ShellSlash = {
   readonly description: string;
   readonly subcommands?: readonly ShellSubcommand[];
   readonly elsewhere?: Readonly<Record<string, string>>;
+  readonly sessionArgument?: true;
 };
 
 export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
@@ -20,7 +22,7 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
       { name: 'logout', description: 'sign out a saved account' },
     ], elsewhere: { login: 'sign in with /login' } },
   { name: 'status', usage: '[run-id] [--json]', description: 'show a run, the subagent runs under it and the approvals waiting in them' },
-  { name: 'jobs', usage: '[session-id] [--json]', description: 'list the background jobs of a session, including those of its subagents' },
+  { name: 'jobs', usage: '[session-id] [--json]', description: 'list the background jobs of a session, including those of its subagents', sessionArgument: true },
   { name: 'trace', usage: '[run-id] [--json]', description: 'show the model and tool spans of a run' },
   { name: 'mcp', usage: 'list [--json] | login <server> [--no-browser]', description: 'inspect and authorize the MCP servers of this folder', subcommands: [
       { name: 'list', description: 'list the MCP servers with their transport and authorization state' },
@@ -56,21 +58,29 @@ const answerWithoutRunning = (entry: ShellSlash | undefined, words: readonly str
   return [`/${entry.name} has no subcommand ${first}; it has these subcommands:`, ...subcommandLines(entry, entry.subcommands)].join('\n');
 };
 
+const argvOf = (entry: ShellSlash | undefined, name: string, words: readonly string[], context: SlashContext): readonly string[] | undefined => {
+  if (entry?.sessionArgument === undefined || words.some((word) => !word.startsWith('-'))) return [name, ...words];
+  const own = context.sessions.current();
+  return own === undefined ? undefined : [name, own, ...words];
+};
+
 export const runShellCommand = async (name: string, line: string, context: SlashContext): Promise<void> => {
   const parsed = commandWords(line);
   if (parsed.kind === 'refused') {
     context.info(`/${name} was not run: ${parsed.reason}`);
     return;
   }
-  const answer = answerWithoutRunning(
-    SHELL_SLASH_COMMANDS.find((entry) => entry.name === name),
-    parsed.words,
-  );
+  const entry = SHELL_SLASH_COMMANDS.find((candidate) => candidate.name === name);
+  const answer = answerWithoutRunning(entry, parsed.words);
   if (answer !== undefined) {
     context.info(answer);
     return;
   }
-  const argv = [name, ...parsed.words];
+  const argv = argvOf(entry, name, parsed.words, context);
+  if (argv === undefined) {
+    context.info(NEEDS_SESSION_NOTE);
+    return;
+  }
   const work = async (signal: AbortSignal): Promise<void> => {
     const code = await context.shell.run(argv, { write: (text) => context.info(text.replace(/\n$/, '')), signal });
     if (code !== 0) context.info(`/${name} exited with code ${code}`);

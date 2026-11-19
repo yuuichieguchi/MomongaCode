@@ -20,3 +20,10 @@ export class ShutdownError extends Error {
     this.name = 'ShutdownError';
   }
 }
+
+export class CancelRequestedError extends Error {
+  constructor() {
+    super('the cancellation of the run was requested');
+    this.name = 'CancelRequestedError';
+  }
+}

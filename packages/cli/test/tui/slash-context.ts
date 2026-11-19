@@ -33,7 +33,7 @@ export const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions:
     startRun: async () => undefined,
     compact: async () => undefined,
     info: (text) => void recorded.infos.push(text),
-    sessions: { startNew: async () => undefined, resume: async () => undefined, now: () => 0, columns: () => 80 },
+    sessions: { startNew: async () => undefined, resume: async () => undefined, current: () => undefined, now: () => 0, columns: () => 80 },
     exit: () => undefined,
     setMode: async (mode) => void recorded.modes.push(mode),
     setModel: async () => undefined,

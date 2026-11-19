@@ -235,7 +235,8 @@ export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: Cl
 export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
 export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
 export type ServiceMutationResult = { kind: 'ok'; run: Run } | Conflict;
-export type RequestApprovalResult = { kind: 'ok'; approval: Approval } | LeaseLost;
+export type RunCancelled = { kind: 'run_cancelled' };
+export type RequestApprovalResult = { kind: 'ok'; approval: Approval } | LeaseLost | RunCancelled;
 export type InheritContextResult = { kind: 'inherited' } | { kind: 'already' } | { kind: 'none' } | LeaseLost | Conflict;
 
 export type StatusPatch = { stopReason?: StopReason; error?: RunError };

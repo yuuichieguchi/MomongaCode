@@ -31,7 +31,7 @@ export type ShellPort = {
 
 export type ScreenPort = { current(): ScreenMode; set(mode: ScreenMode): Promise<void> };
 
-export type SessionsPort = { startNew(): Promise<void>; resume(id: string): Promise<void>; now(): number; columns(): number };
+export type SessionsPort = { startNew(): Promise<void>; resume(id: string): Promise<void>; current(): string | undefined; now(): number; columns(): number };
 
 export type SelectedText = { kind: 'text'; text: string } | { kind: 'too-large'; bytes: number };
 

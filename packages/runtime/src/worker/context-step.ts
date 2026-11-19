@@ -799,8 +799,7 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
   }
 };
 
-export const COMPACTION_WAY_FORWARD: Readonly<Record<CompactionBlockReason, string>> = {
-  deficit_not_closed: 'The session is already small enough; nothing needs to be done.',
+export const COMPACTION_WAY_FORWARD: Readonly<Record<Exclude<CompactionBlockReason, 'deficit_not_closed'>, string>> = {
   no_step_boundary_outside_protection: 'Every step lies among the recent steps that are kept; ask for a compaction again after the session has more steps.',
   protected_step_exceeds_room: 'The latest step alone does not fit; start a new session with /clear, or choose a model with a larger context window.',
   region_exceeds_summary_input_budget: 'The part to summarise is larger than one summary request may hold; set models.roles.compaction to a model with a larger context window.',
@@ -809,6 +808,7 @@ export const COMPACTION_WAY_FORWARD: Readonly<Record<CompactionBlockReason, stri
 const nothingToCompactMessage = (ctx: ClaimContext, block: CompactionBlock | undefined): string => {
   if (ctx.journal.state.history.length <= 1) return NOTHING_TO_COMPACT_MESSAGE;
   if (block === undefined) throw new Error(`run ${ctx.run.id} found no compaction and no reason for it over a history of ${ctx.journal.state.history.length} items`);
+  if (block.reason === 'deficit_not_closed') return NOTHING_TO_COMPACT_MESSAGE;
   return `No compaction: ${block.message}. ${COMPACTION_WAY_FORWARD[block.reason]}`;
 };
 
