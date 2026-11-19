@@ -122,6 +122,7 @@ export type FakeBackendOptions = {
   startupNotices?: readonly string[];
   autoModeAvailable?: boolean;
   modelPending?: Promise<void>;
+  modelFailure?: Error;
   models?: readonly string[];
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
@@ -321,9 +322,13 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     const effort = writtenEntries().find((entry) => entry.id === id)?.effort;
     return effort === undefined ? {} : { effort };
   };
+  let measured = false;
+  void options.modelPending?.then(() => {
+    measured = true;
+  });
   const listedModels = async (): Promise<MomongaModelEntry[]> => {
     const written = writtenEntries();
-    const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true || options.probing?.includes(id) === true ? PROBING_PLAN : listedCapabilities(id), options.chains?.[id] ?? options.chain ?? [id]), ...savedEffortOf(id) }));
+    const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true || (options.probing?.includes(id) === true && !measured) ? PROBING_PLAN : listedCapabilities(id), options.chains?.[id] ?? options.chain ?? [id]), ...savedEffortOf(id) }));
     return [...scripted, ...written.filter((entry) => !scripted.some((other) => other.id === entry.id))];
   };
 
@@ -638,6 +643,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
+      if (options.modelFailure !== undefined) throw options.modelFailure;
       const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model), ...reasoningOf(session.model) };
       return { ...listedEntryOf(session.model, capabilities, options.chain ?? [session.model]), ...savedEffortOf(session.model) };
     },

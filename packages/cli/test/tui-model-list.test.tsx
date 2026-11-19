@@ -45,6 +45,7 @@ const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
     effort: () => undefined,
     setEffort: async () => undefined,
     shownModel: (model) => model,
+    timers: { setTimeout: (run) => setTimeout(run, 0), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
     refreshConnection: async () => undefined,
     signedIn: async () => undefined,
     found: harness.context.found,

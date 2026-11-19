@@ -1,4 +1,4 @@
-import { MODEL_SETTINGS_ROW, PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import { agentReadiness, MODEL_SETTINGS_ROW, PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type { ReasoningEffort, DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanModelsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { GatewayAnswerError, listingViewsOf } from '../client/gateway-client.ts';
@@ -15,6 +15,8 @@ import type { PlanListRow } from './models/model-list.ts';
 import { planProfileOf } from '@momonga/config';
 import { writeStart } from './models/order.ts';
 import { effortStepOf } from './commands/effort.ts';
+import { followMeasurement } from '../readiness.ts';
+import type { MeasurementPorts } from '../readiness.ts';
 import { ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
@@ -35,6 +37,7 @@ export type PlanFlowPorts = OverlayPorts & {
   readonly effort: () => ReasoningEffort | undefined;
   setEffort(effort: ReasoningEffort | null): Promise<void>;
   shownModel(model: string): string;
+  readonly timers: MeasurementPorts['timers'];
   refreshConnection(): Promise<void>;
   signedIn(): Promise<void>;
   readonly found: FoundServers;
@@ -61,6 +64,7 @@ type Acted = typeof AGAIN | undefined;
 type Choice = { row: PickRow; act(): Promise<Acted | void> };
 
 const USE_API_KEY = 'Use an API key';
+const LOADING_PHASE = 'loading';
 const CONNECT_TITLE = 'Connect a model';
 
 const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
@@ -85,8 +89,25 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     if (added?.model !== undefined) await ports.connected(added.model);
   };
 
-  const effortStep = (model: string): Promise<void> =>
-    effortStepOf({ backend, overlays: { choose: ports.choose }, effort: ports.effort(), shownModel: ports.shownModel, setEffort: ports.setEffort, info: ports.info, wait: ports.wait }, model);
+  const loadedEntry = async (retryAfterSeconds: number): Promise<MomongaModelEntry | undefined> => {
+    let stop = (): void => undefined;
+    const loaded = await ports.loading(LOADING_PHASE, () =>
+      new Promise<MomongaModelEntry | undefined>((resolve) => {
+        stop = followMeasurement({ read: () => backend.model(), timers: ports.timers }, retryAfterSeconds, resolve, () => resolve(undefined), () => undefined);
+      }),
+    );
+    stop();
+    return loaded.kind === 'read' ? loaded.value : undefined;
+  };
+
+  const effortStep = async (model: string): Promise<void> => {
+    const entries = await backend.models();
+    const entry = entries.find((candidate) => candidate.id === model);
+    const readiness = entry === undefined ? undefined : agentReadiness(entry.capabilities);
+    const loaded = readiness?.state === 'probing' ? await loadedEntry(readiness.retryAfterSeconds) : entry;
+    if (loaded === undefined) return;
+    await effortStepOf({ backend, overlays: { choose: ports.choose }, effort: ports.effort(), shownModel: ports.shownModel, setEffort: ports.setEffort, info: ports.info, wait: ports.wait }, model, [...entries.filter((other) => other.id !== loaded.id), loaded]);
+  };
 
   const chosenWithEffort = async (model: string, before: () => Promise<void>): Promise<void> =>
     ports.connectedThen(model, async () => {

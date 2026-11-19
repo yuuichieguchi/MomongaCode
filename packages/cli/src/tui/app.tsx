@@ -755,7 +755,7 @@ export function App(props: AppProps) {
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), connected: connectModel, connectedThen: connectModelThen, effort: () => sessionEffortRef.current, setEffort: applyEffort, shownModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), connected: connectModel, connectedThen: connectModelThen, effort: () => sessionEffortRef.current, setEffort: applyEffort, shownModel, timers, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();

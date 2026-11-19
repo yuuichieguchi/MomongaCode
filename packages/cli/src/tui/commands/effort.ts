@@ -47,13 +47,11 @@ const typedOf = (args: string): { words: string[]; session: boolean } => {
   return { words: all.filter((word) => word !== SESSION_FLAG), session: all.includes(SESSION_FLAG) };
 };
 
-export const capabilitiesNotKnownText = (modelName: string): string => `the capabilities of ${modelName} are not known yet, so its reasoning efforts are not known; use /effort again when it is ready`;
-
 const levelsOf = (entries: readonly MomongaModelEntry[], model: string, context: SlashContext): ReasoningEffort[] | undefined => {
   const declared = declaredReasoning(entries, model);
   const name = context.shownModel(model);
   if (!declared.known) {
-    context.info(capabilitiesNotKnownText(name));
+    context.info(`the capabilities of ${name} are not known yet, so its reasoning efforts are not known; use /effort again when it is ready`);
     return undefined;
   }
   const accepted = acceptedEffortsOf(declared);
@@ -80,14 +78,8 @@ const pickEffort = async (context: EffortContext, model: string, entries: readon
   await applyEffort(context, model, chosen, choice.alt ? 'session' : 'saved');
 };
 
-export const effortStepOf = async (context: EffortContext, model: string): Promise<void> => {
-  const entries = await context.backend.models();
-  const declared = declaredReasoning(entries, model);
-  if (!declared.known) {
-    context.info(capabilitiesNotKnownText(context.shownModel(model)));
-    return;
-  }
-  const accepted = acceptedEffortsOf(declared);
+export const effortStepOf = async (context: EffortContext, model: string, entries: readonly MomongaModelEntry[]): Promise<void> => {
+  const accepted = acceptedEffortsOf(declaredReasoning(entries, model));
   if (accepted.length === 0) return;
   await pickEffort(context, model, entries, accepted);
 };

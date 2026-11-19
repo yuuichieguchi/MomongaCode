@@ -4,7 +4,7 @@ import type { ResolvedTuiSettings } from '@momonga/config';
 import { App } from '../../src/tui/app.tsx';
 import type { TuiBackend } from '../../src/tui/backend.ts';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
-import { account, eventually, fakePlanBackend, startPlan, submitLine } from '../fake-plan-gateway.tsx';
+import { account, fakePlanBackend, startPlan, submitLine } from '../fake-plan-gateway.tsx';
 import type { FakePlanOptions } from '../fake-plan-gateway.tsx';
 import { KEYS, TEST_KEY_SETTLE_MS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
@@ -230,14 +230,68 @@ describe('the effort step after a plan model that is not configured is chosen', 
     app.unmount();
   });
 
-  it('opens nothing and says what /effort says when the capabilities of the added model are not known yet', async () => {
-    const { app, backend } = await startPlan({ ...APPROVED, probing: ['chatgpt/gpt-6.2-sol'] });
-    await openList(app);
-    app.stdin.write(`${KEYS.down}${KEYS.down}${KEYS.enter}`);
-    await untilOutput(app, 'the capabilities of gpt-6.2-sol are not known yet, so its reasoning efforts are not known; use /effort again when it is ready');
+  const SOL = 'chatgpt/gpt-6.2-sol';
+
+  const chosenWhileMeasured = async (options: FakePlanOptions) => {
+    const started = await startPlan({ ...APPROVED, probing: [SOL], ...options });
+    await openList(started.app);
+    started.app.stdin.write(`${KEYS.down}${KEYS.down}${KEYS.enter}`);
+    await started.backend.called(`model:${SOL}`);
+    return started;
+  };
+
+  const LOADING_BLOCK = ['loading', 'reading… · esc cancels'].join('\n');
+
+  const loadingBlockOf = (frame: string): string => {
+    const lines = frame.split('\n').map(lineOf);
+    const start = lines.indexOf('loading');
+    return lines.slice(start, start + 2).join('\n');
+  };
+
+  it('shows the loading row while the capabilities of the added model are not loaded, then opens the effort picker', async () => {
+    const pending = Promise.withResolvers<void>();
+    const { app } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
+    const waiting = await untilFrame(app, 'reading… · esc cancels');
+    expect(loadingBlockOf(waiting)).toBe(LOADING_BLOCK);
+    expect(waiting).not.toContain('Reasoning effort');
+    pending.resolve();
+    const picker = await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('tab: this session only'));
+    expect(listBlock(picker, 'Reasoning effort')).toBe(['Reasoning effort', '  1. low', '› 2. medium  in use', '  3. high', '  4. xhigh', 'up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n'));
+    expect(picker).not.toContain('reading…');
+    app.unmount();
+  });
+
+  it('opens nothing more when the loaded model has no reasoning control', async () => {
+    const pending = Promise.withResolvers<void>();
+    const { app } = await chosenWhileMeasured({ reasoning: {}, modelPending: pending.promise });
+    await untilFrame(app, 'reading… · esc cancels');
+    pending.resolve();
+    const output = await untilOutput(app, 'model: gpt-6.2-sol · effort: not available; applies from the next run');
+    expect(output).not.toContain('Reasoning effort');
+    expect(app.lastFrame()).not.toContain('reading…');
+    app.unmount();
+  });
+
+  it('ends the wait when the model information cannot be read, shows what is shown for that failure, and opens no picker', async () => {
+    const { app } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelFailure: new Error('the probe failed') });
+    const output = await untilOutput(app, 'model information unavailable: the probe failed');
+    const after = await untilOutput(app, 'model: gpt-6.2-sol; applies from the next run');
+    expect(output).not.toContain('Reasoning effort');
+    expect(after).not.toContain('are not known yet');
+    expect(app.lastFrame()).not.toContain('reading…');
+    app.unmount();
+  });
+
+  it('ends the wait on the cancel key: the model stays chosen and no picker opens', async () => {
+    const pending = Promise.withResolvers<void>();
+    const { app, backend } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
+    await untilFrame(app, 'reading… · esc cancels');
+    app.stdin.write(KEYS.escape);
     await untilOutput(app, 'model: gpt-6.2-sol; applies from the next run');
-    await eventually(() => backend.calls.includes('model:chatgpt/gpt-6.2-sol'), 'the switch');
+    pending.resolve();
+    await untilFrame(app, 'mode: manual');
     expect(app.lastFrame()).not.toContain('Reasoning effort');
+    expect(backend.calls).toContain(`model:${SOL}`);
     app.unmount();
   });
 });

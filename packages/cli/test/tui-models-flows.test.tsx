@@ -185,6 +185,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       effort: () => undefined,
       setEffort: async () => undefined,
       shownModel: (model) => model,
+      timers: { setTimeout: (run) => setTimeout(run, 0), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
       refreshConnection: async () => undefined,
       signedIn: async () => undefined,
       found: harness.context.found,
