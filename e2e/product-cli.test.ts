@@ -5,6 +5,7 @@ import { EXIT_USAGE, EXIT_WAITING_FOR_APPROVAL } from '@momonga/foundation';
 import { CACHE_READ_TEXT } from '@momonga/observability';
 import { CACHE_READS_NOT_REPORTED } from '@momonga/protocol';
 import { startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
+import { formatTokens } from '../packages/cli/src/format-tokens.ts';
 import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, approveInBrowser, openerCallsOf, runCli, runCliWithFakes, startCli, startCliWithFakes } from './support/cli.ts';
 import type { CliResult } from './support/cli.ts';
@@ -33,12 +34,17 @@ describe('momonga models, cost and memory', () => {
 
     expect(text.stderr).toBe('');
     expect(text.code).toBe(0);
-    expect(text.stdout.split('\n')[0]).toMatch(/^model +window +billing +server +state$/);
-    expect(text.stdout).toMatch(new RegExp(`^${UPSTREAM_MODEL} +\\S+ +\\S+ +${UPSTREAM_PROVIDER} +starts new sessions$`, 'm'));
+    expect(text.stdout).toBe(
+      [
+        `${'model'.padEnd(UPSTREAM_MODEL_REF.length)}  window  billing  server  state`,
+        `${UPSTREAM_MODEL_REF.padEnd('model'.length)}  ${formatTokens(UPSTREAM_CONTEXT_WINDOW).padEnd('window'.length)}  metered  ${UPSTREAM_PROVIDER.padEnd('server'.length)}  starts new sessions`,
+        '',
+      ].join('\n'),
+    );
     const json = jsonOf((await runCli(home, ['models', '--json'])).stdout);
     expect(json).toMatchObject({
       start: UPSTREAM_MODEL_REF,
-      models: [{ model: UPSTREAM_MODEL_REF, name: UPSTREAM_MODEL, provider: UPSTREAM_PROVIDER, address: null, contextWindow: UPSTREAM_CONTEXT_WINDOW, fallback: [] }],
+      models: [{ model: UPSTREAM_MODEL_REF, name: UPSTREAM_MODEL_REF, provider: UPSTREAM_PROVIDER, address: null, contextWindow: UPSTREAM_CONTEXT_WINDOW, fallback: [] }],
     });
   });
 
@@ -198,7 +204,7 @@ describe('momonga -p with skills and images', () => {
     writePng(incapable.home.project, 'shot.png');
     const declined = await runCli(incapable.home, ['-p', 'What is in the picture?', '--image', 'shot.png']);
     expect(declined.code).toBe(1);
-    expect(declined.stderr).toContain(`the model "${UPSTREAM_MODEL}" does not declare image input`);
+    expect(declined.stderr).toContain(`the model "${UPSTREAM_MODEL_REF}" does not declare image input`);
     expect(chatCompletions(incapable.fake)).toHaveLength(0);
   });
 });
