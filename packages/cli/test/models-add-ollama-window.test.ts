@@ -208,6 +208,24 @@ describe('a metered Ollama model with no stated window is measured within the bo
   });
 });
 
+describe('gateway probe of a metered Ollama model with no stated window answers as the gateway does, and sends no chat', () => {
+  it('names ollama pull for a model the server does not list', async () => {
+    const fake = await startFakeOllama({ showStatus: () => 404, tags: () => ({ models: [] }) });
+    const home = meteredHome(fake.origin);
+
+    await expect(runCli(home, ['gateway', 'probe', `paid/${OLLAMA_LISTED}`, '--yes'])).rejects.toThrow(`ollama pull ${OLLAMA_LISTED}`);
+    expect(fake.requests.filter((request) => request.path === '/api/chat')).toEqual([]);
+  });
+
+  it('refuses a listed model whose server reports no context window', async () => {
+    const fake = await startFakeOllama({ show: { model_info: {} } });
+    const home = meteredHome(fake.origin);
+
+    await expect(runCli(home, ['gateway', 'probe', `paid/${OLLAMA_LISTED}`, '--yes'])).rejects.toThrow('the server reports no context window for this model');
+    expect(fake.requests.filter((request) => request.path === '/api/chat')).toEqual([]);
+  });
+});
+
 describe('models add writes for a server other than Ollama what it wrote before', () => {
   it('writes the LM Studio entry with the loaded window', async () => {
     const server = await serveRoutes(lmstudioRoutes());

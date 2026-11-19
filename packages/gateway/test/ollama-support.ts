@@ -52,6 +52,7 @@ export type FakeOllamaOptions = {
   version?: { status: number; body: unknown };
   show?: unknown;
   showStatus?: () => number;
+  hangs?: readonly string[];
   tags?: () => unknown;
   completions?: readonly string[];
   cacheProbe?: 'automatic' | 'none' | 'unreported' | 'malformed';
@@ -117,6 +118,10 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
     const body = parsedBody(await readBody(req));
     const url = new URL(req.url ?? '/', 'http://fake');
     requests.push({ method: req.method ?? '', path: url.pathname, headers: req.headers, body });
+    if (options.hangs?.includes(url.pathname) === true) {
+      await new Promise<void>((resolve) => res.once('close', () => resolve()));
+      return;
+    }
     if (url.pathname === '/api/version' && req.method === 'GET') {
       const version = options.version ?? { status: 200, body: fixtureJson('version.json') };
       sendJson(res, version.status, version.body);

@@ -210,14 +210,17 @@ const probeOllama = async (
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
 ): Promise<number> => {
-  const { DEFAULT_SAMPLES, countedWindowOf, isMeteredTarget, measurementBoundOf, probeOllamaTarget, reachableEndpoint, readOllamaReported, saveMeasurementConsent, PERSON_TRAFFIC } = await import('@momonga/gateway');
+  const { DEFAULT_SAMPLES, endpointLockKeyOf, isMeteredTarget, measurementBoundOf, ollamaPrecondition, probeOllamaTarget, reachableEndpoint, readOllamaReported, saveMeasurementConsent, unknownWindowRefusal, PERSON_TRAFFIC } = await import('@momonga/gateway');
   const key = endpointRecordKeyOf(subject, target);
   const statedWindow = target.writtenCapabilities.contextWindow;
   const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
   const probePorts = probePortsOf(ports, PERSON_TRAFFIC);
-  const metered = isMeteredTarget(target)
-    ? { displayOf: () => subject.display, declaredContextWindow: statedWindow ?? countedWindowOf(undefined, await readOllamaReported(upstream, probePorts, target.model), subject.display, key.endpoint) }
-    : undefined;
+  const meteredWindow = async (): Promise<number> => {
+    const window = statedWindow ?? (await readOllamaReported(upstream, probePorts, target.model)).contextWindow;
+    if (window === undefined) throw await unknownWindowRefusal(ollamaPrecondition(upstream, probePorts, target.model), subject.display, endpointLockKeyOf(key).target);
+    return window;
+  };
+  const metered = isMeteredTarget(target) ? { displayOf: () => subject.display, declaredContextWindow: await meteredWindow() } : undefined;
   if (metered !== undefined && options.consented) {
     await saveMeasurementConsent(paths.probe, key, measurementBoundOf(metered.declaredContextWindow, options.samples ?? DEFAULT_SAMPLES), resolveLayoutLocks(paths).mechanism);
   }

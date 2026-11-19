@@ -15,9 +15,9 @@ import type { ReportedFields, ToolCallingDeclaration } from './sources.ts';
 
 export type OllamaDeclaredCapabilities = Omit<DeclaredCore, 'contextWindow' | 'maxOutputTokens'> & (ImageCapability | { imageInput?: undefined; imageTokens?: undefined });
 
-export const countedWindowOf = (statedWindow: number | undefined, reported: ReportedFields, display: string, endpoint: string): number => {
-  const contextWindow = statedWindow ?? reported.contextWindow;
-  if (contextWindow === undefined) throw new ReportedWindowMissingError(display, endpoint);
+export const countedWindowOf = (statedWindow: number | undefined, reported: ReportedFields, recorded: number | undefined, display: string): number => {
+  const contextWindow = statedWindow ?? reported.contextWindow ?? recorded;
+  if (contextWindow === undefined) throw new ReportedWindowMissingError(display);
   return contextWindow;
 };
 
@@ -56,8 +56,8 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
     return reported;
   };
 
-  const declaredFor = (reported: ReportedFields): DeclaredCapabilities => {
-    const contextWindow = countedWindowOf(written.contextWindow, reported, options.displayOf(), options.endpoint);
+  const declaredFor = (reported: ReportedFields, recorded: number | undefined): DeclaredCapabilities => {
+    const contextWindow = countedWindowOf(written.contextWindow, reported, recorded, options.displayOf());
     return { ...options.declared, contextWindow, maxOutputTokens: written.maxOutputTokens ?? maxOutputTokensFor(contextWindow) };
   };
 
@@ -68,7 +68,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
   const fromSources = async (): Promise<Capabilities> => {
     const reported = await readReported();
     if (unknownFieldsOf({ toolCalling: options.toolCalling }, reported).length > 0) return measuring(reported);
-    return sourcedCapabilities(declaredFor(reported), written, options.toolCalling, reported) ?? measuring(reported);
+    return sourcedCapabilities(declaredFor(reported, undefined), written, options.toolCalling, reported) ?? measuring(reported);
   };
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
@@ -85,8 +85,8 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
       record = usable(await options.readRecord());
       if (record === null) return fromSources();
       const reported = await readReported();
-      const { core } = layerOf(declaredFor(reported));
       const { report } = record;
+      const { core } = layerOf(declaredFor(reported, report.contextWindow.value));
       return mergeCapabilities({
         defaults: { ...core, schemaDialect: resolveDialectId(options.declared.schemaDialect, report) },
         declared: writtenLayerFor(written, options.toolCalling),

@@ -25,7 +25,9 @@ import { endedByOperation, recordAccess } from './record-io.ts';
 import { responseBytes } from './refresh.ts';
 import type { PlanFetch, PlanSleep } from './refresh.ts';
 
-export const NO_REPORTED_WINDOW = 'the server reports no context window for this model';
+import { NO_REPORTED_WINDOW } from '../reported-window.ts';
+
+export { NO_REPORTED_WINDOW };
 
 const CATALOG_LABEL = 'plan catalog';
 

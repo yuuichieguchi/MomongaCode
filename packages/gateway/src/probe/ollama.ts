@@ -30,7 +30,7 @@ import { JSON_MODE_PROBE_REQUEST, measureJsonMode } from './json-mode.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
 import { jsonReplyPlanOf } from '../adapters/shared/json-reply.ts';
 import { OLLAMA_VOCABULARY } from '../adapters/ollama/vocabulary.ts';
-import { recordProbe } from './auto-probe.ts';
+import { recordProbe, targetNotReadyError } from './auto-probe.ts';
 import { measuringAskOf, readReportedFields } from './sources.ts';
 import type { ReportedFields } from './sources.ts';
 import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
@@ -41,8 +41,7 @@ import type { KernelLockMechanism } from '@momonga/foundation';
 import { meteredPrecondition, requireMeasurementConsent } from './consent.ts';
 import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import { meteredGateOf } from './probe-endpoint.ts';
-import { DeclaredWindowAboveReportedError } from './declared-window.ts';
-import type { PreconditionFailedError } from '../adapters/shared/failures.ts';
+import { DeclaredWindowAboveReportedError, ReportedWindowMissingError } from './declared-window.ts';
 
 export type ProbeOllamaTargetOptions = {
   ports: ProbePorts;
@@ -316,14 +315,10 @@ export const ollamaPrecondition = (upstream: UpstreamEndpoint, ports: ProbeHostP
   },
 });
 
-export const refusingAfter = (precondition: ProbePrecondition, refusal: PreconditionFailedError): ProbePrecondition => ({
-  boundMs: precondition.boundMs,
-  check: async (signal) => {
-    const verdict = await precondition.check(signal);
-    if (verdict.kind === 'refused') return verdict;
-    return { kind: 'refused', message: refusal.message, detail: refusal.detail ?? '', remedy: refusal.remediation };
-  },
-});
+export const unknownWindowRefusal = async (listed: ProbePrecondition, display: string, target: string): Promise<Error> => {
+  const verdict = await listed.check(new AbortController().signal);
+  return verdict.kind === 'refused' ? targetNotReadyError(target, verdict) : new ReportedWindowMissingError(display);
+};
 
 export type OllamaProbeSubjectOptions = {
   target: string;
