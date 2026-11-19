@@ -33,7 +33,7 @@ describe('a value a person did not write stays on its own line in command output
     expect(mcpAuthorizationInvitation(`docs ${FORGED}`, `https://e.test/ ${FORGED}`)).toBe(`Authorize MCP server docs ${SHOWN} in your browser:\nhttps://e.test/ ${SHOWN}`);
   });
 
-  it('shows a model whose name holds a newline on its own row, the name of its server on the row above', () => {
+  it('shows a model whose name holds a newline on its own row, the address of its server in the same row', () => {
     const capabilities = {
       contextWindow: 1,
       maxOutputTokens: 1,
@@ -51,7 +51,10 @@ describe('a value a person did not write stays on its own line in command output
     const ownName = `google/fast:7b ${FORGED}`;
     const entry: MomongaModelEntry = { id: `lmstudio/${ownName}`, object: 'model', provider: 'lmstudio', ownName, naming: 'server', billing: 'local', capabilities, state: 'available', chain: [] };
     const lines = formatModels(modelsDocumentOf({ object: 'list', data: [entry], start: null, roles: {} }, new Map([['lmstudio', `http://e.test/ ${FORGED}`]]), new Set(), new Map())).split('\n');
-    expect(lines).toEqual([`lmstudio  ·  http://e.test/ ${SHOWN}`, `  lmstudio/google/fast:7b ${SHOWN}  ·  1 tokens  ·  local`]);
+    expect(lines).toEqual([
+      `model${' '.repeat(`lmstudio/google/fast:7b ${SHOWN}`.length - 'model'.length)}  window  billing  server${' '.repeat(`http://e.test/ ${SHOWN}`.length - 'server'.length)}  state`,
+      `lmstudio/google/fast:7b ${SHOWN}  1       -        http://e.test/ ${SHOWN}  -`,
+    ]);
   });
 
   it('shows a daemon child held reason with a newline on the child line', () => {

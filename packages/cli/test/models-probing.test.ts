@@ -21,7 +21,7 @@ describe('the model list of a model the gateway is measuring', () => {
 
     const document = modelsDocumentOf(listing, new Map(), new Set(), new Map());
 
-    expect(formatModels(document)).toBe('apple\n  apple/system  ·  window not known  ·  starts new sessions');
+    expect(formatModels(document)).toBe('model         window            billing  server  state\napple/system  window not known  -        apple   starts new sessions');
     expect(document.models[0]).toMatchObject({ state: 'probing', contextWindow: null });
   });
 });
