@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ResolvedModelTarget } from '@momonga/config';
-import type { ManagedServerDescription } from '@momonga/protocol';
+import type { ManagedServerDescription, ReasoningCapability } from '@momonga/protocol';
 import type { ProbeOutputPolicy } from './probe/decide.ts';
 
 type ResolvedTarget = ResolvedModelTarget & { canon?: string; ownName?: string; defaultTag?: string };
@@ -12,7 +12,7 @@ const definitionOf = (target: ResolvedTarget): ResolvedModelTarget => {
 
 export type ServedAccount = { profile: string; account: string | null };
 
-export type ReportedNumbers = { contextWindow: number; maxOutputTokens: number } | null;
+export type ReportedNumbers = { contextWindow: number; maxOutputTokens: number; reasoning?: ReasoningCapability } | null;
 
 export type TargetCounterInput = {
   target: ResolvedTarget;

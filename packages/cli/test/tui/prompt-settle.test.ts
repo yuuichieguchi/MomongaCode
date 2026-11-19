@@ -204,6 +204,22 @@ describe('a prompt is answered only by a key pressed after its first frame was w
     expect(gate.takes('approval:1', 'enter', 'key')).toBe(false);
   });
 
+  it('does not count a key release as typing toward the next prompt', () => {
+    const { gate } = gateOf();
+    gate.keyReleased();
+    drawnAs(gate, 'pick:1', QUIET);
+    expect(gate.view('pick:1').underHands).toBe(false);
+  });
+
+  it('does not count the key that answered a list, nor its release, as typing toward the list that follows', () => {
+    const { gate } = gateOf();
+    gate.keyPressed();
+    gate.keyConsumed();
+    gate.keyReleased();
+    drawnAs(gate, 'pick:2', QUIET);
+    expect(gate.view('pick:2').underHands).toBe(false);
+  });
+
   it('does not count the key that submitted the input as typing toward the next prompt', () => {
     const { gate } = gateOf();
     gate.keyPressed();

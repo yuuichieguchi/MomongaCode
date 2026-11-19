@@ -387,7 +387,7 @@ describe('the slash menu keys', () => {
     app.stdin.write(KEYS.ctrlU);
     await type(app, '/hel', '> /hel');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'Commands\n');
+    await untilFrame(app, (shown) => shown.includes('click on a menu row  complete it') && inputLines(shown)[0]?.trimEnd() === '>');
     app.unmount();
   });
 

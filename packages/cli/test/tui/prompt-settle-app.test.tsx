@@ -117,7 +117,7 @@ describe('a prompt that opened under the hands', () => {
     app.unmount();
   });
 
-  it('the second of two approvals appears under the key that answered the first, so a doubled key does not answer both', async () => {
+  it('the second of two approvals is not under the key that answered the first, and a doubled key does not answer both', async () => {
     const { app, backend, clock } = await working();
     ask(backend, 'c1', 'ap1');
     ask(backend, 'c2', 'ap2');
@@ -127,13 +127,14 @@ describe('a prompt that opened under the hands', () => {
     app.stdin.write('1');
     await backend.called('approve:ap1:o1');
     backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
-    await untilFrame(app, 'Permission requested: Bash c2');
+    const second = await untilFrame(app, 'Permission requested: Bash c2');
+    expect(second).not.toContain(UNDER_HANDS_LINE);
     app.stdin.write('1');
-    clock.advance(KEY_SETTLE_MS);
-    await untilFrame(app, DIGIT_ONLY_HINT);
     await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual(['approve:ap1:o1']);
-    app.stdin.write('1');
+    clock.advance(KEY_SETTLE_MS);
+    await untilFrame(app, HINT);
+    app.stdin.write(KEYS.enter);
     await backend.called('approve:ap2:o1');
     app.unmount();
   });

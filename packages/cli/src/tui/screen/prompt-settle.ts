@@ -33,6 +33,8 @@ export const createPromptGate = ({ timers, settleMs, onChange }: PromptGateOptio
   let keysQuiet = true;
   let quietBeforeKey = true;
   let quietTimer: unknown;
+  let pressesQuiet = true;
+  let pressTimer: unknown;
   let windowTimer: unknown;
   let shown: Shown | undefined;
 
@@ -65,6 +67,15 @@ export const createPromptGate = ({ timers, settleMs, onChange }: PromptGateOptio
     }, settleMs);
   };
 
+  const pressEvent = (): void => {
+    pressesQuiet = false;
+    pressTimer = stopTimer(pressTimer);
+    pressTimer = timers.setTimeout(() => {
+      pressTimer = undefined;
+      pressesQuiet = true;
+    }, settleMs);
+  };
+
   const putUnderHands = (prompt: Shown): void => {
     if (prompt.underHands) return;
     prompt.underHands = true;
@@ -82,6 +93,7 @@ export const createPromptGate = ({ timers, settleMs, onChange }: PromptGateOptio
     keyPressed: () => {
       quietBeforeKey = keysQuiet;
       keyEvent();
+      pressEvent();
       if (shown === undefined) return;
       if (!shown.drawn) {
         putUnderHands(shown);
@@ -97,6 +109,8 @@ export const createPromptGate = ({ timers, settleMs, onChange }: PromptGateOptio
     keyConsumed: () => {
       quietTimer = stopTimer(quietTimer);
       keysQuiet = true;
+      pressTimer = stopTimer(pressTimer);
+      pressesQuiet = true;
     },
     show: (id) => {
       if (shown?.id === id) return;
@@ -105,7 +119,7 @@ export const createPromptGate = ({ timers, settleMs, onChange }: PromptGateOptio
         shown = undefined;
         return;
       }
-      shown = { id, underHands: !keysQuiet, rendered: false, drawn: false, settling: true, pressedSinceDrawn: false, engaged: false };
+      shown = { id, underHands: !pressesQuiet, rendered: false, drawn: false, settling: true, pressedSinceDrawn: false, engaged: false };
     },
     rendered: (id) => {
       if (shown !== undefined && shown.id === id) shown.rendered = true;
@@ -128,6 +142,7 @@ export const createPromptGate = ({ timers, settleMs, onChange }: PromptGateOptio
     },
     stop: () => {
       quietTimer = stopTimer(quietTimer);
+      pressTimer = stopTimer(pressTimer);
       windowTimer = stopTimer(windowTimer);
     },
   };

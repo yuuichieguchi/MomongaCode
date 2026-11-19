@@ -9,6 +9,44 @@ export const PLAN_RESPONSES_PATH = '/v1/responses';
 
 export const PLAN_MODELS_PATH = '/v1/models';
 
+const INSTRUCTION_TEXT_BYTES = 48 * 1024;
+
+const longText = (slug: string, field: string, bytes: number): string => {
+  const line = `${slug} ${field}: You are a coding agent running in a terminal. Follow the user's instructions and keep answers short.\n`;
+  return line.repeat(Math.ceil(bytes / line.length)).slice(0, bytes);
+};
+
+export const planModelLongTexts = (slug: string): Record<string, unknown> => ({
+  description: longText(slug, 'description', 512),
+  base_instructions: longText(slug, 'base_instructions', INSTRUCTION_TEXT_BYTES),
+  model_messages: { instructions_template: longText(slug, 'instructions_template', INSTRUCTION_TEXT_BYTES / 2) },
+  availability_nux: { message: longText(slug, 'availability_nux', 256) },
+  shell_type: 'shell_command',
+  supported_in_api: true,
+  priority: 1,
+  truncation_policy: { mode: 'tokens', limit: 10000 },
+  experimental_supported_tools: [],
+  input_modalities: ['text', 'image'],
+});
+
+export const PLAN_HIDDEN_MODELS: readonly unknown[] = Array.from({ length: 6 }, (_unused, index) => {
+  const slug = `hidden-reference-${index + 1}`;
+  return {
+    slug,
+    display_name: `Hidden Reference ${index + 1}`,
+    visibility: 'hide',
+    context_window: 272000,
+    supported_reasoning_levels: [
+      { effort: 'low', description: longText(slug, 'low', 128) },
+      { effort: 'medium', description: longText(slug, 'medium', 128) },
+      { effort: 'high', description: longText(slug, 'high', 128) },
+    ],
+    default_reasoning_level: 'medium',
+    ...planModelLongTexts(slug),
+    supported_in_api: index !== 0,
+  };
+});
+
 export const PLAN_ERROR_CODES = [
   { code: 'subscription_sharing_user_not_eligible', status: 403 },
   { code: 'subscription_sharing_usage_limit_exceeded', status: 429 },
@@ -239,7 +277,7 @@ export const startFakePlanResponses = async (options: PlanResponsesOptions): Pro
       return;
     }
     if (recorded.method === 'GET' && recorded.path === PLAN_MODELS_PATH) {
-      await serveFakeUpstreamReply(options.catalogReply ?? { kind: 'json', body: { models } }, res);
+      await serveFakeUpstreamReply(options.catalogReply ?? { kind: 'json', body: { models: [...models, ...PLAN_HIDDEN_MODELS] } }, res);
       return;
     }
     if (recorded.method !== 'POST' || recorded.path !== PLAN_RESPONSES_PATH) {

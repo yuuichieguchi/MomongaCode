@@ -23,7 +23,7 @@ import {
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
 import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, WORDS, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
-import type { ManagedServerDescription, PlanAccountRef, ReasoningEffort, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
+import type { ManagedServerDescription, PlanAccountRef, ReasoningCapability, ReasoningEffort, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
   JsonDepthError,
@@ -795,16 +795,24 @@ type PlanAdapterWiring = { clock: Clock; userDialects: UserDialects; liveness: U
 
 type PlanNumbers = { contextWindow: number; maxOutputTokens: number };
 
-type PlanReported = () => PlanNumbers | undefined;
+type PlanReported = () => (PlanNumbers & { reasoning?: ReasoningCapability }) | undefined;
 
 const PRECONDITION_STATUS = 412;
 
 const planCapabilityNumbers = (target: PlanTarget, reported: PlanReported): PlanNumbers | undefined => {
   const { contextWindow, maxOutputTokens } = target.capabilities;
-  return contextWindow !== undefined && maxOutputTokens !== undefined ? { contextWindow, maxOutputTokens } : reported();
+  if (contextWindow !== undefined && maxOutputTokens !== undefined) return { contextWindow, maxOutputTokens };
+  const numbers = reported();
+  return numbers === undefined ? undefined : { contextWindow: numbers.contextWindow, maxOutputTokens: numbers.maxOutputTokens };
 };
 
 const declaresPlanNumbers = (target: PlanTarget): boolean => planCapabilityNumbers(target, () => undefined) !== undefined;
+
+const reportedReasoningOf = (target: PlanTarget, reported: PlanReported): { reasoning?: ReasoningCapability } => {
+  if (target.capabilities.reasoning !== undefined) return {};
+  const reasoning = reported()?.reasoning;
+  return reasoning === undefined ? {} : { reasoning };
+};
 
 const unknownCapabilitiesText = (target: PlanTarget): string =>
   `the model ${target.model} cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models catalog reads the list`;
@@ -813,7 +821,7 @@ const planCapabilitiesOf = (target: PlanTarget, reported: PlanReported): Capabil
   const { contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, ...rest } = target.capabilities;
   const numbers = planCapabilityNumbers(target, reported);
   if (numbers === undefined) throw invalidRequest(CAPABILITIES_UNKNOWN_CODE, unknownCapabilitiesText(target), 'model', PRECONDITION_STATUS);
-  return withImageDefault({ ...rest, ...numbers, toolCalling: target.toolCalling });
+  return withImageDefault({ ...rest, ...reportedReasoningOf(target, reported), ...numbers, toolCalling: target.toolCalling });
 };
 
 const planHealthOf = (target: PlanTarget, auth: AuthSource, reported: PlanReported): HealthResult => {
@@ -1209,8 +1217,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     const servedOf = (target: PlanTarget): ServedAccount => ({ profile: target.plan.profile, account: target.plan.account ?? sessions.activeLabel(target.plan.profile) ?? null });
     const reportedOf = (target: PlanTarget, served: ServedAccount): ReportedNumbers | undefined => {
-      if (declaresPlanNumbers(target)) return undefined;
-      return served.account === null ? null : (catalog.capabilitiesOf(served.profile, served.account, target.model) ?? null);
+      const entry = served.account === null ? undefined : catalog.capabilitiesOf(served.profile, served.account, target.model);
+      if (declaresPlanNumbers(target)) return entry?.reasoning === undefined || target.capabilities.reasoning !== undefined ? undefined : entry;
+      return served.account === null ? null : (entry ?? null);
     };
     type PlanInput = { account: string | null; reported?: ReportedNumbers };
     type EpochInputs = { plan: Readonly<Record<string, PlanInput>> };

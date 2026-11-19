@@ -23,7 +23,7 @@ import { retryAfterSeconds } from '../core/retry.ts';
 import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
 import { PLAN_OPERATION_LIMIT, limitFailureOf, withinRequestLimit } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
-import { NO_REPORTED_WINDOW } from './catalog.ts';
+import { unusableReasonOf } from './catalog.ts';
 import { CONFLICT_STATUS, INVALID_REQUEST_STATUS, RETRYABLE_STATUS } from './http-status.ts';
 import { planProfileNamed } from './profiles.ts';
 import type { PlanCatalog } from './catalog.ts';
@@ -203,7 +203,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
       const record = await options.catalog.record(ref.profile.id, account, signal);
       const entry = record === undefined ? undefined : ownEntry(record.models, slug);
       if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models catalog lists them`, 'slug');
-      if ('unreported' in entry) throw invalidRequest('plan_model_unusable', `the model ${slug} cannot be added: ${NO_REPORTED_WINDOW}`, 'slug');
+      if ('unreported' in entry) throw invalidRequest('plan_model_unusable', `the model ${slug} cannot be added: ${unusableReasonOf(entry)}`, 'slug');
       return { model: await addedModelOf(ref.profile.id, slug, signal) };
     });
 

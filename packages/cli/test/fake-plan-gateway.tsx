@@ -224,11 +224,16 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   return backend;
 };
 
-export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill' | 'startup'> = {}, screen: Partial<FakeScreenSize> = {}) => {
+export type PlanTiming = Pick<AppProps, 'now' | 'timers' | 'keySettleMs'>;
+
+const AT_ONCE: PlanTiming = { now: Date.now, timers: settleAtOnce(systemTiming), keySettleMs: TEST_KEY_SETTLE_MS };
+
+export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill' | 'startup'> = {}, screen: Partial<FakeScreenSize> = {}, timing: PlanTiming = AT_ONCE) => {
   const backend = fakePlanBackend(options);
   const outcomes: TuiOutcome[] = [];
-  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen })} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
-  return { backend, app, outcomes };
+  const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
+  const app = renderObservable(<App backend={backend as TuiBackend} terminal={terminal} {...timing} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
+  return { backend, app, outcomes, terminal };
 };
 
 const numberedRowOf = (frame: string, label: string): string | undefined => frame.split('\n').find((candidate) => /^[\s│]*\W?\s*\d+\. /.test(candidate) && candidate.includes(label));

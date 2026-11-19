@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  PLAN_HIDDEN_MODELS,
   PLAN_ERROR_CODES,
   PLAN_UNSUPPORTED_FIELDS,
   openResponsesTextReply,
@@ -225,7 +226,7 @@ describe('fake plan Responses route: the model list', () => {
     const server = await startPlan({ models });
     const response = await fetch(`${server.origin}/v1/models`, { headers: { authorization: 'Bearer good' } });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ models });
+    expect(await response.json()).toEqual({ models: [...models, ...PLAN_HIDDEN_MODELS] });
     expect(server.requests.at(-1)).toMatchObject({ method: 'GET', path: '/v1/models' });
   });
 
@@ -236,9 +237,13 @@ describe('fake plan Responses route: the model list', () => {
     expect(await response.json()).toEqual({ detail: expect.any(String) });
   });
 
-  it('serves an empty array when it was given none', async () => {
+  it('serves only its realistic hidden entries when it was given none, a body above the auth document cap with long texts and one entry the API does not serve', async () => {
     const server = await startPlan();
     const response = await fetch(`${server.origin}/v1/models`, { headers: { authorization: 'Bearer good' } });
-    expect(await response.json()).toEqual({ models: [] });
+    const text = await response.text();
+    expect(JSON.parse(text)).toEqual({ models: PLAN_HIDDEN_MODELS });
+    expect(Buffer.byteLength(text)).toBeGreaterThan(256 * 1024);
+    for (const entry of PLAN_HIDDEN_MODELS) expect(entry).toMatchObject({ visibility: 'hide', context_window: expect.any(Number), input_modalities: expect.any(Array), supported_reasoning_levels: expect.any(Array), supported_in_api: expect.any(Boolean) });
+    expect(PLAN_HIDDEN_MODELS.filter((entry) => (entry as { supported_in_api: boolean }).supported_in_api === false)).toHaveLength(1);
   });
 });
