@@ -18,6 +18,7 @@ import {
   typedModelText,
 } from '@momonga/protocol';
 import type {
+  ReasoningEffort,
   AdapterRequest,
   AdapterTarget,
   Capabilities,
@@ -111,6 +112,7 @@ export type Router = {
   displayOf(model: string): string;
   start(): string | null;
   roles(): MomongaModelRoles;
+  effortOf(model: string): ReasoningEffort | undefined;
   resolveRequestModel(text: string, exact: boolean): string;
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
   roomRefusalOf(model: string, members: readonly TargetRuntime[]): Promise<GatewayError | undefined>;
@@ -483,6 +485,7 @@ export const createRouter = (options: RouterOptions): Router => {
 
   const start = config.models.start ?? views[0]?.canon ?? null;
   const roles = config.models.roles ?? {};
+  const efforts = new Map(Object.entries(config.models.efforts ?? {}));
 
   return {
     target: (name) => targets.get(name),
@@ -493,6 +496,7 @@ export const createRouter = (options: RouterOptions): Router => {
     displayOf,
     start: () => start,
     roles: () => roles,
+    effortOf: (model) => efforts.get(model),
     resolveRequestModel: (text, exact) => resolveRequestModel(text, exact, views).canon,
     capabilitiesOf,
     roomRefusalOf,

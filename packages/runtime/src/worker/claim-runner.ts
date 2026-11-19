@@ -66,8 +66,8 @@ const LIVE_RUN_STATUSES = RUN_STATUSES.filter((status) => !TERMINAL_STATUSES.som
 const DEFAULT_CANCEL_POLL_MS = 250;
 const TOOLS_CHANGED_NOTICE = 'The available tools changed since this run started; the run continues with the current tool set.';
 
-const sessionEffortPin = (session: Session): { effort?: ReasoningEffort } => {
-  if (session.effort === null) return {};
+const effortPinOf = (session: Session, startsWith: ReasoningEffort | undefined): { effort?: ReasoningEffort } => {
+  if (session.effort === null) return startsWith === undefined ? {} : { effort: startsWith };
   if (!isReasoningEffort(session.effort)) throw new Error(`the reasoning effort of session ${session.id} was written by a newer build`);
   return { effort: session.effort };
 };
@@ -451,7 +451,7 @@ const drive = async (
     pinned === undefined
       ? {
           model: session.model,
-          ...sessionEffortPin(session),
+          ...effortPinOf(session, listing.effort),
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
           capabilities,

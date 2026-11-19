@@ -19,7 +19,7 @@ const agentsPortOf = (env: Env, models: readonly string[] = ['fm']): AgentsPort 
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
     settings: { trusted: async () => env.settings.trustedValue, approvedProjectAgents: async () => ({ has: () => true }) },
-    runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(models) }),
+    runs: createChildRuns({ store: env.store, listing: async () => ({ models: [], views: fakeViewsOf(models) }) }),
   });
 
 const writeAgent = (env: Env, name: string, frontmatter = '', body = 'You review code.'): void => {

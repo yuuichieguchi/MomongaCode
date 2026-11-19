@@ -12,6 +12,7 @@ import type {
   ItemField,
   ModelView,
   MomongaModelRoles,
+  ReasoningEffort,
   StreamEvent,
 } from '@momonga/protocol';
 import { quoteChain } from '@momonga/observability';
@@ -167,6 +168,7 @@ export type FakeGateway = GatewayPort & {
   unlisted: Set<string>;
   start: string | null;
   roles: MomongaModelRoles;
+  effortsByModel: Record<string, ReasoningEffort>;
   counterOf(target: string): string;
   rewriteCallIds: boolean;
   issuedCallIds(scriptId: string): string[];
@@ -252,6 +254,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         ...(gateway.memberFacts[target] ?? { adapter: FAKE_ADAPTER, upstream: target, answers: 'model' as const }),
         capabilities: { ...(gateway.capabilitiesByTarget.get(target) ?? capabilitiesOfModel) },
       })),
+      ...(gateway.effortsByModel[model] === undefined ? {} : { effort: gateway.effortsByModel[model] }),
     };
   };
 
@@ -363,6 +366,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     unlisted: new Set(),
     start: null,
     roles: {},
+    effortsByModel: {},
     counterOf: (target) => gateway.countersByTarget.get(target) ?? fakeCounterOf(target),
     rewriteCallIds: true,
 

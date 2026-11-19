@@ -54,6 +54,7 @@ describe('the fields the edit flows offer (4.9.2)', () => {
       'Schema dialect': 'text',
       'Token count error': 'number',
       Reasoning: 'variant',
+      'Reasoning effort': 'choice',
       'Prompt cache': 'variant',
       Sampling: 'variant',
     });
@@ -102,7 +103,7 @@ describe('the fields the edit flows offer (4.9.2)', () => {
     expect(labelsOf(serverFieldRows(CONNECTIONS.chat))).not.toContain('API version');
     expect(labelsOf(serverFieldRows(CONNECTIONS.plan))).not.toContain('API');
     expect(labelsOf(serverFieldRows(CONNECTIONS.managed))).toEqual(['Server program', 'Program file', 'Start wait', 'Billing', 'Who answers', 'Idempotency key header', 'Concurrent requests', 'Wait for a free slot']);
-    expect(labelsOf(modelFieldRows(CONNECTIONS.managed))).toEqual(['Concurrent requests', 'Wait for a free slot', 'Tool calling', 'Context window', 'Output limit', 'Output limit field']);
+    expect(labelsOf(modelFieldRows(CONNECTIONS.managed))).toEqual(['Concurrent requests', 'Wait for a free slot', 'Tool calling', 'Context window', 'Output limit', 'Reasoning effort', 'Output limit field']);
   });
 
   it('the labels are the label column of the table, in its order', () => {
@@ -127,6 +128,7 @@ describe('the fields the edit flows offer (4.9.2)', () => {
       'Schema dialect',
       'Token count error',
       'Reasoning',
+      'Reasoning effort',
       'Prompt cache',
       'Sampling',
       'Output limit field',

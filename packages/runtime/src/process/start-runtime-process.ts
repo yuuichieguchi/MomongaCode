@@ -669,9 +669,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         settings: composition.settings,
         runs: createChildRuns({
           store,
-          modelViews: async () => {
+          listing: async () => {
             try {
-              return (await gatewayClient.listing({ signal: lifetime.signal })).views;
+              return await gatewayClient.listing({ signal: lifetime.signal });
             } catch (error) {
               if ((await retireDecisionOf(error, rolePort)) === 'retire-yield') throw new RetiringYield();
               throw error;

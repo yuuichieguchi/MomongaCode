@@ -165,6 +165,18 @@ describe('the Agent tool', () => {
     expect(requests).toEqual([{ parent: 'run-1', call: 'call-1', agent: 'r', prompt: 'p' }]);
   });
 
+  it('accepts an effort level and passes it to the child it starts, and refuses a word that is not a level', async () => {
+    const efforts: unknown[] = [];
+    const tool = await toolWith(async (request) => {
+      efforts.push(request.effort);
+      return { state: 'running', runId: 'child', sessionId: 'cs' };
+    });
+    expect(tool.inputSchema).toMatchObject({ properties: { effort: { enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] } } });
+    await tool.execute({ ...input, effort: 'high' }, context, undefined);
+    await tool.execute(input, context, undefined);
+    expect(efforts).toEqual(['high', undefined]);
+  });
+
   type Finished = Extract<ChildRunOutcome, { state: 'finished' }>;
   const finished = (status: Finished['status'], extra: Partial<Finished> = {}): ChildRunOutcome => ({
     state: 'finished',

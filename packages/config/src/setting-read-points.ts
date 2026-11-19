@@ -4,7 +4,6 @@ export type SettingReadPoint = (typeof SETTING_READ_POINT_KINDS)[number];
 
 export const SETTING_READ_POINTS: Readonly<Record<string, SettingReadPoint>> = {
   models: 'operation',
-  'models.effort': 'start',
   autoMode: 'operation',
   pricing: 'operation',
   sandbox: 'operation',

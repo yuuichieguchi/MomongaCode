@@ -1,13 +1,14 @@
 import { ChildRunError, pinOf } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
-import { TERMINAL_STATUSES, assistantTextOf, displayMapOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
-import type { InputItem, ModelViews, RunState } from '@momonga/protocol';
+import { TERMINAL_STATUSES, acceptedReasoningEfforts, assistantTextOf, displayMapOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import type { InputItem, ModelViews, ReasoningCapability, ReasoningEffort, RunState } from '@momonga/protocol';
 import type { Run, RuntimeStore } from '@momonga/store';
+import type { GatewayListing, ListedGatewayModel } from '../gateway-client.ts';
 import { parentPinsOf } from '../worker/pins.ts';
 
 export type ChildRunsOptions = {
   store: Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'finalTextOf' | 'readRunEventsOfTypes' | 'journalFacts'>;
-  modelViews(): Promise<ModelViews>;
+  listing(): Promise<Pick<GatewayListing, 'models' | 'views'>>;
 };
 
 type TerminalStatus = Extract<ChildRunOutcome, { state: 'finished' }>['status'];
@@ -39,7 +40,23 @@ const agentModelOf = (agentName: string, text: string, views: ModelViews): strin
   throw new ChildRunError(`Subagent ${agentName} asks for the model "${text}", which is not configured. Configured models: ${listOf(views)}`);
 };
 
-export const createChildRuns = ({ store, modelViews }: ChildRunsOptions): ChildRuns => {
+const declaredLevelsOf = (listed: ListedGatewayModel | undefined): readonly ReasoningEffort[] | undefined => {
+  if (listed === undefined || typeof listed.capabilities['contextWindow'] !== 'number') return undefined;
+  const reasoning = listed.capabilities['reasoning'] as ReasoningCapability | undefined;
+  if (reasoning === undefined) return [];
+  const accepted = acceptedReasoningEfforts(reasoning);
+  return accepted.some((level) => level !== 'none') ? accepted : [];
+};
+
+const requestedEffortOf = (agentName: string, requested: ReasoningEffort, model: string, listing: Pick<GatewayListing, 'models' | 'views'>): ReasoningEffort => {
+  const accepted = declaredLevelsOf(listing.models.find((listed) => listed.id === model));
+  if (accepted === undefined || accepted.includes(requested)) return requested;
+  const shown = displayMapOf(listing.views).get(model) ?? model;
+  if (accepted.length === 0) throw new ChildRunError(`Subagent ${agentName} cannot run at effort ${requested}: its model ${shown} declares no reasoning control; call Agent again without effort`);
+  throw new ChildRunError(`Subagent ${agentName} cannot run at effort ${requested}: its model ${shown} accepts ${accepted.join(', ')}; call Agent again with one of them`);
+};
+
+export const createChildRuns = ({ store, listing }: ChildRunsOptions): ChildRuns => {
   const outcomeOf = async (run: Run): Promise<ChildRunOutcome> => {
     if (!isTerminalStatus(run.status)) return { state: 'running', runId: run.id, sessionId: run.sessionId };
     return {
@@ -60,13 +77,16 @@ export const createChildRuns = ({ store, modelViews }: ChildRunsOptions): ChildR
       if (run === undefined) throw new Error(`unknown child run ${runId}`);
       return outcomeOf(run);
     },
-    spawn: async ({ parentRunId, parentCallId, agent, prompt }) => {
+    spawn: async ({ parentRunId, parentCallId, agent, prompt, effort: requested }) => {
       const known = store.listChildRuns(parentRunId).find((child) => child.parentCallId === parentCallId);
       if (known !== undefined) return outcomeOf(known);
       const parentPins = parentPinsOf(store, parentRunId);
-      const model = agent.model === undefined ? parentPins.model : agentModelOf(agent.name, agent.model, await modelViews());
+      let listed: Promise<Pick<GatewayListing, 'models' | 'views'>> | undefined;
+      const listedNow = (): Promise<Pick<GatewayListing, 'models' | 'views'>> => (listed ??= listing());
+      const model = agent.model === undefined ? parentPins.model : agentModelOf(agent.name, agent.model, (await listedNow()).views);
       const delegated = parentPins.delegation;
-      const effort = agent.effort ?? parentPins.effort;
+      const inherited = model === parentPins.model ? parentPins.effort : undefined;
+      const effort = requested === undefined ? (agent.effort ?? inherited) : requestedEffortOf(agent.name, requested, model, await listedNow());
       const created = await store.createChildRun({
         parentRunId,
         parentCallId,

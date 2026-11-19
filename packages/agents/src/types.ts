@@ -44,7 +44,7 @@ export type ChildRunOutcome =
       report?: RunReport;
     };
 
-export type ChildRunRequest = { parentRunId: string; parentCallId: string; agent: AgentDefinition; prompt: string };
+export type ChildRunRequest = { parentRunId: string; parentCallId: string; agent: AgentDefinition; prompt: string; effort?: ReasoningEffort };
 
 export type ChildRunSpawner = { spawn(request: ChildRunRequest): Promise<ChildRunOutcome> };
 

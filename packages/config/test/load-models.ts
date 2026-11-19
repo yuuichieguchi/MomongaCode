@@ -10,6 +10,8 @@ export type LoadedModels = {
   views: readonly { canon: string; provider: string; ownName: string; defaultTag?: string }[];
   chains: Chains;
   start: string | undefined;
+  effort?: string;
+  efforts: ReadonlyMap<string, string>;
   fallback: readonly string[];
   roles: Record<string, string>;
   billingChanges: readonly { from: string; to: string; model?: string }[];

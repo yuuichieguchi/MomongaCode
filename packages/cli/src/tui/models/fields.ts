@@ -41,6 +41,7 @@ const ENTRY_ORDER = [
   'capabilities.schemaDialect',
   'capabilities.tokenErrorRatio',
   'capabilities.reasoning',
+  'effort',
   'capabilities.promptCache',
   'capabilities.sampling',
   'capabilities.outputBoundField',

@@ -1,11 +1,12 @@
-import type { RunReport, ToolFile } from '@momonga/protocol';
+import { REASONING_EFFORTS } from '@momonga/protocol';
+import type { ReasoningEffort, RunReport, ToolFile } from '@momonga/protocol';
 import { defineTool, ToolExecutionError } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { AGENT_TOOL_NAME, SPAWN_TOOL_TIMEOUT_MS } from './constants.ts';
 import { ChildRunError } from './types.ts';
 import type { AgentDefinition, ChildRunOutcome, ChildRunSpawner } from './types.ts';
 
-type AgentInput = { description: string; prompt: string; subagent_type: string };
+type AgentInput = { description: string; prompt: string; subagent_type: string; effort?: ReasoningEffort };
 
 const oneLine = (value: string): string => value.replace(/\s+/g, ' ');
 
@@ -64,7 +65,7 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
       ...agents.map((agent) => `- ${agent.name}: ${oneLine(agent.description)}`),
     ].join('\n'),
     conciseDescription: `Delegates a task to a subagent that works in its own context and returns its final message. Put everything it needs in prompt. Subagents: ${agents.map((agent) => agent.name).join(', ')}`,
-    conciseParameterDescriptions: { description: 'Short task summary', prompt: 'Task for the subagent', subagent_type: 'Subagent to use' },
+    conciseParameterDescriptions: { description: 'Short task summary', prompt: 'Task for the subagent', subagent_type: 'Subagent to use', effort: 'Reasoning effort of the subagent' },
     kind: 'other',
     sideEffect: 'read_only',
     inputSchema: {
@@ -73,6 +74,11 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
         description: { type: 'string', minLength: 1, description: 'A short description of the task' },
         prompt: { type: 'string', minLength: 1, description: 'The task for the subagent' },
         subagent_type: { type: 'string', enum: agents.map((agent) => agent.name), description: 'The subagent to use' },
+        effort: {
+          type: 'string',
+          enum: [...REASONING_EFFORTS],
+          description: 'The reasoning effort the subagent runs at; omit it to use the effort of the subagent definition, else of this run when the subagent runs on the same model, else the effort its model starts with',
+        },
       },
       required: ['description', 'prompt', 'subagent_type'],
       additionalProperties: false,
@@ -85,7 +91,7 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
       if (agent === undefined) throw new ToolExecutionError(`Unknown subagent "${input.subagent_type}"`);
       let outcome: ChildRunOutcome;
       try {
-        outcome = await runs.spawn({ parentRunId: ctx.runId, parentCallId: ctx.callId, agent, prompt: input.prompt });
+        outcome = await runs.spawn({ parentRunId: ctx.runId, parentCallId: ctx.callId, agent, prompt: input.prompt, ...(input.effort === undefined ? {} : { effort: input.effort }) });
       } catch (error) {
         if (error instanceof ChildRunError) throw new ToolExecutionError(error.message);
         throw error;

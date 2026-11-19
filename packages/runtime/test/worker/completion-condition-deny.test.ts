@@ -18,7 +18,7 @@ const workerOf = (env: Env) =>
       home: env.home,
       fileSystem: createNodeSkillFileSystem(),
       settings: { trusted: async () => env.settings.trustedValue, approvedProjectAgents: async () => ({ has: () => true }) },
-      runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
+      runs: createChildRuns({ store: env.store, listing: async () => ({ models: [], views: fakeViewsOf(['fm']) }) }),
     }),
     tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform, killGraceMs: 200 })) },
   });

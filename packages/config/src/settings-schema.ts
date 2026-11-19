@@ -133,7 +133,7 @@ const CONNECTION_COMMON_PROPERTIES = { provider: PROVIDER_SCHEMA, answers: ANSWE
 const entriesOf = (properties: object, required: readonly string[]) =>
   ({
     type: 'array',
-    items: { type: 'object', properties: { id: MODEL_ID_SCHEMA, ...properties, ...SERVING_PROPERTIES }, required: ['id', ...required], additionalProperties: false },
+    items: { type: 'object', properties: { id: MODEL_ID_SCHEMA, ...properties, ...SERVING_PROPERTIES, effort: { type: 'string', enum: [...REASONING_EFFORTS] } }, required: ['id', ...required], additionalProperties: false },
   }) as const;
 
 const MANAGED_CONNECTION_SCHEMA = {

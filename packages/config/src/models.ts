@@ -4,6 +4,7 @@ import type { PathAsking } from '@momonga/foundation';
 import {
   DEFAULT_ANTHROPIC_API_VERSION,
   SERVER_KINDS,
+  acceptedReasoningEfforts,
   anthropicVersionSamplingBound,
   canonOf,
   displayMapOf,
@@ -13,7 +14,7 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
-import type { AnthropicApiVersion, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningCapability, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { ConfigError, toConfigError } from './config-error.ts';
 import { chainRoomVerdict, roomNumbersText } from './chain-room.ts';
 import type { ChainMember } from './chain-room.ts';
@@ -76,6 +77,7 @@ export type ResolvedModels = {
   chains: ReadonlyMap<string, readonly string[]>;
   start: string | undefined;
   effort?: ReasoningEffort;
+  efforts: ReadonlyMap<string, ReasoningEffort>;
   fallback: readonly string[];
   roles: ModelRoles;
   classifier?: string;
@@ -396,8 +398,24 @@ const checkEntryCount = (connection: ModelConnection, where: string): void => {
 
 const flatTargetOf = (connection: ModelConnection, index: number, ownName: string): ModelTarget => {
   const { models, provider: _provider, ...shared } = connection;
-  const { id: _id, ...entry } = (models ?? [])[index] as { id: string };
+  const { id: _id, effort: _effort, ...entry } = (models ?? [])[index] as { id: string; effort?: ReasoningEffort };
   return { ...shared, ...entry, model: ownName } as ModelTarget;
+};
+
+const savedEffortOf = (connection: ModelConnection, index: number): ReasoningEffort | undefined => ((connection.models ?? [])[index] as { effort?: ReasoningEffort } | undefined)?.effort;
+
+const declaredReasoningOf = (target: ResolvedModelTarget): { reasoning: ReasoningCapability } | 'none' | 'unknown' => {
+  const declared = (target.capabilities ?? {}) as { reasoning?: ReasoningCapability };
+  if (declared.reasoning !== undefined) return { reasoning: declared.reasoning };
+  return target.adapter === 'managed' || 'plan' in target ? 'unknown' : 'none';
+};
+
+const checkSavedEffort = (target: ResolvedModelTarget, effort: ReasoningEffort, where: string): void => {
+  const declared = declaredReasoningOf(target);
+  if (declared === 'unknown') return;
+  if (declared === 'none') throw new ConfigError(`${where}: effort ${effort} is set, but the model declares no capabilities.reasoning, so no effort can be sent to it`);
+  const accepted = acceptedReasoningEfforts(declared.reasoning);
+  if (!accepted.includes(effort)) throw new ConfigError(`${where}: effort ${effort} is not a level capabilities.reasoning accepts; accepted: ${accepted.join(', ')}`);
 };
 
 const checkDuplicateIds = (connection: ModelConnection, ownNames: readonly string[], defaultTag: string | undefined, source: string, key: string): void => {
@@ -445,7 +463,7 @@ const resolvedConnectionOf = (connection: ModelConnection, provider: string, def
   ...(first.adapter === 'managed' ? { server: first.server, binary: first.binary } : {}),
 });
 
-type Configured = { connections: ResolvedConnection[]; models: Map<string, ResolvedModel>; views: ModelView[] };
+type Configured = { connections: ResolvedConnection[]; models: Map<string, ResolvedModel>; views: ModelView[]; efforts: Map<string, ReasoningEffort> };
 
 const resolveConnections = (connections: readonly ModelConnection[], source: string, kinds: ServerKinds, context: ResolveContext): Configured => {
   const wheres = connections.map((_connection, index) => `${source}: models.connections[${index}]`);
@@ -467,14 +485,19 @@ const resolveConnections = (connections: readonly ModelConnection[], source: str
   connections.forEach((connection, index) => checkProviderName(connection, wheres[index] as string, kinds));
   const providers = connections.map((connection) => providerNameOf(connection, kinds));
   checkDistinctProviders(providers, source);
-  const configured: Configured = { connections: [], models: new Map(), views: [] };
+  const configured: Configured = { connections: [], models: new Map(), views: [], efforts: new Map() };
   targets.forEach((entries, index) => {
     const provider = providers[index] as string;
     const defaultTag = tags[index];
     const resolved = entries.map(({ flat, place }) => resolveTarget(flat, provider, place, context));
     configured.connections.push(resolvedConnectionOf(connections[index] as ModelConnection, provider, defaultTag, resolved[0] as ResolvedModelTarget));
-    resolved.forEach((target) => {
+    resolved.forEach((target, entryIndex) => {
       const view: ModelView = { canon: canonOf(provider, target.model), provider, ownName: target.model, ...(defaultTag === undefined ? {} : { defaultTag }) };
+      const saved = savedEffortOf(connections[index] as ModelConnection, entryIndex);
+      if (saved !== undefined) {
+        checkSavedEffort(target, saved, (entries[entryIndex] as { place: { entry: string } }).place.entry);
+        configured.efforts.set(view.canon, saved);
+      }
       configured.views.push(view);
       configured.models.set(view.canon, { ...target, ...view, providerWritten: (connections[index] as ModelConnection).provider !== undefined });
     });
@@ -584,6 +607,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, warn
     chains,
     start: references.start ?? configured.views[0]?.canon,
     ...(models?.effort === undefined ? {} : { effort: models.effort }),
+    efforts: configured.efforts,
     fallback: references.fallback,
     roles: references.roles,
     ...(references.classifier === undefined ? {} : { classifier: references.classifier }),

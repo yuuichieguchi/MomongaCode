@@ -41,8 +41,8 @@ const SESSION_EVENT = { id: 4, sessionId: 'sess-1', createdAt: 1_800_000_000_000
 const UNAVAILABLE = { state: 'unavailable', status: 412, type: 'invalid_request', message: 'm', param: 'model' };
 
 describe('the models listing of the gateway names every model by its canonical reference', () => {
-  it('an entry holds id, provider, ownName, an optional defaultTag, billing, capabilities and its chain', () => {
-    expectTypeOf<keyof MomongaModelEntry>().toEqualTypeOf<'id' | 'object' | 'provider' | 'ownName' | 'defaultTag' | 'billing' | 'capabilities' | 'state' | 'chain'>();
+  it('an entry holds id, provider, ownName, an optional defaultTag, billing, capabilities, its chain and the effort it starts with', () => {
+    expectTypeOf<keyof MomongaModelEntry>().toEqualTypeOf<'id' | 'object' | 'provider' | 'ownName' | 'defaultTag' | 'billing' | 'capabilities' | 'state' | 'chain' | 'effort'>();
     expectTypeOf<MomongaModelEntry['provider']>().toEqualTypeOf<string>();
     expectTypeOf<MomongaModelEntry['ownName']>().toEqualTypeOf<string>();
     expectTypeOf<MomongaModelEntry['defaultTag']>().toEqualTypeOf<string | undefined>();

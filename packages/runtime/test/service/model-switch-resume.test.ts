@@ -42,7 +42,7 @@ describe('a model switch through PATCH while a run waits for approval', () => {
         home: env.layout.home,
         fileSystem: createNodeSkillFileSystem(),
         settings: { trusted: async () => true, approvedProjectAgents: async () => ({ has: () => true }) },
-        runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf([session.model, OTHER_MODEL_ID]) }),
+        runs: createChildRuns({ store: env.store, listing: async () => ({ models: [], views: fakeViewsOf([session.model, OTHER_MODEL_ID]) }) }),
       });
     const session = await env.createSession();
     const target = path.join(env.layout.projectReal, 'out.txt');

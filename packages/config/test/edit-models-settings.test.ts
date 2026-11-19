@@ -279,6 +279,7 @@ const FIELD_FAMILIES: readonly (readonly FieldChange[])[] = [
   [[['capabilities', 'schemaDialect'], 'strict-closed']],
   [[['capabilities', 'tokenErrorRatio'], 0.25]],
   [[['capabilities', 'reasoning'], { control: 'reasoning_effort', lowest: 'low' }]],
+  [[['effort'], 'high']],
   [[['capabilities', 'promptCache'], { kind: 'automatic' }]],
   [[['capabilities', 'sampling'], { accepts: 'without_thinking', topP: { min: 0.1, max: 1 } }]],
   [[['capabilities', 'outputBoundField'], 'max_completion_tokens']],
@@ -463,6 +464,7 @@ describe('what the writer never does', () => {
     ['setClassifier cleared', op('setClassifier', { model: null }), "The auto-mode classifier is now the session's model."],
     ['setModelField', op('setModelField', { model: DEVSTRAL_MODEL, path: ['capabilities', 'contextWindow'], value: 65536 }), 'Set Context window of devstral-small-2 to 65536.'],
     ['setModelField cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['toolCalling'], value: undefined }), 'Cleared Tool calling of gemma-3-4b.'],
+    ['setModelField effort cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['effort'], value: undefined }), 'Cleared Reasoning effort of gemma-3-4b.'],
     ['setConnectionField', op('setConnectionField', { provider: 'lmstudio', path: ['maxConcurrency'], value: 2 }), 'Set Concurrent requests of lmstudio to 2.'],
     ['setProvider', op('setProvider', { provider: 'lmstudio', name: 'studio' }), 'Renamed lmstudio to studio.'],
     ['setProvider cleared', op('setProvider', { provider: 'lmstudio', name: null }), 'lmstudio is now named srv-127.0.0.1-1234.'],
@@ -645,7 +647,7 @@ describe('the plan is judged with the plan profiles of the loader (P-159)', () =
 });
 
 describe('a field writer changes only the fields of its table, and a rewrite keeps every key it did not change', () => {
-  const MODEL_FIELDS_SENTENCE = 'is not a field of a model that can be set. The fields are: id, toolCalling, outputBoundField, maxConcurrency, admissionTimeoutMs, capabilities.contextWindow,';
+  const MODEL_FIELDS_SENTENCE = 'is not a field of a model that can be set. The fields are: id, effort, toolCalling, outputBoundField, maxConcurrency, admissionTimeoutMs, capabilities.contextWindow,';
   const SERVER_FIELDS_SENTENCE = 'is not a field of a server that can be set. The fields are: adapter, baseUrl, socketPath, apiKeyEnv, apiKeySecret, plan.account, server, binary, readyTimeoutMs, billing, apiVersion, answers, idempotencyKeyHeader, maxConcurrency, admissionTimeoutMs.';
 
   it('setting the id of a model that is referred to renames it and rewrites every reference in the same write', async () => {

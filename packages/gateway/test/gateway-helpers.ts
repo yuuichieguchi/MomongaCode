@@ -94,6 +94,7 @@ export type ConfigOverrides = {
   billingChanges?: ReadonlyArray<{ from: TargetBilling; to: TargetBilling; model?: string }>;
   start?: string;
   roles?: MomongaModelRoles;
+  efforts?: GatewayConfig['models']['efforts'];
   retry?: Partial<GatewayConfig['retry']>;
   breaker?: Partial<GatewayConfig['breaker']>;
   limits?: Partial<GatewayConfig['limits']>;
@@ -136,6 +137,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
       ...(overrides.billingChanges === undefined ? {} : { billingChanges: overrides.billingChanges.map((change) => ({ ...change })) }),
       ...(overrides.start === undefined ? {} : { start: overrides.start }),
       ...(overrides.roles === undefined ? {} : { roles: overrides.roles }),
+      ...(overrides.efforts === undefined ? {} : { efforts: overrides.efforts }),
     },
     retry: { maxAttempts: 3, totalWaitMs: 84_000, baseMs: 100, maxMs: 10_000, ...overrides.retry },
     breaker: { failureThreshold: 5, openMs: 30_000, ...overrides.breaker },

@@ -65,7 +65,7 @@ describe('the request a child call is judged against', () => {
         home: env.home,
         fileSystem: createNodeSkillFileSystem(),
         settings: { trusted: async () => env.settings.trustedValue, approvedProjectAgents: async () => ({ has: () => true }) },
-        runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
+        runs: createChildRuns({ store: env.store, listing: async () => ({ models: [], views: fakeViewsOf(['fm']) }) }),
       }),
     });
     for (let round = 0; round < 4; round += 1) await env.runOnce(worker);

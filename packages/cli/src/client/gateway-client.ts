@@ -1,7 +1,7 @@
 import { GENERATION_RETIRED_CODE, HOST_READ_BOUND_MS, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver, UdsClient } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
-import { JSON_MODES, MODEL_ENTRY_STATES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import { isReasoningEffort, JSON_MODES, MODEL_ENTRY_STATES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   TraceContentPage,
   Capabilities,
@@ -162,6 +162,7 @@ const ENTRY_FIELDS: readonly (readonly [string, (value: unknown) => boolean])[] 
   ['capabilities', isEntryCapabilities],
   ['state', (value) => oneOf(value, MODEL_ENTRY_STATES)],
   ['chain', (value) => Array.isArray(value) && value.every(isChainMember)],
+  ['effort', (value) => isOptional(value, isReasoningEffort)],
 ];
 
 const unreadableFieldOf = (entry: Record<string, unknown>): string | undefined => ENTRY_FIELDS.find(([field, holds]) => !holds(entry[field]))?.[0];

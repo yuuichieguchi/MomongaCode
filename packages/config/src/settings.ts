@@ -168,7 +168,7 @@ export type ModelTarget = ManagedTarget | ChatCompletionsTarget | OpenResponsesT
 
 type ConnectionKeys = 'adapter' | 'answers' | 'idempotencyKeyHeader' | 'billing' | 'baseUrl' | 'socketPath' | 'apiKeyEnv' | 'apiKeySecret' | 'plan' | 'apiVersion' | 'server' | 'binary' | 'readyTimeoutMs';
 
-type EntryOf<Target extends ModelTarget> = Target extends ModelTarget ? { id: string } & Omit<Target, ConnectionKeys | 'model'> : never;
+type EntryOf<Target extends ModelTarget> = Target extends ModelTarget ? { id: string; effort?: ReasoningEffort } & Omit<Target, ConnectionKeys | 'model'> : never;
 
 type ConnectionOf<Target extends ModelTarget> = Target extends ModelTarget
   ? Pick<Target, Extract<keyof Target, ConnectionKeys>> & { provider?: string; maxConcurrency?: number; admissionTimeoutMs?: number; models?: EntryOf<Target>[] }

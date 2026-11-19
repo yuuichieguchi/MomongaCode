@@ -141,3 +141,16 @@ describe('rule M: a managed server that lists another id than its entry is never
     });
   });
 });
+
+describe('the effort a model starts with is listed with its entry', () => {
+  it('lists the level the settings give a model, and nothing for a model with none', async () => {
+    const harness = await startGateway({
+      adapters: { [FIRST]: listed(CAPABILITIES), [SECOND]: listed(CAPABILITIES) },
+      config: { targets: { [FIRST]: {}, [SECOND]: {} }, chains: {}, efforts: { [FIRST]: 'high' } },
+    });
+    registerCleanup(() => harness.gateway.close());
+    const entries = (await getJson(harness.client, '/v1/momonga/models')).body.data as Array<{ id: string; effort?: string }>;
+    expect(entries.find((entry) => entry.id === FIRST)?.effort).toBe('high');
+    expect(entries.find((entry) => entry.id === SECOND)).not.toHaveProperty('effort');
+  });
+});

@@ -4,7 +4,7 @@ import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
 import type { Redactor } from './core/redaction.ts';
-import type { BilledCallsCursorView, BilledCallsPageView, MomongaModelRoles, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, RunSpansPage, TraceContentPage } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, MomongaModelRoles, ReasoningEffort, PlanAccountRef, ProviderAdapter, TargetAnswers, TargetBilling, RunSpansPage, TraceContentPage } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
@@ -30,6 +30,7 @@ export type GatewayConfig = {
     billingChanges?: readonly GatewayBillingChange[];
     start?: string;
     roles?: MomongaModelRoles;
+    efforts?: Record<string, ReasoningEffort>;
   };
   retry: { maxAttempts: number; totalWaitMs: number; baseMs: number; maxMs: number };
   breaker: { failureThreshold: number; openMs: number };

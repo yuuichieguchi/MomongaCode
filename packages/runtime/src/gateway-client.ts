@@ -1,6 +1,7 @@
 import { GENERATION_RETIRED_CODE, JsonDepthError, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
 import {
+  isReasoningEffort,
   COMPACTION_RESULT_EVENT,
   DEFERRED_HEADER,
   ERROR_TYPES,
@@ -20,6 +21,7 @@ import {
 } from '@momonga/protocol';
 import type {
   Measuring,
+  ReasoningEffort,
   BilledCallsCursorView,
   BilledCallsPageView,
   Capabilities,
@@ -117,7 +119,7 @@ export type ChainMemberBilling = { billing: string; provider?: string; upstream:
 
 export type ListedChainMember = { model: string; counter: string; adapter: string; answers: TargetAnswers; upstream: string; capabilities: Record<string, unknown>; billing?: string; provider?: string };
 
-export type ListedGatewayModel = ModelView & { id: string; capabilities: Record<string, unknown>; chain: ListedChainMember[] };
+export type ListedGatewayModel = ModelView & { id: string; capabilities: Record<string, unknown>; chain: ListedChainMember[]; effort?: ReasoningEffort };
 
 export type GatewayListing = { models: ListedGatewayModel[]; views: ModelViews; start: string | null; roles: MomongaModelRoles };
 
@@ -130,6 +132,7 @@ export type GatewayModel = {
   targets: Record<string, TargetFacts>;
   roles: MomongaModelRoles;
   views: ModelViews;
+  effort?: ReasoningEffort;
 };
 
 export type GatewayClient = GatewayPort & {
@@ -306,6 +309,8 @@ const listedModelOf = (entry: unknown): ListedGatewayModel => {
   if ([entry['capabilities'], ...chain.map((member) => member.capabilities)].some(holdsMalformedUnavailable)) {
     throw invalidResponse('the model list holds a malformed unavailable entry');
   }
+  const effort = entry['effort'];
+  if (effort !== undefined && !isReasoningEffort(effort)) throw invalidResponse('the model list holds an entry with a malformed effort');
   return {
     id: entry['id'],
     canon: entry['id'],
@@ -314,6 +319,7 @@ const listedModelOf = (entry: unknown): ListedGatewayModel => {
     ...(defaultTag === undefined ? {} : { defaultTag }),
     capabilities: entry['capabilities'],
     chain,
+    ...(effort === undefined ? {} : { effort }),
   };
 };
 
@@ -385,6 +391,7 @@ export const gatewayModelIn = (listing: GatewayListing, model: string): GatewayM
     targets: Object.fromEntries(found.chain.map((member) => [member.model, { adapter: member.adapter, model: member.upstream, answers: member.answers }])),
     roles: listing.roles,
     views: listing.views,
+    ...(found.effort === undefined ? {} : { effort: found.effort }),
   };
 };
 

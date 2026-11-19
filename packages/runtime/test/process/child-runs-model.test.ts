@@ -35,7 +35,7 @@ const childRunsOver = (parentModel: string) => {
     getRun: () => undefined,
     finalTextOf: async () => '',
   } as unknown as Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'finalTextOf' | 'readRunEventsOfTypes' | 'journalFacts'>;
-  return { created, runs: createChildRuns({ store, modelViews: async () => S2 }) };
+  return { created, runs: createChildRuns({ store, listing: async () => ({ models: [], views: S2 }) }) };
 };
 
 const spawn = (runs: ReturnType<typeof childRunsOver>['runs'], agent: AgentDefinition) => runs.spawn({ parentRunId: 'parent-1', parentCallId: 'call-1', agent, prompt: 'Look at the diff' });

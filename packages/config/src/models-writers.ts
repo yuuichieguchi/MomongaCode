@@ -468,6 +468,7 @@ const CONNECTION_FIELDS: Readonly<Record<string, FieldRow>> = {
 };
 
 const ENTRY_FIELDS: Readonly<Record<string, FieldRow>> = {
+  effort: { label: 'Reasoning effort' },
   toolCalling: { label: 'Tool calling' },
   outputBoundField: { label: 'Output limit field' },
   maxConcurrency: { label: 'Concurrent requests' },
@@ -509,6 +510,7 @@ const TIMEOUT_FIELDS: Readonly<Record<string, FieldRow>> = {
 const CONNECTION_FIELD_KEYS = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'apiKeySecret', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'idempotencyKeyHeader', 'maxConcurrency', 'admissionTimeoutMs'] as const;
 
 const ENTRY_FIELD_KEYS = [
+  'effort',
   'toolCalling',
   'outputBoundField',
   'maxConcurrency',

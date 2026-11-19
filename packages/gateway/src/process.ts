@@ -23,7 +23,7 @@ import {
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
 import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, WORDS, displayMapOf, planAccountRefOf, PLAN_STORE_UNREADABLE_STATE, PLAN_STORE_UNWRITABLE_STATE } from '@momonga/protocol';
-import type { ManagedServerDescription, PlanAccountRef, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
+import type { ManagedServerDescription, PlanAccountRef, ReasoningEffort, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
   JsonDepthError,
@@ -875,12 +875,19 @@ const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<
   };
 };
 
-export const gatewayConfigOf = (resolved: Pick<ResolvedModels, 'models' | 'chains' | 'start' | 'roles' | 'billingChanges'>): UncountedGatewayConfig => ({
+const startEffortsOf = ({ models, effort, efforts }: Pick<ResolvedModels, 'models' | 'effort' | 'efforts'>): Record<string, ReasoningEffort> =>
+  Object.fromEntries([...models.keys()].flatMap((canon) => {
+    const level = efforts.get(canon) ?? effort;
+    return level === undefined ? [] : [[canon, level]];
+  }));
+
+export const gatewayConfigOf = (resolved: Pick<ResolvedModels, 'models' | 'chains' | 'start' | 'roles' | 'billingChanges' | 'effort' | 'efforts'>): UncountedGatewayConfig => ({
   models: {
     billingChanges: resolved.billingChanges,
     chains: Object.fromEntries([...resolved.chains].map(([model, members]) => [model, [...members]])),
     ...(resolved.start === undefined ? {} : { start: resolved.start }),
     roles: resolved.roles,
+    efforts: startEffortsOf(resolved),
     targets: Object.fromEntries(
       [...resolved.models].map(([canon, target]) => [
         canon,

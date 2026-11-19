@@ -1,5 +1,5 @@
 import type { ErrorShape } from './budget-constants.ts';
-import type { Capabilities, ChainCapabilities, HealthResult, ProbingCapabilities, TargetAnswers, TargetBilling, UnavailableCapabilities } from './capabilities.ts';
+import type { Capabilities, ChainCapabilities, HealthResult, ProbingCapabilities, ReasoningEffort, TargetAnswers, TargetBilling, UnavailableCapabilities } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 import type { PlanAccountRef } from './plan-account.ts';
 
@@ -92,6 +92,7 @@ export type MomongaModelEntry = {
   capabilities: ChainCapabilities | ProbingCapabilities | UnavailableCapabilities;
   state: ModelEntryState;
   chain: ChainMemberEntry[];
+  effort?: ReasoningEffort;
 };
 
 export const MODEL_ENTRY_STATES = ['available', 'degraded'] as const;

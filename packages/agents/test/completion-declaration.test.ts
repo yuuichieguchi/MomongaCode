@@ -64,7 +64,7 @@ describe('completion conditions in agent front matter', () => {
     const set = await load({ [`${PROJECT}/.momonga/agents/fixer.md`]: agentFile('fixer', 'conditions:\n  - npm test\n') });
     const tool = set.tool({ spawn: async () => ({ state: 'running', runId: 'r', sessionId: 's' }) });
     const schema = tool.inputSchema as { properties: Record<string, unknown>; additionalProperties: boolean };
-    expect(Object.keys(schema.properties).sort()).toEqual(['description', 'prompt', 'subagent_type']);
+    expect(Object.keys(schema.properties).sort()).toEqual(['description', 'effort', 'prompt', 'subagent_type']);
     expect(schema.additionalProperties).toBe(false);
     expect((set.agents[1] as unknown as MandateHolder).mandate?.completion?.conditions).toHaveLength(1);
   });
