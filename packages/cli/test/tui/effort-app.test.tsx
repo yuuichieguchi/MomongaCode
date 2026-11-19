@@ -196,30 +196,55 @@ describe('/model and the effort', () => {
     app.close();
   });
 
-  it('shows in the picker the effort each model would run at, changes the chosen row with the arrows, and saves a changed level on Enter', async () => {
+  const listBlockOf = (lines: readonly string[], title: string): string => {
+    const shown = lines.map((line) => line.replace(/^│ /, '').replace(/│$/, '').trimEnd());
+    const start = shown.indexOf(title);
+    const end = shown.findIndex((line, index) => index > start && line.includes('esc: go back'));
+    return shown.slice(start, end + 1).join('\n');
+  };
+
+  const outputOf = (app: TerminalApp): string => app.screen().join('\n');
+
+  it('shows no effort on the rows of the model list, and opens the reasoning effort picker for the chosen model after it is applied; Enter saves the level and the model line names it once', async () => {
     const place = freshPlace();
     settingsWith(place, { own: { [OTHER]: 'low' } });
     const app = await opened({ reasoning: TWO_DECLARED, models: [SCRIPTED_MODEL, OTHER], session: { effort: 'high' } }, place);
-    const picker = await app.type(`/model${KEYS.enter}`, shows('change the effort'), 'the picker opens with its hint');
-    expect(picker.some((line) => line.includes('scripted-model') && line.includes('effort: ‹ high ›'))).toBe(true);
-    expect(picker.some((line) => line.includes('other-model') && line.includes('effort: low'))).toBe(true);
-    expect(picker.join('\n')).toContain('left/right: change the effort');
-    await app.type(KEYS.down, (lines) => lines.some((line) => line.includes('other-model') && line.includes('effort: ‹ low ›')), 'the other row is chosen');
-    await app.type(`${KEYS.right}${KEYS.right}`, (lines) => lines.some((line) => line.includes('other-model') && line.includes('effort: ‹ high ›')), 'the level is raised');
-    await app.type(KEYS.enter, shows('effort: high for other-model; saved'), 'the switch saves the level');
-    expect(app.backend.calls).toContain(`model:${OTHER} effort:high`);
+    const list = await app.type(`/model${KEYS.enter}`, shows(MODEL_SETTINGS_ROW), 'the model list opens');
+    expect(list.filter((line) => /\d\. /.test(line)).join('\n')).not.toContain('effort');
+    await app.type(`${KEYS.down}${KEYS.enter}`, shows('Reasoning effort'), 'the effort picker opens');
+    const picker = await app.type('', shows('tab: this session only'), 'the effort picker is drawn');
+    expect(listBlockOf(picker, 'Reasoning effort')).toBe(['Reasoning effort', '› 1. low  in use', '  2. medium', '  3. high', '  4. xhigh', '  up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n'));
+    expect(app.backend.calls).toContain(`model:${OTHER}`);
+    expect(outputOf(app)).not.toContain('model: other-model ·');
+    await app.type(`${KEYS.down}${KEYS.down}${KEYS.enter}`, shows('model: other-model · effort: high;'), 'the level is saved and the model line follows');
+    expect(outputOf(app)).toContain('effort: high for other-model; saved');
+    expect(app.backend.calls).toContain('effort:high');
     expect(savedEffortOf(place, OTHER)).toBe('high');
+    expect(outputOf(app).split('model: other-model ·').length - 1).toBe(1);
     app.close();
   });
 
-  it('writes nothing when the level of the chosen row is not changed', async () => {
+  it('opens nothing more for a model without a reasoning control', async () => {
     const place = freshPlace();
-    settingsWith(place, { own: { [OTHER]: 'low' } });
+    settingsWith(place, {});
+    const app = await opened({ reasoning: DECLARED, models: [SCRIPTED_MODEL, OTHER] }, place);
+    await app.type(`/model${KEYS.enter}`, shows(MODEL_SETTINGS_ROW), 'the model list opens');
+    await app.type(`${KEYS.down}${KEYS.enter}`, shows('model: other-model · effort: not available;'), 'the switch is made');
+    expect(outputOf(app)).not.toContain('Reasoning effort');
+    expect(outputOf(app)).not.toContain('declares no reasoning control');
+    app.close();
+  });
+
+  it('writes the start model on tab, then opens the same effort step', async () => {
+    const place = freshPlace();
+    settingsWith(place, {});
     const app = await opened({ reasoning: TWO_DECLARED, models: [SCRIPTED_MODEL, OTHER] }, place);
-    await app.type(`/model${KEYS.enter}`, shows('Models'), 'the picker opens');
-    await app.type(`${KEYS.down}${KEYS.enter}`, shows('model: other-model · effort: low'), 'the switch is made');
-    expect(app.backend.calls).toContain(`model:${OTHER}`);
-    expect(savedEffortOf(place, OTHER)).toBe('low');
+    await app.type(`/model${KEYS.enter}`, shows(MODEL_SETTINGS_ROW), 'the model list opens');
+    await app.type(`${KEYS.down}${KEYS.tab}`, shows('Reasoning effort'), 'the effort picker opens after the start model is written');
+    expect((stored(place.userFile) as { models: { start?: string } }).models.start).toBe(OTHER);
+    await app.type(`${KEYS.tab}`, shows('model: other-model · effort: medium;'), 'the level is set for the session');
+    expect(outputOf(app)).toContain('effort: medium for other-model; this session only');
+    expect(app.backend.calls).toContain('effort:medium');
     app.close();
   });
 });

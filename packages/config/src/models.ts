@@ -199,6 +199,10 @@ const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;
 const DEFAULT_REMOTE_BILLING: TargetBilling = 'metered';
 const REMOTE_SERVING = { billing: DEFAULT_REMOTE_BILLING, maxConcurrency: DEFAULT_REMOTE_MAX_CONCURRENCY };
 
+const servingDefaultsOf = (adapter: Exclude<AdapterKind, 'managed'>): { billing: TargetBilling; maxConcurrency: number } => (adapter === 'ollama' ? LOCAL_SERVER_DEFAULTS : REMOTE_SERVING);
+
+export const resolvedBillingOf = (adapter: Exclude<AdapterKind, 'managed'>, billing: TargetBilling | undefined): TargetBilling => billing ?? servingDefaultsOf(adapter).billing;
+
 const checkSamplingRange = (capabilities: Pick<TargetCapabilitiesCore, 'sampling'>, where: string): void => {
   const { sampling } = capabilities;
   if (sampling?.accepts !== 'without_thinking') return;
@@ -212,8 +216,8 @@ const resolveRemote = <Declared extends PlanTargetCapabilities>(
   target: RemoteTargetInput<Declared>,
   adapter: Exclude<AdapterKind, 'managed'>,
   { connection, entry: where }: Where,
-  serving: { billing: TargetBilling; maxConcurrency: number } = REMOTE_SERVING,
 ) => {
+  const serving = servingDefaultsOf(adapter);
   const { baseUrl, socketPath } = target;
   const problem = addressProblem(target);
   if (problem !== undefined) throw new ConfigError(`${connection}: ${problem}`);
@@ -231,7 +235,7 @@ const resolveRemote = <Declared extends PlanTargetCapabilities>(
     ...(socketPath === undefined ? {} : { socketPath }),
     ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
     ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
-    billing: target.billing ?? serving.billing,
+    billing: resolvedBillingOf(adapter, target.billing),
     capabilities,
     writtenCapabilities: target.capabilities,
     maxConcurrency,
@@ -335,7 +339,7 @@ const resolveAnthropic = (target: AnthropicTarget, place: Where, warnings: strin
 const resolveOllama = (target: OllamaTarget, where: Where): ResolvedOllamaTarget => ({
   adapter: 'ollama',
   model: target.model,
-  ...resolveRemote({ ...target, capabilities: target.capabilities ?? {} }, 'ollama', where, LOCAL_SERVER_DEFAULTS),
+  ...resolveRemote({ ...target, capabilities: target.capabilities ?? {} }, 'ollama', where),
 });
 
 const checkJsonMode = (target: ModelTarget, where: string): void => {

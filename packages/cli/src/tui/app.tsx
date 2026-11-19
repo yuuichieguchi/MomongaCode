@@ -634,8 +634,7 @@ export function App(props: AppProps) {
     prompts.flow(work).catch(reportError);
   };
 
-  const applyModel = async (chosen: string, effort?: ReasoningEffort): Promise<void> => {
-    const previous = sessionModelRef.current;
+  const switchModel = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {
     const session = await backend.setModel(chosen, effort);
     modelChosen(store);
     sessionModelRef.current = session.model;
@@ -644,12 +643,21 @@ export function App(props: AppProps) {
     setSessionEffort(session.effort);
     unconfiguredModel.current = false;
     await readDisplays();
-    const name = shownModel(session.model);
-    const shown = shownEffort(await backend.models(), session.model, session.effort);
-    const named = shown === undefined ? name : `${name} · ${effortLine(shown, 'short')}`;
-    note(busyRef.current ? `model: ${named}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${named}; applies from the next run`);
     endMeasuring();
     void backend.model().then(showModel, modelUnread);
+    return session.model;
+  };
+
+  const noteModelSwitch = async (model: string, previous: string | undefined): Promise<void> => {
+    const name = shownModel(model);
+    const shown = shownEffort(await backend.models(), model, sessionEffortRef.current);
+    const named = shown === undefined ? name : `${name} · ${effortLine(shown, 'short')}`;
+    note(busyRef.current ? `model: ${named}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${named}; applies from the next run`);
+  };
+
+  const applyModel = async (chosen: string, effort?: ReasoningEffort): Promise<void> => {
+    const previous = sessionModelRef.current;
+    await noteModelSwitch(await switchModel(chosen, effort), previous);
   };
 
   const rememberProfiles = (listed: PlanAccountsResponse): void => {
@@ -663,6 +671,18 @@ export function App(props: AppProps) {
       return;
     }
     await applyModel(chosen, effort);
+  };
+
+  const connectModelThen = async (chosen: string, then: () => Promise<void>): Promise<void> => {
+    const previous = sessionModelRef.current;
+    if (previous === undefined) {
+      await openSession(chosen);
+      await then();
+      return;
+    }
+    const model = await switchModel(chosen, undefined);
+    await then();
+    await noteModelSwitch(model, previous);
   };
 
   const refreshConnection = async (): Promise<void> => {
@@ -735,7 +755,7 @@ export function App(props: AppProps) {
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), connected: connectModel, effort: () => sessionEffortRef.current, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), connected: connectModel, connectedThen: connectModelThen, effort: () => sessionEffortRef.current, setEffort: applyEffort, shownModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();

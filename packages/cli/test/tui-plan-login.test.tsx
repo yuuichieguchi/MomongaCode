@@ -424,7 +424,7 @@ describe('the model picker', () => {
     app.unmount();
   });
 
-  it('lists a catalog model that is not yet a target, tagged with the profile picker label, and choosing it creates the target', async () => {
+  it('lists a catalog model that is not yet a target by its slug and the billing of its profile, and choosing it creates the target', async () => {
     const { app, backend } = await startPlan({
       accounts: [account()],
       catalogs: {
@@ -441,8 +441,9 @@ describe('the model picker', () => {
     await submitLine(app, '/model');
     const picker = await untilFrame(app, 'gpt-5.1');
     const row = picker.split('\n').find((line) => line.includes('gpt-5.1')) ?? '';
-    expect(row).toContain('OpenAI (ChatGPT subscription)');
-    expect(picker).toContain('no context window reported');
+    expect(row).toMatch(/gpt-5\.1 +plan/);
+    expect(row).not.toContain('OpenAI (ChatGPT subscription)');
+    expect(picker).toMatch(/gpt-odd +plan +no context window reported/);
     await choose(app, 'gpt-5.1');
     await eventually(() => routesOf(backend).includes('accounts/chatgpt/targets'), 'the target creation');
     expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });

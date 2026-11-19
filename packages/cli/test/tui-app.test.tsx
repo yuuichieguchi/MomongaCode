@@ -341,9 +341,9 @@ describe('App slash commands', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
-    const picker = await untilFrame(app, (shown) => shown.includes('qwen3.8:27b  ·  metered') && shown.includes('esc: go back'));
-    expect(picker).toContain('scripted-model  ·  metered  ·  current');
-    expect(picker).not.toContain('qwen3.8:27b  ·  metered  ·  current');
+    const picker = await untilFrame(app, (shown) => shown.includes('qwen3.8:27b ') && shown.includes('esc: go back'));
+    expect(picker).toContain('scripted-model (current)  metered');
+    expect(picker).not.toContain('qwen3.8:27b (current)');
     expect(picker).toContain('tab: also use at every start');
     app.unmount();
   });

@@ -4,6 +4,7 @@ import type { MomongaModelEntry, ReasoningEffort } from '@momonga/protocol';
 import { acceptedEffortsOf, declaredReasoning, effortLine, effortRefusalText, sentEffort, shownEffort } from '../effort.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 import type { TuiBackend } from '../backend.ts';
+import type { OverlayPorts } from '../picker.tsx';
 
 export const EFFORT_PICKER_TITLE = 'Reasoning effort';
 export const SESSION_FLAG = '--session';
@@ -25,7 +26,9 @@ export const writeModelEffort = async (context: { readonly backend: Pick<TuiBack
   await context.wait(SAVING_EFFORT, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setModelField', model, path: ['effort'], value: level }], { lock: host.lock(), signal }));
 };
 
-export const applyEffort = async (context: SlashContext, model: string, level: ReasoningEffort, scope: EffortScope): Promise<void> => {
+export type EffortContext = Pick<SlashContext, 'effort' | 'shownModel' | 'setEffort' | 'info' | 'wait'> & { readonly backend: Pick<TuiBackend, 'models' | 'modelsHost'>; readonly overlays: Pick<OverlayPorts, 'choose'> };
+
+export const applyEffort = async (context: EffortContext, model: string, level: ReasoningEffort, scope: EffortScope): Promise<void> => {
   if (scope === 'saved') await writeModelEffort(context, model, level);
   await context.setEffort(level);
   context.info(effortAnswerText(level, context.shownModel(model), scope));
@@ -44,11 +47,13 @@ const typedOf = (args: string): { words: string[]; session: boolean } => {
   return { words: all.filter((word) => word !== SESSION_FLAG), session: all.includes(SESSION_FLAG) };
 };
 
+export const capabilitiesNotKnownText = (modelName: string): string => `the capabilities of ${modelName} are not known yet, so its reasoning efforts are not known; use /effort again when it is ready`;
+
 const levelsOf = (entries: readonly MomongaModelEntry[], model: string, context: SlashContext): ReasoningEffort[] | undefined => {
   const declared = declaredReasoning(entries, model);
   const name = context.shownModel(model);
   if (!declared.known) {
-    context.info(`the capabilities of ${name} are not known yet, so its reasoning efforts are not known; use /effort again when it is ready`);
+    context.info(capabilitiesNotKnownText(name));
     return undefined;
   }
   const accepted = acceptedEffortsOf(declared);
@@ -57,6 +62,34 @@ const levelsOf = (entries: readonly MomongaModelEntry[], model: string, context:
     return undefined;
   }
   return accepted;
+};
+
+const pickEffort = async (context: EffortContext, model: string, entries: readonly MomongaModelEntry[], accepted: readonly ReasoningEffort[]): Promise<void> => {
+  const inForce = sentEffort(entries, model, context.effort);
+  const choice = await context.overlays.choose({
+    title: EFFORT_PICKER_TITLE,
+    rows: accepted.map((level) => ({ label: level, ...(level === inForce ? { value: IN_FORCE_MARK } : {}) })),
+    initial: inForce === undefined ? 0 : Math.max(0, accepted.indexOf(inForce)),
+    decideOn: 'enter',
+    escape: 'back',
+    filter: false,
+    alt: { label: SESSION_ONLY_LABEL },
+  });
+  const chosen = choice === undefined ? undefined : accepted[choice.index];
+  if (choice === undefined || chosen === undefined) return;
+  await applyEffort(context, model, chosen, choice.alt ? 'session' : 'saved');
+};
+
+export const effortStepOf = async (context: EffortContext, model: string): Promise<void> => {
+  const entries = await context.backend.models();
+  const declared = declaredReasoning(entries, model);
+  if (!declared.known) {
+    context.info(capabilitiesNotKnownText(context.shownModel(model)));
+    return;
+  }
+  const accepted = acceptedEffortsOf(declared);
+  if (accepted.length === 0) return;
+  await pickEffort(context, model, entries, accepted);
 };
 
 export const effortCommand: SlashCommand = {
@@ -83,18 +116,6 @@ export const effortCommand: SlashCommand = {
       await applyEffort(context, model, word, typed.session ? 'session' : 'saved');
       return;
     }
-    const inForce = sentEffort(entries, model, context.effort);
-    const choice = await context.overlays.choose({
-      title: EFFORT_PICKER_TITLE,
-      rows: accepted.map((level) => ({ label: level, ...(level === inForce ? { value: IN_FORCE_MARK } : {}) })),
-      initial: inForce === undefined ? 0 : Math.max(0, accepted.indexOf(inForce)),
-      decideOn: 'enter',
-      escape: 'back',
-      filter: false,
-      alt: { label: SESSION_ONLY_LABEL },
-    });
-    const chosen = choice === undefined ? undefined : accepted[choice.index];
-    if (choice === undefined || chosen === undefined) return;
-    await applyEffort(context, model, chosen, choice.alt ? 'session' : 'saved');
+    await pickEffort(context, model, entries, accepted);
   },
 };

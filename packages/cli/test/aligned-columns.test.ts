@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alignedColumns } from '../src/aligned-columns.ts';
+import { alignedColumns, alignedRows } from '../src/aligned-columns.ts';
 
 describe('alignedColumns', () => {
   it('pads every cell but the last to the widest of its column and joins the cells with two spaces', () => {
@@ -28,8 +28,26 @@ describe('alignedColumns', () => {
 
   it('takes rows of exactly the header length', () => {
     // @ts-expect-error a row longer than the header is refused by the type
-    alignedColumns(['a'], [['x', 'y']]);
+    expect(() => alignedColumns(['a'], [['x', 'y']])).toThrow('every row has 1 cells; one has 2');
     // @ts-expect-error a row shorter than the header is refused by the type
-    alignedColumns(['a', 'b'], [['x']]);
+    expect(() => alignedColumns(['a', 'b'], [['x']])).toThrow('every row has 2 cells; one has 1');
+  });
+});
+
+describe('alignedRows', () => {
+  it('aligns rows without a header by the same rule', () => {
+    expect(alignedRows([['long', 'x', 'y'], ['s', 'wider', 'zz']])).toEqual(['long  x      y', 's     wider  zz']);
+  });
+
+  it('measures wide characters by their display width', () => {
+    expect(alignedRows([['日本語', 'a'], ['b', 'c']])).toEqual(['日本語  a', 'b       c']);
+  });
+
+  it('gives nothing for no row', () => {
+    expect(alignedRows([])).toEqual([]);
+  });
+
+  it('refuses rows of different lengths', () => {
+    expect(() => alignedRows([['a', 'b'], ['c']])).toThrow('every row has 2 cells; one has 1');
   });
 });

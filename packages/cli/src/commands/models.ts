@@ -1,5 +1,5 @@
 import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
-import { ConfigError, ModelsEditRefused, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, modelNamingOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
+import { ConfigError, ModelsEditRefused, resolvedBillingOf, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, modelNamingOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
@@ -147,7 +147,7 @@ const STATE_JOINER = ', ';
 
 const MODELS_TABLE_HEADER = ['model', 'window', 'billing', 'server', 'state'] as const;
 
-const NO_VALUE_CELL = '-';
+export const NO_VALUE_CELL = '-';
 
 const windowCellOf = (model: ListedModel): string => (model.contextWindow === null ? WINDOW_NOT_KNOWN : formatTokens(model.contextWindow));
 
@@ -491,6 +491,11 @@ export const kindOf = (server: DetectedLocalServer): ServerKind => {
   const kind = SERVER_KINDS.find((candidate) => candidate.kind === server.kind);
   if (kind === undefined) throw new ShellRefusal(`The server at ${server.address} is of the kind "${server.kind}", which this version does not know.`);
   return kind;
+};
+
+export const foundBillingOf = (server: DetectedLocalServer): TargetBilling => {
+  const kind = kindOf(server);
+  return resolvedBillingOf(kind.adapter, kind.settings.billing);
 };
 
 export const serverChoosesWindow = (kind: ServerKind | undefined): boolean => kind?.read?.lengthIsMaximum === true;

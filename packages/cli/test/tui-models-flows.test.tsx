@@ -178,7 +178,13 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       failed: harness.context.info,
       toast: harness.context.info,
       connected: async (model) => void connected.push(model),
+      connectedThen: async (model, then) => {
+        connected.push(model);
+        await then();
+      },
       effort: () => undefined,
+      setEffort: async () => undefined,
+      shownModel: (model) => model,
       refreshConnection: async () => undefined,
       signedIn: async () => undefined,
       found: harness.context.found,

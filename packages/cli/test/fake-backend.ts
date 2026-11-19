@@ -127,6 +127,8 @@ export type FakeBackendOptions = {
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
   reasoning?: Readonly<Record<string, ReasoningCapability>>;
   listedProbing?: boolean;
+  probing?: readonly string[];
+  chains?: Readonly<Record<string, readonly string[]>>;
   conversations?: readonly FakeConversation[];
   settingsPlace?: { home: string; projectDir: string };
   files?: readonly string[];
@@ -321,7 +323,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   };
   const listedModels = async (): Promise<MomongaModelEntry[]> => {
     const written = writtenEntries();
-    const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true ? PROBING_PLAN : listedCapabilities(id), options.chain ?? [id]), ...savedEffortOf(id) }));
+    const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true || options.probing?.includes(id) === true ? PROBING_PLAN : listedCapabilities(id), options.chains?.[id] ?? options.chain ?? [id]), ...savedEffortOf(id) }));
     return [...scripted, ...written.filter((entry) => !scripted.some((other) => other.id === entry.id))];
   };
 

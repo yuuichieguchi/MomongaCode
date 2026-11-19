@@ -1,6 +1,5 @@
 import { acceptedReasoningEfforts, sentReasoningEffort } from '@momonga/protocol';
 import type { MomongaModelEntry, ReasoningCapability, ReasoningEffort } from '@momonga/protocol';
-import type { RowSteps } from './select.tsx';
 import { effortChoiceText } from '../effort-text.ts';
 
 export { effortChoiceText };
@@ -54,13 +53,3 @@ export const effortLine = (shown: ShownEffort, form: 'full' | 'short'): string =
 export const effortValue = (shown: ShownEffort): string => (shown.kind === 'sent' ? shown.level : EFFORT_NOT_AVAILABLE);
 
 export const effortRefusalText = (modelName: string): string => `effort is ${EFFORT_NOT_AVAILABLE} for ${modelName}: it declares no reasoning control`;
-
-export const effortStepsOf = (entry: MomongaModelEntry, chosen: ReasoningEffort | undefined): RowSteps | undefined => {
-  const declared = declaredOf(entry.capabilities);
-  const accepted = acceptedEffortsOf(declared);
-  const level = sentFor(declared, chosen ?? entry.effort);
-  if (accepted.length === 0 || level === undefined) return undefined;
-  return { name: EFFORT_STEP_NAME, values: accepted, at: Math.max(0, accepted.indexOf(level)) };
-};
-
-export const EFFORT_STEP_NAME = 'effort';
