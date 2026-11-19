@@ -103,7 +103,7 @@ export type ThinkingAdaptiveEffort = Exclude<ThinkingBudgetEffort, 'minimal'>;
 
 export type ReasoningCapability =
   | { control: 'none'; headroomTokens?: number }
-  | { control: 'reasoning_effort'; lowest: ReasoningEffort }
+  | { control: 'reasoning_effort'; lowest: ReasoningEffort; efforts?: readonly ReasoningEffort[]; default?: ReasoningEffort }
   | { control: 'thinking'; form: 'adaptive'; efforts: readonly ThinkingAdaptiveEffort[]; off?: ThinkingOff }
   | { control: 'thinking'; form: 'budget'; budgets: Readonly<Partial<Record<ThinkingBudgetEffort, number>>>; off?: ThinkingOff };
 
@@ -118,7 +118,7 @@ export const acceptedReasoningEfforts = (capability: ReasoningCapability): Reaso
     case 'none':
       return [];
     case 'reasoning_effort':
-      return REASONING_EFFORTS.slice(REASONING_EFFORTS.indexOf(capability.lowest));
+      return capability.efforts === undefined ? REASONING_EFFORTS.slice(REASONING_EFFORTS.indexOf(capability.lowest)) : ladderOrder(capability.efforts);
     case 'thinking': {
       const declared = capability.form === 'adaptive' ? capability.efforts : REASONING_EFFORTS.filter((level) => capability.budgets[level as ThinkingBudgetEffort] !== undefined);
       return ladderOrder([...(capability.off === undefined ? [] : ['none' as const]), ...declared]);

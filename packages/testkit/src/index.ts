@@ -245,6 +245,7 @@ export type {
 } from './fake-siwc-auth.ts';
 export {
   PLAN_ERROR_CODES,
+  PLAN_HIDDEN_MODELS,
   PLAN_MODELS_PATH,
   PLAN_RESPONSES_PATH,
   PLAN_UNSUPPORTED_FIELDS,
@@ -252,6 +253,7 @@ export {
   planAdmissionReply,
   planErrorHttpReply,
   planErrorStreamReply,
+  planModelLongTexts,
   startFakePlanResponses,
 } from './fake-plan-responses.ts';
 export type { BearerVerdict, FakePlanResponses, PlanResponsesOptions } from './fake-plan-responses.ts';

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createFileCredentialStore, credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, testKernelLock } from '@momonga/testkit';
+import { PLAN_HIDDEN_MODELS, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, planModelLongTexts, testKernelLock } from '@momonga/testkit';
 import { getJson, listedEntryOf } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
 import { ACCOUNT, accountRoute, recordingLogger, signIn, startPlanGateway } from './plan-signin-support.ts';
@@ -76,6 +76,23 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     });
     expect(Number.isNaN(Date.parse(record.readAt))).toBe(false);
     for (const secret of gateway.auth.issuedSecrets()) expect(fs.readFileSync(file, 'utf8')).not.toContain(secret);
+    await gateway.close();
+  });
+
+  it('reads a list far larger than the auth document cap, with long texts in every entry, and keeps none of those texts', async () => {
+    const realistic = Array.from({ length: 12 }, (_unused, index) => ({ slug: `gpt-real-${index}`, display_name: `GPT Real ${index}`, visibility: 'list', context_window: 272000, supported_reasoning_levels: [{ effort: 'low', description: 'Fast' }], ...planModelLongTexts(`gpt-real-${index}`) }));
+    expect(Buffer.byteLength(JSON.stringify({ models: [...realistic, ...PLAN_HIDDEN_MODELS] }))).toBeGreaterThan(4 * 256 * 1024);
+    const gateway = await startPlanGateway({ models: realistic });
+    await signIn(gateway);
+    const listed = await gateway.get(modelsRoute());
+    expect(listed.status).toBe(200);
+    expect(listed.body.models).toEqual(realistic.map((entry) => ({ slug: entry.slug, displayName: entry.display_name, usable: true, contextWindow: 272000, maxOutputTokens: 68000 })));
+    const record = await readRecord(gateway);
+    expect(Object.keys(record).sort()).toEqual(['models', 'readAt']);
+    for (const entry of realistic) expect(record.models[entry.slug]).toEqual({ contextWindow: 272000, maxOutputTokens: 68000, source: 'reported', reasoning: { efforts: ['low'] } });
+    const file = fs.readFileSync(credentialFileFor(catalogDirectory(gateway), RECORD_KEY), 'utf8');
+    expect(file).not.toContain('coding agent');
+    expect(Buffer.byteLength(file)).toBeLessThan(4096);
     await gateway.close();
   });
 
@@ -208,6 +225,27 @@ describe('accounts/{account}/targets adds a model of the plan through the one se
     const unknown = await add(gateway, 'no-such-model');
     expect(unknown.status).toBe(404);
     expect(unknown.body.error).toMatchObject({ type: 'not_found', code: 'plan_model_unknown' });
+    await gateway.close();
+  });
+
+  it('lists an entry that reports supported_in_api false as unusable through the API, keeps that reason in the record, and refuses to add it with it; an entry without the field is as before', async () => {
+    const models = [
+      { slug: 'api-model', display_name: 'API Model', visibility: 'list', context_window: 200000, supported_in_api: true },
+      { slug: 'app-only', display_name: 'App Only', visibility: 'list', context_window: 200000, supported_in_api: false },
+      { slug: 'unstated', display_name: 'Unstated', visibility: 'list', context_window: 200000 },
+    ];
+    const gateway = await startPlanGateway({ models });
+    await signIn(gateway);
+    const listed = await gateway.get(modelsRoute());
+    expect(listed.body.models).toEqual([
+      { slug: 'api-model', displayName: 'API Model', usable: true, contextWindow: 200000, maxOutputTokens: 50000 },
+      { slug: 'app-only', displayName: 'App Only', usable: false, reason: 'not available through the API' },
+      { slug: 'unstated', displayName: 'Unstated', usable: true, contextWindow: 200000, maxOutputTokens: 50000 },
+    ]);
+    expect((await readRecord(gateway)).models['app-only']).toEqual({ unreported: true, reason: 'not available through the API' });
+    const refused = await add(gateway, 'app-only');
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toMatchObject({ code: 'plan_model_unusable', message: 'the model app-only cannot be added: not available through the API' });
     await gateway.close();
   });
 

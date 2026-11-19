@@ -1,4 +1,4 @@
-import type { Capabilities, ChainCapabilities, ChainMemberEntry, ModelEntryState, MomongaModelEntry, NotListedCapabilities, UnavailableCapabilities } from '@momonga/protocol';
+import type { Capabilities, ChainCapabilities, ChainMemberEntry, ModelEntryState, MomongaModelEntry, NotListedCapabilities, ReasoningEffort, UnavailableCapabilities } from '@momonga/protocol';
 import { isNotListedCapabilities, isUnavailableCapabilities } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError } from '../core/errors.ts';
 import { UpstreamFailure, failureFrom, plainError } from '../core/retry.ts';
@@ -60,7 +60,13 @@ const chainCapabilitiesOf = async (router: Router, model: string, members: reado
 
 const stateOf = (listed: readonly ListedCapabilities<Capabilities>[]): ModelEntryState => (listed.some(isUnavailableCapabilities) ? 'degraded' : 'available');
 
-const effortEntryOf = (effort: ReturnType<Router['effortOf']>): { effort?: NonNullable<ReturnType<Router['effortOf']>> } => (effort === undefined ? {} : { effort });
+const reportedDefaultOf = (listed: ListedCapabilities<Capabilities> | undefined): ReasoningEffort | undefined => {
+  if (listed === undefined || isNotListedCapabilities(listed)) return undefined;
+  const reasoning = listed.reasoning;
+  return reasoning?.control === 'reasoning_effort' ? reasoning.default : undefined;
+};
+
+const effortEntryOf = (effort: ReasoningEffort | undefined): { effort?: ReasoningEffort } => (effort === undefined ? {} : { effort });
 
 export const listModel = async (router: Router, model: string, signal: AbortSignal): Promise<MomongaModelEntry> => {
   const members = router.chainOf(model);
@@ -77,6 +83,6 @@ export const listModel = async (router: Router, model: string, signal: AbortSign
     capabilities: await chainCapabilitiesOf(router, model, members, listed),
     state: stateOf(listed),
     chain: members.map((target, index) => memberEntryOf(target, listed[index] as ListedCapabilities<Capabilities>)),
-    ...effortEntryOf(router.effortOf(model)),
+    ...effortEntryOf(router.effortOf(model) ?? reportedDefaultOf(listed[0])),
   };
 };

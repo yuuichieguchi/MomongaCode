@@ -52,7 +52,12 @@ describe('protocol capability types', () => {
         sampling?: { accepts: 'none' } | { accepts: 'without_thinking'; topP: { min: number; max: number } } | { accepts: 'free' };
         reasoning?:
           | { control: 'none'; headroomTokens?: number }
-          | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }
+          | {
+              control: 'reasoning_effort';
+              lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+              efforts?: readonly ('none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh')[];
+              default?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+            }
           | { control: 'thinking'; form: 'adaptive'; efforts: readonly ('low' | 'medium' | 'high' | 'xhigh')[]; off?: 'disabled' | 'between_tools' }
           | { control: 'thinking'; form: 'budget'; budgets: Readonly<Partial<Record<'minimal' | 'low' | 'medium' | 'high' | 'xhigh', number>>>; off?: 'disabled' | 'between_tools' };
       } & (

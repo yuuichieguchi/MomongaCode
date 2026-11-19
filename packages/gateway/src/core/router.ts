@@ -228,6 +228,7 @@ export const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]
     usageReported: all.every((entry) => entry.usageReported),
     maxConcurrency: Math.min(...all.map((entry) => entry.maxConcurrency)),
     ...mergedOutputBound(all),
+    ...(first.reasoning === undefined ? {} : { reasoning: first.reasoning }),
     source: first.source,
     ...(all.length === 1 && first.probedAt !== undefined ? { probedAt: first.probedAt } : {}),
   };

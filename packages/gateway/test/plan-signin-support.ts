@@ -55,7 +55,9 @@ export const accountRoute = (route: string, account: string = ACCOUNT): string =
 
 export type PlanGatewayOptions = {
   models?: readonly unknown[];
-  declaredCapabilities?: boolean;
+  declaredCapabilities?: boolean | Record<string, unknown>;
+  targetExtra?: Record<string, unknown>;
+  modelsRest?: Record<string, unknown>;
   clock?: FakeClock;
   accessTokenForm?: SiwcAccessTokenForm;
   earliestRefreshAtForm?: SiwcEarliestRefreshAtForm;
@@ -109,10 +111,11 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
         gpt: {
           adapter: 'open-responses',
           model: 'plan-model',
-          ...(options.declaredCapabilities === false ? {} : { capabilities: { contextWindow: 128000, maxOutputTokens: 16000 } }),
+          ...(options.declaredCapabilities === false ? {} : { capabilities: typeof options.declaredCapabilities === 'object' ? options.declaredCapabilities : { contextWindow: 128000, maxOutputTokens: 16000 } }),
           plan: options.pinned === false ? { profile: PROFILE_ID } : { profile: PROFILE_ID, account: ACCOUNT },
+          ...options.targetExtra,
         },
-      }),
+      }, options.modelsRest),
   });
   const launchOnly = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }), ...(options.planStore === undefined ? {} : { planStore: options.planStore }), ...(options.timers === undefined ? {} : { timers: options.timers }) });
   const launch = async () => {

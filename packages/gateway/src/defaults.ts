@@ -37,6 +37,8 @@ export const PLAN_SESSION_DEFAULTS = {
 
 const KIB = 1024;
 
+export const PLAN_CATALOG_MAX_BYTES = 16 * MIB;
+
 export const PLAN_SIGN_IN_DEFAULTS = {
   attemptTtlMs: AUTHORIZATION_WAIT_MS + PLAN_ATTEMPT_TIMEOUT_MS,
   exchangeTimeoutMs: PLAN_ATTEMPT_TIMEOUT_MS,
@@ -46,6 +48,7 @@ export const PLAN_SIGN_IN_DEFAULTS = {
   keysBodyBytes: 64 * KIB,
   keysMaxCount: 16,
   authBodyBytes: AUTH_DOCUMENT_MAX_BYTES,
+  catalogBodyBytes: PLAN_CATALOG_MAX_BYTES,
   errorTextChars: 64,
   randomStateBytes: 16,
   verifierBytes: 32,

@@ -35,6 +35,7 @@ export type PlanProfileCatalog = {
   path: string;
   listKey: string;
   filter: { field: string; equals: string };
+  unusableWhen: { field: string; equals: boolean; reason: string };
   idKey: string;
   labelKey: string;
 };
@@ -172,6 +173,7 @@ const PLAN_PROFILE_SCHEMA = {
       path: { type: 'string', pattern: '^/[^\\s]*$' },
       listKey: NON_EMPTY_STRING,
       filter: object({ field: NON_EMPTY_STRING, equals: NON_EMPTY_STRING }),
+      unusableWhen: object({ field: NON_EMPTY_STRING, equals: { type: 'boolean' }, reason: NON_EMPTY_STRING }),
       idKey: NON_EMPTY_STRING,
       labelKey: NON_EMPTY_STRING,
     }),
@@ -381,7 +383,7 @@ const CHATGPT_PROFILE_DATA = {
       message: 'Try again later',
     },
   ],
-  catalog: { path: '/models', listKey: 'models', filter: { field: 'visibility', equals: 'list' }, idKey: 'slug', labelKey: 'display_name' },
+  catalog: { path: '/models', listKey: 'models', filter: { field: 'visibility', equals: 'list' }, unusableWhen: { field: 'supported_in_api', equals: false, reason: 'not available through the API' }, idKey: 'slug', labelKey: 'display_name' },
 } as const satisfies Record<string, unknown>;
 
 const SHIPPED_PROFILES: readonly PlanProfile[] = [assertPlanProfile(structuredClone(CHATGPT_PROFILE_DATA), 'shipped plan profile chatgpt')];
