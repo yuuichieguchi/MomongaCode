@@ -93,7 +93,12 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
 
   it('momonga models prints a plan model with its billing, a listed one with its window and a measured one without a window', () => {
     expect(formatModels(modelsDocumentOf(LISTED, new Map([['lmstudio', 'http://127.0.0.1:1234/v1']]), new Set(), new Map()))).toBe(
-      ['chatgpt', '  plan-model  ·  plan  ·  available', 'lmstudio  ·  http://127.0.0.1:1234/v1', '  lmstudio/local-model  ·  32.8k tokens  ·  local', 'apple', '  apple/slow  ·  window not known'].join('\n'),
+      [
+        'model                 window            billing  server                    state',
+        'plan-model                              plan     chatgpt                   available',
+        'lmstudio/local-model  32.8k             local    http://127.0.0.1:1234/v1',
+        'apple/slow            window not known           apple',
+      ].join('\n'),
     );
   });
 

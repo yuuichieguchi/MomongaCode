@@ -8,7 +8,7 @@ import { S2, bytesOf, homeWith, listingOf, ollamaFound, shellOf } from './models
 const EMPTY: MomongaModelList = { object: 'list', data: [], start: null, roles: {} };
 
 describe('momonga models', () => {
-  it('prints one block per server with a row per model, the window written by formatTokens and the start model marked', async (context) => {
+  it('prints one aligned table with a row per model, the window written by formatTokens and the start model marked', async (context) => {
     const at = homeWith(context, S2);
     const harness = shellOf(at);
 
@@ -17,10 +17,9 @@ describe('momonga models', () => {
     expect(code).toBe(0);
     expect(harness.out()).toBe(
       [
-        'ollama  ·  http://127.0.0.1:11434',
-        '  ollama/gemma-3-4b  ·  32.8k tokens  ·  local  ·  starts new sessions',
-        'lmstudio  ·  http://127.0.0.1:1234/v1',
-        '  lmstudio/gemma-3-4b  ·  4.1k tokens  ·  local',
+        'model                window  billing  server                    state',
+        'ollama/gemma-3-4b    32.8k   local    http://127.0.0.1:11434    starts new sessions',
+        'lmstudio/gemma-3-4b  4.1k    local    http://127.0.0.1:1234/v1',
         '',
       ].join('\n'),
     );
@@ -34,7 +33,7 @@ describe('momonga models', () => {
 
     await listModels(harness.shell, { json: false });
 
-    expect(harness.out().split('\n')).toContain(`  lmstudio/gemma-3-4b  ·  ${formatTokens(4096)} tokens  ·  local`);
+    expect(harness.out().split('\n')).toContain(`lmstudio/gemma-3-4b  ${formatTokens(4096)}    local    http://127.0.0.1:1234/v1`);
   });
 
   it('prints the one JSON document with the state named by the readiness state', async (context) => {

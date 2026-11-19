@@ -24,6 +24,7 @@ import {
   typedModelText,
   withDefaultTag,
   messageOf,
+  escapeTerminalLine,
 } from '@momonga/protocol';
 import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, ModelEntryState, ModelView, ModelViews, MomongaModelEntry, MomongaModelList, MomongaModelRoles, PlanAccountView, PlanCatalogEntry, Readiness, ServerKind, ServerKindAdapter, TargetBilling } from '@momonga/protocol';
 import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
@@ -37,6 +38,7 @@ import { withIdentityReadFetch } from '../network.ts';
 import { announcePlainHttp } from '../plain-http.ts';
 import type { CliFiles, CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
+import { alignedColumns } from '../aligned-columns.ts';
 import { cliProbeInstance, managedProbeTimersOf } from './gateway.ts';
 
 type Writer = { write(text: string): void };
@@ -137,22 +139,32 @@ const windowPartsOf = (model: ListedModel): string[] => {
   return model.contextWindow === null ? [WINDOW_NOT_KNOWN] : [`${formatTokens(model.contextWindow)} tokens`, model.billing];
 };
 
-export const modelRowOf = (model: ListedModel, start: string | null): string => `${ROW_INDENT}${modelRowText(model, start)}`;
-
 export const modelRowText = (model: ListedModel, start: string | null): string =>
   [model.name, ...windowPartsOf(model), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(SEPARATOR);
 
-const modelLinesOf = (document: ModelsDocument): string[] => {
-  if (document.models.length === 0) return [messageOf('noModelConnected', 'cli')];
-  const providers = [...new Set(document.models.map((model) => model.provider))];
-  return providers.flatMap((provider) => {
-    const served = document.models.filter((model) => model.provider === provider);
-    const address = served[0]?.address ?? null;
-    return [address === null ? provider : `${provider}${SEPARATOR}${address}`, ...served.map((model) => modelRowOf(model, document.start))];
-  });
+const STATE_JOINER = ', ';
+
+const MODELS_TABLE_HEADER = ['model', 'window', 'billing', 'server', 'state'] as const;
+
+const windowCellOf = (model: ListedModel): string => {
+  if (model.billing === 'plan') return '';
+  return model.contextWindow === null ? WINDOW_NOT_KNOWN : formatTokens(model.contextWindow);
 };
 
-export const formatModels = (document: ModelsDocument): string => escapedLines(modelLinesOf(document));
+const billingCellOf = (model: ListedModel): string => (model.billing !== 'plan' && model.contextWindow === null ? '' : model.billing);
+
+const stateCellOf = (model: ListedModel, start: string | null): string =>
+  [...(model.billing === 'plan' ? [model.health] : []), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(STATE_JOINER);
+
+const modelCellsOf = (model: ListedModel, start: string | null): string[] =>
+  [model.name, windowCellOf(model), billingCellOf(model), model.address ?? model.provider, stateCellOf(model, start)].map(escapeTerminalLine);
+
+export const formatModels = (document: ModelsDocument): string => {
+  if (document.models.length === 0) return escapedLines([messageOf('noModelConnected', 'cli')]);
+  const providers = [...new Set(document.models.map((model) => model.provider))];
+  const ordered = providers.flatMap((provider) => document.models.filter((model) => model.provider === provider));
+  return alignedColumns(MODELS_TABLE_HEADER, ordered.map((model) => modelCellsOf(model, document.start))).join('\n');
+};
 
 const printDocument = (shell: ModelsShell, document: ModelsDocument, json: boolean): void => {
   if (json) shell.stdout.write(`${JSON.stringify({ ...document, models: document.models.map(({ health: _shownInRows, ...model }) => model) })}\n`);

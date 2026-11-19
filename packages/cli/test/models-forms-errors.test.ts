@@ -50,7 +50,7 @@ describe('the forms of momonga models map every outside text to their own errors
 
     await listModels(harness.shell, { json: false });
 
-    expect(harness.out()).toMatch(/gpt-5\.5 {2}· {2}plan {2}· {2}degraded/);
+    expect(harness.out()).toMatch(/^chatgpt\/gpt-5\.5 +plan +chatgpt +degraded, starts new sessions$/m);
   });
 
   it('adds the built-in fm server from the shell', async (context) => {
