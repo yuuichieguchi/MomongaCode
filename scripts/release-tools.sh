@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly RELEASE_TOOLS=(git node npm gh zig codesign xcrun spctl ditto ssh-keygen shasum wrangler curl)
+readonly RELEASE_TOOLS=(git node npm gh zig codesign xcrun spctl ditto ssh-keygen shasum curl)
 
 missing=()
 for tool in "${RELEASE_TOOLS[@]}"; do

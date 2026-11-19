@@ -7,7 +7,7 @@ import { repoRoot } from '../scripts/bundle.ts';
 import { readEmbeddedReleaseRepo } from '../scripts/release-key.ts';
 import { createTempRoot, removeTempRoot } from '../scripts/support/temp.ts';
 import { buildSite, llmsLinkText, siteOutput, writeSite } from '../scripts/site.ts';
-import { INSTALLERS, SITE_ORIGIN, SITE_PROJECT } from '../scripts/site-target.ts';
+import { INSTALLERS, SITE_BRANCH, SITE_ORIGIN } from '../scripts/site-target.ts';
 import type { SearchRecord } from '../site/client/search.ts';
 import { ART_WIDTH, FIGURE, TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../packages/cli/src/tui/figure.ts';
 import { STYLE } from '../packages/cli/src/tui/screen/theme.ts';
@@ -328,7 +328,7 @@ describe('the website', () => {
 
   it('names its target in one place', () => {
     expect(SITE_ORIGIN).toBe('https://momongacode.com');
-    expect(SITE_PROJECT).toBe('momongacode');
+    expect(SITE_BRANCH).toBe('site');
     expect(INSTALLERS.map((installer) => [installer.file, installer.source, installer.tab, installer.language, installer.command])).toEqual([
       ['install.sh', 'scripts/install.sh', 'macOS and Linux', 'sh', 'curl -fsSL https://momongacode.com/install.sh | bash'],
       ['install.ps1', 'scripts/install.ps1', 'Windows, in PowerShell', 'powershell', 'irm https://momongacode.com/install.ps1 | iex'],
@@ -337,7 +337,7 @@ describe('the website', () => {
 
   it.each([
     ['print-origin', 'https://momongacode.com\n'],
-    ['print-project', 'momongacode\n'],
+    ['print-branch', 'site\n'],
   ])('prints its target with site-target.ts %s', (command, printed) => {
     const result = spawnSync(process.execPath, [path.join(repoRoot, 'scripts/site-target.ts'), command], { encoding: 'utf8' });
     expect(result.status, result.stderr).toBe(0);

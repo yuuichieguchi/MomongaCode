@@ -50,7 +50,6 @@ printf 'signature' > "$last.sig"`,
     /usr/bin/git --git-dir "$STUB_ORIGIN" tag "$3" "$(/usr/bin/git --git-dir "$STUB_ORIGIN" rev-parse refs/heads/main)" ;;
   "release create") if [ "\${STUB_GH_FAIL_ON:-}" = "create" ]; then exit 1; fi ;;
 esac`,
-  wrangler: `exit "\${STUB_WRANGLER_EXIT:-0}"`,
   curl: `out=''
 headers=''
 format=''
@@ -114,6 +113,9 @@ for (const file of ['install.sh', 'install.ps1']) fs.copyFileSync(path.join(root
 `;
 
 const SITE_DEPLOY_FAILED = 'the release v1.2.3 is published but momongacode.com was not updated: run scripts/site-deploy.sh again';
+const siteBranchNotMoved = (commit: string): string =>
+  `site-deploy.sh: the branch site of origin could not be moved to ${commit}: check that origin is reachable and that its branch site is not ahead of or diverged from ${commit}, then run scripts/site-deploy.sh again`;
+const NOT_ON_ORIGIN_MAIN = 'site-deploy.sh: HEAD is not a commit of main on origin; push main first, then run scripts/site-deploy.sh again; nothing was deployed\n';
 const SITE_URLS = ['https://momongacode.com/install.sh', 'https://momongacode.com/install.ps1'];
 
 const git = (cwd: string, ...args: string[]): string => {
@@ -183,8 +185,6 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     APPLE_API_KEY: keyFile,
     APPLE_API_KEY_ID: 'FAKEKEYID1',
     APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000',
-    CLOUDFLARE_API_TOKEN: 'fake-cloudflare-api-token',
-    CLOUDFLARE_ACCOUNT_ID: 'fake-cloudflare-account',
     STUB_WORK: work,
     MOMONGA_WINDOWS_SMOKE_SHA256: stubWindowsSha256(),
     ...extra,
@@ -205,10 +205,12 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     const at = args.indexOf('--output');
     return path.resolve(work, args[at + 1] as string);
   };
-  const deployDirectory = (wranglerLine: string): string => {
-    const match = /^wrangler pages deploy (\S+) --project-name momongacode --branch main $/.exec(wranglerLine);
-    if (match === null) throw new Error(`not the deploy of the site: ${wranglerLine}`);
-    return path.resolve(work, match[1] as string);
+  const originRef = (ref: string): string => git(origin, 'rev-parse', '--verify', '--quiet', ref).trim();
+  const originHasRef = (ref: string): boolean => spawnSync('/usr/bin/git', ['--git-dir', origin, 'rev-parse', '--verify', '--quiet', ref], { encoding: 'utf8', env: gitEnv() }).status === 0;
+  const releasedCommit = (): string => originRef('refs/tags/v1.2.3^{commit}');
+  const forgetFetches = (): void => {
+    fs.rmSync(log, { force: true });
+    for (const url of SITE_URLS) fs.rmSync(path.join(path.dirname(log), `curl-fetches-${url.split('/').at(-1) as string}`), { force: true });
   };
 
   beforeAll(() => {
@@ -388,9 +390,11 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(calls[22]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
     const deployed = calls.slice(23);
     expect(deployed[0]).toMatch(/^site --output \S+ $/);
-    expect(deployDirectory(deployed[1] as string)).toBe(outputOf(deployed[0] as string));
-    expect(deployed.slice(2).length).toBeGreaterThanOrEqual(2);
-    expect(deployed.slice(2).every((line) => line.startsWith('curl '))).toBe(true);
+    expect(fs.existsSync(path.join(outputOf(deployed[0] as string), 'install.sh'))).toBe(true);
+    expect(deployed.slice(1).length).toBeGreaterThanOrEqual(2);
+    expect(deployed.slice(1).every((line) => line.startsWith('curl '))).toBe(true);
+    expect(originRef('refs/heads/site')).toBe(releasedCommit());
+    expect(originRef('refs/heads/main')).toBe(git(work, 'rev-parse', 'HEAD').trim());
     for (const url of SITE_URLS) expect(fetchesOf(url)).toBeGreaterThanOrEqual(1);
     expect(result.stderr).not.toContain(SITE_DEPLOY_FAILED);
     expect(originTags()).toBe('v1.2.3\n');
@@ -559,7 +563,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(calls.join('\n')).not.toContain('FAKE000000');
   });
 
-  it('gets past the environment check with only APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER, CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID set', () => {
+  it('gets past the environment check with only APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER set', () => {
     commit('second change');
     const env = releaseEnv();
     for (const name of ['SIGNING_IDENTITY', 'MOMONGA_TEAM_ID', 'RELEASE_SIGNING_KEY', 'MOMONGA_REPO']) delete env[name];
@@ -627,15 +631,6 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(loggedCalls()).toEqual([]);
   });
 
-  it.each(['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID'])('refuses to start without %s, before any command', (name) => {
-    commit('second change');
-    const result = release({ [name]: '' });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toBe(`release.sh: ${name} is not set\n`);
-    expect(loggedCalls()).toEqual([]);
-    expect(originTags()).toBe('');
-  });
-
   it('builds the site after the notices and before the checksums, so a failed build publishes nothing', () => {
     commit('second change');
     const result = release({ STUB_SITE_FAIL: '1' });
@@ -645,26 +640,45 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(calls.at(-2)).toBe(`npm run notices -- --output ${work}/dist/release/THIRD-PARTY-NOTICES.md `);
     expect(loggedNames()).not.toContain('gh');
     expect(loggedNames()).not.toContain('ssh-keygen');
-    expect(loggedNames()).not.toContain('wrangler');
+    expect(originHasRef('refs/heads/site')).toBe(false);
     expect(originTags()).toBe('');
     expect(fs.existsSync(`${work}/dist/release/SHA256SUMS`)).toBe(false);
   });
 
-  it('keeps the published release and its tag when the deploy of the site fails, and names the command to run again', () => {
+  it.each([
+    ['ahead of', (released: string): void => {
+      git(work, 'commit', '--allow-empty', '-m', 'ahead of the release');
+      git(work, 'push', '--quiet', 'origin', `HEAD:refs/heads/site`);
+      git(work, 'reset', '--quiet', '--hard', released);
+    }],
+    ['diverged from', (released: string): void => {
+      git(work, 'checkout', '--quiet', '--detach', `${released}~1`);
+      git(work, 'commit', '--allow-empty', '-m', 'diverged from the release');
+      git(work, 'push', '--quiet', 'origin', `HEAD:refs/heads/site`);
+      git(work, 'checkout', '--quiet', 'main');
+    }],
+  ] as const)('keeps the published release and its tag when the branch site of origin is %s the released commit, and names the command to run again', (_label, moveSite) => {
     commit('second change');
-    const result = release({ STUB_WRANGLER_EXIT: '1' });
+    const main = git(work, 'rev-parse', 'HEAD').trim();
+    moveSite(main);
+    const site = originRef('refs/heads/site');
+    const result = release();
     expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(siteBranchNotMoved(releasedCommit()));
     expect(result.stderr).toContain(SITE_DEPLOY_FAILED);
+    expect(originRef('refs/heads/site')).toBe(site);
+    expect(originRef('refs/heads/main')).toBe(main);
     expect(originTags()).toBe('v1.2.3\n');
     expect(git(work, 'tag', '--list')).toBe('v1.2.3\n');
     expect(loggedCalls().some((line) => line.startsWith('gh release delete'))).toBe(false);
-    expect(loggedNames()).toContain('wrangler');
     expect(loggedNames()).not.toContain('curl');
   });
 
   it.each([
     ['other bytes', { STUB_CURL_BYTES: 'other' }],
     ['another content type', { STUB_CURL_TYPE: 'text/html; charset=utf-8' }],
+    ['an untyped binary', { STUB_CURL_TYPE: 'application/octet-stream' }],
+    ['no charset', { STUB_CURL_TYPE: 'text/plain' }],
   ] as const)('fails after its bounded tries when the served installers have %s, and keeps the release', (_label, env) => {
     commit('second change');
     const result = release(env);
@@ -676,6 +690,34 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(loggedCalls().some((line) => line.startsWith('gh release delete'))).toBe(false);
   });
 
+  it.each(['text/plain;charset=UTF-8', 'Text/Plain; charset="utf-8"'])('accepts the served installers when their content type is spelled %s', (type) => {
+    commit('second change');
+    const result = release({ STUB_CURL_TYPE: type });
+    expect(result.status, result.stderr).toBe(0);
+    expect(originRef('refs/heads/site')).toBe(releasedCommit());
+  });
+
+  it('deploys a release cut from the branch named by MOMONGA_RELEASE_BRANCH', () => {
+    git(work, 'checkout', '--quiet', '-b', 'stable');
+    commitLocally('second change');
+    git(work, 'push', '--quiet', 'origin', 'stable');
+    const result = release({ MOMONGA_RELEASE_BRANCH: 'stable' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(originRef('refs/heads/site')).toBe(git(work, 'rev-parse', 'HEAD').trim());
+  });
+
+  it('site-deploy.sh refuses a shallow clone before checking HEAD against origin main', () => {
+    commit('second change');
+    commit('third change');
+    const shallow = path.join(path.dirname(work), 'shallow');
+    git(path.dirname(work), 'clone', '--quiet', '--depth', '1', `file://${origin}`, shallow);
+    const result = spawnSync('/bin/bash', [path.join(shallow, 'scripts/site-deploy.sh')], { cwd: shallow, encoding: 'utf8', env: releaseEnv() });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe('site-deploy.sh: this clone is shallow; deploying the site needs a full clone of the repository (git fetch --unshallow); nothing was deployed\n');
+    expect(originHasRef('refs/heads/site')).toBe(false);
+    expect(loggedCalls()).toEqual([]);
+  });
+
   it('tries the served installers again until the new deployment serves them', () => {
     commit('second change');
     const result = release({ STUB_CURL_STALE_FETCHES: '1' });
@@ -683,61 +725,63 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(SITE_URLS.some((url) => fetchesOf(url) >= 2)).toBe(true);
   });
 
-  it('deploys the site of a published release when site-deploy.sh is run alone', () => {
+  it('moves the branch site of origin to an untagged commit of origin main when site-deploy.sh is run alone, and pushes nothing new when run again', () => {
     commit('second change');
-    expect(release().status).toBe(0);
-    fs.rmSync(log, { force: true });
-    for (const url of SITE_URLS) fs.rmSync(path.join(path.dirname(log), `curl-fetches-${url.split('/').at(-1) as string}`), { force: true });
+    const head = git(work, 'rev-parse', 'HEAD').trim();
     const result = siteDeploy();
     expect(result.status, result.stderr).toBe(0);
     const calls = loggedCalls();
     expect(calls[0]).toMatch(/^site --output \S+ $/);
-    expect(deployDirectory(calls[1] as string)).toBe(outputOf(calls[0] as string));
-    expect(calls.slice(2).every((line) => line.startsWith('curl '))).toBe(true);
+    expect(calls.slice(1).length).toBeGreaterThanOrEqual(2);
+    expect(calls.slice(1).every((line) => line.startsWith('curl '))).toBe(true);
     for (const url of SITE_URLS) expect(fetchesOf(url)).toBeGreaterThanOrEqual(1);
     expect(loggedNames()).not.toContain('gh');
+    expect(originTags()).toBe('');
+    expect(originRef('refs/heads/site')).toBe(head);
+    expect(originRef('refs/heads/main')).toBe(head);
+    forgetFetches();
+    const again = siteDeploy();
+    expect(again.status, again.stderr).toBe(0);
+    expect(originRef('refs/heads/site')).toBe(head);
+    for (const url of SITE_URLS) expect(fetchesOf(url)).toBeGreaterThanOrEqual(1);
   });
 
-  it('site-deploy.sh refuses when the tag of the version is on origin but HEAD is another commit', () => {
+  it('site-deploy.sh run alone on an ancestor of origin main moves the branch site to it', () => {
     commit('second change');
-    expect(release().status).toBe(0);
-    fs.rmSync(log, { force: true });
-    const atTag = siteDeploy();
-    expect(atTag.status, atTag.stderr).toBe(0);
+    const earlier = git(work, 'rev-parse', 'HEAD').trim();
     commit('third change');
-    fs.rmSync(log, { force: true });
+    git(work, 'checkout', '--quiet', '--detach', earlier);
     const result = siteDeploy();
-    expect(result.status).not.toBe(0);
-    expect(loggedNames()).not.toContain('wrangler');
+    expect(result.status, result.stderr).toBe(0);
+    expect(originRef('refs/heads/site')).toBe(earlier);
+  });
+
+  it('site-deploy.sh run alone refuses to move a branch site of origin that is ahead of HEAD', () => {
+    commit('second change');
+    const head = git(work, 'rev-parse', 'HEAD').trim();
+    git(work, 'commit', '--allow-empty', '-m', 'ahead of main');
+    git(work, 'push', '--quiet', 'origin', 'HEAD:refs/heads/site');
+    const site = originRef('refs/heads/site');
+    git(work, 'reset', '--quiet', '--hard', head);
+    const result = siteDeploy();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(siteBranchNotMoved(head));
+    expect(originRef('refs/heads/site')).toBe(site);
     expect(loggedNames()).not.toContain('curl');
   });
 
-  it('site-deploy.sh refuses when the tag of the version is only in the local clone', () => {
+  it('site-deploy.sh refuses when HEAD is a local commit that origin main does not have', () => {
     commit('second change');
-    git(work, 'tag', 'v1.2.3');
+    commitLocally('third change');
     const result = siteDeploy();
-    expect(result.status).not.toBe(0);
-    expect(loggedNames()).not.toContain('wrangler');
-    expect(loggedNames()).not.toContain('curl');
-    git(work, 'push', '--quiet', 'origin', 'refs/tags/v1.2.3');
-    fs.rmSync(log, { force: true });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(NOT_ON_ORIGIN_MAIN);
+    expect(originHasRef('refs/heads/site')).toBe(false);
+    expect(loggedCalls()).toEqual([]);
+    git(work, 'push', '--quiet', 'origin', 'main');
     const pushed = siteDeploy();
     expect(pushed.status, pushed.stderr).toBe(0);
-    expect(loggedNames()).toContain('wrangler');
-  });
-
-  it('site-deploy.sh refuses when no tag of the version exists', () => {
-    commit('second change');
-    const result = siteDeploy();
-    expect(result.status).not.toBe(0);
-    expect(loggedNames()).not.toContain('wrangler');
-    expect(loggedNames()).not.toContain('curl');
-    git(work, 'tag', 'v1.2.3');
-    git(work, 'push', '--quiet', 'origin', 'refs/tags/v1.2.3');
-    fs.rmSync(log, { force: true });
-    const tagged = siteDeploy();
-    expect(tagged.status, tagged.stderr).toBe(0);
-    expect(loggedNames()).toContain('wrangler');
+    expect(originRef('refs/heads/site')).toBe(git(work, 'rev-parse', 'HEAD').trim());
   });
 
   it('site-deploy.sh refuses a dirty working tree', () => {
@@ -747,40 +791,29 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     fs.writeFileSync(path.join(work, 'untracked.txt'), 'x');
     const result = siteDeploy();
     expect(result.status).not.toBe(0);
-    expect(loggedNames()).not.toContain('wrangler');
+    expect(originRef('refs/heads/site')).toBe(releasedCommit());
     expect(loggedNames()).not.toContain('curl');
     fs.rmSync(path.join(work, 'untracked.txt'));
     fs.rmSync(log, { force: true });
     const clean = siteDeploy();
     expect(clean.status, clean.stderr).toBe(0);
-    expect(loggedNames()).toContain('wrangler');
+    expect(originRef('refs/heads/site')).toBe(releasedCommit());
   });
 
-  it.each(['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID'])('site-deploy.sh refuses to start without %s', (name) => {
+  it('site-deploy.sh refuses when cmp is not on PATH', () => {
     commit('second change');
-    expect(release().status).toBe(0);
-    fs.rmSync(log, { force: true });
-    const result = siteDeploy({ [name]: '' });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(`${name} is not set`);
-    expect(loggedCalls()).toEqual([]);
-    const set = siteDeploy();
-    expect(set.status, set.stderr).toBe(0);
-  });
-
-  it('site-deploy.sh refuses when wrangler is not on PATH', () => {
-    commit('second change');
-    expect(release().status).toBe(0);
-    fs.rmSync(log, { force: true });
     const bare = createTempDir({ parent: root });
-    for (const name of fs.readdirSync(stubs)) if (name !== 'wrangler') fs.symlinkSync(path.join(stubs, name), path.join(bare, name));
+    for (const name of fs.readdirSync(stubs)) fs.symlinkSync(path.join(stubs, name), path.join(bare, name));
     fs.symlinkSync(process.execPath, path.join(bare, 'node'));
-    const result = siteDeploy({ PATH: `${bare}:/usr/bin:/bin` });
+    for (const name of ['git', 'dirname']) fs.symlinkSync(`/usr/bin/${name}`, path.join(bare, name));
+    const result = siteDeploy({ PATH: bare });
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('wrangler');
-    expect(loggedNames()).not.toContain('curl');
+    expect(result.stderr).toBe('site-deploy.sh: deploying the site needs cmp on PATH, not found; nothing was deployed\n');
+    expect(originHasRef('refs/heads/site')).toBe(false);
+    expect(loggedCalls()).toEqual([]);
     const found = siteDeploy();
     expect(found.status, found.stderr).toBe(0);
+    expect(originRef('refs/heads/site')).toBe(git(work, 'rev-parse', 'HEAD').trim());
   });
 
   it('refuses to start from a dirty working tree', () => {

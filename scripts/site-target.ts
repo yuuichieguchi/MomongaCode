@@ -1,6 +1,6 @@
 export const SITE_ORIGIN = 'https://momongacode.com';
 
-export const SITE_PROJECT = 'momongacode';
+export const SITE_BRANCH = 'site';
 
 export type Installer = { file: string; source: string; tab: string; language: string; command: string };
 
@@ -13,7 +13,7 @@ export const INSTALLER_CONTENT_TYPE = 'text/plain; charset=utf-8';
 
 const PRINTED: Readonly<Record<string, () => string>> = {
   'print-origin': () => SITE_ORIGIN,
-  'print-project': () => SITE_PROJECT,
+  'print-branch': () => SITE_BRANCH,
   'print-installers': () => INSTALLERS.map((installer) => installer.file).join('\n'),
   'print-installer-content-type': () => INSTALLER_CONTENT_TYPE,
 };

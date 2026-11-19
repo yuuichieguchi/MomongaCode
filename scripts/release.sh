@@ -134,7 +134,7 @@ case "$DRY_RUN" in
 esac
 
 bash "$ROOT/scripts/release-tools.sh"
-require_env APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+require_env APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
 [ -f "$RELEASE_SIGNING_KEY" ] || fail "the ssh private key that signs $CHECKSUMS_NAME must be at $RELEASE_SIGNING_KEY"
 [ -f "$APPLE_API_KEY" ] || fail "APPLE_API_KEY must be the path of the App Store Connect .p8 key file"
 
