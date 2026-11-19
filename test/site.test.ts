@@ -189,13 +189,15 @@ const githubSlug = (text: string): string =>
     .replace(/ /g, '-');
 
 type Heading = { level: number; text: string; id: string; line: number };
+const shownTitleOf = (title: string): string => title.replace(/^\d+\.\s+/, '');
+
 const headingsOf = (file: SourceFile): Heading[] => {
   const seen = new Map<string, number>();
   const headings: Heading[] = [];
   for (const { line, number } of outsideFences(sourceOf(file))) {
     const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
     if (match === null) continue;
-    const base = githubSlug(match[2] as string);
+    const base = githubSlug(shownTitleOf(match[2] as string));
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     headings.push({ level: (match[1] as string).length, text: match[2] as string, id: count === 0 ? base : `${base}-${count}`, line: number });
@@ -203,7 +205,7 @@ const headingsOf = (file: SourceFile): Heading[] => {
   return headings;
 };
 
-const pageSlugOf = (title: string): string => githubSlug(title.replace(/^\d+\.\s+/, ''));
+const pageSlugOf = (title: string): string => githubSlug(shownTitleOf(title));
 const guidePages = (): { title: string; key: string; line: number }[] =>
   headingsOf('README.md')
     .filter((heading) => heading.level === 2 && /^\d+\.\s/.test(heading.text))
@@ -661,7 +663,7 @@ describe('the website', () => {
   });
 
   it('shows outside the rendered source text only the interface strings of the design, and titles that are source headings', () => {
-    const headingTitles = new Set(SOURCE_FILES.flatMap((file) => headingsOf(file).map((heading) => inlineText(heading.text))));
+    const headingTitles = new Set(SOURCE_FILES.flatMap((file) => headingsOf(file).map((heading) => inlineText(shownTitleOf(heading.text)))));
     const strings = new Set<string>();
     for (const key of pageKeys()) {
       const { texts, titles } = interfaceTextOf(text(key));

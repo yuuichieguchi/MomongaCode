@@ -77,17 +77,27 @@ const current = (url: string, here: string): string => (url === here ? ' aria-cu
 const groupList = (pages: readonly DocPage[], here: string): string =>
   `<ul>${pages.map((each) => `<li><a href="${escapeHtml(each.url)}"${current(each.url, here)} data-source>${escapeHtml(each.title)}</a></li>`).join('')}</ul>`;
 
-const groupLabel = (source: SourceSet, here: string): string => {
-  const single = source.pages.length === 1 ? source.pages[0] : undefined;
-  if (single !== undefined) return ui('a', source.spec.group, ` class="group" href="${escapeHtml(single.url)}"${current(single.url, here)}`);
-  const home = source.spec.home === 'index.html' ? undefined : urlOfKey(source.spec.home);
-  return home === undefined ? ui('p', source.spec.group, ' class="group"') : ui('a', source.spec.group, ` class="group" href="${escapeHtml(home)}"${current(home, here)}`);
+const groupUrl = (source: SourceSet): string | undefined => {
+  if (source.pages.length === 1) return source.pages[0]?.url;
+  return source.spec.home === 'index.html' ? undefined : urlOfKey(source.spec.home);
 };
+
+const groupLabel = (source: SourceSet, here: string): string => {
+  const url = groupUrl(source);
+  return url === undefined ? ui('p', source.spec.group, ' class="group"') : ui('a', source.spec.group, ` class="group" href="${escapeHtml(url)}"${current(url, here)}`);
+};
+
+export const groupHeading = (source: SourceSet): string => {
+  const url = groupUrl(source);
+  return url === undefined ? ui('h2', source.spec.group) : `<h2>${ui('a', source.spec.group, ` href="${escapeHtml(url)}"`)}</h2>`;
+};
+
+export const hasGroupList = (source: SourceSet): boolean => source.pages.length !== 1;
 
 const sidebar = (chrome: Chrome, here: string): string =>
   [
     '<nav id="sidebar" class="sidebar">',
-    ...chrome.sources.map((source) => `<div class="sidebar-group">${groupLabel(source, here)}${source.pages.length === 1 ? '' : groupList(source.pages, here)}</div>`),
+    ...chrome.sources.map((source) => `<div class="sidebar-group">${groupLabel(source, here)}${hasGroupList(source) ? groupList(source.pages, here) : ''}</div>`),
     '</nav>',
   ].join('\n');
 

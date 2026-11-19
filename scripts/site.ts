@@ -4,14 +4,14 @@ import { build } from 'esbuild';
 import { readEmbeddedReleaseRepo } from './release-key.ts';
 import { INSTALLERS, INSTALLER_CONTENT_TYPE, SITE_ORIGIN } from './site-target.ts';
 import { iconFigure, landingFigure } from './site/figure.ts';
-import { docsLayout, page } from './site/layout.ts';
+import { docsLayout, groupHeading, hasGroupList, page } from './site/layout.ts';
 import type { Assets, Chrome } from './site/layout.ts';
 import { codeBlock, marked, plainText, renderBlocks, sourceText, squash } from './site/markdown.ts';
 import type { Block } from './site/markdown.ts';
-import { linkResolver, readSources, urlOfKey } from './site/pages.ts';
+import { assertDistinctAddresses, linkResolver, readSources, urlOfKey } from './site/pages.ts';
 import type { DocPage, SiteFacts, SourceSet } from './site/pages.ts';
 import { iconCss, themeCss } from './site/style.ts';
-import { NUMBERED, contentHash, escapeHtml } from './site/text.ts';
+import { contentHash, escapeHtml } from './site/text.ts';
 
 const FOOTER_SECTIONS = ['Contributing', 'License', 'Disclaimer'] as const;
 
@@ -43,10 +43,8 @@ const bundleClient = async (root: string): Promise<string> => {
 
 const hashed = (name: string, extension: string, content: string): { key: string; content: string } => ({ key: `assets/${name}.${contentHash(content)}.${extension}`, content });
 
-const titleOf = (each: DocPage): string => each.title.replace(NUMBERED, '');
-
 const sectionOf = (source: SourceSet, number: number): DocPage => {
-  const found = source.pages.find((each) => each.title.startsWith(`${number}. `));
+  const found = source.pages.find((each) => squash(plainText(source.spec.file, each.heading.tokens)).startsWith(`${number}. `));
   if (found === undefined) throw new Error(`${source.spec.file} has no section ${number}`);
   return found;
 };
@@ -105,7 +103,7 @@ const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFact
   const after: Block[] = installation.blocks.slice(lastCode + 1);
   const why = sectionOf(guide, 2);
   const features = sectionOf(guide, 4);
-  const rendered = (blocks: readonly Block[]): string => sourceText(renderBlocks(guide.document, blocks, link, 1, '/', 'unnumbered').html);
+  const rendered = (blocks: readonly Block[]): string => sourceText(renderBlocks(guide.document, blocks, link, 1, '/').html);
   const release = `https://github.com/${facts.repo}/releases/tag/v${facts.version}`;
   const body = [
     '<main id="content" class="landing">',
@@ -124,6 +122,8 @@ const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFact
   ].join('\n');
   return page(chrome, { title: front.name, body, menu: false, className: 'page-landing' });
 };
+
+const indexHeading = (heading: string): string => `<h1 data-ui>${escapeHtml(heading)}</h1>`;
 
 const titleList = (pages: readonly DocPage[]): string => `<ul class="index-list">${pages.map((each) => `<li><a href="${escapeHtml(each.url)}" data-source>${escapeHtml(each.title)}</a></li>`).join('')}</ul>`;
 
@@ -161,14 +161,20 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   if (guide === undefined) throw new Error('no source is the landing page');
   const reference = sources.find((source) => source.spec.home === 'docs/reference/index.html');
   if (reference === undefined) throw new Error('no source is the reference');
+  assertDistinctAddresses(sources, [
+    { key: 'index.html', name: 'the landing page' },
+    { key: 'docs/index.html', name: 'the docs index' },
+    { key: reference.spec.home, name: 'the reference index' },
+    { key: '404.html', name: 'the page not found' },
+  ]);
   const docPages = sources.flatMap((source) => source.pages);
   const footer = FOOTER_SECTIONS.map((label) => {
-    const found = docPages.filter((each) => titleOf(each) === label);
+    const found = docPages.filter((each) => each.title === label);
     if (found.length !== 1) throw new Error(`the footer link ${label} names ${found.length} pages`);
     return { label, url: (found[0] as DocPage).url };
   });
 
-  const rendered = new Map(docPages.map((each) => [each, renderBlocks(each.document, each.blocks, link, each.spec.splitDepth, each.url, 'numbered')]));
+  const rendered = new Map(docPages.map((each) => [each, renderBlocks(each.document, each.blocks, link, each.spec.splitDepth, each.url)]));
   const css = hashed('site', 'css', `${themeCss()}\n${fs.readFileSync(path.join(root, 'site/styles/site.css'), 'utf8')}`);
   const js = hashed('site', 'js', await bundleClient(root));
   const index = hashed('search-index', 'json', JSON.stringify([...rendered.values()].flatMap((each) => each.records)));
@@ -178,8 +184,8 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   const pages = new Map<string, string>();
   const front = frontOf(guide);
   pages.set('index.html', landing(chrome, guide, front, facts, link));
-  pages.set('docs/index.html', page(chrome, { title: 'Docs', body: docsLayout(chrome, '/docs/', sources.map((source) => titleList(source.pages)).join('\n'), []), menu: true, className: 'page-docs' }));
-  pages.set(reference.spec.home, page(chrome, { title: reference.spec.group, body: docsLayout(chrome, urlOfKey(reference.spec.home), titleList(reference.pages), []), menu: true, className: 'page-docs' }));
+  pages.set('docs/index.html', page(chrome, { title: 'Docs', body: docsLayout(chrome, '/docs/', [indexHeading('Docs'), ...sources.map((source) => (hasGroupList(source) ? `${groupHeading(source)}\n${titleList(source.pages)}` : groupHeading(source)))].join('\n'), []), menu: true, className: 'page-docs' }));
+  pages.set(reference.spec.home, page(chrome, { title: reference.spec.group, body: docsLayout(chrome, urlOfKey(reference.spec.home), `${indexHeading(reference.spec.group)}\n${titleList(reference.pages)}`, []), menu: true, className: 'page-docs' }));
   for (const [each, result] of rendered) pages.set(each.key, page(chrome, { title: each.title, body: docsLayout(chrome, each.url, sourceText(result.html), result.toc), menu: true, className: 'page-docs' }));
   pages.set('404.html', page(chrome, { title: 'Page not found', body: '<main id="content" class="not-found"><h1 data-ui>Page not found</h1><p><a href="/docs/" data-ui>Docs</a> <a href="/" data-ui>MomongaCode</a></p></main>', menu: false, className: 'page-not-found' }));
   for (const [key, html] of pages) assertUniqueIds(key, html);

@@ -2,11 +2,11 @@ import { lexer } from 'marked';
 import type { MarkedToken, Token, Tokens } from 'marked';
 import { highlightCode } from '../../packages/cli/src/tui/screen/highlight.ts';
 import type { SearchRecord } from '../../site/client/search.ts';
-import { NUMBERED, decodeEntities, escapeHtml, githubSlug, githubSlugger, tokenClass } from './text.ts';
+import { decodeEntities, escapeHtml, githubSlug, githubSlugger, shownTitle, tokenClass } from './text.ts';
 
 export type Block = { token: MarkedToken; line: number };
 
-export type SourceDocument = { file: string; blocks: readonly Block[]; headingIds: ReadonlyMap<Tokens.Heading, string>; rowIds: ReadonlyMap<readonly Tokens.TableCell[], string> };
+export type SourceDocument = { file: string; blocks: readonly Block[]; headingIds: ReadonlyMap<Tokens.Heading, string>; sourceAnchors: ReadonlyMap<string, string>; rowIds: ReadonlyMap<readonly Tokens.TableCell[], string> };
 
 const MARKED_TYPES: ReadonlySet<string> = new Set(['blockquote', 'br', 'checkbox', 'code', 'codespan', 'def', 'del', 'em', 'escape', 'heading', 'hr', 'html', 'image', 'link', 'list', 'list_item', 'paragraph', 'space', 'strong', 'table', 'text']);
 
@@ -78,10 +78,16 @@ export const readDocument = (file: string, markdown: string): SourceDocument => 
     });
   }
   const slug = githubSlugger();
+  const sourceSlug = githubSlugger();
   const tokens = blocks.map((block) => block.token);
   const headingIds = new Map<Tokens.Heading, string>();
+  const sourceAnchors = new Map<string, string>();
   eachToken(file, tokens, (token) => {
-    if (token.type === 'heading') headingIds.set(token, slug(githubSlug(squash(plainText(file, token.tokens)))));
+    if (token.type !== 'heading') return;
+    const sourceTitle = squash(plainText(file, token.tokens));
+    const id = slug(githubSlug(shownTitle(sourceTitle)));
+    headingIds.set(token, id);
+    sourceAnchors.set(sourceSlug(githubSlug(sourceTitle)), id);
   });
   const rowIds = new Map<readonly Tokens.TableCell[], string>();
   let heading: string | undefined;
@@ -95,7 +101,7 @@ export const readDocument = (file: string, markdown: string): SourceDocument => 
       rowIds.set(row, slug(`${heading}-${githubSlug(squash(plainText(file, first.tokens)))}`));
     }
   });
-  return { file, blocks, headingIds, rowIds };
+  return { file, blocks, headingIds, sourceAnchors, rowIds };
 };
 
 export type LinkTarget = (from: string, href: string) => string;
@@ -104,9 +110,7 @@ export type TocEntry = { id: string; title: string };
 
 export type RenderedPage = { html: string; toc: readonly TocEntry[]; records: readonly SearchRecord[] };
 
-export type HeadingNumbers = 'numbered' | 'unnumbered';
-
-type RenderState = { headingNumbers: HeadingNumbers; document: SourceDocument; link: LinkTarget; topDepth: number; url: string; toc: TocEntry[]; records: SearchRecord[]; section: SearchRecord | undefined };
+type RenderState = { document: SourceDocument; link: LinkTarget; topDepth: number; url: string; toc: TocEntry[]; records: SearchRecord[]; section: SearchRecord | undefined };
 
 export const sourceText = (html: string): string => `<div data-source>${html}</div>`;
 
@@ -187,16 +191,13 @@ const blocksHtml = (state: RenderState, tokens: readonly Token[], tight: boolean
         case 'def':
           return '';
         case 'heading': {
-          const sourceId = state.document.headingIds.get(token);
-          if (sourceId === undefined) throw new Error(`${state.document.file}: a heading has no id`);
-          const unnumbered = state.headingNumbers === 'unnumbered';
-          const shown = squash(plainText(state.document.file, token.tokens));
-          const title = unnumbered ? shown.replace(NUMBERED, '') : shown;
-          const id = unnumbered ? githubSlug(title) : sourceId;
+          const id = state.document.headingIds.get(token);
+          if (id === undefined) throw new Error(`${state.document.file}: a heading has no id`);
+          const title = shownTitle(squash(plainText(state.document.file, token.tokens)));
           state.section = record(state, id, title, '');
           const level = Math.min(6, token.depth - state.topDepth + 1);
           if (level === 2) state.toc.push({ id, title });
-          return `<h${level} id="${escapeHtml(id)}">${unnumbered ? inline(state, token.tokens).replace(NUMBERED, '') : inline(state, token.tokens)}</h${level}>`;
+          return `<h${level} id="${escapeHtml(id)}">${shownTitle(inline(state, token.tokens))}</h${level}>`;
         }
         case 'paragraph':
           addText(state, plainText(state.document.file, token.tokens));
@@ -228,8 +229,8 @@ const blocksHtml = (state: RenderState, tokens: readonly Token[], tight: boolean
     })
     .join(tight ? ' ' : '\n');
 
-export const renderBlocks = (document: SourceDocument, blocks: readonly Block[], link: LinkTarget, topDepth: number, url: string, headingNumbers: HeadingNumbers): RenderedPage => {
-  const state: RenderState = { headingNumbers, document, link, topDepth, url, toc: [], records: [], section: undefined };
+export const renderBlocks = (document: SourceDocument, blocks: readonly Block[], link: LinkTarget, topDepth: number, url: string): RenderedPage => {
+  const state: RenderState = { document, link, topDepth, url, toc: [], records: [], section: undefined };
   const html = blocksHtml(
     state,
     blocks.map((block) => block.token),

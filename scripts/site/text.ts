@@ -38,6 +38,6 @@ export const githubSlugger = (): ((base: string) => string) => {
 
 export const contentHash = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex').slice(0, 12);
 
-export const NUMBERED = /^\d+\.\s+/;
+export const shownTitle = (sourceTitle: string): string => sourceTitle.replace(/^\d+\.\s+/, '');
 
 export const tokenClass = (token: string): string => `t-${token.replace(/\./g, '-')}`;

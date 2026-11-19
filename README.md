@@ -16,7 +16,7 @@ Windows, in PowerShell:
 irm https://momongacode.com/install.ps1 | iex
 ```
 
-Then add a model and run a first prompt, as [section 3](#3-getting-started) shows.
+Then add a model and run a first prompt, as [Getting Started](#3-getting-started) shows.
 
 ## 2. Why MomongaCode?
 
@@ -49,7 +49,7 @@ Every token-saving mechanism is on by default; each has a setting only so you ca
 - **Cost visibility.** `momonga cost --breakdown` shows what the requests were made of, the billed tokens by kind, the cache hit ratio, the timing, and the cost.
 - **Measurement.** `momonga eval context <dataset>` runs a golden dataset and reports metrics; `momonga eval compare <baseline> <candidate> --gate token` judges the defaults against a base report built with `--settings packages/eval/policies/core-off.json` (every core feature off). `momonga eval yield <dataset> --model <model> --report <file>` runs paired sessions and judges whether reflection pays: what a later session saves if the candidates are accepted, with the charge of the reflection shown beside it.
 
-All of these settings are on by default; each is turned off key by key (see Configuration).
+All of these settings are on by default; each is turned off key by key (see [Configuration](#6-configuration)).
 
 ## 3. Getting Started
 
@@ -125,7 +125,7 @@ Run `momonga` with no prompt to start an interactive session instead. The first 
 
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
 - **Models.** Connections to Ollama, chat-completions servers, Open Responses servers, Anthropic, and server programs that MomongaCode starts itself, such as Apple's `fm`. A model is called by the name its server gives it. `models.fallback` lists the models tried next when a model cannot answer. `momonga gateway probe <model>` measures a model's capabilities and records the result.
-- **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background work), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents: the general subagent `general-purpose` is built in and needs no setup), `LoadTools`, and `activate_skill`, and the operations tools for Git, pull requests and issues (`GitStage`, `GitCommit`, `GitPush` and the others): each states what it changes, and the approval names it. [docs/reference.md](docs/reference.md) lists every tool.
+- **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background work), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents: the general subagent `general-purpose` is built in and needs no setup), `LoadTools`, and `activate_skill`, and the operations tools for Git, pull requests and issues (`GitStage`, `GitCommit`, `GitPush` and the others): each states what it changes, and the approval names it. [The reference](docs/reference.md) lists every tool.
 - **Permission modes.** The mode decides what a call that no rule decides does:
   - `manual` asks before every call that changes something or reaches the network;
   - `acceptEdits` also allows, without asking, edits and file-system commands inside the workspace;
@@ -133,20 +133,20 @@ Run `momonga` with no prompt to start an interactive session instead. The first 
   - `auto` lets a classifier model decide each such call in your place, as the next item says;
   - `bypassPermissions` allows every call that no deny rule matches and asks nobody.
 
-  In every mode a deny rule still denies, the secret locations stay denied (see Permission rules), and a command that removes the workspace is asked of you except in `bypassPermissions`. Rules are written as `Tool(specifier)` and set in `permissions.allow`, `permissions.ask`, and `permissions.deny` ([section 6](#6-configuration)). `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`.
+  In every mode a deny rule still denies, the secret locations stay denied (see [Permission rules](#permission-rules)), and a command that removes the workspace is asked of you except in `bypassPermissions`. Rules are written as `Tool(specifier)` and set in `permissions.allow`, `permissions.ask`, and `permissions.deny` ([Configuration](#6-configuration)). `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`.
 - **Policy verification.** `momonga policy verify` asks the daemon to check the rules of the folder: that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect. It states what is proved and what is not, and lists a rule that is redundant, shadowed by another, or cannot be reached as a note; a note refuses nothing. The verdict is stored with the rules of the folder, and a run of that folder reuses it until a rule changes.
-- **Verifiable completion.** A run can declare completion conditions: shell commands that MomongaCode runs itself, in the sandbox, when the model stops. A run ends `COMPLETED` only when every condition it owes passed on the final state of the workspace; otherwise the failures go back to the model, and a run that stops again without a change ends `STOPPED` with the reason `conditions_unmet` and names the conditions. `momonga report` shows the outcome (see [section 5](#5-usage)).
+- **Verifiable completion.** A run can declare completion conditions: shell commands that MomongaCode runs itself, in the sandbox, when the model stops. A run ends `COMPLETED` only when every condition it owes passed on the final state of the workspace; otherwise the failures go back to the model, and a run that stops again without a change ends `STOPPED` with the reason `conditions_unmet` and names the conditions. `momonga report` shows the outcome (see [Usage](#5-usage)).
 - **Auto mode.** `momonga auto-mode` measures how well a model judges approvals for auto mode. Auto mode is honored only from user settings or the command line.
 - **Sandbox.** Bash runs under Seatbelt on macOS and bubblewrap on Linux. Windows has no sandbox in this release: Bash asks before every command.
-- **Memory and rules.** `momonga memory` and `momonga rule` (see [section 2](#2-why-momongacode)).
+- **Memory and rules.** `momonga memory` and `momonga rule` (see [Why MomongaCode?](#2-why-momongacode)).
 - **Skills and agents.** Skills are `SKILL.md` files found in `.momonga/skills` and `.agents/skills` of the project and in `~/.momonga/skills` and `~/.agents/skills`. A general subagent, `general-purpose`, is built in; custom agents are read from `.momonga/agents` directories, and a custom agent named `general-purpose` replaces the built-in one. Project skills are loaded only for trusted folders.
 - **MCP.** Servers over stdio or HTTP with OAuth. `momonga mcp list` and `momonga mcp login <server>`. Pending MCP input requests are handled with `momonga elicit`.
 - **Hooks.** Commands run on `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, and `SessionStart`. A hook that exits with code 2 blocks.
 - **Editor integration.** `momonga acp` speaks the Agent Client Protocol on standard input and output.
 - **Observability.** `momonga trace` shows the model and tool spans of a run, `momonga cost` shows what it cost, and an OTLP endpoint can be configured under `telemetry.otlp`.
 - **Background jobs and runs.** `momonga status`, `momonga jobs`, `momonga attach`, and `momonga cancel`.
-- **Delegated work.** A mandate hands work over with bounds, as [section 5](#5-usage) describes: `--mandate <name>` on `momonga -p`, or `/delegate <mandate> <request>` in the interactive session.
-- **Measured reliability.** `momonga reliability` reports how runs ended, `momonga eval bench <folder>` runs a fixed bench set on one model, and `momonga permissions review` samples recorded permission decisions for review ([section 5](#5-usage)).
+- **Delegated work.** A mandate hands work over with bounds, as [Usage](#5-usage) describes: `--mandate <name>` on `momonga -p`, or `/delegate <mandate> <request>` in the interactive session.
+- **Measured reliability.** `momonga reliability` reports how runs ended, `momonga eval bench <folder>` runs a fixed bench set on one model, and `momonga permissions review` samples recorded permission decisions for review ([Usage](#5-usage)).
 
 ## 5. Usage
 
@@ -154,7 +154,7 @@ Run `momonga` with no prompt to start an interactive session instead. The first 
 momonga [options] [prompt]
 ```
 
-[docs/reference.md](docs/reference.md) lists every option and command, with the options of each command, the settings keys, the environment variables, and the exit codes. It is generated from the product's own tables. Run `momonga <command> --help` for the options of each command.
+[The reference](docs/reference.md) lists every option and command, with the options of each command, the settings keys, the environment variables, and the exit codes. It is generated from the product's own tables. Run `momonga <command> --help` for the options of each command.
 
 `momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists. An update never interrupts running work. If the daemon was running, both `momonga update` and the automatic update start a daemon of the new version beside it. The new one serves every new request at once. The old one accepts no new work, finishes the steps and background jobs it already runs, and then ends by itself; `momonga daemon status` lists it as retiring until then. A session opened before the update keeps working on the old daemon while that daemon lives, and is then told that momonga was updated and to reopen it. If the new daemon does not start, the new version stays installed, the old daemon keeps running, and the message says what to run. `momonga daemon stop` is the only command that interrupts running work: it stops every running daemon, and it first prints how many running steps and background jobs it interrupts.
 
@@ -262,7 +262,7 @@ Other keys under `models`: `roles` (the model for `compaction`, `reflection`, or
 
 You can make every one of these changes without editing the file: `momonga models add`, `remove`, `start`, `fallback`, `billing`, `role`, and `set` in a shell, or `/model`, then `Model settings…`, in a session.
 
-A model request can be sent twice. After a crash of the gateway or the runtime, or when a server fails before its answer starts, MomongaCode sends the same request again, and the server may run and bill it twice. A second send is recorded and marked `retry_of`: the usage record of its answer carries `retry_of_seq` and its trace span carries `momonga.retry_of`, both naming the first send. If a server accepts an idempotency key, set `idempotencyKeyHeader` on its connection to the name of the header the server reads the key from, for example `"idempotencyKeyHeader": "Idempotency-Key"`. MomongaCode then sends the same key on a request and on every resend of it, so that such a server answers and bills it once. Without the setting no key is sent. [docs/threat-model.md](docs/threat-model.md) states this risk in full.
+A model request can be sent twice. After a crash of the gateway or the runtime, or when a server fails before its answer starts, MomongaCode sends the same request again, and the server may run and bill it twice. A second send is recorded and marked `retry_of`: the usage record of its answer carries `retry_of_seq` and its trace span carries `momonga.retry_of`, both naming the first send. If a server accepts an idempotency key, set `idempotencyKeyHeader` on its connection to the name of the header the server reads the key from, for example `"idempotencyKeyHeader": "Idempotency-Key"`. MomongaCode then sends the same key on a request and on every resend of it, so that such a server answers and bills it once. Without the setting no key is sent. [The threat model](docs/threat-model.md) states this risk in full.
 
 ### Permission rules
 
@@ -274,7 +274,7 @@ A `Bash(...)` allow rule matches the command text literally, as in Claude Code, 
 
 A command allowed this way still runs inside the sandbox. It has no network unless the call asks for it. The model sets `network` on the Bash call, either to `{"hosts": ["registry.example.org"]}` for named hosts (a name or an IP address, optionally with `:port`) or to `"open"` for unrestricted access, and you are asked to approve that call, with the request and the hosts named in the approval. Only you can grant it: a hook and the `auto` mode classifier never do. The approval holds for that one call. `Network(registry.example.org)` and `Network(*.example.org)` in the `permissions` of your user settings allow, ask about or deny those hosts without a question each time; a folder's settings cannot hold them. The `sandboxNetwork` setting refuses every request (`deny`), asks for each (`ask`, the default), or grants them without asking (`allow`); `--sandbox-network deny`, `ask` or `allow` sets it for one session and wins over the setting, and a folder's settings cannot set it. An allow rule never covers `"open"`. With named hosts the command reaches the network only through a proxy that MomongaCode runs for that command on this machine: the proxy carries HTTP and HTTPS, lets through only the granted hosts, closes a tunnel that does not open with the granted name, and refuses a name that resolves to a loopback, link-local, or private address unless that address is granted itself. A refused host is named in the tool result. A program that does not use the proxy variables (`HTTPS_PROXY` and the like), such as SSH, stays without network. A command that only reads never gets the network. File deny rules, such as `Read(...)` and `Edit(...)`, are enforced by the operating system, so no program the command starts can read or write a denied path. The command can write only where the sandbox allows writes. A `Bash(...)` deny rule, such as `Bash(rm:*)` in the example, matches only the command text, so it does not stop a program that an allowed command starts through an option.
 
-The secret locations, such as `~/.ssh`, `~/.aws`, `~/.netrc`, the home of MomongaCode and the platform key store, stay denied to reading and writing in every mode, `bypassPermissions` included; [docs/threat-model.md](docs/threat-model.md) lists them all.
+The secret locations, such as `~/.ssh`, `~/.aws`, `~/.netrc`, the home of MomongaCode and the platform key store, stay denied to reading and writing in every mode, `bypassPermissions` included; [the threat model](docs/threat-model.md) lists them all.
 
 An approval shows the whole command, or every argument of an MCP call or an operation, escaped so that no character of it can redraw the screen, and the model's own description of the call labelled as the model's claim. A changed argument or description asks again. In `/config`, removing a permission rule or an additional folder asks first and names the rule or the folder and the settings file it comes from.
 
@@ -282,11 +282,11 @@ When a trusted folder adds or changes a hook group, its mandate file, a server o
 
 With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer lets a command run without approval: Bash asks before every command, and in `auto` mode the classifier decides.
 
-[docs/threat-model.md](docs/threat-model.md) states these and the other risks that MomongaCode accepts by design.
+[The threat model](docs/threat-model.md) states these and the other risks that MomongaCode accepts by design.
 
 ### Other settings
 
-[docs/reference.md](docs/reference.md) lists every settings key with its values and the settings files that may set it.
+[The reference](docs/reference.md) lists every settings key with its values and the settings files that may set it.
 
 MomongaCode stores its data under `~/.momonga` (settings, `state/` databases, `logs/`, `skills/`, `agents/`, and per-project data).
 
@@ -298,7 +298,7 @@ You set nothing.
 
 The script downloads `SHA256SUMS` and `SHA256SUMS.sig` from the latest GitHub release of `yuuichieguchi/MomongaCode`, verifies the signature with `ssh-keygen` against the release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails. `ssh-keygen` must be available; on Windows that means the OpenSSH Client optional feature.
 
-Both installers read a few optional environment variables, such as `MOMONGA_VERSION` to install one version and `MOMONGA_MODIFY_PATH=0` to leave your PATH alone; [docs/reference.md](docs/reference.md) lists them all.
+Both installers read a few optional environment variables, such as `MOMONGA_VERSION` to install one version and `MOMONGA_MODIFY_PATH=0` to leave your PATH alone; [the reference](docs/reference.md) lists them all.
 
 The installers change your PATH only when the install directory is missing from it (`install.sh` checks the PATH of the running shell, `install.ps1` the user PATH):
 
