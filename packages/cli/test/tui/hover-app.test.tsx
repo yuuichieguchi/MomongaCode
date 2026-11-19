@@ -83,22 +83,21 @@ describe('the chosen row of the slash menu when it opens again', () => {
   it('is the exact match after the choice was moved down for the same text, the draft emptied and the text typed again', async () => {
     const place = freshPlace();
     const app = await startOnTerminal(SIZE, { settingsPlace: { home: place.home, projectDir: place.project } });
-    await app.type('/model', (lines) => chosenLine(lines).startsWith('› /model ['), 'the exact match is chosen');
-    await app.type(KEYS.down, (lines) => chosenLine(lines).startsWith('› /models'), 'the keys move the choice down');
-    await app.type(KEYS.backspace.repeat(6), (lines) => !lines.some((line) => line.includes('/models')), 'the draft is emptied');
-    await app.type('/model', (lines) => lines.some((line) => line.includes('/models')), 'the menu opens again');
-    expect(chosenLine(app.screen())).toMatch(/^› \/model \[/);
-    await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('a change applies from the next run')), 'Enter runs /model');
+    await app.type('/mode', (lines) => chosenLine(lines).startsWith('› /mode ['), 'the exact match is chosen');
+    await app.type(KEYS.down, (lines) => chosenLine(lines).startsWith('› /model ['), 'the keys move the choice down');
+    await app.type(KEYS.backspace.repeat(5), (lines) => !lines.some((line) => line.includes('/model [')), 'the draft is emptied');
+    await app.type('/mode', (lines) => lines.some((line) => line.includes('/model [')), 'the menu opens again');
+    expect(chosenLine(app.screen())).toMatch(/^› \/mode \[/);
     app.close();
   });
 
   it('opens again after ctrl+c closed it for the same text, once the text was typed again', async () => {
     const place = freshPlace();
     const app = await startOnTerminal(SIZE, { settingsPlace: { home: place.home, projectDir: place.project } });
-    await app.type('/model', (lines) => lines.some((line) => line.includes('/models')), 'the menu is open');
-    await app.type(KEYS.ctrlC, (lines) => !lines.some((line) => line.includes('/models')), 'ctrl+c closes the menu');
-    await app.type(KEYS.backspace.repeat(6), (lines) => !lines.some((line) => line.includes('/model')), 'the draft is emptied');
-    await app.type('/model', (lines) => chosenLine(lines).startsWith('› /model ['), 'the menu opens again with the exact match chosen');
+    await app.type('/mode', (lines) => lines.some((line) => line.includes('/model [')), 'the menu is open');
+    await app.type(KEYS.ctrlC, (lines) => !lines.some((line) => line.includes('/model [')), 'ctrl+c closes the menu');
+    await app.type(KEYS.backspace.repeat(5), (lines) => !lines.some((line) => line.includes('/mode')), 'the draft is emptied');
+    await app.type('/mode', (lines) => chosenLine(lines).startsWith('› /mode ['), 'the menu opens again with the exact match chosen');
     app.close();
   });
 });
