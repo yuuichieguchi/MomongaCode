@@ -712,7 +712,7 @@ export function App(props: AppProps) {
     panelRows: panelRowsCap(rows),
     keys,
     screenReader: a11y.screenReader,
-    cancelNewest,
+    interruptRun: () => interruptRun('prompt.interrupt'),
     reportError,
     fail,
     exit: () => finish({}),
@@ -1517,6 +1517,11 @@ export function App(props: AppProps) {
     exitOnSecondPress(action);
   };
 
+  const interruptRun = (action: ExitAction): void => {
+    if (armedExit.current?.action === action) exitOnSecondPress(action);
+    else cancelAndArmExit(action);
+  };
+
   useEffect(
     () => () => {
       if (armedExit.current !== undefined) timers.clearTimeout(armedExit.current.timer);
@@ -1619,8 +1624,7 @@ export function App(props: AppProps) {
       else if (invitationShown) prompts.dismissInvitation();
     } else if (action === 'prompt.interrupt') {
       if (starting) finish({});
-      else if (armedExit.current?.action === action) exitOnSecondPress(action);
-      else if (working) cancelAndArmExit(action);
+      else if (armedExit.current?.action === action || working) interruptRun(action);
       else if (current.text === '') exitOnSecondPress(action);
       else replaceEditor(emptyEditor(current.history));
     } else if (action === 'prompt.exit') {

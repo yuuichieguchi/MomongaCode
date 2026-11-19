@@ -70,7 +70,7 @@ export type PromptsHost = {
   panelRows: number;
   keys: KeyTable;
   screenReader: boolean;
-  cancelNewest(): void;
+  interruptRun(): void;
   reportError(error: unknown): void;
   fail(error: unknown): void;
   exit(): void;
@@ -456,7 +456,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       sending: sent.current === owner,
       on: (outcome) => {
         if (outcome.kind === 'interrupt') {
-          host.cancelNewest();
+          host.interruptRun();
           return;
         }
         const option = outcome.kind === 'decide' ? approval.options[outcome.index] : undefined;
@@ -520,7 +520,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       border: true,
       sending: pending.submitted,
       on: (outcome) => {
-        if (outcome.kind === 'interrupt') host.cancelNewest();
+        if (outcome.kind === 'interrupt') host.interruptRun();
         else if (outcome.kind === 'decide') decideFlow(pending, decisionChoices(flow)[outcome.index]?.decision);
       },
     };
@@ -541,7 +541,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     }
     if (!gate.takes(settle, action === 'select.interrupt' || action === 'select.escape' ? 'other' : 'text', 'key')) return;
     if (action === 'select.interrupt') {
-      host.cancelNewest();
+      host.interruptRun();
       return;
     }
     if (pending.submitted) return;
