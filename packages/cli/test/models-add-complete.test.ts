@@ -128,7 +128,7 @@ describe('momonga models add writes a complete entry from what the server report
 
     await listModels(harness.shell, { json: false });
 
-    expect(harness.out()).toMatch(new RegExp(`^ollama/qwen3\\.8:27b +${formatTokens(32768)} +local `, 'm'));
+    expect(harness.out()).toMatch(new RegExp(`^ollama/qwen3\\.8:27b +${formatTokens(32768)} +- `, 'm'));
     expect(harness.out()).not.toContain('window not known');
   });
 });

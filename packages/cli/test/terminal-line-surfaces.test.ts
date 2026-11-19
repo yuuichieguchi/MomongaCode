@@ -53,7 +53,7 @@ describe('a value a person did not write stays on its own line in command output
     const lines = formatModels(modelsDocumentOf({ object: 'list', data: [entry], start: null, roles: {} }, new Map([['lmstudio', `http://e.test/ ${FORGED}`]]), new Set(), new Map())).split('\n');
     expect(lines).toEqual([
       `model${' '.repeat(`lmstudio/google/fast:7b ${SHOWN}`.length - 'model'.length)}  window  billing  server${' '.repeat(`http://e.test/ ${SHOWN}`.length - 'server'.length)}  state`,
-      `lmstudio/google/fast:7b ${SHOWN}  1       local    http://e.test/ ${SHOWN}`,
+      `lmstudio/google/fast:7b ${SHOWN}  1       -        http://e.test/ ${SHOWN}  -`,
     ]);
   });
 

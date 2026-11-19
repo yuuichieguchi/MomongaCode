@@ -34,7 +34,7 @@ describe('momonga models, cost and memory', () => {
     expect(text.stderr).toBe('');
     expect(text.code).toBe(0);
     expect(text.stdout.split('\n')[0]).toMatch(/^model +window +billing +server +state$/);
-    expect(text.stdout).toMatch(new RegExp(`^${UPSTREAM_MODEL} .* ${UPSTREAM_PROVIDER} +starts new sessions$`, 'm'));
+    expect(text.stdout).toMatch(new RegExp(`^${UPSTREAM_MODEL} +\\S+ +\\S+ +${UPSTREAM_PROVIDER} +starts new sessions$`, 'm'));
     const json = jsonOf((await runCli(home, ['models', '--json'])).stdout);
     expect(json).toMatchObject({
       start: UPSTREAM_MODEL_REF,

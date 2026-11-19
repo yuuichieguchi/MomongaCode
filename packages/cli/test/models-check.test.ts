@@ -27,8 +27,8 @@ describe('momonga models check', () => {
     ]);
     expect(text.out().split('\n')).toEqual([
       'model                window  billing  server                    state',
-      'ollama/gemma-3-4b    32.8k   local    http://127.0.0.1:11434    starts new sessions, not listed by the server',
-      'lmstudio/gemma-3-4b  4.1k    local    http://127.0.0.1:1234/v1',
+      'ollama/gemma-3-4b    32.8k   -        http://127.0.0.1:11434    starts new sessions, not listed by the server',
+      'lmstudio/gemma-3-4b  4.1k    -        http://127.0.0.1:1234/v1  -',
       '',
     ]);
     const document = JSON.parse(json.out()) as { models: Record<string, unknown>[] };

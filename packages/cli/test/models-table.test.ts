@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { messageOf } from '@momonga/protocol';
+import { TARGET_PROBING_MESSAGE, messageOf } from '@momonga/protocol';
+import type { MomongaModelEntry } from '@momonga/protocol';
 import { checkModels, listModels } from '../src/commands/models.ts';
 import { OLLAMA_ADDRESS, homeWith, ollamaFound, shellOf } from './models-shell-harness.ts';
 
@@ -18,8 +19,8 @@ describe('momonga models prints one aligned table', () => {
     expect(await printed({ models: { connections: [ollama([QWEN]), LUNA_PLAN], start: 'ollama/qwen3.8:27b' } }, context)).toBe(
       [
         'model               window  billing  server                  state',
-        'ollama/qwen3.8:27b  262.1k  local    http://127.0.0.1:11434  starts new sessions',
-        'gpt-6-luna                  plan     chatgpt                 available',
+        'ollama/qwen3.8:27b  262.1k  -        http://127.0.0.1:11434  starts new sessions',
+        'gpt-6-luna          -       plan     chatgpt                 available',
         '',
       ].join('\n'),
     );
@@ -29,11 +30,29 @@ describe('momonga models prints one aligned table', () => {
     expect(await printed({ models: { connections: [ollama([{ id: 'mystery:7b' }, QWEN])], start: 'ollama/qwen3.8:27b' } }, context)).toBe(
       [
         'model               window            billing  server                  state',
-        'ollama/mystery:7b   window not known           http://127.0.0.1:11434',
-        'ollama/qwen3.8:27b  262.1k            local    http://127.0.0.1:11434  starts new sessions',
+        'ollama/mystery:7b   window not known  -        http://127.0.0.1:11434  -',
+        'ollama/qwen3.8:27b  262.1k            -        http://127.0.0.1:11434  starts new sessions',
         '',
       ].join('\n'),
     );
+  });
+
+  it('prints the billing of a metered model whose window is not known', async (context) => {
+    const measuring = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: { fields: ['toolCalling'], step: null, elapsedSeconds: 0, declaration: 'declare toolCalling for the model in its settings' } }, source: 'unprobed' } as const;
+    const entry: MomongaModelEntry = {
+      id: 'gpu-box/mystery',
+      object: 'model',
+      provider: 'gpu-box',
+      ownName: 'mystery',
+      naming: 'server',
+      billing: 'metered',
+      capabilities: measuring,
+      state: 'available',
+      chain: [{ model: 'gpu-box/mystery', counter: '1'.repeat(64), billing: 'metered', adapter: 'chat-completions', answers: 'model', upstream: 'mystery', capabilities: measuring }],
+    };
+    const harness = shellOf(homeWith(context, undefined), { listing: () => ({ object: 'list', data: [entry], start: null, roles: {} }) });
+    await listModels(harness.shell, { json: false });
+    expect(harness.out()).toBe(['model            window            billing  server   state', 'gpu-box/mystery  window not known  metered  gpu-box  -', ''].join('\n'));
   });
 
   it('prints the mark of a model its server no longer lists in the state column of check', async (context) => {
@@ -44,8 +63,8 @@ describe('momonga models prints one aligned table', () => {
     expect(harness.out()).toBe(
       [
         'model               window  billing  server                  state',
-        'ollama/qwen3.8:27b  262.1k  local    http://127.0.0.1:11434  starts new sessions',
-        'ollama/gone:1b      4.1k    local    http://127.0.0.1:11434  not listed by the server',
+        'ollama/qwen3.8:27b  262.1k  -        http://127.0.0.1:11434  starts new sessions',
+        'ollama/gone:1b      4.1k    -        http://127.0.0.1:11434  not listed by the server',
         '',
       ].join('\n'),
     );
@@ -55,8 +74,8 @@ describe('momonga models prints one aligned table', () => {
     expect(await printed({ models: { connections: [LUNA_PLAN, ollama([QWEN])], start: 'chatgpt/gpt-6-luna' } }, context)).toBe(
       [
         'model               window  billing  server                  state',
-        'gpt-6-luna                  plan     chatgpt                 available, starts new sessions',
-        'ollama/qwen3.8:27b  262.1k  local    http://127.0.0.1:11434',
+        'gpt-6-luna          -       plan     chatgpt                 available, starts new sessions',
+        'ollama/qwen3.8:27b  262.1k  -        http://127.0.0.1:11434  -',
         '',
       ].join('\n'),
     );
@@ -67,9 +86,9 @@ describe('momonga models prints one aligned table', () => {
     expect(await printed({ models: { connections: [ollama([{ id: '日本語:7b', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }, QWEN]), wideAddress], start: 'ollama/qwen3.8:27b' } }, context)).toBe(
       [
         'model               window  billing  server                      state',
-        'ollama/日本語:7b    8.2k    local    http://127.0.0.1:11434',
-        'ollama/qwen3.8:27b  262.1k  local    http://127.0.0.1:11434      starts new sessions',
-        'lmstudio/m          4.1k    local    http://127.0.0.1:1234/日本',
+        'ollama/日本語:7b    8.2k    -        http://127.0.0.1:11434      -',
+        'ollama/qwen3.8:27b  262.1k  -        http://127.0.0.1:11434      starts new sessions',
+        'lmstudio/m          4.1k    -        http://127.0.0.1:1234/日本  -',
         '',
       ].join('\n'),
     );

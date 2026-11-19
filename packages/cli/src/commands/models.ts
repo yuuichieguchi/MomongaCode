@@ -146,18 +146,20 @@ const STATE_JOINER = ', ';
 
 const MODELS_TABLE_HEADER = ['model', 'window', 'billing', 'server', 'state'] as const;
 
+const NO_VALUE_CELL = '-';
+
 const windowCellOf = (model: ListedModel): string => {
   if (model.billing === 'plan') return '';
   return model.contextWindow === null ? WINDOW_NOT_KNOWN : formatTokens(model.contextWindow);
 };
 
-const billingCellOf = (model: ListedModel): string => (model.billing !== 'plan' && model.contextWindow === null ? '' : model.billing);
+const billingCellOf = (model: ListedModel): string => (model.billing === 'local' ? '' : model.billing);
 
 const stateCellOf = (model: ListedModel, start: string | null): string =>
   [...(model.billing === 'plan' ? [model.health] : []), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(STATE_JOINER);
 
 const modelCellsOf = (model: ListedModel, start: string | null): string[] =>
-  [model.name, windowCellOf(model), billingCellOf(model), model.address ?? model.provider, stateCellOf(model, start)].map(escapeTerminalLine);
+  [model.name, windowCellOf(model), billingCellOf(model), model.address ?? model.provider, stateCellOf(model, start)].map((cell) => (cell === '' ? NO_VALUE_CELL : escapeTerminalLine(cell)));
 
 export const formatModels = (document: ModelsDocument): string => {
   if (document.models.length === 0) return escapedLines([messageOf('noModelConnected', 'cli')]);

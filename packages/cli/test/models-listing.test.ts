@@ -18,8 +18,8 @@ describe('momonga models', () => {
     expect(harness.out()).toBe(
       [
         'model                window  billing  server                    state',
-        'ollama/gemma-3-4b    32.8k   local    http://127.0.0.1:11434    starts new sessions',
-        'lmstudio/gemma-3-4b  4.1k    local    http://127.0.0.1:1234/v1',
+        'ollama/gemma-3-4b    32.8k   -        http://127.0.0.1:11434    starts new sessions',
+        'lmstudio/gemma-3-4b  4.1k    -        http://127.0.0.1:1234/v1  -',
         '',
       ].join('\n'),
     );
@@ -33,7 +33,7 @@ describe('momonga models', () => {
 
     await listModels(harness.shell, { json: false });
 
-    expect(harness.out().split('\n')).toContain(`lmstudio/gemma-3-4b  ${formatTokens(4096)}    local    http://127.0.0.1:1234/v1`);
+    expect(harness.out().split('\n')).toContain(`lmstudio/gemma-3-4b  ${formatTokens(4096)}    -        http://127.0.0.1:1234/v1  -`);
   });
 
   it('prints the one JSON document with the state named by the readiness state', async (context) => {
