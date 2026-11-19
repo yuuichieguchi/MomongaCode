@@ -14,6 +14,7 @@ readonly ARCHIVE="$OUT_DIR/$ASSET_NAME.zip"
 readonly CHECKSUMS="$OUT_DIR/$CHECKSUMS_NAME"
 readonly SIGNATURE="$OUT_DIR/$SIGNATURE_NAME"
 readonly NOTICES="$OUT_DIR/$NOTICES_NAME"
+readonly SITE_DIR="$ROOT/dist/site"
 readonly MOMONGA_TEAM_ID="PQQBSRKD72"
 readonly SIGNING_IDENTITY="Developer ID Application: Yuuichi Eguchi ($MOMONGA_TEAM_ID)"
 readonly RELEASE_SIGNING_KEY="$HOME/.ssh/momonga-release"
@@ -133,7 +134,7 @@ case "$DRY_RUN" in
 esac
 
 bash "$ROOT/scripts/release-tools.sh"
-require_env APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+require_env APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
 [ -f "$RELEASE_SIGNING_KEY" ] || fail "the ssh private key that signs $CHECKSUMS_NAME must be at $RELEASE_SIGNING_KEY"
 [ -f "$APPLE_API_KEY" ] || fail "APPLE_API_KEY must be the path of the App Store Connect .p8 key file"
 
@@ -144,6 +145,8 @@ readonly MOMONGA_REPO
 pinned_key="$(node "$RELEASE_KEY_TOOL" print)" || fail "the installers do not pin a usable release public key; nothing was built"
 readonly pinned_key
 readonly UPDATE_SOURCE_FLAGS=(--repo "$MOMONGA_REPO" --team-id "$MOMONGA_TEAM_ID" --release-public-key "$pinned_key")
+site_origin="$(node "$ROOT/scripts/site-target.ts" print-origin)" || fail "scripts/site-target.ts does not name the origin of the site; nothing was built"
+readonly SITE_HOST="${site_origin#https://}"
 
 cd "$ROOT"
 [ -z "$(git status --porcelain)" ] || fail "working tree is not clean"
@@ -224,6 +227,9 @@ require_windows_smoke
 step "third-party notices of the release"
 run npm run notices -- --output "$NOTICES"
 
+step "build the site"
+run node "$ROOT/scripts/site.ts" --output "$SITE_DIR"
+
 step "checksums and their signature"
 run write_checksums
 run rm -f "$SIGNATURE"
@@ -237,3 +243,6 @@ run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$NOTICE
 run gh release edit "$tag" --repo "$MOMONGA_REPO" --draft=false
 draft_created=0
 run git fetch origin "refs/tags/$tag:refs/tags/$tag"
+
+step "update $SITE_HOST"
+run bash "$ROOT/scripts/site-deploy.sh" || fail "the release $tag is published but $SITE_HOST was not updated: run scripts/site-deploy.sh again"

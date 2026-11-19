@@ -51,6 +51,14 @@ const commandsOf = (command: Command, prefix: readonly string[]): ShownCommand[]
 
 const cell = (text: string): string => text.replaceAll('|', '\\|').replaceAll('\n', ' ');
 
+const proseCell = (text: string): string =>
+  cell(
+    text
+      .split(/(`[^`]*`)/)
+      .map((part, index) => (index % 2 === 1 ? part : part.replaceAll('<', '\\<')))
+      .join(''),
+  );
+
 const code = (text: string): string => `\`${text}\``;
 
 const optionRow = (option: Option): string => {
@@ -58,7 +66,7 @@ const optionRow = (option: Option): string => {
     ...(option.argChoices === undefined ? [] : [`values: ${option.argChoices.map(code).join(', ')}`]),
     ...(option.defaultValue === undefined || (Array.isArray(option.defaultValue) && option.defaultValue.length === 0) ? [] : [`default: ${code(JSON.stringify(option.defaultValue))}`]),
   ];
-  return `| ${code(cell(option.flags))} | ${cell([option.description, ...notes].filter((part) => part !== '').join('; '))} |`;
+  return `| ${code(cell(option.flags))} | ${proseCell([option.description, ...notes].filter((part) => part !== '').join('; '))} |`;
 };
 
 const optionTable = (options: readonly Option[]): string[] => ['| Option | Meaning |', '| --- | --- |', ...options.map(optionRow), `| ${code(HELP_FLAGS)} | display help for the command |`];
@@ -150,7 +158,7 @@ const environmentSection = (): string[] =>
     '',
     '| Variable | Meaning |',
     '| --- | --- |',
-    ...ENVIRONMENT_VARIABLES.filter((variable) => variable.kind === kind).map((variable) => `| ${code(variable.name)} | ${cell(variable.meaning)} |`),
+    ...ENVIRONMENT_VARIABLES.filter((variable) => variable.kind === kind).map((variable) => `| ${code(variable.name)} | ${proseCell(variable.meaning)} |`),
     '',
   ]);
 
@@ -177,7 +185,7 @@ export const renderReference = async (): Promise<string> => {
     '',
     '| Command | Meaning |',
     '| --- | --- |',
-    ...commands.map((command) => `| ${code(`momonga ${command.usage}`)} | ${cell(command.description)} |`),
+    ...commands.map((command) => `| ${code(`momonga ${command.usage}`)} | ${proseCell(command.description)} |`),
     '',
     ...commands.filter((command) => command.options.length > 0).flatMap((command) => [`### momonga ${command.path}`, '', ...optionTable(command.options), '']),
     '## Settings keys',
@@ -186,7 +194,7 @@ export const renderReference = async (): Promise<string> => {
     '',
     '| Key | Value | Default | Unit | Layer |',
     '| --- | --- | --- | --- | --- |',
-    ...settings.map((row) => `| ${code(row.key)} | ${cell(row.type)} | ${cell(row.defaultText)} | ${row.unit} | ${cell(layerOf(row.key))} |`),
+    ...settings.map((row) => `| ${code(row.key)} | ${proseCell(row.type)} | ${proseCell(row.defaultText)} | ${row.unit} | ${proseCell(layerOf(row.key))} |`),
     '',
     '## Environment variables',
     '',
@@ -195,7 +203,7 @@ export const renderReference = async (): Promise<string> => {
     '',
     '| Code | Meaning |',
     '| --- | --- |',
-    ...Object.values(EXIT_CODES).map((exit) => `| ${exit.code} | ${cell(exit.meaning)} |`),
+    ...Object.values(EXIT_CODES).map((exit) => `| ${exit.code} | ${proseCell(exit.meaning)} |`),
     '',
     '## Key bindings',
     '',
@@ -203,7 +211,7 @@ export const renderReference = async (): Promise<string> => {
     '',
     '| Action | Where | Default keys | Meaning |',
     '| --- | --- | --- | --- |',
-    ...KEYS.map((row) => `| ${code(row.id)} | ${row.context} | ${row.default.map((key) => code(key)).join(', ')} | ${cell(row.description)} |`),
+    ...KEYS.map((row) => `| ${code(row.id)} | ${row.context} | ${row.default.map((key) => code(key)).join(', ')} | ${proseCell(row.description)} |`),
     '',
     '## Built-in tools',
     '',
@@ -213,7 +221,7 @@ export const renderReference = async (): Promise<string> => {
     '',
     '| Tool | Meaning |',
     '| --- | --- |',
-    ...OPERATION_SPECS.map((spec) => `| ${code(spec.name)} | ${cell(spec.description)} |`),
+    ...OPERATION_SPECS.map((spec) => `| ${code(spec.name)} | ${proseCell(spec.description)} |`),
     '',
     '### Built-in agents',
     '',
@@ -221,7 +229,7 @@ export const renderReference = async (): Promise<string> => {
     '',
     '| Agent | Meaning |',
     '| --- | --- |',
-    ...BUILT_IN_AGENTS.map((agent) => `| ${code(agent.name)} | ${cell(agent.description)} |`),
+    ...BUILT_IN_AGENTS.map((agent) => `| ${code(agent.name)} | ${proseCell(agent.description)} |`),
     '',
   ];
   return lines.join('\n');

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ART_GAP, ART_WIDTH, artFits, bannerRows, textLines } from '../src/tui/startup.tsx';
+import { ART_GAP, artFits, bannerRows, textLines } from '../src/tui/startup.tsx';
+import { ART_WIDTH } from '../src/tui/figure.ts';
 import type { StartupConfig } from '../src/tui/startup.tsx';
 import type { Row } from '../src/tui/screen/wrap.ts';
 import { SCROLLBAR_COLUMNS } from '../src/tui/screen/transcript-view.tsx';

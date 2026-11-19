@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedTuiSettings } from '@momonga/config';
 import { systemTiming } from '@momonga/foundation';
-import { bannerRows, TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../../src/tui/startup.tsx';
+import { bannerRows } from '../../src/tui/startup.tsx';
+import { TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../../src/tui/figure.ts';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ScreenTimers } from '../../src/tui/screen/timers.ts';
 import { displayWidth } from '../../src/tui/screen/wrap.ts';

@@ -9,7 +9,7 @@ import { createTempDir } from '@momonga/testkit';
 
 const TOOLS_SCRIPT = `${repoRoot}scripts/release-tools.sh`;
 const RELEASE_SCRIPT = `${repoRoot}scripts/release.sh`;
-const RELEASE_TOOLS = ['git', 'node', 'npm', 'gh', 'zig', 'codesign', 'xcrun', 'spctl', 'ditto', 'ssh-keygen', 'shasum'];
+const RELEASE_TOOLS = ['git', 'node', 'npm', 'gh', 'zig', 'codesign', 'xcrun', 'spctl', 'ditto', 'ssh-keygen', 'shasum', 'wrangler', 'curl'];
 
 describe.skipIf(!HAS_POSIX_SHELL)('the tools a release needs', () => {
   let root = '';
@@ -40,6 +40,12 @@ describe.skipIf(!HAS_POSIX_SHELL)('the tools a release needs', () => {
     const result = check(stubbed(RELEASE_TOOLS.filter((name) => name !== 'zig' && name !== 'gh')));
     expect(result.status).toBe(1);
     expect(result.stderr).toBe('release.sh: a release needs gh and zig on PATH, and they were not found; nothing was built\n');
+  });
+
+  it.each(['wrangler', 'curl'])('stops, naming it, when %s is not on PATH', (missing) => {
+    const result = check(stubbed(RELEASE_TOOLS.filter((name) => name !== missing)));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(`release.sh: a release needs ${missing} on PATH, and it was not found; nothing was built\n`);
   });
 
   it('is run by release.sh before the tests, the build, the signing and the notarization', () => {

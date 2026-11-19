@@ -1,5 +1,5 @@
 import { createContext, useEffect, useRef, useState } from 'react';
-import { TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../startup.tsx';
+import { TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../figure.ts';
 import type { ScreenTimers } from './timers.ts';
 
 export type TailPose = { swung(): boolean; subscribe(listener: () => void): () => void };

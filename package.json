@@ -18,8 +18,9 @@
     "test:e2e": "MOMONGA_TEST_REUSE=0 MOMONGA_WHOLE_RUN=1 vitest run --project e2e",
     "test:packaging": "MOMONGA_TEST_REUSE=0 MOMONGA_WHOLE_RUN=1 vitest run --project packaging",
     "calibrate:offloop": "vitest run --project calibration --silent=false packages/runtime/test/calibration/offloop-cost.test.ts",
-    "typecheck": "node scripts/bundle.ts --threads && tsc -p tsconfig.json",
+    "typecheck": "node scripts/bundle.ts --threads && tsc -p tsconfig.json && tsc -p site/tsconfig.json",
     "bundle": "node scripts/bundle.ts",
+    "site": "node scripts/site.ts",
     "sea": "node scripts/sea.ts",
     "notices": "node scripts/third-party-notices.ts",
     "test:sea": "vitest run --project packaging scripts/sea.test.ts",
@@ -36,6 +37,7 @@
     "esbuild": "0.28.2",
     "ink-testing-library": "4.0.0",
     "@momonga/testkit": "*",
-    "@xterm/headless": "5.5.0"
+    "@xterm/headless": "5.5.0",
+    "marked": "18.2.1"
   }
 }

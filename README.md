@@ -1,35 +1,33 @@
-# Momonga Code
+# MomongaCode
 
-Momonga Code is a coding agent for the terminal. It works with local and hosted models, keeps its own memory of your projects, and runs tool calls under a permission system and an operating-system sandbox. The command is `momonga`.
-
-No release has been published yet.
+MomongaCode is a coding agent for the terminal. It works with local and hosted models, keeps its own memory of your projects, and runs tool calls under a permission system and an operating-system sandbox. The command is `momonga`.
 
 ## 1. Installation
 
 macOS and Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yuuichieguchi/MomongaCode/main/scripts/install.sh | bash
+curl -fsSL https://momongacode.com/install.sh | bash
 ```
 
 Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/yuuichieguchi/MomongaCode/main/scripts/install.ps1 | iex
+irm https://momongacode.com/install.ps1 | iex
 ```
 
-Then add a model and run a first prompt, as section 3 shows.
+Then add a model and run a first prompt, as [section 3](#3-getting-started) shows.
 
-## 2. Why Momonga Code?
+## 2. Why MomongaCode?
 
-Momonga Code puts particular effort into the following areas and aims to be No. 1 in them.
+MomongaCode puts particular effort into the following areas and aims to be No. 1 in them.
 
 - **Adaptive Agent Memory & Context Orchestration**
 - **Agent Token Efficiency Engineering**
 
 ### Adaptive Agent Memory & Context Orchestration
 
-In Momonga Code, memory and context are built by the runtime from recorded events, not left to the model alone.
+In MomongaCode, memory and context are built by the runtime from recorded events, not left to the model alone.
 
 - Memories have a kind (`fact`, `episode`, `procedure`), a scope (user or project), a state (`active`, `candidate`, `archived`, `duplicate`, `rejected`), and optional evidence: a file with its SHA-256, a commit, or a check that was run. A memory that is bound to a file is shown as stale once the file changes.
 - Memories the agent proposes wait in a review queue until you accept or reject them. Duplicates are marked, replaced notes keep a history, and active memories whose file evidence is stale, or that are bound to no file, are archived once they have not been kept or used for `memory.forgetAfterDays` (default 90).
@@ -126,7 +124,7 @@ Run `momonga` with no prompt to start an interactive session instead. The first 
 ## 4. Features
 
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
-- **Models.** Connections to Ollama, chat-completions servers, Open Responses servers, Anthropic, and server programs that Momonga Code starts itself, such as Apple's `fm`. A model is called by the name its server gives it. `models.fallback` lists the models tried next when a model cannot answer. `momonga gateway probe <model>` measures a model's capabilities and records the result.
+- **Models.** Connections to Ollama, chat-completions servers, Open Responses servers, Anthropic, and server programs that MomongaCode starts itself, such as Apple's `fm`. A model is called by the name its server gives it. `models.fallback` lists the models tried next when a model cannot answer. `momonga gateway probe <model>` measures a model's capabilities and records the result.
 - **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background work), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents: the general subagent `general-purpose` is built in and needs no setup), `LoadTools`, and `activate_skill`, and the operations tools for Git, pull requests and issues (`GitStage`, `GitCommit`, `GitPush` and the others): each states what it changes, and the approval names it. [docs/reference.md](docs/reference.md) lists every tool.
 - **Permission modes.** The mode decides what a call that no rule decides does:
   - `manual` asks before every call that changes something or reaches the network;
@@ -135,20 +133,20 @@ Run `momonga` with no prompt to start an interactive session instead. The first 
   - `auto` lets a classifier model decide each such call in your place, as the next item says;
   - `bypassPermissions` allows every call that no deny rule matches and asks nobody.
 
-  In every mode a deny rule still denies, the secret locations stay denied (see Permission rules), and a command that removes the workspace is asked of you except in `bypassPermissions`. Rules are written as `Tool(specifier)` and set in `permissions.allow`, `permissions.ask`, and `permissions.deny` (section 6). `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`.
+  In every mode a deny rule still denies, the secret locations stay denied (see Permission rules), and a command that removes the workspace is asked of you except in `bypassPermissions`. Rules are written as `Tool(specifier)` and set in `permissions.allow`, `permissions.ask`, and `permissions.deny` ([section 6](#6-configuration)). `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`.
 - **Policy verification.** `momonga policy verify` asks the daemon to check the rules of the folder: that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect. It states what is proved and what is not, and lists a rule that is redundant, shadowed by another, or cannot be reached as a note; a note refuses nothing. The verdict is stored with the rules of the folder, and a run of that folder reuses it until a rule changes.
-- **Verifiable completion.** A run can declare completion conditions: shell commands that MomongaCode runs itself, in the sandbox, when the model stops. A run ends `COMPLETED` only when every condition it owes passed on the final state of the workspace; otherwise the failures go back to the model, and a run that stops again without a change ends `STOPPED` with the reason `conditions_unmet` and names the conditions. `momonga report` shows the outcome (see section 5).
+- **Verifiable completion.** A run can declare completion conditions: shell commands that MomongaCode runs itself, in the sandbox, when the model stops. A run ends `COMPLETED` only when every condition it owes passed on the final state of the workspace; otherwise the failures go back to the model, and a run that stops again without a change ends `STOPPED` with the reason `conditions_unmet` and names the conditions. `momonga report` shows the outcome (see [section 5](#5-usage)).
 - **Auto mode.** `momonga auto-mode` measures how well a model judges approvals for auto mode. Auto mode is honored only from user settings or the command line.
 - **Sandbox.** Bash runs under Seatbelt on macOS and bubblewrap on Linux. Windows has no sandbox in this release: Bash asks before every command.
-- **Memory and rules.** `momonga memory` and `momonga rule` (see section 2).
+- **Memory and rules.** `momonga memory` and `momonga rule` (see [section 2](#2-why-momongacode)).
 - **Skills and agents.** Skills are `SKILL.md` files found in `.momonga/skills` and `.agents/skills` of the project and in `~/.momonga/skills` and `~/.agents/skills`. A general subagent, `general-purpose`, is built in; custom agents are read from `.momonga/agents` directories, and a custom agent named `general-purpose` replaces the built-in one. Project skills are loaded only for trusted folders.
 - **MCP.** Servers over stdio or HTTP with OAuth. `momonga mcp list` and `momonga mcp login <server>`. Pending MCP input requests are handled with `momonga elicit`.
 - **Hooks.** Commands run on `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, and `SessionStart`. A hook that exits with code 2 blocks.
 - **Editor integration.** `momonga acp` speaks the Agent Client Protocol on standard input and output.
 - **Observability.** `momonga trace` shows the model and tool spans of a run, `momonga cost` shows what it cost, and an OTLP endpoint can be configured under `telemetry.otlp`.
 - **Background jobs and runs.** `momonga status`, `momonga jobs`, `momonga attach`, and `momonga cancel`.
-- **Delegated work.** A mandate hands work over with bounds, as section 5 describes: `--mandate <name>` on `momonga -p`, or `/delegate <mandate> <request>` in the interactive session.
-- **Measured reliability.** `momonga reliability` reports how runs ended, `momonga eval bench <folder>` runs a fixed bench set on one model, and `momonga permissions review` samples recorded permission decisions for review (section 5).
+- **Delegated work.** A mandate hands work over with bounds, as [section 5](#5-usage) describes: `--mandate <name>` on `momonga -p`, or `/delegate <mandate> <request>` in the interactive session.
+- **Measured reliability.** `momonga reliability` reports how runs ended, `momonga eval bench <folder>` runs a fixed bench set on one model, and `momonga permissions review` samples recorded permission decisions for review ([section 5](#5-usage)).
 
 ## 5. Usage
 
@@ -186,7 +184,7 @@ A run declares its completion conditions when it starts, and the set does not ch
 - the agent definition: `conditions` and `requirements` in the front matter of a custom agent (`inherit: false` in a request or an agent narrows the declaration to its own conditions);
 - the settings: every command you set in `verification.commands`, and the check of the folder that you accepted, is a standing condition of the folder. It is owed only by a run that changed the workspace; a run that only answers a question does not pay for a test suite. The default list of `verification.commands` declares no condition.
 
-When the model stops, Momonga Code runs every owed condition itself. A command the model ran, even the same command with exit code 0, is never evidence. If a condition fails and the run changed the workspace since the last failed round, the failures go back to the model; if the model stops again without a change, the run ends `STOPPED` with the reason `conditions_unmet`. A check runs for at most its declared timeout, or 600 seconds. With `"verification": { "required": true }`, a run that changed the workspace without any declared condition also ends `conditions_unmet`. A condition that a `deny` rule matches refuses the run when it is created.
+When the model stops, MomongaCode runs every owed condition itself. A command the model ran, even the same command with exit code 0, is never evidence. If a condition fails and the run changed the workspace since the last failed round, the failures go back to the model; if the model stops again without a change, the run ends `STOPPED` with the reason `conditions_unmet`. A check runs for at most its declared timeout, or 600 seconds. With `"verification": { "required": true }`, a run that changed the workspace without any declared condition also ends `conditions_unmet`. A condition that a `deny` rule matches refuses the run when it is created.
 
 `momonga report [run-id]`, and `/report` inside the interactive session, show the report of a run: each condition with its state and exit code, what was not run and why, the files the run changed, the residual risk as counted facts, and the commands the model ran that equal a condition (informational). The interactive session, `--print` and ACP show each check as it runs and name the unmet conditions when the run ends. The check of a folder is proposed once: when the interactive session starts in a trusted folder that declares a test command (a `test` script of `package.json`, or a `test` rule of a `Makefile` or `justfile`), it asks whether that command is the check of the folder. Your answer, accepted, typed or declined, is kept in your user settings under `projectChecks`. `/init` and `/config` show and change it, and so does `momonga project-check show`, `set <command>` and `clear`. A run that changed the workspace with no declared condition and no check ends unverified: nothing is learned from it, and a notice says how to declare a check. `verification.required` is `false` by default; with `true`, such a run ends `conditions_unmet` instead.
 
@@ -264,7 +262,7 @@ Other keys under `models`: `roles` (the model for `compaction`, `reflection`, or
 
 You can make every one of these changes without editing the file: `momonga models add`, `remove`, `start`, `fallback`, `billing`, `role`, and `set` in a shell, or `/model`, then `Model settings…`, in a session.
 
-A model request can be sent twice. After a crash of the gateway or the runtime, or when a server fails before its answer starts, Momonga Code sends the same request again, and the server may run and bill it twice. A second send is recorded and marked `retry_of`: the usage record of its answer carries `retry_of_seq` and its trace span carries `momonga.retry_of`, both naming the first send. If a server accepts an idempotency key, set `idempotencyKeyHeader` on its connection to the name of the header the server reads the key from, for example `"idempotencyKeyHeader": "Idempotency-Key"`. Momonga Code then sends the same key on a request and on every resend of it, so that such a server answers and bills it once. Without the setting no key is sent. [docs/threat-model.md](docs/threat-model.md) states this risk in full.
+A model request can be sent twice. After a crash of the gateway or the runtime, or when a server fails before its answer starts, MomongaCode sends the same request again, and the server may run and bill it twice. A second send is recorded and marked `retry_of`: the usage record of its answer carries `retry_of_seq` and its trace span carries `momonga.retry_of`, both naming the first send. If a server accepts an idempotency key, set `idempotencyKeyHeader` on its connection to the name of the header the server reads the key from, for example `"idempotencyKeyHeader": "Idempotency-Key"`. MomongaCode then sends the same key on a request and on every resend of it, so that such a server answers and bills it once. Without the setting no key is sent. [docs/threat-model.md](docs/threat-model.md) states this risk in full.
 
 ### Permission rules
 
@@ -290,13 +288,13 @@ With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer 
 
 [docs/reference.md](docs/reference.md) lists every settings key with its values and the settings files that may set it.
 
-Momonga Code stores its data under `~/.momonga` (settings, `state/` databases, `logs/`, `skills/`, `agents/`, and per-project data).
+MomongaCode stores its data under `~/.momonga` (settings, `state/` databases, `logs/`, `skills/`, `agents/`, and per-project data).
 
 Instruction files named `AGENTS.md` are read into the context.
 
 ### Installer options
 
-You set nothing. The install command in section 1 works from the first release on: no release has been published yet, so until then there is nothing to download.
+You set nothing.
 
 The script downloads `SHA256SUMS` and `SHA256SUMS.sig` from the latest GitHub release of `yuuichieguchi/MomongaCode`, verifies the signature with `ssh-keygen` against the release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails. `ssh-keygen` must be available; on Windows that means the OpenSSH Client optional feature.
 
@@ -310,12 +308,12 @@ The installers change your PATH only when the install directory is missing from 
 
 ## 7. Architecture
 
-Momonga Code is an npm workspace of packages under `packages/`. The `momonga` command is a client; the work is done by background processes.
+MomongaCode is an npm workspace of packages under `packages/`. The `momonga` command is a client; the work is done by background processes.
 
 - **Client.** `packages/cli` (command line, terminal UI, ACP server). It starts and talks to the daemon.
 - **Supervisor.** `packages/supervisor` runs the daemon: it starts, restarts, and stops two child processes, the gateway and the runtime. Each start of the daemon is a generation with its own supervisor; a newer generation takes over new work while an older one finishes what it runs and ends by itself. A settings change applies in place: each child reads the settings per operation, and no child is restarted for it.
 - **Runtime.** `packages/runtime` runs sessions, runs, and the model and tool loop. It builds each request with `packages/context`, applies `packages/policy` to tool calls, executes tools from `packages/tools` inside `packages/sandbox`, and records everything in `packages/store`.
-- **Gateway.** `packages/gateway` is the one place that talks to models. It has adapters for chat-completions, Open Responses, Anthropic, and Ollama, plus routing, retry, admission, and probing. Apple's `fm` is a managed server: a server program that Momonga Code starts itself and reaches through the chat-completions adapter.
+- **Gateway.** `packages/gateway` is the one place that talks to models. It has adapters for chat-completions, Open Responses, Anthropic, and Ollama, plus routing, retry, admission, and probing. Apple's `fm` is a managed server: a server program that MomongaCode starts itself and reaches through the chat-completions adapter.
 - **Store.** `packages/store` holds runs, events, approvals, memories, rules, and jobs in databases under `~/.momonga/state`.
 - **Context.** `packages/context` builds the context under a token budget, compacts history, and formats tool output.
 - **Memory.** `packages/memory` holds the logic for memory validity, recall order, deduplication, forgetting, and the memory budget share.
@@ -346,10 +344,10 @@ Contributions are welcome through pull requests on GitHub. [CONTRIBUTING.md](CON
 
 ## 10. License
 
-Momonga Code is open source under the MIT License. See the [`LICENSE`](LICENSE) file.
+MomongaCode is open source under the MIT License. See the [`LICENSE`](LICENSE) file.
 
 Bundles ripgrep (MIT or Unlicense); see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
 ## 11. Disclaimer
 
-Momonga Code is provided as is, without warranty of any kind. It runs commands and edits files on your machine, and it sends the content of your prompts, files, and tool output to the model servers you configure. You are responsible for the models, targets, permission rules, sandbox setting, and permission mode you choose, for the cost of any hosted model you use, and for reviewing what the agent does. A model can make mistakes. Do not use `bypassPermissions` mode or `"sandbox": "none"` on a machine or in a folder where an unwanted command could cause harm you cannot undo.
+MomongaCode is provided as is, without warranty of any kind. It runs commands and edits files on your machine, and it sends the content of your prompts, files, and tool output to the model servers you configure. You are responsible for the models, targets, permission rules, sandbox setting, and permission mode you choose, for the cost of any hosted model you use, and for reviewing what the agent does. A model can make mistakes. Do not use `bypassPermissions` mode or `"sandbox": "none"` on a machine or in a folder where an unwanted command could cause harm you cannot undo.

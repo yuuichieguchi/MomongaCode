@@ -23,7 +23,7 @@ momonga [options] [prompt]
 | `--until <command>` | a shell command that must exit 0 before the run counts as complete; repeat for several. The runtime runs it after the model stops, never the model, so it must only check and change nothing |
 | `--require <text>` | a completion requirement that has no mechanical check; the report lists it as not run; repeat for several |
 | `--mandate <name>` | run under the mandate of this name from the user settings (mandates): only what it allows is run, what it asks for is held for your approval while other work goes on, and its budget bounds the run |
-| `--issue <address>` | run without a terminal UI to resolve an issue on a declared forge, given by its address as the forge shows it (https://<host>/<owner>/<name>/issues/<number>); needs --mandate; the run ends with a pull request that closes the issue and a comment on it |
+| `--issue <address>` | run without a terminal UI to resolve an issue on a declared forge, given by its address as the forge shows it (https://\<host>/\<owner>/\<name>/issues/\<number>); needs --mandate; the run ends with a pull request that closes the issue and a comment on it |
 | `--max-cost-usd <usd>` | the money limit of the run in US dollars; the run stops before a model request that would pass it |
 | `--verbose` | print tool activity to stderr |
 | `--resume [session-id]` | reopen a conversation of this folder by its id or a unique prefix of at least 8 characters; without an id, choose from a list |
@@ -868,8 +868,8 @@ The layer column names the settings files that may set the key: the user file `~
 
 | Variable | Meaning |
 | --- | --- |
-| `MOMONGA_REPO` | <owner>/<repo> of the GitHub repository to download from (default yuuichieguchi/MomongaCode); ignored when MOMONGA_RELEASE_BASE_URL is set |
-| `MOMONGA_VERSION` | install this version (the v<version> release) instead of the latest; ignored when MOMONGA_RELEASE_BASE_URL is set |
+| `MOMONGA_REPO` | \<owner>/\<repo> of the GitHub repository to download from (default yuuichieguchi/MomongaCode); ignored when MOMONGA_RELEASE_BASE_URL is set |
+| `MOMONGA_VERSION` | install this version (the v\<version> release) instead of the latest; ignored when MOMONGA_RELEASE_BASE_URL is set |
 | `MOMONGA_RELEASE_BASE_URL` | download from this address instead of GitHub; https, or http on the loopback interface only |
 | `MOMONGA_RELEASE_PUBLIC_KEY` | the release signing key (an ssh-ed25519 line), used instead of the key in the installer |
 | `MOMONGA_INSTALL_PREFIX` | where momonga is installed (default ~/.local on macOS and Linux, %LOCALAPPDATA%\Programs\momonga on Windows) |

@@ -2,6 +2,8 @@ import path from 'node:path';
 import { displayWidth, wrapLine } from './screen/wrap.ts';
 import type { Row, Span } from './screen/wrap.ts';
 import type { StyleToken } from './screen/tokens.ts';
+import { ART_WIDTH, FIGURE } from './figure.ts';
+import type { ArtPart } from './figure.ts';
 import { effortLine } from './effort.ts';
 import type { ShownEffort } from './effort.ts';
 
@@ -10,33 +12,6 @@ export type StartupConfig = { version: string; home: string };
 export type BannerModel = { kind: 'connected'; name: string; effort?: ShownEffort } | { kind: 'not-connected'; login: boolean } | { kind: 'unread' };
 
 export type StartupBanner = { config: StartupConfig; model: BannerModel; cwd: string; notices: readonly string[]; figure: boolean };
-
-type ArtPart = { text: string; token?: StyleToken };
-
-const ART: readonly (readonly ArtPart[])[] = [
-  [{ text: '     ' }, { text: '∩   ∩', token: 'banner.fur' }],
-  [{ text: '╭────', token: 'banner.membrane' }, { text: '(', token: 'banner.fur' }, { text: '•ᴥ•', token: 'banner.face' }, { text: ')', token: 'banner.fur' }, { text: '────╮', token: 'banner.membrane' }],
-  [{ text: '╰╮░░░░░░░░░░░╭╯', token: 'banner.membrane' }],
-  [{ text: ' ' }, { text: '╰─╮░░░░░░░╭─╯', token: 'banner.membrane' }],
-  [{ text: '   ' }, { text: '╰─╮░░░╭─╯', token: 'banner.membrane' }],
-  [{ text: '     ' }, { text: '╰─', token: 'banner.membrane' }, { text: '┬', token: 'banner.fur' }, { text: '─╯', token: 'banner.membrane' }],
-];
-
-const RESTING_TAIL: readonly ArtPart[] = [{ text: '       ' }, { text: '╰─╮', token: 'banner.fur' }];
-
-const SWUNG_TAIL: readonly ArtPart[] = [{ text: '     ' }, { text: '╭─╯', token: 'banner.fur' }];
-
-export const TAIL_WAG_FRAMES = 6;
-
-export const TAIL_WAG_MS = 300;
-
-type ArtRow = { rest: readonly ArtPart[]; swing?: readonly ArtPart[] };
-
-const FIGURE: readonly ArtRow[] = [...ART.map((rest): ArtRow => ({ rest })), { rest: RESTING_TAIL, swing: SWUNG_TAIL }];
-
-const lengthOfRow = (row: readonly { text: string }[]): number => row.reduce((total, part) => total + [...part.text].length, 0);
-
-export const ART_WIDTH = Math.max(...FIGURE.flatMap((row) => [row.rest, ...(row.swing === undefined ? [] : [row.swing])]).map(lengthOfRow));
 
 export const ART_GAP = 2;
 
