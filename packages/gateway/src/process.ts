@@ -112,6 +112,7 @@ import { isMeteredTarget, meteredPrecondition } from './probe/consent.ts';
 import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest, readOllamaReported } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
+import type { MeteredMeasurement } from './probe/consent.ts';
 import type { OllamaDeclaredCapabilities } from './probe/ollama-target.ts';
 import { DeclaredWindowAboveReportedError, refusingAdapter, reportedWindowAt } from './probe/declared-window.ts';
 import { preconditionText } from './precondition-text.ts';
@@ -686,9 +687,7 @@ const createProbedOllamaAdapter = async (
   const loaded = await readRecord();
   const statedWindow = target.writtenCapabilities.contextWindow;
   const listed = ollamaPrecondition(upstream, probes.ports, target.model);
-  const subjectFor = (contextWindow: number | undefined) => {
-    if (isMeteredTarget(target) && contextWindow === undefined) throw new Error('a metered Ollama model is measured only within the bound of a known window');
-    const metered = isMeteredTarget(target) && contextWindow !== undefined ? { displayOf, declaredContextWindow: contextWindow } : undefined;
+  const subjectFor = (metered: MeteredMeasurement | undefined) => {
     return ollamaProbeSubject({
       target: endpointLockKeyOf(key).target,
       key,
@@ -722,7 +721,7 @@ const createProbedOllamaAdapter = async (
     readReported: () => readOllamaReported(upstream, probes.ports, target.model),
     startProbe: async (ask, contextWindow) => {
       if (isMeteredTarget(target) && contextWindow === undefined) throw await unknownWindowRefusal(listed, displayOf(), endpointLockKeyOf(key).target);
-      return probes.autoProbe.ensure({ ...subjectFor(contextWindow), unknown: ask }, endpointLockKeyOf(key));
+      return probes.autoProbe.ensure({ ...subjectFor(isMeteredTarget(target) && contextWindow !== undefined ? { displayOf, declaredContextWindow: contextWindow } : undefined), unknown: ask }, endpointLockKeyOf(key));
     },
     readDigest: (signal) => readOllamaDigest(upstream, probes.ports, target.model, signal),
   });
