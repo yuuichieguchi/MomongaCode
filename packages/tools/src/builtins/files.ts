@@ -181,15 +181,17 @@ export const updateLedgerAfterWrite = async (files: Pick<FileSystem, 'stat'>, se
   }
 };
 
-const differentLocation = async (scope: PathScope, requestedPath: string, expected: string, actual: string): Promise<ToolExecutionError> =>
+const differentLocation = async (scope: PathScope, requestedPath: string, expected: string, actual: string, facts: { workspaceUnchanged?: true } = {}): Promise<ToolExecutionError> =>
   new ToolExecutionError(
     `${await shownPath(scope, requestedPath)} resolves to a different location than when it was approved (${await shownPath(scope, expected)} → ${await shownPath(scope, actual)}); retry the call`,
+    facts,
   );
 
 export const writeFileAtomically = async (write: AtomicWrite): Promise<string | undefined> => {
   const answer = await writeInWriterChild(write.writer, { target: write.target, content: write.content, mode: write.mode, lock: write.lock.name });
-  if (answer.kind === 'moved') throw await differentLocation(write.scope, write.requestedPath, answer.expected, answer.actual);
-  if (answer.kind === 'failed') throw new ToolExecutionError(`${await shownPath(write.scope, write.requestedPath)} was not written: ${answer.message}`);
+  const facts = answer.kind !== 'written' && answer.workspaceUnchanged === true ? { workspaceUnchanged: true as const } : {};
+  if (answer.kind === 'moved') throw await differentLocation(write.scope, write.requestedPath, answer.expected, answer.actual, facts);
+  if (answer.kind === 'failed') throw new ToolExecutionError(`${await shownPath(write.scope, write.requestedPath)} was not written: ${answer.message}`, facts);
   const warnings = [
     await write.onRenamed(),
     answer.syncFailure === undefined ? undefined : `Warning: the change was written but the directory could not be synced (${answer.syncFailure}).`,

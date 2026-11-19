@@ -11,6 +11,7 @@ export type ClaimControl = {
   leaseLost(): boolean;
   cancelRequested(): boolean;
   cancelled(): never;
+  abortedByCancel(error: unknown): boolean;
   shuttingDown(): boolean;
   readonly shutdownRequested: Promise<void>;
   shutdown(): void;
@@ -130,6 +131,7 @@ export const startClaimControl = ({ store, timers, claim, role, heartbeatMs, can
     noteLeaseLost: markLost,
     leaseLost: () => leaseLost,
     cancelRequested: () => cancelRequested,
+    abortedByCancel: (error) => controller.signal.reason === 'cancel' && error === controller.signal.reason,
     cancelled: () => {
       markCancel();
       throw new CancelRequestedError();

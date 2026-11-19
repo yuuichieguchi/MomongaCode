@@ -165,8 +165,9 @@ export type MutationFacts = { sideEffect?: SideEffect; basis?: ApprovalBasis; re
 
 const mayWrite = (call: MutationFacts): boolean => call.sideEffect !== 'read_only' && call.basis !== 'read_only';
 
-export const completionMutates = (call: MutationFacts, event: { denial?: unknown; mutated?: true }): boolean => {
+export const completionMutates = (call: MutationFacts, event: { status?: 'completed' | 'failed'; denial?: unknown; mutated?: true; workspaceUnchanged?: true }): boolean => {
   if (event.denial !== undefined || call.rejected) return false;
+  if (event.status === 'failed' && event.workspaceUnchanged === true && event.mutated !== true) return false;
   return event.mutated === true || mayWrite(call);
 };
 

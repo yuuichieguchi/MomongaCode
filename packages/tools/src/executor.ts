@@ -722,6 +722,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.toolsLoaded === undefined ? {} : { toolsLoaded: result.toolsLoaded }),
       ...(result.files === undefined ? {} : { files: result.files }),
       ...(result.mutated === undefined ? {} : { mutated: result.mutated }),
+      ...(result.workspaceUnchanged === undefined ? {} : { workspaceUnchanged: result.workspaceUnchanged }),
       ...(result.command === undefined ? {} : { command: result.command }),
       ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
       ...(result.filesComplete === undefined ? {} : { filesComplete: result.filesComplete }),
@@ -1657,7 +1658,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
                 attempt + 1 < retry.attempts &&
                 !scope.controller.signal.aborted &&
                 batch.deadlineAt - clock.now() > 0;
-              if (!retryable) return { status: 'failed', output: describeThrown(tool.name, error) };
+              if (!retryable) return { status: 'failed', output: describeThrown(tool.name, error), ...(error instanceof ToolExecutionError && error.workspaceUnchanged ? { workspaceUnchanged: true as const } : {}) };
               await pause(timers, computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: options.random }), scope.controller.signal);
               if (scope.controller.signal.aborted) return { status: 'failed', output: describeThrown(tool.name, error) };
             }

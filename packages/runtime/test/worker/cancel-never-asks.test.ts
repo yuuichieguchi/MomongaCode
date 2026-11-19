@@ -131,6 +131,7 @@ describe('a run whose cancellation was requested never asks a person', () => {
     await env.store.requestCancel(run.id);
     await env.settled(again, 'the next claim to finish after cancel');
 
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error' || notice.message.includes('after an error'))).toEqual([]);
     expect(env.ofType(run.id, 'tool.unknown.requested')).toEqual([]);
     expect(env.store.approvals.listPending(run.id)).toEqual([]);
     expect(env.run(run.id).status).toBe('CANCELLED');

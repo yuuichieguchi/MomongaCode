@@ -13,7 +13,10 @@ export const writerLaunchOf = (self: HelperSelf): WriterLaunch => ({ argv: helpe
 
 export type WriterRequest = { target: string; content: string; mode: number; lock: KernelLockMechanism['name'] };
 
-export type WriterAnswer = { kind: 'written'; syncFailure?: string } | { kind: 'moved'; expected: string; actual: string } | { kind: 'failed'; message: string };
+export type WriterAnswer =
+  | { kind: 'written'; syncFailure?: string }
+  | { kind: 'moved'; expected: string; actual: string; workspaceUnchanged?: true }
+  | { kind: 'failed'; message: string; workspaceUnchanged?: true };
 
 export type WriterChild = { sandbox: Sandbox; sandboxPolicy: SandboxPolicy; launch: WriterLaunch; cwd: string; env: Readonly<Record<string, string>>; signal: AbortSignal };
 
@@ -43,11 +46,12 @@ const resolvesTo = async (files: FileSystem, directory: string): Promise<void> =
   if (actual !== directory) throw new MovedError(directory, actual);
 };
 
-const createMissingDirectories = async (files: FileSystem, directory: string): Promise<void> => {
+const createMissingDirectories = async (files: FileSystem, directory: string, made: { any: boolean }): Promise<void> => {
   const missing: string[] = [];
   for (let current = directory; !(await exists(files, current)); current = path.dirname(current)) missing.push(current);
   for (const level of missing.reverse()) {
     await files.makeDirectory(level);
+    made.any = true;
     try {
       await resolvesTo(files, level);
     } catch (error) {
@@ -84,17 +88,24 @@ export const writeRequested = async (ports: { files: FileSystem; random: Random 
   const { files } = ports;
   const directory = path.dirname(request.target);
   const syncFailures: unknown[] = [];
+  const made = { any: false };
+  let reached: 'before-write' | 'write' | 'failed-unchanged' = 'before-write';
   try {
-    await createMissingDirectories(files, directory);
+    await createMissingDirectories(files, directory, made);
     await resolvesTo(files, directory);
+    reached = 'write';
     await writeFileAtomicallyThroughLock(recordingDirectorySync(files, directory, syncFailures), ports.random, request.target, request.content, {
       mode: request.mode,
       lock: kernelLockNamed(request.lock),
       beforePublish: () => resolvesTo(files, directory),
+      onFailedUnchanged: () => {
+        reached = 'failed-unchanged';
+      },
     });
   } catch (error) {
-    if (error instanceof MovedError) return { kind: 'moved', expected: error.expected, actual: error.actual };
-    return { kind: 'failed', message: messageOf(error) };
+    const unchanged = !made.any && reached !== 'write' ? { workspaceUnchanged: true as const } : {};
+    if (error instanceof MovedError) return { kind: 'moved', expected: error.expected, actual: error.actual, ...unchanged };
+    return { kind: 'failed', message: messageOf(error), ...unchanged };
   }
   return syncFailures.length === 0 ? { kind: 'written' } : { kind: 'written', syncFailure: messageOf(syncFailures[0]) };
 };
@@ -133,8 +144,9 @@ const answerOf = (text: string): WriterAnswer | undefined => {
     const parsed: unknown = JSON.parse(text);
     if (!isRecord(parsed)) return undefined;
     if (parsed['kind'] === 'written') return typeof parsed['syncFailure'] === 'string' ? { kind: 'written', syncFailure: parsed['syncFailure'] } : { kind: 'written' };
-    if (parsed['kind'] === 'moved' && typeof parsed['expected'] === 'string' && typeof parsed['actual'] === 'string') return { kind: 'moved', expected: parsed['expected'], actual: parsed['actual'] };
-    if (parsed['kind'] === 'failed' && typeof parsed['message'] === 'string') return { kind: 'failed', message: parsed['message'] };
+    const unchanged = parsed['workspaceUnchanged'] === true ? { workspaceUnchanged: true as const } : {};
+    if (parsed['kind'] === 'moved' && typeof parsed['expected'] === 'string' && typeof parsed['actual'] === 'string') return { kind: 'moved', expected: parsed['expected'], actual: parsed['actual'], ...unchanged };
+    if (parsed['kind'] === 'failed' && typeof parsed['message'] === 'string') return { kind: 'failed', message: parsed['message'], ...unchanged };
     return undefined;
   } catch (error) {
     if (error instanceof SyntaxError) return undefined;

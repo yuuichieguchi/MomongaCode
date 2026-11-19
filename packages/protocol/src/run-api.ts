@@ -668,6 +668,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       denial: closed({ source: enumOf(PERMISSION_DENIAL_SOURCES), reason: string }, ['source', 'reason']),
       files: toolFiles,
       mutated: { type: 'boolean', const: true },
+      workspaceUnchanged: { type: 'boolean', const: true },
       command: string,
       windowShared: { type: 'boolean', const: true },
       filesComplete: boolean,

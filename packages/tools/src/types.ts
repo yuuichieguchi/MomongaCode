@@ -36,6 +36,7 @@ export type ToolResult = {
   effect?: OperationEffect;
   files?: ToolFile[];
   mutated?: true;
+  workspaceUnchanged?: true;
   command?: string;
   windowShared?: true;
   filesComplete?: boolean;
@@ -241,9 +242,12 @@ export class ToolInputError extends Error {
 }
 
 export class ToolExecutionError extends Error {
-  constructor(message: string) {
+  readonly workspaceUnchanged: boolean;
+
+  constructor(message: string, facts: { workspaceUnchanged?: true } = {}) {
     super(message);
     this.name = 'ToolExecutionError';
+    this.workspaceUnchanged = facts.workspaceUnchanged === true;
   }
 }
 

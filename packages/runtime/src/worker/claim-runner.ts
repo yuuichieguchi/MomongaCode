@@ -365,7 +365,7 @@ const drive = async (
   try {
     await driveClaim(options, claim, journal, control, terminals, agentSpan, tracer, memory);
   } catch (error) {
-    if (!(error instanceof CancelRequestedError)) throw error;
+    if (!(error instanceof CancelRequestedError) && !control.abortedByCancel(error)) throw error;
     await endCancelled(options, claim, journal, control, terminals);
   }
 };

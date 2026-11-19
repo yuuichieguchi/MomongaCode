@@ -342,6 +342,7 @@ export type RunEventPayload =
       denial?: PermissionDenial;
       files?: ToolFile[];
       mutated?: true;
+      workspaceUnchanged?: true;
       command?: string;
       windowShared?: true;
       filesComplete?: boolean;

@@ -265,6 +265,7 @@ describe('run event payloads', () => {
       denial?: { source: 'sandbox' | 'rule' | 'mode' | 'setting' | 'hook' | 'mandate' | 'superseded' | 'held'; reason: string };
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       mutated?: true;
+      workspaceUnchanged?: true;
       command?: string;
       windowShared?: true;
       filesComplete?: boolean;

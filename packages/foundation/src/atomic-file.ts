@@ -82,7 +82,7 @@ export const atomicWriteSteps = (form: LockForm, publish: PublishMode): AtomicWr
   ...DISPOSAL_STEPS[form],
 ];
 
-type WriterLock = { lock: KernelLockMechanism; onStep?(step: AtomicWriteStep): void };
+type WriterLock = { lock: KernelLockMechanism; onStep?(step: AtomicWriteStep): void; onFailedUnchanged?(): void };
 
 export type AtomicWriteOptions = WriterLock & {
   mode: number;
@@ -138,6 +138,8 @@ type Write = {
   open: OpenFile | undefined;
   ownsTemporary: boolean;
   created: boolean;
+  temporaryMade: boolean;
+  published: boolean;
 };
 
 const startWrite = (mechanism: KernelLockMechanism, random: Random, file: string): Write => ({
@@ -147,6 +149,8 @@ const startWrite = (mechanism: KernelLockMechanism, random: Random, file: string
   open: undefined,
   ownsTemporary: false,
   created: true,
+  temporaryMade: false,
+  published: false,
 });
 
 export class ClaimedDescriptorUnwritableError extends Error {
@@ -245,6 +249,7 @@ function* stepsOf(write: Write, file: string, content: FileContent, options: Ato
     case 'createLocked':
       write.held = yield* run<HeldKernelLock>({ run: 'claim', entry: temporary, form: 'entry' });
       write.ownsTemporary = true;
+      write.temporaryMade = true;
       write.open = yield* run<OpenFile>({ run: 'openClaimed', held: write.held, entry: temporary, mode: options.mode });
       return;
     case 'lockSidecar':
@@ -253,6 +258,7 @@ function* stepsOf(write: Write, file: string, content: FileContent, options: Ato
     case 'createTemporary':
       write.open = yield* run<OpenFile>({ run: 'create', file: temporary, mode: options.mode });
       write.ownsTemporary = true;
+      write.temporaryMade = true;
       return;
     case 'write': {
       const open = openOf(write);
@@ -268,10 +274,13 @@ function* stepsOf(write: Write, file: string, content: FileContent, options: Ato
     case 'publish':
       yield* run({ run: 'beforePublish' });
       assertStillClaimed(write);
-      if (publish === 'replace') yield* run({ run: 'rename', from: temporary, to: file });
-      else {
+      if (publish === 'replace') {
+        yield* run({ run: 'rename', from: temporary, to: file });
+        write.published = true;
+      } else {
         try {
           yield* run({ run: 'link', from: temporary, to: file });
+          write.published = true;
         } catch (error) {
           if (!isAlreadyExists(error)) throw error;
           write.created = false;
@@ -309,8 +318,13 @@ export function* atomicWriteSequence(mechanism: KernelLockMechanism, random: Ran
     const open = write.open;
     write.open = undefined;
     if (open !== undefined) yield* run({ run: 'close', open });
-    if (write.held !== undefined && write.ownsTemporary) yield* run({ run: 'remove', file: write.temporary });
+    let temporaryRemoved = false;
+    if (write.held !== undefined && write.ownsTemporary) {
+      yield* run({ run: 'remove', file: write.temporary });
+      temporaryRemoved = true;
+    }
     releaseAfterFailure(write);
+    if (!write.published && (!write.temporaryMade || temporaryRemoved)) options.onFailedUnchanged?.();
     throw error;
   }
   yield* run({ run: 'syncDirectory', directory: path.dirname(file) });

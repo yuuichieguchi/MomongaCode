@@ -78,6 +78,7 @@ export const outcomePayloads = (outcome: ResultOutcome, held?: HeldLink): RunEve
           ...(result.denial === undefined ? {} : { denial: result.denial }),
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.mutated === undefined ? {} : { mutated: result.mutated }),
+          ...(result.workspaceUnchanged === undefined ? {} : { workspaceUnchanged: result.workspaceUnchanged }),
           ...(result.command === undefined ? {} : { command: result.command }),
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
           ...(result.filesComplete === undefined ? {} : { filesComplete: result.filesComplete }),

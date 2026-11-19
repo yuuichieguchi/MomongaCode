@@ -74,6 +74,7 @@ const contextFor = (state: RunState) => {
       leaseLost: () => false,
       shuttingDown: () => false,
       cancelRequested: () => false,
+      abortedByCancel: () => false,
       cancelled: () => {
         throw new Error('the cancellation of this run is never requested');
       },
