@@ -1,8 +1,9 @@
 import type http from 'node:http';
+import { zstdDecompressSync } from 'node:zlib';
 import { messageEvents, openingEvents, openResponsesStream, terminalEvent } from './fake-open-responses.ts';
 import { serveFakeUpstreamReply } from './fake-sse-upstream.ts';
 import type { FakeUpstreamReply, RecordedUpstreamRequest } from './fake-sse-upstream.ts';
-import { readBody, startLoopbackServer } from './loopback-http.ts';
+import { readBodyBytes, startLoopbackServer } from './loopback-http.ts';
 
 export const PLAN_RESPONSES_PATH = '/v1/responses';
 
@@ -60,10 +61,16 @@ export type PlanResponsesOptions = {
   maxRequestBytes?: { limit: number; reply: FakeUpstreamReply };
 };
 
+export const PLAN_UNCOMPRESSED_BODY_LIMIT = 1024 * 1024;
+
+export const PLAN_OVERSIZED_REPLY: FakeUpstreamReply = { kind: 'error', status: 413, body: { error: { message: 'the request body is too large; send it zstd-compressed', type: 'invalid_request_error', code: null, param: null } } };
+
+export type PlanRecordedRequest = RecordedUpstreamRequest & { rawBytes?: Buffer };
+
 export type FakePlanResponses = {
   origin: string;
   port: number;
-  requests: RecordedUpstreamRequest[];
+  requests: PlanRecordedRequest[];
   close(): Promise<void>;
 };
 
@@ -204,19 +211,27 @@ const bearerOf = (headers: http.IncomingHttpHeaders): string | undefined => {
 };
 
 export const startFakePlanResponses = async (options: PlanResponsesOptions): Promise<FakePlanResponses> => {
-  const requests: RecordedUpstreamRequest[] = [];
+  const requests: PlanRecordedRequest[] = [];
+  const sizeBound = options.maxRequestBytes ?? { limit: PLAN_UNCOMPRESSED_BODY_LIMIT, reply: PLAN_OVERSIZED_REPLY };
   const script = [...(options.script ?? [])];
   const verify = options.verifyBearer;
   const models = options.models ?? [];
 
   const loopback = await startLoopbackServer(async (req, res) => {
-    const raw = await readBody(req);
+    const bytes = await readBodyBytes(req);
+    const encoding = req.headers['content-encoding'];
+    if (encoding !== undefined && encoding !== 'zstd') {
+      await serveFakeUpstreamReply({ kind: 'error', status: 415, body: { detail: `the content encoding ${encoding} is not accepted` } }, res);
+      return;
+    }
+    const raw = (encoding === 'zstd' ? zstdDecompressSync(bytes) : bytes).toString('utf8');
     const outcome = parsedBody(raw);
-    const recorded: RecordedUpstreamRequest = {
+    const recorded: PlanRecordedRequest = {
       method: req.method ?? 'GET',
       path: req.url ?? '/',
       headers: req.headers,
       body: 'invalid' in outcome ? raw : outcome.parsed,
+      ...(encoding === 'zstd' ? { rawBytes: bytes } : {}),
     };
     requests.push(recorded);
     if (verify(bearerOf(req.headers)) !== 'valid') {
@@ -231,8 +246,8 @@ export const startFakePlanResponses = async (options: PlanResponsesOptions): Pro
       await serveFakeUpstreamReply(planErrorHttpReply(ROUTE_NOT_SUPPORTED, { message: `only POST ${PLAN_RESPONSES_PATH} is served` }), res);
       return;
     }
-    if (options.maxRequestBytes !== undefined && Buffer.byteLength(raw) > options.maxRequestBytes.limit) {
-      await serveFakeUpstreamReply(options.maxRequestBytes.reply, res);
+    if (encoding === undefined && bytes.byteLength > sizeBound.limit) {
+      await serveFakeUpstreamReply(sizeBound.reply, res);
       return;
     }
     const rejected = 'invalid' in outcome ? ({ kind: 'error', status: 400, body: { detail: 'the request body is not valid JSON' } } as const) : bodyRejection(outcome.parsed);

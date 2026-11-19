@@ -11,7 +11,7 @@ export const adapterContextOf = (
   capabilities: Capabilities,
   signal: AbortSignal,
   attempt: number,
-  idempotencyKey?: string,
+  call: { idempotencyKey: string; sessionId: string | undefined },
   route?: (route: UpstreamRoute) => void,
 ): AdapterContext => ({
   ...(route === undefined ? {} : { route }),
@@ -20,5 +20,6 @@ export const adapterContextOf = (
   attempt,
   reasoningOrigin: originOf(services, target),
   capabilities,
-  ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+  idempotencyKey: call.idempotencyKey,
+  ...(call.sessionId === undefined ? {} : { sessionId: call.sessionId }),
 });

@@ -33,6 +33,7 @@ export type RecordedStream = {
   signal: AbortSignal;
   deduplicated: boolean;
   role: GatewayCallOptions['role'];
+  sessionId: string | undefined;
 };
 
 export type RecordedCompact = {
@@ -42,6 +43,7 @@ export type RecordedCompact = {
   traceparent: string | undefined;
   signal: AbortSignal;
   runId: string | undefined;
+  sessionId: string | undefined;
 };
 
 export type RecordedCount = { request: CountTokensRequest; signal: AbortSignal | undefined };
@@ -393,6 +395,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         signal: options.signal,
         deduplicated: cached !== undefined || running !== undefined,
         role: options.role,
+        sessionId: options.sessionId,
       };
       gateway.streams.push(record);
       waiterFor(record.index).resolve(record);
@@ -411,6 +414,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         traceparent: options.traceparent,
         signal: options.signal,
         runId: options.runId,
+        sessionId: options.sessionId,
       });
       validator.parseCompact(request);
       await gateway.compactHook?.(request, options.signal);

@@ -106,6 +106,7 @@ describe('every model request of the runtime is admitted by the one budget', () 
     expect(ceiling?.max_cost_nano).toBeGreaterThan(0);
     expect(ceiling?.max_cost_nano).toBeLessThanOrEqual(5_000_000_000);
     expect(ceiling?.max_input_tokens).toBeGreaterThan(0);
+    expect(env.gateway.compacts[0]?.sessionId).toBe(env.run(run.id).sessionId);
     expect(env.store.treeSpend(run.id)).toMatchObject({ reservedNano: 0, reservedTokens: 0 });
   });
 

@@ -9,6 +9,7 @@ import {
   QUOTE_ROUTE,
   ROLE_HEADER,
   RUN_ID_HEADER,
+  SESSION_ID_HEADER,
   STREAM_IDLE_HEADER,
   TARGET_ANSWERS,
   SERVICE_UNAVAILABLE_STATUS,
@@ -466,11 +467,12 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     });
   };
 
-  const callHeaders = (call: { idempotencyKey: string; deadlineAt: number; traceparent?: string; runId?: string; role?: HeaderRole }): Record<string, string> => ({
+  const callHeaders = (call: { idempotencyKey: string; deadlineAt: number; traceparent?: string; runId?: string; sessionId?: string; role?: HeaderRole }): Record<string, string> => ({
     'idempotency-key': sfString(call.idempotencyKey),
     'momonga-deadline-ms': String(Math.max(1, call.deadlineAt - clock.now())),
     ...(call.traceparent === undefined ? {} : { traceparent: call.traceparent }),
     ...(call.runId === undefined ? {} : { [RUN_ID_HEADER]: call.runId }),
+    ...(call.sessionId === undefined ? {} : { [SESSION_ID_HEADER]: call.sessionId }),
     ...(call.role === undefined ? {} : { [ROLE_HEADER]: call.role }),
   });
 

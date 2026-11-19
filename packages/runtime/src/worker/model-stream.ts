@@ -156,6 +156,7 @@ export const streamModel = async (
           deadlineAt: ctx.run.deadlineAt,
           signal: ctx.control.signal,
           traceparent: ctx.agentSpan.traceparent,
+          sessionId: ctx.run.sessionId,
         });
         for await (const event of events) {
           if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = elapsedMsSince(timers, startedAt);

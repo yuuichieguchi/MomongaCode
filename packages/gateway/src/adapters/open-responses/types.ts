@@ -3,11 +3,15 @@ import type { AdapterTarget, Capabilities, ErrorRules, HealthResult, ProviderAda
 import type { AdapterAuth } from '../shared/auth.ts';
 import type { UserDialects } from '../../dialect/choice.ts';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
+import type { PlanRequestWire } from '../shared/request-encoding.ts';
+
+export type { PlanRequestWire };
 
 export type OpenResponsesAdapterOptions = {
   resolveEndpoint: (target: AdapterTarget, signal: AbortSignal) => Promise<UpstreamEndpoint>;
   authSource: AdapterAuth;
   errorRules?: ErrorRules;
+  requestWire?: PlanRequestWire;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;

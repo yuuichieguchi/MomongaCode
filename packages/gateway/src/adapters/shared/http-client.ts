@@ -23,7 +23,7 @@ export type CompletionResponse = {
 
 export type CompletionPost = {
   headers: Record<string, string>;
-  body: string;
+  body: string | Uint8Array;
   signal: AbortSignal;
   subpath?: string;
   streamed?: true;

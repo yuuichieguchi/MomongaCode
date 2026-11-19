@@ -39,6 +39,12 @@ export type PlanProfileCatalog = {
   labelKey: string;
 };
 
+export const PLAN_REQUEST_ENCODINGS = ['identity', 'zstd'] as const;
+
+export type PlanRequestEncoding = (typeof PLAN_REQUEST_ENCODINGS)[number];
+
+export type PlanProfileRequestWire = { encoding: PlanRequestEncoding; sessionHeaders: string[] };
+
 export type PlanProfile = {
   id: string;
   adapter: 'open-responses';
@@ -48,6 +54,7 @@ export type PlanProfile = {
   messages: PlanProfileMessages;
   oauth: PlanProfileOAuth;
   targetDefaults: { baseUrl: string; billing: TargetBilling; capabilities: PlanProfileCapabilities };
+  requestWire: PlanProfileRequestWire;
   errorRules: ErrorRules;
   catalog: PlanProfileCatalog;
 };
@@ -167,6 +174,10 @@ const PLAN_PROFILE_SCHEMA = {
         additionalProperties: false,
       },
     }),
+    requestWire: object({
+      encoding: { enum: [...PLAN_REQUEST_ENCODINGS] },
+      sessionHeaders: { type: 'array', items: { type: 'string', pattern: '^[a-z0-9-]+$' }, uniqueItems: true },
+    }),
     errorRules: { type: 'array', items: ERROR_RULE_SCHEMA, minItems: 1 },
     catalog: object({
       path: { type: 'string', pattern: '^/[^\\s]*$' },
@@ -176,7 +187,7 @@ const PLAN_PROFILE_SCHEMA = {
       labelKey: NON_EMPTY_STRING,
     }),
   },
-  required: ['id', 'adapter', 'displayName', 'usageUrl', 'loginLabel', 'messages', 'oauth', 'targetDefaults', 'errorRules', 'catalog'],
+  required: ['id', 'adapter', 'displayName', 'usageUrl', 'loginLabel', 'messages', 'oauth', 'targetDefaults', 'requestWire', 'errorRules', 'catalog'],
   additionalProperties: false,
 } as const;
 
@@ -253,6 +264,7 @@ const CHATGPT_PROFILE_DATA = {
       inputKinds: { content: ['file'], tools: ['function', 'custom'] },
     },
   },
+  requestWire: { encoding: 'zstd', sessionHeaders: ['session-id', 'thread-id', 'x-client-request-id'] },
   errorRules: [
     {
       match: { kind: 'code', codes: ['subscription_sharing_usage_limit_exceeded'] },

@@ -24,6 +24,7 @@ import { buildResponsesBody, carriesResponsesOutputBound } from './request.ts';
 import { OpenResponsesStreamDriver } from './stream-driver.ts';
 import type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './types.ts';
 import { idempotencyHeaderOf } from '../shared/idempotency-header.ts';
+import { encodedRequestBody, sessionHeadersOf } from '../shared/request-encoding.ts';
 
 const OPEN_RESPONSES_TOOL_CHOICE: ToolChoiceWire = { forms: ['native', 'single_tool', 'filter'], expressesRequired: true };
 
@@ -76,15 +77,18 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const auth = options.authSource(ctx.target);
+      const encoded = await encodedRequestBody(JSON.stringify(body), options.requestWire);
       const response = await sendAuthorized(auth, signal, (bearer) =>
         pool.clientFor(endpoint).post({ ...routeReportOf(ctx),
           headers: {
             ...idempotencyHeaderOf(ctx),
+            ...sessionHeadersOf(ctx, options.requestWire),
             'content-type': 'application/json',
+            ...encoded.headers,
             accept: 'text/event-stream',
             ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),
           },
-          body: JSON.stringify(body),
+          body: encoded.body,
           signal,
           ...watchedPostOf(options.liveness),
         }),

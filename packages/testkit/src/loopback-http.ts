@@ -37,6 +37,12 @@ export const startLoopbackServer = async (handler: LoopbackHandler): Promise<Loo
   };
 };
 
+export const readBodyBytes = async (req: http.IncomingMessage): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+};
+
 export const readBody = async (req: http.IncomingMessage): Promise<string> => {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);

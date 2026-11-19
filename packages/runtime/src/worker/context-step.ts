@@ -446,6 +446,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
             signal: ctx.control.signal,
             traceparent: ctx.agentSpan.traceparent,
             runId: ctx.run.id,
+            sessionId: ctx.run.sessionId,
           }),
         );
         return { resource, startedAt };

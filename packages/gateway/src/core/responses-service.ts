@@ -20,6 +20,7 @@ export type SubmitHeaders = {
   deadlineMs: string | undefined;
   traceparent: string | undefined;
   tracestate: string | undefined;
+  sessionId: string | undefined;
   role: string;
 };
 
@@ -144,6 +145,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
       deadlineAt,
       parent,
       runId: body.metadata?.['run_id'],
+      sessionId: headers.sessionId,
       step: parseStep(body.metadata?.['step']),
       role: headers.role,
     };

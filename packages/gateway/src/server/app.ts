@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { MAX_RUN_SPANS_PAGE, MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { MAX_RUN_SPANS_PAGE, MAX_TRACE_CONTENT_PAGE, QUOTE_ROUTE, ROLE_HEADER, RUN_ID_HEADER, SESSION_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayHealth, ModelList, MomongaModelList, RunSpansPage, TraceContentPage } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
@@ -11,6 +11,7 @@ import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { quoteOf } from '../core/quote.ts';
 import { roleOfHeader } from '../core/role.ts';
+import { sessionIdOfHeader } from '../core/session-header.ts';
 import { withPinnedServices } from '../core/services.ts';
 import type { GatewayServices } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
@@ -54,6 +55,7 @@ const submitHeadersOf = (context: Context): SubmitHeaders => ({
   deadlineMs: context.req.header('momonga-deadline-ms'),
   traceparent: context.req.header('traceparent'),
   tracestate: context.req.header('tracestate'),
+  sessionId: sessionIdOfHeader(context.req.header(SESSION_ID_HEADER)),
   role: roleOfHeader(context.req.header(ROLE_HEADER)),
 });
 
@@ -122,6 +124,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
     const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'), {
       runId: context.req.header(RUN_ID_HEADER),
+      sessionId: sessionIdOfHeader(context.req.header(SESSION_ID_HEADER)),
       traceparent: context.req.header('traceparent'),
       tracestate: context.req.header('tracestate'),
     });

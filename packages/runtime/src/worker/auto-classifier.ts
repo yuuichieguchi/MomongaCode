@@ -101,6 +101,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
         deadlineAt: ctx.run.deadlineAt,
         signal: ctx.control.signal,
         traceparent: ctx.agentSpan.traceparent,
+        sessionId: ctx.run.sessionId,
         role: 'classifier',
       });
       for await (const event of events) {

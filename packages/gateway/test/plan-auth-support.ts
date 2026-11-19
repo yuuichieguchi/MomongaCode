@@ -59,6 +59,7 @@ export const startPlan = async (auth: AuthSource, accepted: (bearer: string | un
     clock: createFakeClock(START_MS),
     authSource: () => auth,
     errorRules: planProfileOf('chatgpt').errorRules,
+    requestWire: planProfileOf('chatgpt').requestWire,
   });
   registerCleanup(() => adapter.close());
   const harness = await startGateway({ adapters: { 'scripted/plan-model': adapter }, config: { chains: { 'scripted/plan-model': ['scripted/plan-model'] }, targets: { 'scripted/plan-model': { billing: 'plan' } }, retry } });

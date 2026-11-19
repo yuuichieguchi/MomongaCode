@@ -28,6 +28,7 @@ export type GatewayCallOptions = {
   signal: AbortSignal;
   traceparent?: string;
   runId?: string;
+  sessionId?: string;
   role?: HeaderRole;
 };
 

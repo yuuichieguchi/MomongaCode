@@ -44,7 +44,7 @@ export type {
   ToolCallingState,
   ToolCallingSetting,
 } from './capabilities.ts';
-export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, DEFERRED_HEADER, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, STREAM_IDLE_HEADER } from './headers.ts';
+export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, DEFERRED_HEADER, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, SESSION_ID_HEADER, STREAM_IDLE_HEADER } from './headers.ts';
 export type { CallRole } from './headers.ts';
 export type { HeaderRole } from './headers.ts';
 export {

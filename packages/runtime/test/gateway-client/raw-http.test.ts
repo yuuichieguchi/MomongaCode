@@ -77,6 +77,19 @@ describe('gateway client request headers', () => {
     expect(fake.requests[1]?.headers['momonga-run-id']).toBeUndefined();
   });
 
+  it('sends the session id of a call in momonga-session-id, and none for a call without one', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(sseReply([sseFrame(completedEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    await collect(client.stream(streamBody(), { ...callOptions(clock), sessionId: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b' }));
+    await collect(client.stream(streamBody(), callOptions(clock, { idempotencyKey: 'key-2' })));
+
+    expect(fake.requests[0]?.headers['momonga-session-id']).toBe('0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b');
+    expect(fake.requests[1]?.headers['momonga-session-id']).toBeUndefined();
+  });
+
   it('serialises the idempotency key as an sf-string, escaping quotes and backslashes', async () => {
     const fake = await startRawHttpFake();
     fake.respond(sseReply([sseFrame(completedEvent)]));

@@ -29,6 +29,7 @@ describe('worker tracing', () => {
     expect(env.tracer.spans.every((span) => span.ended === 1)).toBe(true);
 
     expect(env.gateway.streams.map((stream) => stream.traceparent)).toEqual([agents[0]?.traceparent, agents[0]?.traceparent]);
+    expect(env.gateway.streams.map((stream) => stream.sessionId)).toEqual([env.session.id, env.session.id]);
     for (const execution of env.toolbox.executions) {
       const span = tools.find((candidate) => candidate.input['callId'] === execution.callId);
       expect(execution.traceparent).toBe(span?.traceparent);

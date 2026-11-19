@@ -56,6 +56,7 @@ export type AdapterContext = {
   reasoningOrigin: ReasoningOrigin;
   capabilities: Capabilities;
   idempotencyKey?: string;
+  sessionId?: string;
 };
 
 export type UpstreamFailureFacts = {

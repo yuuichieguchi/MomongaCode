@@ -247,6 +247,8 @@ export {
   PLAN_ERROR_CODES,
   PLAN_MODELS_PATH,
   PLAN_RESPONSES_PATH,
+  PLAN_OVERSIZED_REPLY,
+  PLAN_UNCOMPRESSED_BODY_LIMIT,
   PLAN_UNSUPPORTED_FIELDS,
   PLAN_UNSUPPORTED_TOOL_TYPES,
   planAdmissionReply,
@@ -258,7 +260,7 @@ export {
   startFakePlanResponses,
   withoutOutputIndex,
 } from './fake-plan-responses.ts';
-export type { BearerVerdict, FakePlanResponses, PlanErrorEventShape, PlanResponsesOptions } from './fake-plan-responses.ts';
+export type { BearerVerdict, FakePlanResponses, PlanErrorEventShape, PlanRecordedRequest, PlanResponsesOptions } from './fake-plan-responses.ts';
 export { FAKE_KEYCHAIN_PATH, READY_CONTROL, createFakeSecretFiles, createFakeSecretStore, createFakeSecurityPort, fakeReadinessAnswer } from './fake-secrets.ts';
 export type { FakePrograms, OpenerCall } from './fake-programs.ts';
 export type { FakeCallMode, FakeControl, FakeReadiness, FakeSecretStore, FakeSecretStoreOptions, FakeSecurityPort, FakeSecurityPortOptions } from './fake-secrets.ts';

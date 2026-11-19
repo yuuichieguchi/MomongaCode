@@ -139,7 +139,7 @@ const countWireOnce = async (
   attemptNumber: number,
   call: CallIdentity,
 ): Promise<Counted> => {
-  const sentContext = async (): Promise<AdapterContext> => adapterContextOf(services, target, capabilities, signal, attemptNumber, (await recordSendOf(services, call, target, undefined, signal)).callKey);
+  const sentContext = async (): Promise<AdapterContext> => adapterContextOf(services, target, capabilities, signal, attemptNumber, { idempotencyKey: (await recordSendOf(services, call, target, undefined, signal)).callKey, sessionId: undefined });
   const adapterCountWire = target.adapter.countWire;
   if (adapterCountWire !== undefined) return { result: await adapterCountWire.call(target.adapter, wire, await sentContext()), contacted: true };
   const adapterCountTokens = target.adapter.countTokens;
@@ -202,7 +202,7 @@ const countOnTarget = async (
       ? { type: 'message', role: 'user', content: [{ type: 'input_text', text: compactionSummaryText(item.summary, 'model', fence) }] }
       : item,
   );
-  const context = adapterContextOf(services, target, capabilities, signal, attemptNumber, (await recordSendOf(services, call, target, undefined, signal)).callKey);
+  const context = adapterContextOf(services, target, capabilities, signal, attemptNumber, { idempotencyKey: (await recordSendOf(services, call, target, undefined, signal)).callKey, sessionId: undefined });
   const result = await adapterCountTokens.call(
     target.adapter,
     {
@@ -255,7 +255,7 @@ const withoutCeiling = (momonga: CompactRequest['momonga']): CompactRequest['mom
   return rest;
 };
 
-export type CompactTrace = { runId: string | undefined; traceparent: string | undefined; tracestate: string | undefined };
+export type CompactTrace = { runId: string | undefined; sessionId: string | undefined; traceparent: string | undefined; tracestate: string | undefined };
 
 const compactOnce = async (
   services: Services,
@@ -362,7 +362,7 @@ const compactOnce = async (
     }
     const span = startSpan(target, attemptNumber, cap, sent.retryOfSeq);
     try {
-      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber, sent.callKey, span.route));
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber, { idempotencyKey: sent.callKey, sessionId: trace.sessionId }, span.route));
       spans.set(target, span);
       return result;
     } catch (error) {

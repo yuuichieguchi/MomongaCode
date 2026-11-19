@@ -831,6 +831,7 @@ const createPlanAdapter = (target: PlanTarget, auth: AuthSource, profiles: PlanP
     health: async () => planHealthOf(target, auth, reported),
     authSource: () => auth,
     errorRules: profile.errorRules,
+    requestWire: profile.requestWire,
     clock: wiring.clock,
     userDialects: wiring.userDialects,
     liveness: wiring.liveness,

@@ -57,6 +57,7 @@ export type ResponseJob = {
   deadlineAt: number | undefined;
   parent: TraceParent | undefined;
   runId: string | undefined;
+  sessionId: string | undefined;
   step: number | undefined;
   role: string;
 };
@@ -217,7 +218,7 @@ const openAttempt = async (
   const span = startSpan(retryOfSeq);
   let iterator: AsyncIterator<StreamEvent> | undefined;
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound, services.fenceBoundary), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey, span.route));
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target, visibleBound, services.fenceBoundary), adapterContextOf(services, target, capabilities, signal, attemptNumber, { idempotencyKey: callKey, sessionId: job.sessionId }, span.route));
     iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
