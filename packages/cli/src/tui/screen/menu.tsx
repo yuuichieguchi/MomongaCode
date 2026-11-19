@@ -92,6 +92,7 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
 
   const matchesFor = (text: string): SlashCommand[] | undefined => (host.active && !stateFor(text).closed ? slashMatches(text, host.commands) : undefined);
 
+  if (held.current.text !== host.text) held.current = stateFor(host.text);
   const shown = matchesFor(host.text);
   const state = stateFor(host.text);
 

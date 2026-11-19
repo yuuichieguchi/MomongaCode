@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SCRIPTED_MODEL } from '@momonga/testkit';
 import { SETTINGS_TITLE } from '../../src/tui/settings-screen.tsx';
+import { slashMatches } from '../../src/tui/screen/menu.tsx';
+import type { SlashCommand } from '../../src/tui/slash.ts';
 import { KEYS, TUI_TEST_TIMEOUT_MS } from '../ink-helpers.ts';
 import { freshPlace } from './settings-harness.tsx';
 import { startOnTerminal } from './terminal-app.tsx';
@@ -66,6 +68,37 @@ describe('the row under the mouse pointer', () => {
     await app.type(hover(10, second + 1), (lines) => (lines[second] ?? '').includes('› '), 'the chosen row follows the pointer');
     await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('Automatic updates  off  user')), 'Enter decides the hovered row');
     expect(app.screen().join('\n')).not.toContain('Automatic compaction  off  user');
+    app.close();
+  });
+
+});
+
+describe('the chosen row of the slash menu when it opens again', () => {
+  it('ranks the exact name first', () => {
+    expect(slashMatches('/model', [{ name: 'models' }, { name: 'model' }] as unknown as SlashCommand[])?.map((command) => command.name)).toEqual(['model', 'models']);
+  });
+
+  const chosenLine = (lines: string[]): string => lines.find((line) => line.startsWith('› /')) ?? '';
+
+  it('is the exact match after the choice was moved down for the same text, the draft emptied and the text typed again', async () => {
+    const place = freshPlace();
+    const app = await startOnTerminal(SIZE, { settingsPlace: { home: place.home, projectDir: place.project } });
+    await app.type('/model', (lines) => chosenLine(lines).startsWith('› /model ['), 'the exact match is chosen');
+    await app.type(KEYS.down, (lines) => chosenLine(lines).startsWith('› /models'), 'the keys move the choice down');
+    await app.type(KEYS.backspace.repeat(6), (lines) => !lines.some((line) => line.includes('/models')), 'the draft is emptied');
+    await app.type('/model', (lines) => lines.some((line) => line.includes('/models')), 'the menu opens again');
+    expect(chosenLine(app.screen())).toMatch(/^› \/model \[/);
+    await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('a change applies from the next run')), 'Enter runs /model');
+    app.close();
+  });
+
+  it('opens again after ctrl+c closed it for the same text, once the text was typed again', async () => {
+    const place = freshPlace();
+    const app = await startOnTerminal(SIZE, { settingsPlace: { home: place.home, projectDir: place.project } });
+    await app.type('/model', (lines) => lines.some((line) => line.includes('/models')), 'the menu is open');
+    await app.type(KEYS.ctrlC, (lines) => !lines.some((line) => line.includes('/models')), 'ctrl+c closes the menu');
+    await app.type(KEYS.backspace.repeat(6), (lines) => !lines.some((line) => line.includes('/model')), 'the draft is emptied');
+    await app.type('/model', (lines) => chosenLine(lines).startsWith('› /model ['), 'the menu opens again with the exact match chosen');
     app.close();
   });
 });
