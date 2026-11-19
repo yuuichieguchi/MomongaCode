@@ -183,6 +183,9 @@ export const useAtMenu = (host: AtMenuHost): AtMenu => {
     return path === undefined ? { kind: 'toggle' } : { kind: 'place', ...completedMention(editor.text, editor.cursor, shown.token, path) };
   };
 
+  const tokenKey = host.active ? mentionTokenAt(host.editor.text, host.editor.cursor) : undefined;
+  const shownKey = tokenKey === undefined ? '' : keyOf(tokenKey);
+  if (held.current.key !== shownKey) held.current = { key: shownKey, index: 0, closed: undefined };
   const shown = shownFor(host.editor);
 
   return {
