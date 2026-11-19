@@ -56,7 +56,7 @@ describe('the header of a subagent view names the model the child run runs on', 
 
   it('keeps the state, the model and the standard effort at 40 columns', async () => {
     const app = await openChild({ columns: 40, rows: 30 }, OTHER);
-    expect(headerOf(app.screen())).toBe('running · ollama/qwen3.8:27b · medium');
+    expect(headerOf(app.screen())).toBe('running · ollama/qwen3.8:27b (medium)');
     app.close();
   });
 
@@ -71,15 +71,13 @@ describe('the header of a subagent view names the model the child run runs on', 
 
   it('keeps the state, the model and the chosen effort at 40 columns', async () => {
     const app = await openChild({ columns: 40, rows: 30 }, OTHER, 'high');
-    expect(headerOf(app.screen())).toBe('running · ollama/qwen3.8:27b · high');
+    expect(headerOf(app.screen())).toBe('running · ollama/qwen3.8:27b (high)');
     app.close();
   });
 
   it('keeps the state, the model and the unavailable effort at 40 columns', async () => {
     const app = await openChild({ columns: 40, rows: 30 }, SCRIPTED_MODEL);
-    const header = headerOf(app.screen());
-    expect(header.endsWith('not available')).toBe(true);
-    expect(header.length).toBeLessThanOrEqual(40);
+    expect(headerOf(app.screen())).toBe('running · scripted-model (not available)');
     app.close();
   });
 });
