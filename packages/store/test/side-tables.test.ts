@@ -102,7 +102,11 @@ describe('approvals', () => {
       kind: 'ok',
       approval: { id, status: 'resolved', optionId: 'allow_once', resolvedAt: START_MS + 9 },
     });
-    expect(await store.resolveApproval(id, 'reject_once')).toEqual({ kind: 'approval_not_pending', status: 'resolved' });
+    expect(await store.resolveApproval(id, 'reject_once')).toEqual({
+      kind: 'approval_not_pending',
+      status: 'resolved',
+      approval: expect.objectContaining({ id, status: 'resolved', optionId: 'allow_once', resolvedAt: START_MS + 9 }),
+    });
     expect(store.approvals.get(id)?.optionId).toBe('allow_once');
     expect(store.approvals.listPending(runId)).toEqual([]);
   });

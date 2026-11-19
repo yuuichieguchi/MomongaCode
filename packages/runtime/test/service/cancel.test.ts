@@ -50,7 +50,7 @@ describe('cancel', () => {
 
     expect(response.status).toBe(202);
     expect(response.json.run).toMatchObject({ status: 'CANCELLING', cancelRequested: true });
-    expect((await env.http('GET', `/v1/runs/${run.id}/approvals`)).json).toEqual({ approvals: [] });
+    expect((await env.http('GET', `/v1/runs/${run.id}/approvals`)).json).toEqual({ approvals: [], settled: [expect.objectContaining({ id: approvalId, status: 'withdrawn' })] });
     expect((await env.http('GET', `/v1/approvals/${approvalId}`)).json.approval.status).toBe('withdrawn');
     expect(env.ofType(run.id, 'tool.permission.cancelled')).toEqual([expect.objectContaining({ approvalId, reason: 'withdrawn' })]);
     expect(typesAfter(env, run.id, before)).toEqual(['tool.permission.cancelled', 'run.status']);
