@@ -9,6 +9,7 @@ const VERSION = 'MomongaCode v1.2.3';
 const WELCOME_TITLE = 'Connect a model to start';
 const TRUST_ROW = '1. Yes, I trust this folder';
 const FIGURE_ROWS = 7;
+const DESCRIPTION = 'Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
 const HINT_ROW = 'esc: go back';
 const LIST_ROWS = ['1. Continue with ChatGPT', '2. Use an API key', '3. Use a local server', HINT_ROW];
 
@@ -64,6 +65,19 @@ describe('the first screen shows the start screen at the top with the list direc
     expect(frame).toContain('2. Use an API key');
     expect(frame).toContain('3. Use a local server');
     expectListUnderStartScreen(frame, WELCOME_TITLE);
+    app.unmount();
+  });
+
+  it('at 40 columns the description of the sign-in row is wrapped under it, dimmed, within the width', async () => {
+    const { app } = await startPlan({ models: [], accounts: [] }, STARTUP, { columns: 40, rows: 40 });
+    const frame = await untilFrame(app, (shown) => shown.includes(WELCOME_TITLE) && shown.includes('3. Use a local server'));
+    const rows = rowsOf(frame);
+    const first = rowIndexOf(rows, '1. Continue with ChatGPT');
+    const second = rowIndexOf(rows, '2. Use an API key');
+    const between = rows.slice(first + 1, second);
+    expect(between.length).toBeGreaterThan(1);
+    expect(between.join(' ').replace(/[│]/g, ' ').replace(/\s+/g, ' ').trim()).toBe(DESCRIPTION);
+    for (const row of rows) expect(row.length).toBeLessThanOrEqual(40);
     app.unmount();
   });
 

@@ -7,8 +7,6 @@ import { PLAN_TEST_TIMEOUT_MS, account, choose, eventually, startPlan, submitLin
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
-const SENTENCE = 'Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
-
 const ready = async (app: Instance): Promise<void> => {
   await untilFrame(app, 'mode: manual');
 };
@@ -18,8 +16,6 @@ const expired = () => runView({ status: 'FAILED', error: { code: 'sign_in_requir
 const signInAgain = async (app: Instance): Promise<void> => {
   await submitLine(app, '/login chatgpt');
   await choose(app, 'work · w@example.com');
-  await untilFrame(app, SENTENCE);
-  await choose(app, 'Continue with ChatGPT');
 };
 
 describe('resubmit after /login (O-R5-4 S1)', () => {

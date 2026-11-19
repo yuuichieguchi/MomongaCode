@@ -6,6 +6,8 @@ import { runStarted } from './tui-harness.tsx';
 import { CHATGPT, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
+const PASTE_LABEL = 'On a remote machine? Paste the redirect URL here';
+
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
 const NOT_ENABLED_MESSAGE = 'Plan use is not enabled for this account.';
@@ -40,16 +42,17 @@ describe('the plan_use_not_enabled block of the TUI (P6.5, O-R5-6 designed and n
     app.unmount();
   });
 
-  it('Enable ChatGPT plan use opens the sign-in of error.plan.account with reconsent', async () => {
+  it('Enable ChatGPT plan use shows the description under the row and opens the sign-in of error.plan.account with reconsent at once, with no second list', async () => {
     const { app, backend } = await startPlan({ accounts: [account({ label: 'work', state: 'plan_disabled' })], callbackArrives: false });
     await ready(app);
     await runStarted(backend, app, 'go');
     failWith(backend, 'plan_use_not_enabled', NOT_ENABLED_MESSAGE);
+    const block = await untilRow(app, 'Enable ChatGPT plan use');
+    expect(block.replace(/\s+/g, ' ')).toContain(CHATGPT.messages.description);
     await choose(app, 'Enable ChatGPT plan use');
-    const sentenceScreen = await untilRow(app, CHATGPT.messages.apiKeyLabel, CHATGPT.messages.description);
-    expect(rowNumberOf(sentenceScreen, 'Enable ChatGPT plan use')).toBe(1);
-    expect(rowNumberOf(sentenceScreen, CHATGPT.messages.apiKeyLabel)).toBe(2);
-    await choose(app, 'Enable ChatGPT plan use');
+    const waiting = await untilFrame(app, PASTE_LABEL);
+    expect(waiting.replace(/\s+/g, ' ')).toContain(CHATGPT.messages.description);
+    expect(waiting).not.toContain(CHATGPT.messages.apiKeyLabel);
     await eventually(() => backend.planCalls.some((call) => call.route === 'sign-in/begin'), 'the sign-in begin');
     expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'work', port: LISTENER_PORT, reconsent: true });
     app.unmount();
@@ -103,7 +106,6 @@ describe('a sign-in listener that cannot start (O-R5-6 A)', () => {
     const { app, backend } = await startPlan({ accounts: [], listenerFails: new Error('bind refused') });
     await ready(app);
     await submitLine(app, '/login chatgpt');
-    await choose(app, CHATGPT.loginLabel);
     await untilOutput(app, 'Could not start the local sign-in listener (bind refused). Nothing was changed.');
     await untilTypedAfter(app);
     expect(backend.planCalls.map((call) => call.route)).not.toContain('sign-in/begin');

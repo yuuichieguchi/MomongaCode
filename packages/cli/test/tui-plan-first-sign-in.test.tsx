@@ -15,7 +15,6 @@ const cancellations = (backend: FakePlanBackend): unknown[] => backend.planCalls
 const toTheQuestion = async (app: Instance): Promise<string> => {
   await untilFrame(app, 'mode: manual');
   await submitLine(app, '/login chatgpt');
-  await choose(app, 'Continue with ChatGPT');
   return untilRow(app, 'Save this account');
 };
 

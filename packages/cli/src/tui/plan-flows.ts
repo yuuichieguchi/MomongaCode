@@ -48,7 +48,9 @@ export type PlanFlows = {
   notEligible(profile: PlanProfileView): Promise<void>;
 };
 
-type Choice = { row: PickRow; act(): Promise<void> };
+const AGAIN = 'again';
+type Acted = typeof AGAIN | undefined;
+type Choice = { row: PickRow; act(): Promise<Acted | void> };
 
 const USE_API_KEY = 'Use an API key';
 const CONNECT_TITLE = 'Connect a model';
@@ -91,11 +93,12 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const chooseFrom = async (request: { title?: string; lines?: readonly string[] }, choices: readonly Choice[]): Promise<boolean> => {
-    const index = await ports.pick({ ...request, rows: choices.map((choice) => choice.row) });
-    const chosen = index === undefined ? undefined : choices[index];
-    if (chosen === undefined) return false;
-    await chosen.act();
-    return true;
+    for (;;) {
+      const index = await ports.pick({ ...request, rows: choices.map((choice) => choice.row) });
+      const chosen = index === undefined ? undefined : choices[index];
+      if (chosen === undefined) return false;
+      if ((await chosen.act()) !== AGAIN) return true;
+    }
   };
 
   const addApiKey = async (): Promise<void> => {
@@ -144,8 +147,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     return (await ports.pick({ title: 'The sandbox is off', lines: SANDBOX_OFF_NOTICE, rows: SANDBOX_OFF_ROWS, initial: SANDBOX_OFF_CANCEL, decideOn: 'enter', escape: SANDBOX_OFF_CANCEL })) === SANDBOX_OFF_CONTINUE;
   };
 
-  const signInFlow = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<void> => {
-    if (!(await sandboxAccepted())) return;
+  const signInRow = (profile: PlanProfileView, label: string): PickRow => ({ label, opensBrowser: true, description: profile.messages.description });
+
+  const signInFlow = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<Acted> => {
+    if (!(await sandboxAccepted())) return undefined;
     const cancel = new AbortController();
     let deliver: (text: string) => void = () => undefined;
     const deliveries = new Promise<string>((resolve) => {
@@ -153,7 +158,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     });
     const handlers = { cancel: () => cancel.abort(), deliver: (text: string) => deliver(text) };
     const authorize = async ({ url, state }: SignInShown, waiting: AbortSignal): Promise<void> => {
-      const lines = ['Open this URL in your browser if it does not open by itself:', url.href];
+      const lines = [profile.messages.description, 'Open this URL in your browser if it does not open by itself:', url.href];
       ports.waiting({ title: profile.loginLabel, lines, url, state }, handlers);
       backend.openUrl(url, waiting, (message) => {
         ports.waiting({ title: profile.loginLabel, lines: [...lines, `${couldNotOpenBrowser(message)} Copy the URL and continue manually.`], url, state }, handlers);
@@ -190,15 +195,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     } catch (error) {
       if (cancel.signal.aborted && error === cancel.signal.reason) {
         ports.info(cancelledText(SIGN_IN_WORD));
-        return;
+        return AGAIN;
       }
       if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError) {
         ports.info(error.message);
-        return;
+        return undefined;
       }
       if (error instanceof SignInNotFinishedError) {
         ports.info(signInFailureLine('tui', { profile: profile.id, account }, error));
-        return;
+        return undefined;
       }
       throw error;
     } finally {
@@ -207,15 +212,14 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     switch (answer.outcome) {
       case RETRY_OUTCOME:
         ports.info(codeNotAcceptedLine('tui', profile, account));
-        await sentence(profile, account, reconsent);
-        return;
+        return AGAIN;
       case IDENTITY_UNCONFIRMED_OUTCOME:
         ports.info(identityNotConfirmedLine('tui', { profile: profile.id, account }, answer.identity));
-        return;
+        return undefined;
       case PLAN_DISABLED_STATE:
         for (const line of planDisabledLines('tui', profile, answer.account.label)) ports.info(line);
-        await sentence(profile, answer.account.label, true);
-        return;
+        await planUseNotEnabled(profile, answer.account.label);
+        return undefined;
       case SIGNED_IN_OUTCOME:
         ports.info(signedInLine(answer.account));
         try {
@@ -223,39 +227,29 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         } finally {
           await ports.signedIn();
         }
-        return;
+        return undefined;
     }
   };
 
-  const sentence = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<void> => {
-    ports.info(profile.messages.description);
-    await chooseFrom({}, [
-      { row: { label: reconsent ? `Enable ${profile.messages.identityLabel} plan use` : profile.loginLabel, opensBrowser: true }, act: () => signInFlow(profile, account, reconsent) },
-      { row: { label: profile.messages.apiKeyLabel }, act: addApiKey },
-    ]);
-  };
-
-  const savedAccount = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
+  const savedAccount = async (profile: PlanProfileView, account: PlanAccountView): Promise<Acted> => {
     switch (savedAccountAction(account)) {
       case 'activate':
         await backend.plan.setActive({ profile: profile.id, account: account.label });
         ports.info(`${profile.messages.identityLabel}: using ${account.label}`);
         await ports.refreshConnection();
-        return;
+        return undefined;
       case 'sign-in':
-        await sentence(profile, account.label, account.state === PLAN_DISABLED_STATE);
-        return;
+        return signInFlow(profile, account.label, account.state === PLAN_DISABLED_STATE);
       case 'replace':
         ports.info(recordUnreadableLine('tui', account));
-        await sentence(profile, account.label, false);
-        return;
+        return signInFlow(profile, account.label, false);
       case 'none':
         ports.info(`${accountRowLabel(account)}${account.cause === undefined ? '' : `: ${account.cause}`}`);
-        return;
+        return undefined;
     }
   };
 
-  const newAccount = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<void> => {
+  const newAccount = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<Acted> => {
     const taken = new Set(accountsOf(profile.id, listed.accounts).map((account) => account.label));
     const label = await ports.promptText({
       title: 'Label for the new account or workspace',
@@ -267,14 +261,18 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return undefined;
       },
     });
-    if (label === undefined) return;
-    await sentence(profile, label, false);
+    if (label === undefined) return AGAIN;
+    return signInFlow(profile, label, false);
   };
 
   const accountPicker = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<void> => {
     const records = accountsOf(profile.id, listed.accounts);
     await chooseFrom({ title: profile.messages.pickerLabel }, [
-      ...records.map((account) => ({ row: { label: `${accountRowLabel(account)}${account.active ? ' (current)' : ''}` }, act: () => savedAccount(profile, account) })),
+      ...records.map((account) => {
+        const label = `${accountRowLabel(account)}${account.active ? ' (current)' : ''}`;
+        const action = savedAccountAction(account);
+        return { row: action === 'sign-in' || action === 'replace' ? signInRow(profile, label) : { label }, act: () => savedAccount(profile, account) };
+      }),
       ...records
         .filter((account) => account.paused !== undefined)
         .map((account) => ({
@@ -288,16 +286,16 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     ]);
   };
 
-  const providerFlowOf = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<void> => {
+  const providerFlowOf = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<Acted> => {
     for (const problem of listed.listProblems ?? []) ports.info(listProblemLine(problem));
-    if (accountsOf(profile.id, listed.accounts).length === 0) {
-      await sentence(profile, nextAccountLabel(profile.id, listed.accounts), false);
-      return;
-    }
+    if (accountsOf(profile.id, listed.accounts).length === 0) return signInFlow(profile, nextAccountLabel(profile.id, listed.accounts), false);
     await accountPicker(profile, listed);
+    return undefined;
   };
 
-  const providerFlow = async (profile: PlanProfileView): Promise<void> => providerFlowOf(profile, await backend.plan.accounts());
+  const providerFlow = async (profile: PlanProfileView): Promise<void> => {
+    await providerFlowOf(profile, await backend.plan.accounts());
+  };
 
   const managedChoice = (server: DetectedManagedServer): Choice => {
     if (server.refused !== undefined) {
@@ -348,7 +346,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const displays = displayMapOf(listingViewsOf(entries));
     const local = entries.filter((entry) => entry.billing === 'local');
     await chooseFrom({ title: CONNECT_TITLE }, [
-      ...listed.profiles.map((profile) => ({ row: { label: `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}` }, act: () => providerFlowOf(profile, listed) })),
+      ...listed.profiles.map((profile) => {
+        const label = `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}`;
+        return { row: accountsOf(profile.id, listed.accounts).length === 0 ? signInRow(profile, label) : { label }, act: () => providerFlowOf(profile, listed) };
+      }),
       { row: { label: 'Add an API key' }, act: addApiKey },
       ...local.map((entry) => {
         const display = displays.get(entry.id) ?? entry.id;
@@ -375,16 +376,13 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     for (const line of signedOutLines(profile, chosen.label, report)) ports.info(line);
   };
 
-  const targetSignIn = async (listed: PlanAccountsResponse, plan: PlanAccountRef): Promise<void> => {
+  const targetSignIn = async (listed: PlanAccountsResponse, plan: PlanAccountRef): Promise<Acted> => {
     const profile = profileOf(listed.profiles, plan.profile);
     const records = accountsOf(profile.id, listed.accounts);
     const label = plan.account ?? records.find((record) => record.active)?.label;
     const record = records.find((candidate) => candidate.label === label);
-    if (record === undefined) {
-      await providerFlowOf(profile, listed);
-      return;
-    }
-    await savedAccount(profile, record);
+    if (record === undefined) return providerFlowOf(profile, listed);
+    return savedAccount(profile, record);
   };
 
   const blockedPlanOf = (entry: MomongaModelEntry, health: GatewayHealth): { profile: string; account?: string } | undefined =>
@@ -463,7 +461,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {
     await chooseFrom({ title: 'Connect a model to start' }, [
-      ...profiles.map((profile) => ({ row: { label: profile.loginLabel, opensBrowser: true }, act: () => providerFlow(profile) })),
+      ...profiles.map((profile) => ({ row: signInRow(profile, profile.loginLabel), act: async () => providerFlowOf(profile, await backend.plan.accounts()) })),
       { row: { label: USE_API_KEY }, act: addApiKey },
       { row: { label: 'Use a local server' }, act: addLocalServer },
     ]);
@@ -480,7 +478,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const planUseNotEnabled = async (profile: PlanProfileView, account: string | undefined): Promise<void> => {
     await chooseFrom({}, [
-      { row: { label: `Enable ${profile.messages.identityLabel} plan use`, opensBrowser: true }, act: () => (account === undefined ? providerFlow(profile) : sentence(profile, account, true)) },
+      { row: signInRow(profile, `Enable ${profile.messages.identityLabel} plan use`), act: async () => (account === undefined ? providerFlowOf(profile, await backend.plan.accounts()) : signInFlow(profile, account, true)) },
       { row: { label: USE_API_KEY }, act: addApiKey },
     ]);
   };

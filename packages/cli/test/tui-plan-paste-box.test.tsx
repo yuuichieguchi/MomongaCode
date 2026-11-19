@@ -24,7 +24,6 @@ const waitingScreen = async (options: { completeHeld?: Promise<void>; completeFa
   const started = await startPlan({ accounts: [], callbackArrives: false, ...options });
   await untilFrame(started.app, 'mode: manual');
   await submitLine(started.app, '/login chatgpt');
-  await choose(started.app, 'Continue with ChatGPT');
   await untilFrame(started.app, PASTE_LABEL);
   return started;
 };
@@ -157,7 +156,6 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     const { app, backend } = await startPlan({ accounts: [], callbackArrives: true, completeHeld: held });
     await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
-    await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the delivery of the callback');
     const frame = await untilFrame(app, 'Finishing the sign-in…');
     expect(frame).not.toContain(PASTE_LABEL);

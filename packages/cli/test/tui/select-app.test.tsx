@@ -280,7 +280,6 @@ describe('the sandbox-off dialog is decided only by enter and starts on the safe
     backend.sandbox = async () => 'none';
     await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
-    await choose(app, 'Continue with ChatGPT');
     const dialog = await untilFrame(app, (shown) => shown.includes('The sandbox is off') && shown.includes('esc: Cancel'));
     expect(dialog).toContain('› 2. Cancel');
     expect(dialog).toContain('up/down to move · enter to choose · esc: Cancel');

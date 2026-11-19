@@ -5,12 +5,16 @@ import { KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { frame, runStarted } from './tui-harness.tsx';
 import { authLogout } from '../src/commands/auth.ts';
-import { account, AUTHORIZATION_URL, choose, eventually, fakePlanBackend, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
+import { account, AUTHORIZATION_URL, CHATGPT, choose, eventually, fakePlanBackend, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
 const SENTENCE ='Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
+
+const PASTE_LABEL = 'On a remote machine? Paste the redirect URL here';
+
+const flat = (shown: string): string => shown.replace(/\s+/g, ' ');
 
 const ready = async (app: Instance): Promise<void> => {
   await untilFrame(app, 'mode: manual');
@@ -30,6 +34,50 @@ describe('/login opens the generic list of every way to connect', () => {
     expect(listed).toContain('[subscription]');
     expect(listed).toContain('not signed in');
     expect(listed).toContain('Add an API key');
+    expect(routesOf(backend)).not.toContain('sign-in/begin');
+    app.unmount();
+  });
+
+  it('the subscription row shows the description, and choosing it opens the browser once with no second list; the waiting screen shows the description and the URL', async () => {
+    const { app, backend } = await startPlan({ accounts: [], callbackArrives: false });
+    await ready(app);
+    await submitLine(app, '/login');
+    const listed = await untilFrame(app, 'Add a local server');
+    expect(flat(listed)).toContain(SENTENCE);
+    await choose(app, 'OpenAI (ChatGPT subscription)');
+    const waiting = await untilFrame(app, PASTE_LABEL);
+    expect(flat(waiting)).toContain(SENTENCE);
+    expect(waiting.replace(/\s+/g, '')).toContain(AUTHORIZATION_URL);
+    expect(waiting).not.toContain(CHATGPT.messages.apiKeyLabel);
+    await eventually(() => backend.openedUrls.length === 1, 'the browser stand-in was asked once');
+    expect(routesOf(backend).filter((route) => route === 'sign-in/begin')).toHaveLength(1);
+    expect(bodyOf(backend, 'sign-in/begin')).toEqual({ profile: 'chatgpt', account: 'chatgpt', port: LISTENER_PORT });
+    app.unmount();
+  });
+
+  it('cancelling the waiting screen returns to the /login list with nothing changed', async () => {
+    const { app, backend } = await startPlan({ accounts: [], callbackArrives: false });
+    await ready(app);
+    await submitLine(app, '/login');
+    await choose(app, 'OpenAI (ChatGPT subscription)');
+    await untilFrame(app, PASTE_LABEL);
+    app.stdin.write(KEYS.escape);
+    const listed = await untilFrame(app, (shown) => shown.includes('Add a local server') && !shown.includes(PASTE_LABEL));
+    expect(listed).toContain('not signed in');
+    expect(routesOf(backend).filter((route) => route === 'sign-in/begin')).toHaveLength(1);
+    expect(routesOf(backend)).not.toContain('sign-in/complete');
+    expect(backend.openedUrls).toHaveLength(1);
+    app.unmount();
+  });
+
+  it('a subscription row of a profile with a saved account shows no description and leads to the account picker', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'work' })] });
+    await ready(app);
+    await submitLine(app, '/login');
+    const listed = await untilFrame(app, 'Add a local server');
+    expect(flat(listed)).not.toContain(SENTENCE);
+    await choose(app, 'OpenAI (ChatGPT subscription)');
+    await untilFrame(app, 'Add another account or workspace');
     expect(routesOf(backend)).not.toContain('sign-in/begin');
     app.unmount();
   });
@@ -56,13 +104,16 @@ describe('/login opens the generic list of every way to connect', () => {
 });
 
 describe('where /login <provider> leads', () => {
-  it('goes to the sentence screen with the first free label when the profile has no account record', async () => {
-    const { app, backend } = await startPlan({ accounts: [] });
+  it('starts the sign-in at once with the first free label when the profile has no account record: the waiting screen shows the description and the URL, and no second list', async () => {
+    const { app, backend } = await startPlan({ accounts: [], callbackArrives: false });
     await ready(app);
     await submitLine(app, '/login chatgpt');
-    const screen = await untilFrame(app, SENTENCE);
+    const screen = await untilFrame(app, PASTE_LABEL);
+    expect(flat(screen)).toContain(SENTENCE);
+    expect(screen.replace(/\s+/g, '')).toContain(AUTHORIZATION_URL);
     expect(screen).not.toContain('Add another account or workspace');
-    await choose(app, 'Continue with ChatGPT');
+    expect(screen).not.toContain(CHATGPT.messages.apiKeyLabel);
+    expect(backend.openedUrls).toEqual([AUTHORIZATION_URL]);
     await eventually(() => routesOf(backend).includes('sign-in/begin'), 'the sign-in start');
     expect(bodyOf(backend, 'sign-in/begin')).toEqual({ profile: 'chatgpt', account: 'chatgpt', port: LISTENER_PORT });
     app.unmount();
@@ -83,26 +134,30 @@ describe('choosing a saved account in the picker', () => {
     app.unmount();
   });
 
-  it('an account that needs sign-in shows the sentence screen', async () => {
-    const { app, backend } = await startPlan({ accounts: [account({ label: 'work', email: 'w@example.com', state: 'needs_sign_in' })] });
+  it('an account that needs sign-in shows the description under its row and starts its sign-in at once when chosen', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'work', email: 'w@example.com', state: 'needs_sign_in' })], callbackArrives: false });
     await ready(app);
     await submitLine(app, '/login chatgpt');
-    await choose(app, 'work · w@example.com');
-    await untilFrame(app, SENTENCE);
+    const picker = await untilRow(app, 'work · w@example.com');
+    expect(flat(picker)).toContain(SENTENCE);
     expect(routesOf(backend)).not.toContain('sign-in/begin');
+    await choose(app, 'work · w@example.com');
+    await untilFrame(app, PASTE_LABEL);
+    expect(bodyOf(backend, 'sign-in/begin')).toMatchObject({ profile: 'chatgpt', account: 'work' });
+    expect(backend.openedUrls).toEqual([AUTHORIZATION_URL]);
     app.unmount();
   });
 
-  it('an account whose record is unreadable shows its cause and what replaces or forgets it, then the sentence screen; nothing starts before the person chooses', async () => {
+  it('an account whose record is unreadable shows its cause and what replaces or forgets it, and its sign-in starts once, only when the person chooses it', async () => {
     const { app, backend } = await startPlan({ accounts: [account({ label: 'work', email: 'w@example.com', state: 'store_unreadable', cause: 'bad tag' })] });
     await ready(app);
     await submitLine(app, '/login chatgpt');
     const picker = await untilFrame(app, 'work · w@example.com · record unreadable');
     expect(picker).not.toContain('sign-in required');
+    expect(routesOf(backend)).not.toContain('sign-in/begin');
     await choose(app, 'work · w@example.com');
-    const shown = (await untilFrame(app, SENTENCE)).replace(/\s+/g, ' ');
+    const shown = flat(await untilOutput(app, 'The saved record of work'));
     expect(shown).toContain('The saved record of work cannot be read (bad tag). Run /login to replace it with a new sign-in, or /logout to forget it on this computer; forgetting it does not revoke the session at the provider.');
-    await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/begin'), 'the sign-in start');
     expect(routesOf(backend).filter((route) => route !== 'accounts')[0]).toBe('sign-in/begin');
     expect(routesOf(backend).filter((route) => route === 'sign-in/begin')).toHaveLength(1);
@@ -122,9 +177,6 @@ describe('the account picker and a new sign-in', () => {
     await choose(app, 'Add another account or workspace');
     await untilFrame(app, 'chatgpt-2');
     app.stdin.write(KEYS.enter);
-    const sentence = await untilRow(app, 'Continue with ChatGPT', SENTENCE);
-    expect(sentence).toContain('Continue with ChatGPT');
-    await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
     expect(backend.listenerPaths).toEqual(['/auth/callback']);
     expect(bodyOf(backend, 'sign-in/begin')).toEqual({ profile: 'chatgpt', account: 'chatgpt-2', port: LISTENER_PORT });
@@ -153,7 +205,6 @@ describe('the account picker and a new sign-in', () => {
     const { app } = await startPlan({ accounts: [], complete: { outcome: 'signed_in', account: account(), firstSignIn: true } });
     await ready(app);
     await submitLine(app, '/login chatgpt');
-    await choose(app, 'Continue with ChatGPT');
     const overlay = await untilFrame(app, "You're using your ChatGPT plan");
     expect(overlay).toContain('Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings.');
     await choose(app, 'Got it');
@@ -165,7 +216,6 @@ describe('the account picker and a new sign-in', () => {
     const { app, backend } = await startPlan({ accounts: [], complete: { outcome: 'signed_in', account: account(), firstSignIn: false } });
     await ready(app);
     await submitLine(app, '/login chatgpt');
-    await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
     await untilTypedAfter(app);
     expect(app.frames.join('\n')).not.toContain("You're using your ChatGPT plan");
@@ -185,7 +235,6 @@ describe('the account picker and a new sign-in', () => {
     await untilFrame(app, 'no model connected · /login');
     await submitLine(app, '/login chatgpt');
     await choose(app, 'chatgpt · ada@example.com');
-    await choose(app, 'Continue with ChatGPT');
     await choose(app, 'gpt-5.1');
     await backend.called('openSession');
     expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });
@@ -289,18 +338,20 @@ describe('Using ChatGPT plan in the footer', () => {
 });
 
 describe('the model picker', () => {
-  it('turns a plan target that needs sign-in into the sign-in flow for its profile', async () => {
-    const { app } = await startPlan({
+  it('turns a plan target that needs sign-in into the sign-in of its account at once, with no second list', async () => {
+    const { app, backend } = await startPlan({
       chain: ['plan-gpt'],
       billing: { 'plan-gpt': 'plan' },
       planTargets: { 'plan-gpt': { profile: 'chatgpt', account: 'chatgpt' } },
       health: { 'plan-gpt': { ok: false, breaker: 'closed', reason: 'sign_in_required' } },
       accounts: [account({ state: 'needs_sign_in' })],
+      callbackArrives: false,
     });
     await ready(app);
     await submitLine(app, '/model');
     await choose(app, 'plan-gpt');
-    await untilFrame(app, SENTENCE);
+    expect(flat(await untilFrame(app, PASTE_LABEL))).toContain(SENTENCE);
+    expect(bodyOf(backend, 'sign-in/begin')).toMatchObject({ profile: 'chatgpt', account: 'chatgpt' });
     app.unmount();
   });
 

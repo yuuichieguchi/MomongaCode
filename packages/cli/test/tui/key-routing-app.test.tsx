@@ -181,8 +181,7 @@ describe('a key typed between two lists of one flow never acts on the list that 
     };
     await submitLine(app, '/login');
     await choose(app, 'ChatGPT');
-    await choose(app, 'Continue with ChatGPT');
-    await untilFrame(app, (shown) => !shown.includes('Continue with ChatGPT'));
+    await untilFrame(app, (shown) => !shown.includes('Add a local server'));
     app.stdin.write(KEYS.down);
     app.stdin.write('x');
     held.resolve();
@@ -224,11 +223,6 @@ describe('a browser starts only from enter or a click on the row that says so', 
     const { app, backend } = await startPlan({ models: [], accounts: [] });
     await untilRow(app, 'Continue with ChatGPT');
     for (const key of ['1', '1', '1']) app.stdin.write(key);
-    app.stdin.write(KEYS.enter);
-    await untilFrame(app, (shown) => !shown.includes('Connect a model to start') && shown.includes('1. Continue with ChatGPT'));
-    expect(signInSteps(backend)).toEqual([]);
-    expect(backend.openedUrls).toEqual([]);
-    app.stdin.write('1');
     app.stdin.write(KEYS.down);
     await untilFrame(app, '› 2.');
     expect(signInSteps(backend)).toEqual([]);

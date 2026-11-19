@@ -11,7 +11,6 @@ describe('the TUI starts the browser through the opener port and hears of a fail
     const { app } = await startPlan({ accounts: [], callbackArrives: false, openUrlFailure: new Error('no opener') });
     await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
-    await choose(app, 'Continue with ChatGPT');
     const screen = await untilFrame(app, 'Could not open the browser (no opener). Copy the URL and continue manually.');
     expect(screen.replace(/\s+/g, '')).toContain(AUTHORIZATION_URL);
     app.unmount();
@@ -46,7 +45,6 @@ describe('the TUI starts the browser through the opener port and hears of a fail
     const { app, backend } = await startPlan({ accounts: [], callbackArrives: true });
     await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
-    await choose(app, 'Continue with ChatGPT');
     await untilOutput(app, 'Signed in as chatgpt (ada@example.com)');
     expect(backend.openUrlCalls).toHaveLength(1);
     expect(backend.openUrlCalls[0]?.watch?.aborted).toBe(true);

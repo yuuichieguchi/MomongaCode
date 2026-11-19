@@ -14,7 +14,6 @@ const flat = (frame: string): string => frame.replace(/\s+/g, ' ');
 const signInFromLogin = async (app: Instance): Promise<void> => {
   await untilFrame(app, 'mode: manual');
   await submitLine(app, '/login chatgpt');
-  await choose(app, 'Continue with ChatGPT');
 };
 
 const begun = (backend: FakePlanBackend): unknown[] => backend.planCalls.filter((call) => call.route === 'sign-in/begin').map((call) => call.body);

@@ -183,7 +183,6 @@ const tuiWaitingScreen = async (options: Parameters<typeof startPlan>[0]) => {
   const started = await startPlan({ accounts: [], ...options });
   await untilFrame(started.app, 'mode: manual');
   await submitLine(started.app, '/login chatgpt');
-  await choose(started.app, CHATGPT.loginLabel);
   await untilFrame(started.app, PASTE_LABEL);
   return started;
 };

@@ -136,18 +136,33 @@ const signInSteps = (backend: FakePlanBackend): string[] => backend.planCalls.ma
 
 describe('a list that opens while keys are on their way', () => {
   it(
-    'a doubled enter on the welcome list does not start the sign-in of the list that opens after it; a later enter does',
+    'an enter queued before the welcome list is drawn starts no sign-in and opens no browser',
     async () => {
-      const { app, backend } = await startPlan({ models: [], accounts: [] });
+      const { app, backend } = await startPlan({ models: [], accounts: [], callbackArrives: false });
+      app.stdin.write(KEYS.enter);
+      app.stdin.write(KEYS.enter);
+      await untilRow(app, 'Continue with ChatGPT', 'esc: go back');
+      await untilFrame(app, 'Connect a model to start');
+      expect(signInSteps(backend)).toEqual([]);
+      expect(backend.openedUrls).toEqual([]);
+      app.unmount();
+    },
+    PLAN_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'a doubled enter on the welcome list starts one sign-in and opens the browser once, with no second list',
+    async () => {
+      const { app, backend } = await startPlan({ models: [], accounts: [], callbackArrives: false });
       await untilRow(app, 'Continue with ChatGPT', 'esc: go back');
       app.stdin.write(KEYS.enter);
       app.stdin.write(KEYS.enter);
-      await untilFrame(app, (shown) => !shown.includes('Connect a model to start') && shown.includes('1. Continue with ChatGPT'));
-      await untilFrame(app, 'enter to choose');
-      expect(signInSteps(backend)).toEqual([]);
-      expect(backend.openedUrls).toEqual([]);
-      app.stdin.write(KEYS.enter);
+      await untilFrame(app, 'On a remote machine? Paste the redirect URL here');
       await eventually(() => backend.openedUrls.length === 1, 'the browser');
+      app.stdin.write(KEYS.enter);
+      await untilFrame(app, 'On a remote machine? Paste the redirect URL here');
+      expect(signInSteps(backend).filter((route) => route === 'sign-in/begin')).toHaveLength(1);
+      expect(backend.openedUrls).toHaveLength(1);
       app.unmount();
     },
     PLAN_TEST_TIMEOUT_MS,
@@ -161,8 +176,6 @@ describe('a list that opens while keys are on their way', () => {
       app.stdin.write('x');
       await untilFrame(app, UNDER_HANDS_PAUSE_LINE);
       expect(signInSteps(backend)).toEqual([]);
-      app.stdin.write(KEYS.enter);
-      await untilFrame(app, (shown) => !shown.includes('Connect a model to start') && shown.includes('1. Continue with ChatGPT') && shown.includes('enter to choose'));
       app.stdin.write(KEYS.enter);
       await eventually(() => backend.openedUrls.length === 1, 'the browser');
       app.unmount();

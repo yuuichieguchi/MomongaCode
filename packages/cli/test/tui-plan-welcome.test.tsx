@@ -4,11 +4,13 @@ import type { LocalServerDetection, PlanAccountState } from '@momonga/protocol';
 import { SESSION } from './fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilTypedAfter } from './fake-plan-gateway.tsx';
+import { LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
+const DESCRIPTION = 'Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
+const PASTE_LABEL = 'On a remote machine? Paste the redirect URL here';
 const NO_MODEL = 'No model is connected. Use /login to connect one.';
 const NEEDS_SESSION = 'This command needs a session. Connect a model first with /login.';
 const UNCONNECTED_FOOTER = 'no model connected · /login';
@@ -70,13 +72,27 @@ describe('the welcome screen predicate: no model and no plan account record in a
 });
 
 describe('the welcome actions', () => {
-  it('Continue with ChatGPT shows the sentence and signs in with the first free label', async () => {
-    const { app, backend } = await startPlan({ models: [], accounts: [], complete: { outcome: 'signed_in', account: account(), firstSignIn: false } });
+  it('Continue with ChatGPT shows the description under the row and signs in at once with the first free label, with no second list', async () => {
+    const { app, backend } = await startPlan({ models: [], accounts: [], callbackArrives: false });
+    const welcome = await untilRow(app, 'Continue with ChatGPT');
+    expect(welcome.replace(/\s+/g, ' ')).toContain(DESCRIPTION);
     await choose(app, 'Continue with ChatGPT');
-    await untilFrame(app, 'Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.');
+    const waiting = await untilFrame(app, PASTE_LABEL);
+    expect(waiting.replace(/\s+/g, ' ')).toContain(DESCRIPTION);
+    expect(waiting).not.toContain('Connect a model to start');
+    expect(backend.openedUrls).toHaveLength(1);
+    expect(backend.planCalls.filter((call) => call.route === 'sign-in/begin').map((call) => call.body)).toEqual([{ profile: 'chatgpt', account: 'chatgpt', port: LISTENER_PORT }]);
+    app.unmount();
+  });
+
+  it('cancelling the waiting screen of Continue with ChatGPT returns to the welcome list', async () => {
+    const { app, backend } = await startPlan({ models: [], accounts: [], callbackArrives: false });
     await choose(app, 'Continue with ChatGPT');
-    await eventually(() => backend.planCalls.some((call) => call.route === 'sign-in/begin'), 'the sign-in start');
-    expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'chatgpt', port: LISTENER_PORT });
+    await untilFrame(app, PASTE_LABEL);
+    app.stdin.write(KEYS.escape);
+    await untilFrame(app, (shown) => shown.includes('Connect a model to start') && shown.includes('1. Continue with ChatGPT') && !shown.includes(PASTE_LABEL));
+    expect(backend.planCalls.filter((call) => call.route === 'sign-in/begin')).toHaveLength(1);
+    expect(backend.openedUrls).toHaveLength(1);
     app.unmount();
   });
 
@@ -121,7 +137,7 @@ describe('the unconnected phase', () => {
   });
 
   it('runs /help without a session', async () => {
-    const { app } = await unconnected();
+    const { app } = await startPlan({ models: [], accounts: [account({ state: 'needs_sign_in', active: false, pinnedBy: [] })] }, {}, { columns: 100, rows: 200 });
     await untilFrame(app, UNCONNECTED_FOOTER);
     await submitLine(app, '/help');
     const frame = await untilFrame(app, 'Commands\n');
