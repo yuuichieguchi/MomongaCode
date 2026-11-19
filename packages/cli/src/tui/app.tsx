@@ -1513,7 +1513,7 @@ export function App(props: AppProps) {
   };
 
   const cancelAndArmExit = (action: ExitAction): void => {
-    if (armedExit.current?.action !== action) cancelNewest();
+    cancelNewest();
     exitOnSecondPress(action);
   };
 
@@ -1619,6 +1619,7 @@ export function App(props: AppProps) {
       else if (invitationShown) prompts.dismissInvitation();
     } else if (action === 'prompt.interrupt') {
       if (starting) finish({});
+      else if (armedExit.current?.action === action) exitOnSecondPress(action);
       else if (working) cancelAndArmExit(action);
       else if (current.text === '') exitOnSecondPress(action);
       else replaceEditor(emptyEditor(current.history));

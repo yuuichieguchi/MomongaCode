@@ -5,6 +5,7 @@ import { BUILTIN_SLASH_COMMANDS, createSlashRegistry } from '../../src/tui/slash
 import type { SlashCommand, SlashContext } from '../../src/tui/slash.ts';
 import type { TuiOutcome } from '../../src/tui/app.tsx';
 import type { FakeBackend } from '../fake-backend.ts';
+import { runView } from '../fake-backend.ts';
 import { KEYS, untilFrame } from '../ink-helpers.ts';
 import { runStarted, start, type } from '../tui-harness.tsx';
 import { PLAN_TEST_TIMEOUT_MS } from '../fake-plan-gateway.tsx';
@@ -93,6 +94,27 @@ describe('ctrl+c while a run is working arms the exit as it cancels', () => {
     expect(cancels(backend)).toBe(1);
     app.unmount();
   });
+
+  for (const [name, draft] of [
+    ['with text in the draft', 'kept draft'],
+    ['with an empty draft', ''],
+  ] as const) {
+    it(`${name}, a second press within the window exits after the cancellation has completed`, async () => {
+      const { app, backend, outcomes } = await workingRun();
+      if (draft !== '') await type(app, draft, `> ${draft}`);
+      app.stdin.write(KEYS.ctrlC);
+      await backend.called('cancel:run-1');
+      await untilFrame(app, HINT);
+      backend.finish(runView({ status: 'CANCELLED' }));
+      await untilFrame(app, (shown) => !shown.includes('esc to cancel') && shown.includes(HINT));
+      const before = app.frames.length;
+      app.stdin.write(KEYS.ctrlC);
+      await exitedOnce(outcomes);
+      for (const shown of app.frames.slice(before).filter((frame) => frame.includes('mode: manual'))) expect(shown).toContain(`> ${draft}`.trimEnd());
+      expect(cancels(backend)).toBe(1);
+      app.unmount();
+    });
+  }
 });
 
 describe('ctrl+c while a background task is working is never swallowed', () => {
