@@ -26,6 +26,6 @@ describe('O-R5-6 (M) 5.2: the plan routes that take the pinned lease', () => {
     const leased = new Set(segments.filter((entry) => entry.segment.includes('withPinnedServices(')).map((entry) => entry.name));
     expect([...leased].sort()).toEqual(['accountResume', 'accounts', 'signInComplete']);
     const closing = segments.filter((entry) => entry.segment.includes('closedOr')).map((entry) => entry.name).sort();
-    expect(closing).toEqual(['accountModels', 'signInComplete', 'signOut']);
+    expect(closing).toEqual(['accountModels', 'accountRename', 'signInComplete', 'signOut']);
   });
 });
