@@ -102,6 +102,8 @@ const serverMenu = async (context: ModelsFlowContext, opened: Opened, provider: 
   if (action === 'Remove server') await removeServer(context, opened, provider);
 };
 
+export const runServerActions = async (context: ModelsFlowContext, provider: string): Promise<void> => serverMenu(context, await openEdit(context), provider);
+
 const modelMenu = async (context: ModelsFlowContext, opened: Opened, model: string, label: string): Promise<void> => {
   const index = await chosenOf(context, { title: label.trim(), rows: MODEL_ACTIONS.map((action) => ({ label: action })) });
   const action = index === undefined ? undefined : MODEL_ACTIONS[index];

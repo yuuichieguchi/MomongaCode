@@ -8,11 +8,11 @@ import { addBuiltIn, addFoundModel, addFromFound, addService, builtInRowOf, foun
 import type { Added } from './models/add.ts';
 import { openEdit } from './models/context.ts';
 import type { FoundServers, ModelsFlowContext } from './models/context.ts';
-import { runModelsHub } from './models/hub.ts';
+import { runModelsHub, runServerActions } from './models/hub.ts';
 import { modelListRows } from './models/model-list.ts';
 import { writeStart } from './models/order.ts';
 import { effortAnswerText, writeModelEffort } from './commands/effort.ts';
-import { ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, configuredSwitchText, startingModelSetText } from './models/texts.ts';
+import { ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError, signIn, waitForPaste } from '../plan/sign-in.ts';
@@ -369,7 +369,13 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       { row: { label: 'Add an API key' }, act: addApiKey },
       ...local.map((entry) => {
         const display = displays.get(entry.id) ?? entry.id;
-        return { row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` }, act: async () => ports.info(configuredSwitchText(display)) };
+        return {
+          row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` },
+          act: async () => {
+            await runServerActions(flowContext(), entry.provider);
+            await ports.refreshConnection();
+          },
+        };
       }),
       { row: { label: 'Add a local server' }, act: addLocalServer },
       ...(invited.length === 0 ? [] : [{ row: { label: NOT_NOW_LABEL }, act: () => answerNotNow(invited) }]),

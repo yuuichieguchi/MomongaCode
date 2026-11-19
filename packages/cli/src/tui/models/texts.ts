@@ -134,6 +134,5 @@ export { sessionModelNotConfiguredText as notConfiguredAnyMoreText } from '@momo
 
 export const START_ONE_TEXT = `Start one, or add it with ${modelSettingsPath('Add a model')}.`;
 
-export const configuredSwitchText = (display: string): string => `${display} is configured; /model switches to it`;
 
 export const settingsFileLine = (file: string): string => `Settings file: ${file}`;
