@@ -366,6 +366,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const selectInput = (active: Active, event: KeyEvent, keys: KeyTable): void => {
+    if (active.spec.interrupt === 'cancel-run' && keys.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.interrupt') {
+      active.on({ kind: 'interrupt', action: active.spec.interrupt });
+      return;
+    }
     if (!gate.view(active.settle).drawn) {
       keepAside(event, keys);
       return;
@@ -535,15 +539,15 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const action = selectActionOf(event, keys);
     const settle = elicitationSettle(pending);
     gate.show(settle);
-    if (!gate.view(settle).drawn) {
-      keepAside(event, keys);
-      return;
-    }
-    if (!gate.takes(settle, action === 'select.interrupt' || action === 'select.escape' ? 'other' : 'text', 'key')) return;
     if (action === 'select.interrupt') {
       host.interruptRun();
       return;
     }
+    if (!gate.view(settle).drawn) {
+      keepAside(event, keys);
+      return;
+    }
+    if (!gate.takes(settle, action === 'select.escape' ? 'other' : 'text', 'key')) return;
     if (pending.submitted) return;
     if (action === 'select.escape') {
       applyFlow(pending, leaveFields(flow));

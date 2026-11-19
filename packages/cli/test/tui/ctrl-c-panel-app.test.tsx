@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView } from '@momonga/protocol';
 import { EXIT_ARM_MS } from '../../src/tui/app.tsx';
+import { KEY_SETTLE_MS } from '../../src/tui/terminal/constants.ts';
 import type { AppProps } from '../../src/tui/app.tsx';
 import { createKeyBindings } from '../../src/tui/keys/store.ts';
 import type { FakeBackend } from '../fake-backend.ts';
@@ -206,6 +207,93 @@ describe('ctrl+c with the exit armed and no panel open', () => {
     await untilFrame(app, 'out 29');
     app.stdin.write(KEYS.ctrlO);
     await untilFrame(app, (shown) => shown.startsWith('out 0'));
+    app.stdin.write(KEYS.ctrlC);
+    await backend.called('cancel:run-1');
+    await untilFrame(app, HINT);
+    app.stdin.write(KEYS.ctrlC);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
+  });
+});
+
+type FreshPanel = { name: string; title: string; ask: (backend: FakeBackend) => void };
+
+const approvalAsked = (backend: FakeBackend): void => {
+  callStarted(backend);
+  backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: OPTIONS, shown: { title: 'approval', input: {} } }));
+};
+
+const freshPanels: readonly FreshPanel[] = [
+  { name: 'the approval panel', title: 'Permission requested: sleep 60', ask: approvalAsked },
+  {
+    name: 'the effect-unknown panel',
+    title: '1. Allow once',
+    ask: (backend) => {
+      callStarted(backend);
+      backend.emit(frame({ type: 'tool.unknown.requested', approvalId: 'ap1', callIds: ['c1'], options: OPTIONS }));
+    },
+  },
+  {
+    name: 'the MCP input panel',
+    title: 'MCP server calc asks for input',
+    ask: (backend) => {
+      backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'mcp__calc__ask', kind: 'other', title: 'mcp__calc__ask {}', rawInput: {} }));
+      backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'c1', server: 'calc', requests: [FORM] }));
+    },
+  },
+];
+
+const workingWithSettle = async () => {
+  const clock = manualClock();
+  const started = await start({}, { now: clock.now, timers: clock.timers, keySettleMs: KEY_SETTLE_MS });
+  await untilFrame(started.app, 'mode: manual');
+  await runStarted(started.backend, started.app, 'go');
+  clock.advance(KEY_SETTLE_MS);
+  return { ...started, clock };
+};
+
+const freshlyOpened = async (panel: FreshPanel) => {
+  const started = await workingWithSettle();
+  panel.ask(started.backend);
+  await untilFrame(started.app, (shown) => shown.includes(panel.title) && !shown.includes('ctrl+c: cancel the run'));
+  return started;
+};
+
+describe.each(freshPanels)('ctrl+c pressed twice quickly while $name has only just opened', (panel) => {
+  it('exits at both presses written in one read', async () => {
+    const { app, backend, exited } = await freshlyOpened(panel);
+    app.stdin.write(`${KEYS.ctrlC}${KEYS.ctrlC}`);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
+  });
+
+  it('exits at a second press 100 ms after the first while the cancel is unanswered', async () => {
+    const { app, backend, exited, clock } = await freshlyOpened(panel);
+    const answer = unansweredCancel(backend);
+    app.stdin.write(KEYS.ctrlC);
+    await backend.called('cancel:run-1');
+    clock.advance(100);
+    app.stdin.write(KEYS.ctrlC);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
+    answer();
+  });
+
+  it('exits at a second press after the run ended between the two', async () => {
+    const { app, backend, exited, clock } = await freshlyOpened(panel);
+    app.stdin.write(KEYS.ctrlC);
+    await backend.called('cancel:run-1');
+    backend.finish(runView({ status: 'CANCELLED' }));
+    await untilFrame(app, (shown) => shown.includes('CANCELLED') && shown.includes(HINT));
+    clock.advance(100);
+    app.stdin.write(KEYS.ctrlC);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
+  });
+
+  it('cancels and arms at a press that arrives before the panel is drawn', async () => {
+    const { app, backend, exited } = await workingWithSettle();
+    panel.ask(backend);
     app.stdin.write(KEYS.ctrlC);
     await backend.called('cancel:run-1');
     await untilFrame(app, HINT);
