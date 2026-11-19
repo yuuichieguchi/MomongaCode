@@ -600,7 +600,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
       },
     };
     const built = await buildContext(
-      {
+      { reasoningRoom: 0,
         capabilities: LARGE_WINDOW_TARGET,
         model: 'large',
         sources: {

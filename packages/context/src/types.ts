@@ -162,6 +162,7 @@ export type ContextArrival =
 
 export type BuildContextInput = {
   capabilities: Capabilities;
+  reasoningRoom: number;
   calibration?: Calibration;
   model: string;
   sources: ContextSources;

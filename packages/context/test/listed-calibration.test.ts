@@ -10,7 +10,7 @@ const LISTED_RATIO = 0.5;
 const inheritedTurn = (textLength: number): HistoryItem[] => [user(1, 'q0 '.padEnd(textLength, 'q')), assistant(2, 'a0 '.padEnd(textLength, 'a'))];
 
 const summaryCeilingAt = (ratio: number): number => {
-  const { W, R } = budgetFor(capabilitiesFor(WINDOW), 0);
+  const { W, R } = budgetFor(capabilitiesFor(WINDOW), 0, 0);
   return Math.min(Math.floor((W - marginFloorFor(W)) / (1 + ratio)), W - R);
 };
 

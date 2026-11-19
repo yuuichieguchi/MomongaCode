@@ -151,7 +151,7 @@ export const summaryRoute = (summary: string): FakeRoute => ({ match: isCompacti
 export const wireTokensOfBody = wireTokensOfRequest;
 
 export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing => {
-  const { W, R } = budgetFor(capabilities, 0);
+  const { W, R } = budgetFor(capabilities, 0, 0);
   const ceiling = inputCeilingFor(capabilities);
   const room = ceiling - pinned;
   const itemCap = itemCapFor(capabilities, room);
@@ -242,7 +242,7 @@ export const overflowStepRange = async (pins: StackPins, base: number, steps: nu
   if (steps < 2) throw new Error('a range needs at least two steps: one that fits and one that stops fitting');
   const largest = async (holds: (stepTokens: number) => Promise<boolean>): Promise<number> => {
     let low = 0;
-    let high = budgetFor(pins.capabilities, 0).I;
+    let high = budgetFor(pins.capabilities, 0, 0).I;
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
       if (await holds(middle)) low = middle;
@@ -280,7 +280,7 @@ const compactsInStack = async (pins: StackPins, base: number, stepTokens: number
 
 export const stepTokensToCompact = async (pins: StackPins, base: number, steps: number, protectedSteps: number, gain: number): Promise<number> => {
   let low = 1;
-  let high = budgetFor(pins.capabilities, 0).I;
+  let high = budgetFor(pins.capabilities, 0, 0).I;
   if (!(await compactsInStack(pins, base, high, steps, protectedSteps, gain))) throw new Error(`no step size carries ${steps} steps over the high mark with a region worth the gain ${gain} (base ${base})`);
   while (low < high) {
     const middle = Math.floor((low + high) / 2);
@@ -409,7 +409,7 @@ export const escalationBudgetVerdict = async (run: EscalationEvidence, pins: Sta
   if (levelZero.length !== 1) return `(g2) ${levelZero.length} level-0 ContextOverflowErrors in the dry run, expected exactly the one before the escalation`;
   const overflow = levelZero[0] as LevelZeroOverflow;
   if (overflow.inputTokens <= overflow.inputBudget) return `(g2) the level-0 ContextOverflowError reports ${overflow.inputTokens} tokens within its own input budget ${overflow.inputBudget}`;
-  const inputBudgetAtZero = budgetFor(capabilities, 0).I;
+  const inputBudgetAtZero = budgetFor(capabilities, 0, 0).I;
   const passLoad = overflow.inputTokens + (inputBudgetAtZero - overflow.inputBudget);
   const unevictedLoad = unevictedObserved + underAt(unevictedObserved);
   if (overflow.inputTokens < unevictedObserved && passLoad >= unevictedLoad) {

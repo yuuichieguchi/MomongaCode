@@ -9,7 +9,7 @@ import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 8192;
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
-const I0 = budgetFor(sized, 0).I;
+const I0 = budgetFor(sized, 0, 0).I;
 const NESTED = '/proj/sub/AGENTS.md';
 const touched = [touchedFile('/proj/sub/x.ts')];
 
@@ -36,7 +36,7 @@ const memoryOf = (text: string): MemoryView => ({
   status: 'unbound',
 });
 
-const inputWith = (layout: 'cachePrefix' | 'default', history: HistoryItem[], extra: Partial<BuildContextInput> = {}, memories: MemoryView[] = []): BuildContextInput => ({
+const inputWith = (layout: 'cachePrefix' | 'default', history: HistoryItem[], extra: Partial<BuildContextInput> = {}, memories: MemoryView[] = []): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: sized,
   fence: TEST_FENCE,
   model: MODEL,

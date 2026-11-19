@@ -8,10 +8,10 @@ import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 4096;
 const capabilities = capabilitiesFor(WINDOW, { tokenCounting: 'exact', maxOutputTokens: 1024 });
-const inputBudget = budgetFor(capabilities, 0).I;
+const inputBudget = budgetFor(capabilities, 0, 0).I;
 const toolTokens = Math.ceil(inputBudget / 2) + 100;
 
-const inputWith = (extra: Partial<BuildContextInput>): BuildContextInput => ({
+const inputWith = (extra: Partial<BuildContextInput>): BuildContextInput => ({ reasoningRoom: 0,
   capabilities,
   fence: TEST_FENCE,
   model: 'm',

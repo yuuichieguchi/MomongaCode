@@ -159,6 +159,6 @@ describe('budgetFor computes the none branch the model states (drift)', () => {
     const capabilities = { ...BASE, contextWindow: window, maxOutputTokens: maxOutput, outputBoundField: 'none' as const, ...(unbounded === undefined ? {} : { unboundedOutputTokens: unbounded }) };
     const R = unbounded ?? maxOutput;
     expect(marginFloorFor(window)).toBe(modelMargin(window));
-    expect(budgetFor(capabilities, 0)).toEqual({ W: window, R, margin: modelMargin(window), I: Math.max(0, window - R - modelMargin(window)) });
+    expect(budgetFor(capabilities, 0, 0)).toEqual({ W: window, R, margin: modelMargin(window), I: Math.max(0, window - R - modelMargin(window)) });
   });
 });

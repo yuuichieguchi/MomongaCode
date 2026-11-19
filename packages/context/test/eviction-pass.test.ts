@@ -8,7 +8,7 @@ import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeCounter, fa
 const ESTIMATED = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
 const EXACT = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'exact' });
 const SYSTEM_PROMPT = 'S'.repeat(6000);
-const I = budgetFor(ESTIMATED, 0).I;
+const I = budgetFor(ESTIMATED, 0, 0).I;
 
 type Measured = { tokens: number; known: number; uncounted: number; bound: number };
 
@@ -303,7 +303,7 @@ describe('R1: the eviction pass is the unit, judged by the fit test’s own meas
     expect(omittedIds(built)).toEqual(['c0']);
     expect(built.input).toEqual(evicted);
     expect(built.inputTokens).toBe(2750);
-    expect(built.budget.I).toBe(budgetFor(EXACT, 0).I);
+    expect(built.budget.I).toBe(budgetFor(EXACT, 0, 0).I);
   });
 
   it('control: a fresh decomposition, with no report, applies the pass as today', async () => {

@@ -13,7 +13,7 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
-import type { AnthropicApiVersion, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { ConfigError, toConfigError } from './config-error.ts';
 import { chainRoomVerdict, roomNumbersText } from './chain-room.ts';
 import type { ChainMember } from './chain-room.ts';
@@ -75,6 +75,7 @@ export type ResolvedModels = {
   views: ModelViews;
   chains: ReadonlyMap<string, readonly string[]>;
   start: string | undefined;
+  effort?: ReasoningEffort;
   fallback: readonly string[];
   roles: ModelRoles;
   classifier?: string;
@@ -582,6 +583,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, warn
     views: configured.views,
     chains,
     start: references.start ?? configured.views[0]?.canon,
+    ...(models?.effort === undefined ? {} : { effort: models.effort }),
     fallback: references.fallback,
     roles: references.roles,
     ...(references.classifier === undefined ? {} : { classifier: references.classifier }),

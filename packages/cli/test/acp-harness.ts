@@ -233,6 +233,12 @@ export const fakeRuntime = (): FakeRuntime => {
       runtime.modeChanged?.(mode);
       return runtime.session;
     },
+    setEffort: async (id, effort) => {
+      record(`setEffort ${id} ${String(effort)}`);
+      const { effort: _dropped, ...rest } = runtime.session;
+      runtime.session = effort === null ? rest : { ...rest, effort };
+      return runtime.session;
+    },
     setModel: async (id, model) => {
       record(`setModel ${id} ${model}`);
       const failure = runtime.failures.get('setModel');

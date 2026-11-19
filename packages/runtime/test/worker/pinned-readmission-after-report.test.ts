@@ -96,7 +96,7 @@ describe('off mode: a fact retired mid-run, after the first request was reported
 
     expect(ceiling - firstEstimate).toBeGreaterThanOrEqual(MIN_ROOM_TOKENS);
     expect(ceiling - (firstEstimate + globTokens)).toBeGreaterThanOrEqual(MIN_ROOM_TOKENS);
-    expect(reported + MIN_ROOM_TOKENS).toBeLessThanOrEqual(budgetFor(sized(), 0).I);
+    expect(reported + MIN_ROOM_TOKENS).toBeLessThanOrEqual(budgetFor(sized(), 0, 0).I);
     expect(ceiling - reported).toBeLessThan(MIN_ROOM_TOKENS);
   });
 

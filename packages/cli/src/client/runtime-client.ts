@@ -1,4 +1,4 @@
-import type { Surface, TrustItemsView } from '@momonga/protocol';
+import type { ReasoningEffort, Surface, TrustItemsView } from '@momonga/protocol';
 import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
@@ -124,6 +124,7 @@ export type CreateSessionInput = {
   env: Readonly<Record<string, string>>;
   permissionMode?: PermissionMode;
   model?: string;
+  effort?: ReasoningEffort;
   bypassAllowed?: boolean;
   sandboxNetwork?: SandboxNetworkSetting;
   mcpServers?: Readonly<Record<string, McpServerConfig>>;
@@ -169,6 +170,7 @@ export type RuntimeClient = {
   setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   setModel(sessionId: string, model: string): Promise<SessionView>;
+  setEffort(sessionId: string, effort: ReasoningEffort | null): Promise<SessionView>;
   updateSession(sessionId: string, update: SessionUpdate): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   compact(sessionId: string, instructions?: string): Promise<RunView>;
@@ -316,7 +318,7 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
-export type SessionUpdate = { permissionMode: PermissionMode; model?: string } | { permissionMode?: PermissionMode; model: string };
+export type SessionUpdate = { permissionMode?: PermissionMode; model?: string; effort?: ReasoningEffort | null };
 
 export type McpFolder = { cwd: string; env: Readonly<Record<string, string>> };
 
@@ -395,6 +397,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
         env: input.env,
         ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
         ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.effort === undefined ? {} : { effort: input.effort }),
         ...(input.bypassAllowed === undefined ? {} : { bypassAllowed: input.bypassAllowed }),
         ...(input.sandboxNetwork === undefined ? {} : { sandboxNetwork: input.sandboxNetwork }),
         ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
@@ -475,6 +478,8 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
   const setPermissionMode = (sessionId: string, mode: PermissionMode): Promise<SessionView> => updateSession(sessionId, { permissionMode: mode });
 
   const setModel = (sessionId: string, model: string): Promise<SessionView> => updateSession(sessionId, { model });
+
+  const setEffort = (sessionId: string, effort: ReasoningEffort | null): Promise<SessionView> => updateSession(sessionId, { effort });
 
   const createRun = async (sessionId: string, input: string, runOptions: CreateRunOptions = {}): Promise<{ run: RunView; location: string }> => {
     const path = `/v1/sessions/${pathSegment(sessionId)}/runs`;
@@ -891,6 +896,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     health,
     createSession,
     getSession,
+    setEffort,
     listSessions,
     listRuns,
     skills,

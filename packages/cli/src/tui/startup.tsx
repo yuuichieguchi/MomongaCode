@@ -2,10 +2,11 @@ import path from 'node:path';
 import { displayWidth, wrapLine } from './screen/wrap.ts';
 import type { Row, Span } from './screen/wrap.ts';
 import type { StyleToken } from './screen/tokens.ts';
+import type { ReasoningEffort } from '@momonga/protocol';
 
 export type StartupConfig = { version: string; home: string };
 
-export type BannerModel = { kind: 'connected'; name: string } | { kind: 'not-connected'; login: boolean };
+export type BannerModel = { kind: 'connected'; name: string; effort?: ReasoningEffort } | { kind: 'not-connected'; login: boolean };
 
 export type StartupBanner = { config: StartupConfig; model: BannerModel; cwd: string; notices: readonly string[]; figure: boolean };
 
@@ -51,14 +52,19 @@ export const LOGIN_POINTER = '  (use /login)';
 
 const modelText = (model: BannerModel): string => (model.kind === 'connected' ? model.name : model.login ? `${NOT_CONNECTED_MODEL}${LOGIN_POINTER}` : NOT_CONNECTED_MODEL);
 
-export const textLines = (config: StartupConfig, model: BannerModel, cwd: string): string[] => [`MomongaCode v${config.version}`, `model: ${modelText(model)}`, shortenHome(cwd, config.home)];
+export const textLines = (config: StartupConfig, model: BannerModel, cwd: string): string[] => [
+  `MomongaCode v${config.version}`,
+  `model: ${modelText(model)}`,
+  ...(model.kind === 'connected' && model.effort !== undefined ? [`effort: ${model.effort}`] : []),
+  shortenHome(cwd, config.home),
+];
 
 export const artFits = (columns: number, lines: readonly string[]): boolean =>
   columns >= ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => [...line].length)) + BOX_CHROME_COLUMNS;
 
 type Cell = { text: string; token?: StyleToken };
 
-const LINE_TOKENS: readonly (StyleToken | undefined)[] = ['bold', undefined, 'dim'];
+const lineToken = (index: number, count: number): StyleToken | undefined => (index === 0 ? 'bold' : index === count - 1 ? 'dim' : undefined);
 
 const padded = (cells: readonly Cell[], width: number): Cell[] => {
   const used = cells.reduce((total, cell) => total + displayWidth(cell.text), 0);
@@ -83,7 +89,10 @@ export const bannerRows = (banner: StartupBanner, columns: number): Row[] => {
   const lines = textLines(config, model, cwd);
   const art = figureDrawn(banner, columns) ? FIGURE : [];
   const textWidth = art.length === 0 ? inner : inner - ART_WIDTH - ART_GAP;
-  const text: Cell[][] = lines.flatMap((line, index) => wrapLine(line, textWidth, { links: false }).map((row): Cell[] => [{ text: row.text, ...(LINE_TOKENS[index] === undefined ? {} : { token: LINE_TOKENS[index] }) }]));
+  const text: Cell[][] = lines.flatMap((line, index) => wrapLine(line, textWidth, { links: false }).map((row): Cell[] => {
+    const token = lineToken(index, lines.length);
+    return [{ text: row.text, ...(token === undefined ? {} : { token }) }];
+  }));
   const bodyCells = (index: number, figurePart: readonly ArtPart[] | undefined): Cell[] => [
     ...(art.length === 0 ? [] : [...padded(figurePart ?? [], ART_WIDTH), { text: ' '.repeat(ART_GAP) }]),
     ...(text[index] ?? []),

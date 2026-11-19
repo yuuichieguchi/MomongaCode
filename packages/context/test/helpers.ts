@@ -241,7 +241,7 @@ export const harness = (
 export const inputFor = (
   capabilities: Capabilities,
   overrides: Partial<BuildContextInput> = {},
-): BuildContextInput => ({
+): BuildContextInput => ({ reasoningRoom: 0,
   capabilities,
   fence: TEST_FENCE,
   model: MODEL,

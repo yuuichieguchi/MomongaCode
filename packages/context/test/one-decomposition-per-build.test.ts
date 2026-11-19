@@ -54,7 +54,7 @@ const spied = (): Spied => {
   };
 };
 
-const inputWith = (history: HistoryItem[], systemPrompt?: string): BuildContextInput => ({
+const inputWith = (history: HistoryItem[], systemPrompt?: string): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: sized,
   model: MODEL,
   sources: sourcesWith({ history, ...(systemPrompt === undefined ? {} : { systemPrompt }) }),

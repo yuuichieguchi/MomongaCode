@@ -1,15 +1,15 @@
 import path from 'node:path';
 import { SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { SandboxNetworkSetting } from '@momonga/foundation';
-import { APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, EVENT_PAYLOAD_RENAMES, withCurrentNames, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
-import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxChangeRow, UserShellRecord } from '@momonga/protocol';
+import { REASONING_EFFORTS, APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, EVENT_PAYLOAD_RENAMES, withCurrentNames, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
+import type { ReasoningEffort, OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxChangeRow, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
 import { UNKNOWN_VALUE, corrupt, expectOneOf, storedOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
-import type { Row } from './rows.ts';
+import type { Row, Stored } from './rows.ts';
 import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
 
 const identityOf = (row: Row): string => String(row['id']);
@@ -35,6 +35,9 @@ const expectServerRecords = (identity: string, value: unknown): SessionMcpServer
 const sandboxNetworkOf = (identity: string, value: string | null): SandboxNetworkSetting | null =>
   value === null ? null : expectOneOf('sessions', identity, 'sandbox_network', SANDBOX_NETWORK_SETTINGS, value);
 
+const effortOf = (context: DecodeContext, identity: string, value: string | null): Stored<ReasoningEffort> | null =>
+  value === null ? null : storedOneOf(context, 'sessions', identity, 'reasoning_effort', REASONING_EFFORTS, value);
+
 export const decodeSession = (row: Row, context: DecodeContext): Session => {
   const identity = identityOf(row);
   const reader = readerFor('sessions', identity, row);
@@ -44,6 +47,7 @@ export const decodeSession = (row: Row, context: DecodeContext): Session => {
     env: expectStringRecord('sessions', identity, 'env_json', reader.json('env_json')),
     permissionMode: storedOneOf(context, 'sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
     model: reader.string('model'),
+    effort: effortOf(context, identity, reader.nullableString('reasoning_effort')),
     bypassAllowed: reader.flag('bypass_allowed'),
     sandboxNetwork: sandboxNetworkOf(identity, reader.nullableString('sandbox_network')),
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),

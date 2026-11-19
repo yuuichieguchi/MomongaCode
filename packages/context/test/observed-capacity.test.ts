@@ -24,7 +24,7 @@ const observed = (input: BuildContextInput, forms?: ReadonlyMap<string, number>)
   return withSetting;
 };
 
-const baseInput = (capabilities: Capabilities, history: HistoryItem[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({
+const baseInput = (capabilities: Capabilities, history: HistoryItem[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({ reasoningRoom: 0,
   capabilities,
   fence: TEST_FENCE,
   model: MODEL,
@@ -50,12 +50,12 @@ describe('capacityFor, the observed capacity C (4.7, M5, B9)', () => {
 
   it('is the whole input budget when the bound is zero at every size', () => {
     const capabilities = capabilitiesFor(8192, { tokenCounting: 'estimated' });
-    expect(capacityFor(capabilities, () => 0)).toBe(budgetFor(capabilities, 0).I);
+    expect(capacityFor(capabilities, () => 0)).toBe(budgetFor(capabilities, 0, 0).I);
   });
 
   it('is the largest m with m + under(m) within the input budget', () => {
     const capabilities = capabilitiesFor(8192, { maxOutputTokens: 1024 });
-    const inputBudget = budgetFor(capabilities, 0).I;
+    const inputBudget = budgetFor(capabilities, 0, 0).I;
     expect(capacityFor(capabilities, (tokens) => tokens)).toBe(Math.floor(inputBudget / 2));
   });
 });
@@ -68,7 +68,7 @@ const historyTotalling = (target: number): HistoryItem[] => {
 
 const estimated = capabilitiesFor(8192, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
 const staticHighMark = floorTokens + floorRatio(COMPACT_AT, inputCeilingFor(estimated) - floorTokens);
-const observedHighMark = floorTokens + floorRatio(COMPACT_AT, budgetFor(estimated, 0).I - floorTokens);
+const observedHighMark = floorTokens + floorRatio(COMPACT_AT, budgetFor(estimated, 0, 0).I - floorTokens);
 
 describe('the high mark reads C with context.observedCapacity (4.7, readers of C)', () => {
   it('does not evict above the static high mark while the total stays below the high mark of C', async () => {
@@ -89,7 +89,7 @@ describe('the high mark reads C with context.observedCapacity (4.7, readers of C
 describe('a fall of C mid-run never raises a pinned error (4.7)', () => {
   it('fails an admitted floor that no longer fits through the context path, not PinnedOverflowError', async () => {
     const capabilities = capabilitiesFor(8192, { maxOutputTokens: 1024 });
-    const inputBudget = budgetFor(capabilities, 0).I;
+    const inputBudget = budgetFor(capabilities, 0, 0).I;
     const history = [user(1, 'question')];
 
     const error = await buildContext(observed(baseInput(capabilities, history, { pinnedTokens: floorTokens })), portsWith(() => inputBudget)).catch(

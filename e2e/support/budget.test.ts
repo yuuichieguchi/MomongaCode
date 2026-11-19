@@ -296,7 +296,7 @@ describe('acceptance (a) support', () => {
     expect(predicted.pinned).toBe(wireTokensOfBody(modelPosts[0]?.body));
     const requested = ofType(journal, 'model.requested');
     for (const [index, event] of requested.entries()) expect((await count.count(event.data['body'])).input_tokens).toBe(wireTokensOfBody(modelPosts[index]?.body));
-    for (const post of modelPosts) expect(reportedTokensOfRequest(post.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
+    for (const post of modelPosts) expect(reportedTokensOfRequest(post.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0, 0).R);
   });
 });
 

@@ -20,7 +20,7 @@ const toolNamed = (name: string, descriptionChars: number): FunctionTool => ({
 const first: HistoryItem[] = [call(1, 'c1'), output(2, 'c1', 'a'.repeat(7000)), assistant(3, 'done')];
 const second: HistoryItem[] = [...first, assistant(4, 'more')];
 
-const inputWith = (history: HistoryItem[], tools: FunctionTool[], touched: boolean): BuildContextInput => ({
+const inputWith = (history: HistoryItem[], tools: FunctionTool[], touched: boolean): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: sized,
   model: MODEL,
   sources: sourcesWith({ history, tools }),

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { defineProductSchema, mcpConnectTimeoutProblem, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, SandboxNetworkSetting, StopValueName } from '@momonga/foundation';
-import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, ReasoningEffort, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { OPERATION_RULE_TOOLS, priceTableProblem } from '@momonga/protocol';
 import { ConfigError } from './config-error.ts';
 import { escapePointerSegment } from './json-file.ts';
@@ -307,6 +307,7 @@ export type DeclaredServer = { command: string; args: string[]; readyPath: strin
 export type ModelsSettings = {
   connections?: ModelConnection[];
   start?: string;
+  effort?: ReasoningEffort;
   fallback?: string[];
   billingChanges?: BillingChange[];
   servers?: Record<string, DeclaredServer>;

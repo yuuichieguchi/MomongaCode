@@ -9,7 +9,7 @@ import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/f
 import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf, approvalEndingText, SURFACES, SURFACE_HEADER } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
-import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RetentionStatusView, RunStatus, RunTraceView, CompactSessionRequest, Surface } from '@momonga/protocol';
+import type { IssueReference, Mandate, ReasoningEffort, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RetentionStatusView, RunStatus, RunTraceView, CompactSessionRequest, Surface } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
@@ -104,6 +104,7 @@ export type SessionCreateSettings = {
   credentials?: CredentialRules;
   autoModeClassifier?: string;
   autoModeKey?: AutoFitKey;
+  effort?: ReasoningEffort;
 };
 
 export type RunAppDeps = {
@@ -402,7 +403,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     refuseNewWork();
-    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, ...(body.sandboxNetwork === undefined ? {} : { sandboxNetwork: body.sandboxNetwork }), additionalDirectories, mcpServers });
+    const effort = body.effort ?? settings.effort;
+    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, ...(effort === undefined ? {} : { effort }), bypassAllowed, ...(body.sandboxNetwork === undefined ? {} : { sandboxNetwork: body.sandboxNetwork }), additionalDirectories, mcpServers });
     const notice = body.terminalUi === false ? await undecidedFolderNotice(store.trust, cwd, context.req.raw.signal) : {};
     return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed, ...notice }, 201, { location: `/v1/sessions/${session.id}` });
   };
@@ -457,6 +459,11 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       const replaced = store.setSessionMcpServers(session.id, mcpServers);
       if (replaced.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
       current = replaced.session;
+    }
+    if (body.effort !== undefined) {
+      const result = store.setEffort(session.id, body.effort);
+      if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+      current = result.session;
     }
     if (body.permissionMode !== undefined) {
       const result = store.setPermissionMode(session.id, body.permissionMode);

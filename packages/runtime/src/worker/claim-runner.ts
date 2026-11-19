@@ -5,8 +5,8 @@ import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex, sleep } from '@momonga/foundation';
-import { REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
-import type { Capabilities, FunctionTool, Measuring } from '@momonga/protocol';
+import { isReasoningEffort, REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
+import type { ReasoningEffort, Capabilities, FunctionTool, Measuring } from '@momonga/protocol';
 import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
@@ -65,6 +65,12 @@ import { heldSessionOf } from './known.ts';
 const LIVE_RUN_STATUSES = RUN_STATUSES.filter((status) => !TERMINAL_STATUSES.some((terminal) => terminal === status));
 const DEFAULT_CANCEL_POLL_MS = 250;
 const TOOLS_CHANGED_NOTICE = 'The available tools changed since this run started; the run continues with the current tool set.';
+
+const sessionEffortPin = (session: Session): { effort?: ReasoningEffort } => {
+  if (session.effort === null) return {};
+  if (!isReasoningEffort(session.effort)) throw new Error(`the reasoning effort of session ${session.id} was written by a newer build`);
+  return { effort: session.effort };
+};
 
 export type ClaimHost = {
   attach(control: ClaimControl): () => void;
@@ -445,6 +451,7 @@ const drive = async (
     pinned === undefined
       ? {
           model: session.model,
+          ...sessionEffortPin(session),
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
           capabilities,
@@ -570,6 +577,7 @@ const drive = async (
     claim,
     run,
     model: pins.model,
+    ...(pins.effort === undefined ? {} : { effort: pins.effort }),
     display: (model) => displays.get(model) ?? model,
     capabilities: pins.capabilities,
     toolLess,

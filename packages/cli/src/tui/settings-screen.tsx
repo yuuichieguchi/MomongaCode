@@ -125,6 +125,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP' },
   'mcp.connectTimeoutMs': { label: 'Connect timeout (ms)', section: 'MCP' },
   'models.dialects': { label: 'Schema dialects', section: 'Models' },
+  'models.effort': { label: 'Reasoning effort of a new session', section: 'Models' },
   env: { label: 'Environment variables', section: 'Environment variables' },
   'credentials.env': { label: 'Variables treated as credentials', section: 'Credentials' },
   'credentials.keep': { label: 'Variables kept for commands', section: 'Credentials' },

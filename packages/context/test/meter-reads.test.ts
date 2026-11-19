@@ -6,7 +6,7 @@ import type { ErrorShape } from '@momonga/protocol';
 import { MODEL, capabilitiesFor, fakeBlobs, fakeReader, inputFor, output, shapeCounter, sourcesWith } from './helpers.ts';
 
 const W8192 = capabilitiesFor(8192, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
-const inputBudget = budgetFor(W8192, 0).I;
+const inputBudget = budgetFor(W8192, 0, 0).I;
 
 const argsSteps = (chars: readonly number[]): HistoryItem[] =>
   chars.flatMap((size, index) => [

@@ -114,6 +114,27 @@ describe('agent pins', () => {
     expect(agentSystemPrompt('base', pin)).toContain('subagent "r"');
     expect(agentSystemPrompt('base', pin).endsWith('Prompt.')).toBe(true);
   });
+
+  it('round trips the effort of a definition and refuses a pin with an unknown effort', async () => {
+    const set = await load({ [`${HOME}/.momonga/agents/r.md`]: agentFile('r', 'd', 'effort: high\n', 'Prompt.') });
+    const pin = pinOf(set.agents[1] as NonNullable<(typeof set.agents)[1]>);
+    expect(readAgentPin({ agent: pin })).toEqual({ name: 'r', description: 'd', prompt: 'Prompt.', effort: 'high' });
+    await expect((async () => readAgentPin({ agent: { ...pin, effort: 'huge' } }))()).rejects.toThrow('effort');
+  });
+});
+
+describe('the effort of an agent definition', () => {
+  it('accepts a level of the reasoning effort ladder without a warning', async () => {
+    const set = await load({ [`${HOME}/.momonga/agents/r.md`]: agentFile('r', 'd', 'effort: low\n', 'Prompt.') });
+    expect(set.agents.find((agent) => agent.name === 'r')?.effort).toBe('low');
+    expect(set.warnings).toEqual([]);
+  });
+
+  it('skips a definition whose effort is not a level, saying which levels exist', async () => {
+    const set = await load({ [`${HOME}/.momonga/agents/r.md`]: agentFile('r', 'd', 'effort: huge\n', 'Prompt.') });
+    expect(set.agents.some((agent) => agent.name === 'r')).toBe(false);
+    expect(set.warnings).toEqual([`Agent at ${HOME}/.momonga/agents/r.md was skipped: effort must be one of none, minimal, low, medium, high, xhigh`]);
+  });
 });
 
 describe('the Agent tool', () => {

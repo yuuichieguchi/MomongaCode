@@ -19,6 +19,7 @@ import {
   withCalibration,
   workingStateCapFor,
 } from '@momonga/context';
+import { stepReasoningRoom } from './step-reasoning.ts';
 import type { ActivatedSkill, ReferenceReaders, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionBlock, CompactionBlockReason, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure } from '@momonga/context';
 import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
@@ -172,6 +173,7 @@ const offeredInputOf = async (
   const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
   const input: BuildContextInput = {
     capabilities: ctx.capabilities,
+    reasoningRoom: wrapUp === undefined ? stepReasoningRoom(ctx) : 0,
     calibration: ctx.calibration,
     model: ctx.model,
     sources: {
@@ -625,7 +627,7 @@ const namedFacts = (error: PinnedOverflowError, ids: readonly string[]): string 
   error.breakdown.governing === 0 ? '' : ` Governing facts take ${error.breakdown.governing} of those tokens${ids.length === 0 ? '' : ` (${ids.join(', ')})`}; retire or shorten one with momonga rule.`;
 
 export const pinnedOverflowFailure = (ctx: Pick<ClaimContext, 'capabilities'>, error: PinnedOverflowError, governingIds: readonly string[] = []): { code: 'pinned_overflow'; message: string } => {
-  const { W, R } = budgetFor(ctx.capabilities, 0);
+  const { W, R } = budgetFor(ctx.capabilities, 0, 0);
   if (error instanceof PinnedBoundError) {
     const limits = `the input budget of ${error.inputBudget} (window ${W}, output reserve ${R})`;
     const remedy = 'Raise contextWindow, lower maxOutputTokens, or calibrate the token counter.';
@@ -679,7 +681,7 @@ const protectionClause = (error: ContextOverflowError): string => {
 };
 
 const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attempt: FinalAttempt, wrapUpClause: string): string => {
-  const { W, R } = budgetFor(ctx.capabilities, 0);
+  const { W, R } = budgetFor(ctx.capabilities, 0, 0);
   const breakdown = error.breakdown;
   const prefix =
     breakdown === undefined

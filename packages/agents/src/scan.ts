@@ -3,6 +3,7 @@ import { homeLayout } from '@momonga/foundation';
 import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills';
 import type { SkillFileSystem } from '@momonga/skills';
 import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
+import { REASONING_EFFORTS, isReasoningEffort } from '@momonga/protocol';
 import type { Mandate } from '@momonga/protocol';
 import { BUILT_IN_AGENTS } from './builtin.ts';
 import type { AgentDefinition, AgentFileScope, FileAgentDefinition, ProjectAgentApproved, ProjectAgentFile } from './types.ts';
@@ -66,7 +67,7 @@ const agentOf = async (file: string, scope: AgentFileScope, fileSystem: SkillFil
     warnings.push(`Agent at ${file} was skipped: ${parsed.reason}`);
     return undefined;
   }
-  const { name, description, tools, model } = parsed.fields;
+  const { name, description, tools, model, effort } = parsed.fields;
   if (typeof name !== 'string' || name.trim() === '') {
     warnings.push(`Agent at ${file} was skipped: the name is missing or empty`);
     return undefined;
@@ -88,6 +89,10 @@ const agentOf = async (file: string, scope: AgentFileScope, fileSystem: SkillFil
     warnings.push(`Agent at ${file} was skipped: model must be a non-empty string`);
     return undefined;
   }
+  if (effort !== undefined && !isReasoningEffort(effort)) {
+    warnings.push(`Agent at ${file} was skipped: effort must be one of ${REASONING_EFFORTS.join(', ')}`);
+    return undefined;
+  }
   const toolList = toolsOf(tools, file, warnings);
   if (toolList === 'invalid') return undefined;
   const mandate = mandateOf(parsed.fields, file, warnings);
@@ -102,6 +107,7 @@ const agentOf = async (file: string, scope: AgentFileScope, fileSystem: SkillFil
     prompt: parsed.body,
     ...(toolList === undefined ? {} : { tools: toolList }),
     ...(trimmedModel === undefined || trimmedModel === INHERIT_MODEL ? {} : { model: trimmedModel }),
+    ...(effort === undefined ? {} : { effort }),
     ...(mandate === undefined ? {} : { mandate }),
     scope,
     location: file,

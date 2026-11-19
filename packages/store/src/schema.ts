@@ -1266,6 +1266,10 @@ const APPROVAL_RESOLVED_BY = `
 ALTER TABLE approvals ADD COLUMN resolved_by TEXT;
 `;
 
+const SESSION_REASONING_EFFORT = `
+ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT;
+`;
+
 const EVENT_SHOWN_FLAG = `
 ALTER TABLE events ADD COLUMN shown INTEGER;
 UPDATE events SET shown = 1 WHERE type = 'tool.permission.requested' AND json_extract(payload_json, '$.shown') IS NOT NULL;
@@ -1590,5 +1594,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 55,
     name: 'keep on a resolved approval the surface whose client answered it (the command line, the terminal UI or an ACP client), so every surface can say who answered; a row resolved before keeps NULL, read as not recorded',
     sql: APPROVAL_RESOLVED_BY,
+  },
+  {
+    version: 56,
+    name: 'keep on a session the reasoning effort chosen for it, which its runs send to a model that declares a reasoning control; a session made before keeps NULL, read as no effort chosen',
+    sql: SESSION_REASONING_EFFORT,
   },
 ];

@@ -94,7 +94,7 @@ const caseOf = (random: Random): Case => {
   };
 };
 
-const inputOf = (scenario: Case, history: HistoryItem[], memories: MemoryView[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({
+const inputOf = (scenario: Case, history: HistoryItem[], memories: MemoryView[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: capabilitiesFor(scenario.window, { tokenCounting: 'estimated', maxOutputTokens: 1024 }),
   fence: TEST_FENCE,
   model: MODEL,

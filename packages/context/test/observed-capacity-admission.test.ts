@@ -46,6 +46,7 @@ type Extra = { memories?: readonly MemoryView[]; files?: Record<string, string>;
 
 const buildWith = (capabilities: Capabilities, under: UnderRule, { memories, files, observed }: Extra): Promise<BuiltContext> => {
   const input: BuildContextInput & { observedCapacity?: true } = {
+    reasoningRoom: 0,
     capabilities,
     fence: TEST_FENCE,
     model: MODEL,
@@ -65,7 +66,7 @@ describe('memories are admitted against C with context.observedCapacity (4.7, re
   it('has static ceilings that equal C for the two exact references', () => {
     expect(inputCeilingFor(exactAtWholeBudget)).toBe(capacityFor(estimated, nothingUnder));
     expect(inputCeilingFor(exactAtHalfBudget)).toBe(capacityFor(estimated, wholeUnder));
-    expect(capacityFor(estimated, nothingUnder)).toBe(budgetFor(estimated, 0).I);
+    expect(capacityFor(estimated, nothingUnder)).toBe(budgetFor(estimated, 0, 0).I);
   });
 
   it('admits as many memories as a static ceiling equal to C would when C is above the static ceiling', async () => {
@@ -90,7 +91,7 @@ describe('memories are admitted against C with context.observedCapacity (4.7, re
 });
 
 describe('a nested AGENTS.md is admitted against C with context.observedCapacity (4.7, readers of C)', () => {
-  const between = Math.floor((inputCeilingFor(estimated) + budgetFor(estimated, 0).I) / 2);
+  const between = Math.floor((inputCeilingFor(estimated) + budgetFor(estimated, 0, 0).I) / 2);
   const files = { [NESTED_AGENTS]: 'n'.repeat(between - floorTokens) };
 
   it('admits a file that fits C but not the static ceiling', async () => {

@@ -184,7 +184,7 @@ const assertAcceptance = async (
   expect(compacted.some((event) => (event.data['replacedThroughSeq'] as number) > taskSeq)).toBe(true);
   for (const event of compacted) expect(event.data['summary']).toBe(summary);
 
-  const { W, R } = budgetFor(capabilities, 0);
+  const { W, R } = budgetFor(capabilities, 0, 0);
   expect(W).toBe(ACCEPTANCE_WINDOW);
   expect(R).toBe(EXPECTED_OUTPUT_RESERVE);
   for (const post of posts.filter((post) => isCompactionRequest(post.body))) expect(wireTokensOfBody(post.body)).toBeLessThanOrEqual(W - R);
@@ -304,6 +304,6 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     expect(notices.some((message) => isToolsDroppedNotice(message, capabilities.contextWindow))).toBe(true);
     const posts = chatCompletions(stack.fake);
     expect(posts).toHaveLength(1);
-    expect(wireTokensOfBody(posts[0]?.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
+    expect(wireTokensOfBody(posts[0]?.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0, 0).R);
   });
 });

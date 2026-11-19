@@ -10,7 +10,7 @@ vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const CASES = 600;
 const CAPABILITIES = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
-const I = budgetFor(CAPABILITIES, 0).I;
+const I = budgetFor(CAPABILITIES, 0, 0).I;
 const SYSTEM_PROMPT = 'S'.repeat(6000);
 const ARGUMENT_SIZES = [0, 300, 500, 1000, 1600];
 const SPIKE_SIZES = [2400, 3200, 4000];

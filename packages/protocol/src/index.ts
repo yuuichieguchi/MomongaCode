@@ -134,6 +134,7 @@ export {
   isReasoningEffort,
   acceptedReasoningEfforts,
   clampReasoningEffort,
+  sentReasoningEffort,
   outputTokensFor,
   maxOutputTokensFor,
   thinkingBudgetFor,

@@ -194,7 +194,7 @@ describe('compaction item rejected by compact (site 2)', () => {
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
     expect(rejected()).toBe(true);
-    expect(countsBeforeFirstCompact().some((count) => count.input_tokens > budgetFor(capabilities, count.error_bound).I)).toBe(true);
+    expect(countsBeforeFirstCompact().some((count) => count.input_tokens > budgetFor(capabilities, count.error_bound, 0).I)).toBe(true);
     expect(rejections(env, run.id)).toHaveLength(1);
     expect(env.ofType(run.id, 'notice').map((event) => event.message).filter((message) => /^recent (turns|steps)/.test(message))).toEqual([]);
     expect(env.gateway.compacts).toHaveLength(2);

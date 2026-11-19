@@ -10,7 +10,7 @@ import { TEST_FENCE } from '@momonga/testkit';
 const WINDOW = 4096;
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
 
-const inputWith = (extra: Partial<BuildContextInput>): BuildContextInput => ({
+const inputWith = (extra: Partial<BuildContextInput>): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: sized,
   fence: TEST_FENCE,
   model: 'm',

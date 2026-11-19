@@ -2,7 +2,7 @@ import { credentialEnvNames, loadUserSettings, stripCredentialEnv } from '@momon
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
 import { TARGET_NOT_READY, messageOf, startModelOf } from '@momonga/protocol';
-import type { Mandate, MomongaModelList, PermissionMode, Surface } from '@momonga/protocol';
+import type { ReasoningEffort, Mandate, MomongaModelList, PermissionMode, Surface } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
 import type { CreatedSession, RuntimeClient } from '../client/runtime-client.ts';
 import type { SessionView } from '../client/views.ts';
@@ -14,7 +14,7 @@ import { reopenedSession } from './resolve-session.ts';
 import type { HeadlessReopen } from './resolve-session.ts';
 import { UsageError } from '../usage-error.ts';
 
-export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; sandboxNetwork?: SandboxNetworkSetting; model?: string; signal?: AbortSignal };
+export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; sandboxNetwork?: SandboxNetworkSetting; model?: string; effort?: ReasoningEffort; signal?: AbortSignal };
 
 export type RunBounds = { mandate?: Mandate; limits?: { maxCostUsd?: number } };
 
@@ -38,7 +38,7 @@ export class NoModelConnected extends Error {
   }
 }
 
-export type TypedSessionOptions = Pick<SessionOptions, 'permissionMode' | 'bypassAllowed' | 'model'>;
+export type TypedSessionOptions = Pick<SessionOptions, 'permissionMode' | 'bypassAllowed' | 'model' | 'effort'>;
 
 const BYPASS_MODE: PermissionMode = 'bypassPermissions';
 
@@ -47,8 +47,12 @@ export const reopenedAsTyped = async (client: Pick<RuntimeClient, 'listSessions'
   const mode = typed.permissionMode ?? stored.permissionMode;
   if (mode === BYPASS_MODE && typed.bypassAllowed !== true) throw new UsageError(messageOf('storedBypassNeedsOptIn', 'cli', { id: stored.id }));
   if (mode === BYPASS_MODE && !stored.bypassAllowed) throw new UsageError(messageOf('bypassNotStarted', 'cli', { id: stored.id }));
-  if (typed.model !== undefined) return client.updateSession(stored.id, { model: typed.model, ...(mode === stored.permissionMode ? {} : { permissionMode: mode }) });
-  return mode === stored.permissionMode ? stored : client.updateSession(stored.id, { permissionMode: mode });
+  const update = {
+    ...(typed.model === undefined ? {} : { model: typed.model }),
+    ...(typed.effort === undefined || typed.effort === stored.effort ? {} : { effort: typed.effort }),
+    ...(mode === stored.permissionMode ? {} : { permissionMode: mode }),
+  };
+  return Object.keys(update).length === 0 ? stored : client.updateSession(stored.id, update);
 };
 
 export type CliSession = {
@@ -106,6 +110,7 @@ export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'p
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.effort === undefined ? {} : { effort: options.effort }),
     });
     return { client, created, close: () => client.close() };
   } catch (error) {

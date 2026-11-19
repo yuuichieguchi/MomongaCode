@@ -1,10 +1,11 @@
-import type { ApprovalShown, ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, Stored, Surface, ToolKind, RunReport } from '@momonga/protocol';
+import type { ReasoningEffort, ApprovalShown, ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, Stored, Surface, ToolKind, RunReport } from '@momonga/protocol';
 
 export type SessionView = {
   readonly id: string;
   readonly cwd: string;
   readonly permissionMode: PermissionMode;
   readonly model: string;
+  readonly effort?: ReasoningEffort;
   readonly bypassAllowed: boolean;
   readonly createdAt: number;
   readonly envKeys: readonly string[];

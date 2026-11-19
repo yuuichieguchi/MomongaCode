@@ -1,6 +1,6 @@
 import type { ModelRoles } from '@momonga/config';
 import type { Calibration, TokenMeter } from '@momonga/context';
-import type { Capabilities, FunctionTool, PinnedCondition, RunEventPayload } from '@momonga/protocol';
+import type { ReasoningEffort, Capabilities, FunctionTool, PinnedCondition, RunEventPayload } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch, WaitTargets } from '@momonga/store';
 import type { OutputFit, ToolSet } from '@momonga/tools';
@@ -31,6 +31,7 @@ export type ClaimContext = {
   claim: Claim;
   run: Run;
   model: string;
+  effort?: ReasoningEffort;
   display: (model: string) => string;
   capabilities: Capabilities;
   toolLess: boolean;

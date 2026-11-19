@@ -78,6 +78,7 @@ import type {
   ServiceMutationResult,
   Session,
   SetModelResult,
+  SetEffortResult,
   SetPermissionModeResult,
   SetSessionMcpServersResult,
   StatusPatch,
@@ -245,12 +246,13 @@ const FENCE_NONCE_BYTE_LENGTH = 16;
 
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at, fence_nonce)
-     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt, :fenceNonce)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, reasoning_effort, bypass_allowed, sandbox_network, additional_directories_json, mcp_servers_json, created_at, fence_nonce)
+     VALUES (:id, :cwd, :env, :permissionMode, :model, :effort, :bypassAllowed, :sandboxNetwork, :additionalDirectories, :mcpServers, :createdAt, :fenceNonce)`,
   ),
   updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
   updateSessionModel: db.prepare('UPDATE sessions SET model = :model WHERE id = :id'),
+  updateSessionEffort: db.prepare('UPDATE sessions SET reasoning_effort = :effort WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
   selectListedSession: db.prepare(`SELECT ${LISTED_SESSION_COLUMNS} FROM sessions s WHERE s.id = :id`),
@@ -1409,6 +1411,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           env: canonicalJson(input.env),
           permissionMode: input.permissionMode,
           model: input.model,
+          effort: input.effort ?? null,
           bypassAllowed: input.bypassAllowed === true ? 1 : 0,
           sandboxNetwork: input.sandboxNetwork ?? null,
           additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
@@ -1470,6 +1473,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', session: { ...session, model }, changed: true };
       }),
 
+    setEffort: (sessionId, effort) =>
+      transaction<SetEffortResult>(() => {
+        const row = sql.selectSession.get({ id: sessionId });
+        if (row === undefined) return { kind: 'not_found' };
+        sql.updateSessionEffort.run({ id: sessionId, effort });
+        return { kind: 'ok', session: { ...decodeSession(row, decodeContext), effort } };
+      }),
+
     setSessionMcpServers: (sessionId, servers) =>
       transaction<SetSessionMcpServersResult>(() => {
         const row = sql.selectSession.get({ id: sessionId });
@@ -1507,6 +1518,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           env: canonicalJson(parentSession.env),
           permissionMode: parentSession.permissionMode,
           model: input.model,
+          effort: input.effort ?? null,
           bypassAllowed: parentSession.bypassAllowed ? 1 : 0,
           sandboxNetwork: parentSession.sandboxNetwork,
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),

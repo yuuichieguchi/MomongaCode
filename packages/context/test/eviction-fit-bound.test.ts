@@ -59,7 +59,7 @@ const outcomeOf = (build: Promise<BuiltContext>): Promise<{ built: BuiltContext 
     (error: unknown) => ({ error: String(error) }),
   );
 
-const I = budgetFor(CAPABILITIES, 0).I;
+const I = budgetFor(CAPABILITIES, 0, 0).I;
 
 describe('an eviction is judged by count + bound, the measure the fit test reads', () => {
   it('keeps an output inside the reported request whose eviction saves 11 tokens but widens the bound by 562, and fits at level 0', async () => {

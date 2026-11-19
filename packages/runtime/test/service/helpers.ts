@@ -12,7 +12,7 @@ import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
 import * as protocol from '@momonga/protocol';
-import type { ModelViews, PermissionMode, PermissionOption, RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { ModelViews, PermissionMode, ReasoningEffort, PermissionOption, RunEvent, RunEventPayload } from '@momonga/protocol';
 import * as runtime from '@momonga/runtime';
 import type { EvidenceRun, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -95,6 +95,7 @@ export type SettingsDefault = {
   additionalDirectories?: readonly string[];
   credentialEnvNames?: readonly string[];
   autoModeClassifier?: string;
+  effort?: ReasoningEffort;
 };
 
 export type SessionCreateSettingsResult = {
@@ -104,6 +105,7 @@ export type SessionCreateSettingsResult = {
   credentialEnvNames: readonly string[];
   autoModeClassifier?: string;
   autoModeKey?: { classifier: string; codeDigest: string; datasetDigest: string };
+  effort?: ReasoningEffort;
 };
 
 export type FakePorts = {
@@ -135,6 +137,7 @@ export const createFakePorts = (): FakePorts => {
       ...(entry.defaultModeOrigin === undefined ? {} : { defaultModeOrigin: entry.defaultModeOrigin }),
       additionalDirectories: entry.additionalDirectories ?? [],
       credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
+      ...(entry.effort === undefined ? {} : { effort: entry.effort }),
       ...(entry.autoModeClassifier === undefined
         ? {}
         : { autoModeClassifier: entry.autoModeClassifier, autoModeKey: { classifier: `fake|${entry.autoModeClassifier}`, codeDigest: 'fake-code-digest', datasetDigest: 'fake-dataset-digest' } }),

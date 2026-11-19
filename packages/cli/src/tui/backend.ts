@@ -3,7 +3,7 @@ import { createOutboundDispatcher, findOutboundError, findProgramOnPath, hostPat
 import { withOutboundNetwork } from '../network.ts';
 import type { NetworkCheck, NetworkView } from './commands/network.ts';
 import type { FileCandidates } from '@momonga/foundation';
-import type { TrustItemsView } from '@momonga/protocol';
+import type { ReasoningEffort, TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
@@ -48,7 +48,7 @@ import type { FileLinkPlace, FileLinkPorts, FileLinks } from './screen/file-link
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
   onChildEvent(frame: RunEventFrame, agent: string): void;
-  onChildStarted(agent: string, runId: string, backlog: number, model: string): void;
+  onChildStarted(agent: string, runId: string, backlog: number, model: string, effort: ReasoningEffort | undefined): void;
   onChildEnded(agent: string, runId: string, end: ChildEnd): void;
   onReconnecting(attempt: number): void;
   onDaemonStopping(): void;
@@ -90,6 +90,7 @@ export type TuiBackend = {
   setMode(mode: PermissionMode): Promise<SessionView>;
   models(): Promise<readonly MomongaModelEntry[]>;
   setModel(model: string): Promise<SessionView>;
+  setEffort(effort: ReasoningEffort): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
   startRun(text: string, options?: StartRunOptions): Promise<RunView>;
   compact(instructions?: string): Promise<RunView>;
@@ -286,6 +287,7 @@ export const createTuiBackend = (
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
         ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
         ...(chosen === undefined ? {} : { model: chosen }),
+        ...(options.effort === undefined ? {} : { effort: options.effort }),
       });
       return adopt(created.session);
     },
@@ -301,6 +303,10 @@ export const createTuiBackend = (
     models: () => withGateway((gateway) => gateway.models()),
     setModel: async (model) => {
       session = await runtime().setModel(current().id, model);
+      return session;
+    },
+    setEffort: async (effort) => {
+      session = await runtime().setEffort(current().id, effort);
       return session;
     },
     autoModeAvailable: () => autoModeConfigured(ports, closing.signal),

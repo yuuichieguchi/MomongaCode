@@ -137,7 +137,7 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     const total = error.inputTokens;
     expect(total).toBe(6049);
     expect(error.ceiling).toBe(5387);
-    expect(error.inputBudget).toBe(budgetFor(W8192, 0).I - errorBoundOfShape(ESTIMATED_ERROR_SHAPE, total));
+    expect(error.inputBudget).toBe(budgetFor(W8192, 0, 0).I - errorBoundOfShape(ESTIMATED_ERROR_SHAPE, total));
     expect(error.compactionBlockedBy).toBeUndefined();
     const plan = error.compaction;
     expect(plan?.throughSeq).toBe(4);
@@ -145,7 +145,7 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     const task = (await meter.count({ input: [TASK], tools: [] })).inputTokens;
     const freed = planned - task - summaryItemTokensFor(plan?.summaryTokenCap ?? 0);
 
-    expect(freed).toBeLessThan(total + errorBoundOfShape(ESTIMATED_ERROR_SHAPE, total) - budgetFor(W8192, 0).I);
+    expect(freed).toBeLessThan(total + errorBoundOfShape(ESTIMATED_ERROR_SHAPE, total) - budgetFor(W8192, 0, 0).I);
     expect(freed).toBeGreaterThanOrEqual(total - error.ceiling);
   });
 
@@ -158,7 +158,7 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     expect(counted.freshUnderAt(6049)).toBe(1815);
     expect(counted.freshUnderAt(5387)).toBe(1617);
     expect(counted.freshUnderAt(0)).toBe(0);
-    expect(maxInputFor({ ceiling: 5387, inputBudget: budgetFor(W8192, 0).I, errorBoundAt: counted.freshUnderAt })).toBe(5387);
+    expect(maxInputFor({ ceiling: 5387, inputBudget: budgetFor(W8192, 0, 0).I, errorBoundAt: counted.freshUnderAt })).toBe(5387);
   });
 
   it('evaluates a suffix count at the bound of its uncounted part, which grows above the known part', async () => {
@@ -196,7 +196,7 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     const meter = await meterWithObservedMiss(W8192, ratioCounter(0.3), 0.5, shapeBound);
     const miss = Math.round(104 * 0.5) - shapeBound;
     const bound = (tokens: number): number => Math.ceil(0.3 * tokens) + Math.max(0, Math.ceil(miss * Math.max(1, tokens / 104)) - floor);
-    const input = budgetFor(W8192, 0).I;
+    const input = budgetFor(W8192, 0, 0).I;
     const largest = Array.from({ length: 5388 }, (_, tokens) => tokens).filter((tokens) => tokens + bound(tokens) <= input).at(-1) as number;
     const error = await overflowOf(
       inputFor(W8192, { sources: sourcesWith({ history: argsSteps([1099, 1099, 4171, 4171, 4171, 4170]) }), level: 0 }),
@@ -250,7 +250,7 @@ describe('maxInputFor over random bounds', () => {
 });
 
 describe('a counter bound that leaves no room for the pinned context', () => {
-  const inputBudget = budgetFor(W8192, 0).I;
+  const inputBudget = budgetFor(W8192, 0, 0).I;
   const boundFailureOf = async (historyBound: number): Promise<unknown> => {
     const inner = createTokenMeter({ counter: shapeCounter(() => ESTIMATED_ERROR_SHAPE), model: MODEL, capabilities: W8192 });
     const meter: TokenMeter = {
@@ -297,7 +297,7 @@ describe('a counter bound that leaves no room for the pinned context', () => {
 describe('accepted counts stay within I with the meter\'s own bound', () => {
   it('keeps every accepted build at or below budgetFor(capabilities, 0).I including the bound the meter returns', async () => {
     const capabilities = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
-    const I = budgetFor(capabilities, 0).I;
+    const I = budgetFor(capabilities, 0, 0).I;
     expect(I).toBe(2990);
     const meter = createTokenMeter({ counter: ratioCounter(0.3), model: MODEL, capabilities });
     const ports = portsWith(meter);

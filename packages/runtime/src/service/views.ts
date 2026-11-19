@@ -53,6 +53,7 @@ export const toSessionView = (store: Pick<RuntimeStore, 'sessionMaxEventId'>, se
   cwd: session.cwd,
   permissionMode: session.permissionMode,
   model: session.model,
+  ...(session.effort === null ? {} : { effort: session.effort }),
   bypassAllowed: session.bypassAllowed,
   createdAt: session.createdAt,
   envKeys: Object.keys(session.env),

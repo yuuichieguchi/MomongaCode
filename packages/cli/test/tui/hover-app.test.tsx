@@ -26,7 +26,7 @@ const withChild = async (): Promise<TerminalApp> => {
   await app.type(KEYS.enter, () => true, 'the prompt is sent');
   await app.backend.called('openSession');
   const follow = app.backend.following();
-  follow.onChildStarted?.('general-purpose', 'child-1', 0, SCRIPTED_MODEL);
+  follow.onChildStarted?.('general-purpose', 'child-1', 0, SCRIPTED_MODEL, undefined);
   await app.type('', (lines) => lines.some((line) => line.includes('general-purpose · starting')), 'the child is listed');
   return app;
 };

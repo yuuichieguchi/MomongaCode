@@ -39,7 +39,7 @@ const memoryOf = (text: string): MemoryView => ({
 
 type Layout = 'cachePrefix' | 'default';
 
-const inputWith = (layout: Layout, history: HistoryItem[], extra: Partial<BuildContextInput> = {}, memories: MemoryView[] = []): BuildContextInput => ({
+const inputWith = (layout: Layout, history: HistoryItem[], extra: Partial<BuildContextInput> = {}, memories: MemoryView[] = []): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: sized,
   fence: TEST_FENCE,
   model: MODEL,

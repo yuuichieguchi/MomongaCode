@@ -17,6 +17,7 @@ const portsWith = (model: WeightMeter, fallbacks: readonly WeightMeter[]): Build
 
 const observedInput = (capabilities: Capabilities, history: HistoryItem[]): BuildContextInput => {
   const input: BuildContextInput & { observedCapacity: true } = {
+    reasoningRoom: 0,
     capabilities,
     fence: TEST_FENCE,
     model: MODEL,
@@ -50,7 +51,7 @@ describe('C is the minimum of C_t over the model targets (4.7, M5; B9, B10)', ()
   const aliasCapacity = capacityFor(estimated, nothingUnder);
 
   it('has a fallback target whose C_t is below the model meter capacity', () => {
-    expect(aliasCapacity).toBe(budgetFor(estimated, 0).I);
+    expect(aliasCapacity).toBe(budgetFor(estimated, 0, 0).I);
     expect(highMarkOf(smallerCapacity) + 1).toBeLessThan(highMarkOf(aliasCapacity));
   });
 

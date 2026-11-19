@@ -1,4 +1,4 @@
-import type { PublicRunEvent } from '@momonga/protocol';
+import type { PublicRunEvent, ReasoningEffort } from '@momonga/protocol';
 import { describeRunEnd } from '../../run/headless.ts';
 import type { ChildEnd } from '../../run/follow.ts';
 import { appendEntry, foldLiveEvent } from '../transcript.ts';
@@ -10,14 +10,14 @@ import type { TranscriptStore } from './store.ts';
 
 export type AgentLoading = { readonly applied: number; readonly backlog: number };
 
-export type AgentView = { readonly runId: string; readonly agent: string; readonly model: string; readonly store: TranscriptStore; readonly end: ChildEnd | undefined; readonly loading: AgentLoading | undefined };
+export type AgentView = { readonly runId: string; readonly agent: string; readonly model: string; readonly effort: ReasoningEffort | undefined; readonly store: TranscriptStore; readonly end: ChildEnd | undefined; readonly loading: AgentLoading | undefined };
 
-type Kept = { runId: string; agent: string; model: string; store: TranscriptStore; end: ChildEnd | undefined; loading: AgentLoading | undefined; firstSeq: number | undefined; stops: Map<StoreWatcher, () => void> };
+type Kept = { runId: string; agent: string; model: string; effort: ReasoningEffort | undefined; store: TranscriptStore; end: ChildEnd | undefined; loading: AgentLoading | undefined; firstSeq: number | undefined; stops: Map<StoreWatcher, () => void> };
 
 export type StoreWatcher = (store: TranscriptStore) => () => void;
 
 export type AgentViews = {
-  started(agent: string, runId: string, backlog: number, model: string): void;
+  started(agent: string, runId: string, backlog: number, model: string, effort: ReasoningEffort | undefined): void;
   event(event: PublicRunEvent): void;
   ended(runId: string, end: ChildEnd): void;
   open(runId: string | undefined): void;
@@ -28,14 +28,15 @@ export type AgentViews = {
   version(): number;
 };
 
-export type AgentHeaderFacts = { readonly agent: string; readonly state: string; readonly model: string };
+export type AgentHeaderFacts = { readonly agent: string; readonly state: string; readonly model: string; readonly effort: ReasoningEffort | undefined };
 
 const ELLIPSIS = '…';
 
-export const agentHeader = ({ agent, state, model }: AgentHeaderFacts, columns: number): string => {
-  const rest = `${state} · model: ${model}`;
+export const agentHeader = ({ agent, state, model, effort }: AgentHeaderFacts, columns: number): string => {
+  const rest = `${state} · model: ${model}${effort === undefined ? '' : ` · effort: ${effort}`}`;
+  const bare = [state, model, ...(effort === undefined ? [] : [effort])].join(' · ');
   const names = segmentsOf(agent).map(({ index }) => `${agent.slice(0, index)}${ELLIPSIS}`).filter((name) => name !== ELLIPSIS).reverse();
-  return fit([{ side: 'left', forms: [`Subagent ${agent} · ${rest}`, `${agent} · ${rest}`, ...names.map((name) => `${name} · ${rest}`), rest] }], columns);
+  return fit([{ side: 'left', forms: [`Subagent ${agent} · ${rest}`, `${agent} · ${rest}`, ...names.map((name) => `${name} · ${rest}`), rest, bare] }], columns);
 };
 
 export const endStateOf = (end: ChildEnd): string => (end.kind === 'finished' ? end.run.status : 'FAILED');
@@ -72,11 +73,11 @@ export const createAgentViews = (): AgentViews => {
     views.delete(view.runId);
   };
   return {
-    started: (agent, runId, backlog, model) => {
+    started: (agent, runId, backlog, model, effort) => {
       const previous = views.get(runId);
       if (previous !== undefined) drop(previous);
       const store = createTranscriptStore();
-      const view: Kept = { runId, agent, model, store, end: undefined, loading: backlog > 0 ? { applied: 0, backlog } : undefined, firstSeq: undefined, stops: new Map() };
+      const view: Kept = { runId, agent, model, effort, store, end: undefined, loading: backlog > 0 ? { applied: 0, backlog } : undefined, firstSeq: undefined, stops: new Map() };
       if (view.loading !== undefined) store.hold();
       views.set(runId, view);
       for (const watcher of watchers) view.stops.set(watcher, watcher(store));

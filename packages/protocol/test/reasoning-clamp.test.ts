@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
+import { acceptedReasoningEfforts, clampReasoningEffort, sentReasoningEffort } from '@momonga/protocol';
 import type { ReasoningCapability } from '@momonga/protocol';
 
 describe('one clamping rule for every reasoning control', () => {
@@ -62,5 +62,23 @@ describe('the levels each reasoning control accepts', () => {
   it('a budget thinking form accepts the levels it declares a budget for, in effort order', () => {
     const budget: ReasoningCapability = { control: 'thinking', form: 'budget', budgets: { high: 8000, low: 2048 } };
     expect(acceptedReasoningEfforts(budget)).toEqual(['low', 'high']);
+  });
+});
+
+describe('the effort a request carries for the chosen effort', () => {
+  it('sends nothing when no effort is chosen', () => {
+    expect(sentReasoningEffort({ control: 'reasoning_effort', lowest: 'low' }, undefined)).toBeUndefined();
+  });
+
+  it('sends nothing to a model that declares no reasoning control or no ladder level', () => {
+    expect(sentReasoningEffort(undefined, 'high')).toBeUndefined();
+    expect(sentReasoningEffort({ control: 'none' }, 'high')).toBeUndefined();
+    expect(sentReasoningEffort({ control: 'thinking', form: 'adaptive', efforts: [], off: 'disabled' }, 'high')).toBeUndefined();
+  });
+
+  it('sends the chosen effort clamped to the levels the model declares', () => {
+    expect(sentReasoningEffort({ control: 'reasoning_effort', lowest: 'low' }, 'minimal')).toBe('low');
+    expect(sentReasoningEffort({ control: 'thinking', form: 'adaptive', efforts: ['low', 'medium', 'high'] }, 'xhigh')).toBe('high');
+    expect(sentReasoningEffort({ control: 'reasoning_effort', lowest: 'none' }, 'medium')).toBe('medium');
   });
 });

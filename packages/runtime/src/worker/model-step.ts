@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { BuiltContext, TokenMeter } from '@momonga/context';
 import { BUDGET_EXCEEDED_CODE, LOWEST_REASONING_EFFORT, fallbackNoticeText, marginFloorFor, wireUsageOf } from '@momonga/protocol';
-import type { FallbackNotice } from '@momonga/protocol';
+import type { FallbackNotice, ReasoningEffort } from '@momonga/protocol';
 import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
 import type { BudgetExhausted, ModelQuote, Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
@@ -30,6 +30,8 @@ import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
 import { cacheControlsOf } from './cache-controls.ts';
 import { EXACT_MODEL } from './exact-model.ts';
+import { stepReasoningEffort, stepReasoningRoom } from './step-reasoning.ts';
+import { OUTPUT_FLOOR_TOKENS } from './budget.ts';
 import { offeredRecordFor } from './tool-offer.ts';
 
 const DEADLINE_CODE = 'deadline_exceeded';
@@ -37,8 +39,16 @@ const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 
 const isRequestBody = (value: unknown): value is CreateResponseBody => isRecord(value) && typeof value['model'] === 'string';
 
-const admissionOf = (ctx: ClaimContext, built: BuiltContext, quote: ModelQuote | undefined): StepAdmission =>
-  admissionFor(ctx.budget, { inputTokens: built.inputTokens, marginTokens: built.budget.margin, maxOutputTokens: built.maxOutputTokens }, quote);
+const reasoningRoomOf = (ctx: ClaimContext, summarising: boolean): number => (summarising ? 0 : stepReasoningRoom(ctx));
+
+const admissionOf = (ctx: ClaimContext, built: BuiltContext, quote: ModelQuote | undefined, summarising: boolean): StepAdmission => {
+  const room = reasoningRoomOf(ctx, summarising);
+  return admissionFor(
+    ctx.budget,
+    { inputTokens: built.inputTokens, marginTokens: built.budget.margin, maxOutputTokens: built.maxOutputTokens + room, ...(room === 0 ? {} : { outputFloor: room + OUTPUT_FLOOR_TOKENS }) },
+    quote,
+  );
+};
 
 const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Promise<Flow> => {
   if (reason === 'max_output_tokens') return terminals.finish('STOPPED', { stopReason: 'max_tokens' });
@@ -390,6 +400,12 @@ const loopGuidanceTrailing = (ctx: ClaimContext): InputItem[] => {
   ];
 };
 
+const reasoningOf = (ctx: ClaimContext, summarising: boolean): { reasoning?: { effort: ReasoningEffort } } => {
+  if (summarising) return { reasoning: { effort: LOWEST_REASONING_EFFORT } };
+  const sent = stepReasoningEffort(ctx);
+  return sent === undefined ? {} : { reasoning: { effort: sent } };
+};
+
 export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { journal, terminals, options } = ctx;
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
@@ -399,12 +415,12 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   let exhausted = stepsExhausted(journal.state.step, ctx.limits.maxSteps);
   let outcome = await buildNext(ctx, { ...(exhausted === undefined ? {} : { wrapUp: stopReasonOf(exhausted) }), trailing });
   if (outcome.kind === 'done') return 'done';
-  let admission = admissionOf(ctx, outcome.built, quote);
+  let admission = admissionOf(ctx, outcome.built, quote, exhausted !== undefined || outcome.wrapUp !== undefined);
   if (admission.kind === 'exhausted' && exhausted === undefined && outcome.wrapUp === undefined && admission.exhausted.cause !== 'unpriced') {
     exhausted = admission.exhausted;
     outcome = await buildNext(ctx, { wrapUp: stopReasonOf(exhausted), trailing });
     if (outcome.kind === 'done') return 'done';
-    admission = admissionOf(ctx, outcome.built, quote);
+    admission = admissionOf(ctx, outcome.built, quote, true);
   }
   if (admission.kind === 'lease_lost') return terminals.yieldLease();
   if (admission.kind === 'exhausted') return stopExhausted(ctx, exhausted ?? admission.exhausted);
@@ -417,8 +433,8 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     tools: built.tools,
     ...(summarising ? { tool_choice: 'none' as const } : ctx.toolLess ? {} : { tool_choice: 'auto' as const }),
     ...(ctx.capabilities.parallelToolCalls === undefined || ctx.toolLess ? {} : { parallel_tool_calls: ctx.capabilities.parallelToolCalls }),
-    ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
-    ...outputBoundOf(ctx.capabilities, admission.maxOutputTokens),
+    ...reasoningOf(ctx, summarising),
+    ...outputBoundOf(ctx.capabilities, admission.maxOutputTokens - reasoningRoomOf(ctx, summarising)),
     store: false,
     stream: true,
     metadata: { run_id: ctx.run.id, step: String(step) },

@@ -22,6 +22,7 @@ import { ruleCommand } from './rule.ts';
 import { shellSlashCommands } from './shell-commands.ts';
 import { skillsCommand } from './skills.ts';
 import { themeCommand } from './theme.ts';
+import { effortCommand } from './effort.ts';
 import { tuiCommand } from './tui.ts';
 
-export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, delegateCommand, resumeCommand, autoModeCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, modelsCommand, initCommand, reportCommand, copyCommand, skillsCommand, agentsCommand, networkCommand, ...shellSlashCommands];
+export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, delegateCommand, resumeCommand, autoModeCommand, effortCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, modelsCommand, initCommand, reportCommand, copyCommand, skillsCommand, agentsCommand, networkCommand, ...shellSlashCommands];

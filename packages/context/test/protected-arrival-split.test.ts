@@ -10,7 +10,7 @@ const NESTED = '/proj/sub/AGENTS.md';
 const ARRIVAL_CONTENT = `Contents of ${NESTED}:\n${'r'.repeat(4000)}`;
 const arrivalItem = (seq: number): HistoryItem => ({ seq, item: { type: 'message', role: 'developer', content: ARRIVAL_CONTENT } satisfies InputItem });
 
-const inputWith = (history: HistoryItem[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({
+const inputWith = (history: HistoryItem[], extra: Partial<BuildContextInput> = {}): BuildContextInput => ({ reasoningRoom: 0,
   capabilities,
   fence: TEST_FENCE,
   model: MODEL,

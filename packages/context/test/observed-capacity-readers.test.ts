@@ -45,6 +45,7 @@ type Setup = { task?: MessageInputItem; tools?: readonly FunctionTool[]; skills?
 
 const inputWith = (capabilities: Capabilities, { task, tools, skills, observed }: Setup): BuildContextInput => {
   const input: BuildContextInput & { observedCapacity?: true } = {
+    reasoningRoom: 0,
     capabilities,
     fence: TEST_FENCE,
     model: MODEL,
@@ -113,13 +114,13 @@ describe('the pinned errors read C at admission (4.7, readers of C)', () => {
 
     const observed = await measurePinned(inputWith(estimated, { task, observed: true }), portsWith(nothingUnder));
 
-    expect(observed.ceiling).toBe(budgetFor(estimated, 0).I);
+    expect(observed.ceiling).toBe(budgetFor(estimated, 0, 0).I);
   });
 });
 
 describe('a skill activation is admitted against C (4.7, readers of C; skill-admission.ts)', () => {
   it('admits a skill whose instructions fit C but not the static ceiling', async () => {
-    const between = Math.floor((inputCeilingFor(estimated) + budgetFor(estimated, 0).I) / 2);
+    const between = Math.floor((inputCeilingFor(estimated) + budgetFor(estimated, 0, 0).I) / 2);
     const skills: ActivatedSkill[] = [{ name: 'big', content: 's'.repeat(between - systemWeight - weightOf(emptyTask)) }];
     const atStatic = await measureLayers(inputWith(estimated, { skills, observed: false }), portsWith(nothingUnder)).catch((caught: unknown) => caught);
     const atC = await measureLayers(inputWith(exactAtWholeBudget, { skills, observed: false }), portsWith(nothingUnder)).catch((caught: unknown) => caught);

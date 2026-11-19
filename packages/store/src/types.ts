@@ -6,6 +6,7 @@ import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type { UnaskedCommands } from './inherit.ts';
+import type { ReasoningEffort } from '@momonga/protocol';
 import type {
   ApprovalShown,
   CallFootprint,
@@ -67,6 +68,7 @@ export type Session = {
   env: Record<string, string>;
   permissionMode: Stored<PermissionMode>;
   model: string;
+  effort: Stored<ReasoningEffort> | null;
   bypassAllowed: boolean;
   sandboxNetwork: SandboxNetworkSetting | null;
   additionalDirectories: readonly string[];
@@ -86,6 +88,7 @@ export type CreateSessionInput = {
   env: Record<string, string>;
   permissionMode: PermissionMode;
   model: string;
+  effort?: ReasoningEffort;
   bypassAllowed?: boolean;
   sandboxNetwork?: SandboxNetworkSetting;
   additionalDirectories?: readonly string[];
@@ -203,6 +206,7 @@ export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | {
 export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 
 export type SetModelResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
+export type SetEffortResult = { kind: 'ok'; session: Session } | NotFound;
 export type SetSessionMcpServersResult = { kind: 'ok'; session: Session } | NotFound;
 export type ResolveApprovalResult =
   | { kind: 'ok'; approval: Approval; run: Run }
@@ -663,6 +667,7 @@ export type RuntimeStore = {
   requestCancel(runId: string): Promise<RequestCancelResult>;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
   setModel(sessionId: string, model: string): SetModelResult;
+  setEffort(sessionId: string, effort: ReasoningEffort | null): SetEffortResult;
   setSessionMcpServers(sessionId: string, servers: SessionMcpServers): SetSessionMcpServersResult;
   listRuns(sessionId: string, statuses?: readonly RunStatus[]): Run[];
   appendAsService(
@@ -924,6 +929,7 @@ export type ChildRunInput = {
   input: string;
   pins: Record<string, unknown>;
   model: string;
+  effort?: ReasoningEffort;
 };
 
 export type CreateChildRunResult =

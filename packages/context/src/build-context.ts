@@ -167,7 +167,7 @@ const requiredToolsOf = (input: BuildContextInput, candidates: readonly Function
 
 const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: readonly FunctionTool[]) => {
   const { capabilities } = input;
-  const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.underAt(counted.inputTokens));
+  const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.underAt(counted.inputTokens), input.reasoningRoom);
   const fits = (counted: MeterCount): boolean => counted.inputTokens <= budgetOf(counted).I;
   const countInput = (items: readonly InputItem[], sent?: true): Promise<MeterCount> =>
     ports.meter.count({ input: items, tools, ...(sent === undefined ? {} : { sent }) });
@@ -1063,7 +1063,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const cachePrefix = input.layout === 'cachePrefix';
   const admitted = admittedFloor(input);
   let total = await measureAssembled();
-  const inputBudgetAtZero = budgetFor(capabilities, 0).I;
+  const inputBudgetAtZero = budgetFor(capabilities, 0, input.reasoningRoom).I;
   const boundOfBuild = (tokens: number): number => counts.reduce((widest, counted) => Math.max(widest, counted.underAt(tokens)), 0);
   const exactHighMark = (): number => floorTokens + floorRatio(COMPACT_AT, ceiling - floorTokens);
   const pinnedBoundError = async (maxInput: number | undefined, boundAtZero: number): Promise<PinnedBoundError> =>
@@ -1107,7 +1107,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   }
 
   if (!fits(total)) {
-    const inputBudget = budgetFor(capabilities, 0).I;
+    const inputBudget = budgetFor(capabilities, 0, input.reasoningRoom).I;
     const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.freshUnderAt });
     if (!admitted && (maxInput === undefined || maxInput < pinnedTokens)) throw await pinnedBoundError(maxInput, total.underAt(0));
     const outcome = await compactionFor('forced', maxInput === undefined ? total.inputTokens : total.inputTokens - maxInput);

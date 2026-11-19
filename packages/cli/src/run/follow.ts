@@ -1,6 +1,6 @@
 import { computeBackoff } from '@momonga/foundation';
 import { TERMINAL_STATUSES, isOpaqueEvent } from '@momonga/protocol';
-import type { RunStatus } from '@momonga/protocol';
+import type { ReasoningEffort, RunStatus } from '@momonga/protocol';
 import { RECONNECT_FIRST_RETRY_MS, RECONNECT_MAX_INTERVAL_MS } from '../constants.ts';
 import { DaemonMoved } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -141,7 +141,7 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
 
 export type ChildFrameHandler = (frame: RunEventFrame, agent: string) => void;
 
-export type ChildStartHandler = (agent: string, runId: string, backlog: number, model: string) => void;
+export type ChildStartHandler = (agent: string, runId: string, backlog: number, model: string, effort: ReasoningEffort | undefined) => void;
 
 export type ChildEnd = { readonly kind: 'finished'; readonly run: RunView } | { readonly kind: 'failed'; readonly error: unknown };
 
@@ -188,9 +188,9 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
     let started = false;
     const opened = async (): Promise<RunView> => {
       const { lastSeq, sessionId } = await client.getRun(childRunId);
-      const { model } = await client.getSession(sessionId);
+      const { model, effort } = await client.getSession(sessionId);
       started = true;
-      options.onChildStarted?.(agent, childRunId, lastSeq, model);
+      options.onChildStarted?.(agent, childRunId, lastSeq, model, effort);
       return followRun({
         client,
         clock: options.clock,

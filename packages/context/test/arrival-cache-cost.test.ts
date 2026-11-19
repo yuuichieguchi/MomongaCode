@@ -65,7 +65,7 @@ const historyFor = (requestStep: number, arrivalStep: number, placement: Placeme
 const inputFor = (requestStep: number, arrivalStep: number, placement: Placement, layout: Layout): BuildContextInput => {
   const arrived = requestStep >= arrivalStep;
   const cachePrefix = layout === 'cachePrefix';
-  return {
+  return { reasoningRoom: 0,
     capabilities,
     fence: TEST_FENCE,
     model: MODEL,

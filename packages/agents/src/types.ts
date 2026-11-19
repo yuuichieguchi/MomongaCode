@@ -1,4 +1,4 @@
-import type { Mandate, RunReport } from '@momonga/protocol';
+import type { Mandate, ReasoningEffort, RunReport } from '@momonga/protocol';
 import type { AnyTool } from '@momonga/tools';
 
 export type AgentFileScope = 'project' | 'user';
@@ -11,6 +11,7 @@ type AgentFields = {
   prompt: string;
   tools?: readonly string[];
   model?: string;
+  effort?: ReasoningEffort;
   mandate?: Mandate;
 };
 
@@ -26,6 +27,7 @@ export type AgentPin = {
   prompt: string;
   tools?: string[];
   model?: string;
+  effort?: ReasoningEffort;
   mandate?: Mandate;
 };
 

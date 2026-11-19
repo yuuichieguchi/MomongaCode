@@ -133,6 +133,12 @@ export const clampReasoningEffort = (requested: ReasoningEffort, accepted: reado
   return ladder.findLast((level) => REASONING_EFFORTS.indexOf(level) <= rank) ?? lowest;
 };
 
+export const sentReasoningEffort = (reasoning: ReasoningCapability | undefined, chosen: ReasoningEffort | undefined): ReasoningEffort | undefined => {
+  if (chosen === undefined || reasoning === undefined) return undefined;
+  const accepted = acceptedReasoningEfforts(reasoning);
+  return accepted.some((level) => level !== 'none') ? clampReasoningEffort(chosen, accepted) : undefined;
+};
+
 export type OutputTokenCapabilities = { maxOutputTokens: number; reasoning?: ReasoningCapability | undefined };
 
 export const thinkingBudgetFor = (reasoning: ThinkingCapability, level: ReasoningEffort): number | undefined =>

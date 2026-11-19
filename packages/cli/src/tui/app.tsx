@@ -3,7 +3,7 @@ import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, escapeTerminalLine, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
-import type { ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { ReasoningEffort, ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
@@ -69,6 +69,7 @@ import { watchFileLinks } from './screen/file-link-watch.ts';
 import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf, viewTargetsOf } from './screen/subagents.tsx';
 import type { ViewTarget } from './screen/subagents.tsx';
 import { agentHeader, createAgentViews, endStateOf } from './screen/agent-views.ts';
+import { declaredReasoning, effortChoiceText, sentEffort } from './effort.ts';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
@@ -264,6 +265,11 @@ export function App(props: AppProps) {
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
   const [sessionModel, setSessionModel] = useState<string | undefined>(undefined);
+  const [sessionEffort, setSessionEffort] = useState<ReasoningEffort | undefined>(undefined);
+  const entriesRef = useRef<readonly MomongaModelEntry[]>([]);
+  const sessionEffortRef = useRef<ReasoningEffort | undefined>(undefined);
+  const effortNotedRef = useRef(false);
+  const [entriesVersion, setEntriesVersion] = useState(0);
   const [notices, setNotices] = useState<readonly string[]>([]);
   const [displays, setDisplays] = useState<ReadonlyMap<string, string>>(new Map());
   const displaysRef = useRef<ReadonlyMap<string, string>>(new Map());
@@ -451,7 +457,10 @@ export function App(props: AppProps) {
   const shownModel = (stored: string): string => displaysRef.current.get(stored) ?? stored;
 
   const readDisplays = async (): Promise<ReadonlyMap<string, string>> => {
-    const read = displayMapOf(listingViewsOf(await backend.models()));
+    const entries = await backend.models();
+    entriesRef.current = entries;
+    setEntriesVersion((version) => version + 1);
+    const read = displayMapOf(listingViewsOf(entries));
     displaysRef.current = read;
     setDisplays(read);
     store.update({ shownModels: read });
@@ -461,7 +470,26 @@ export function App(props: AppProps) {
   const bannerOf = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): StartupBanner | undefined =>
     props.startup === undefined ? undefined : { config: props.startup, model: shownModel, cwd: backend.cwd, notices: shownNotices, figure };
 
-  const connectedModel = (stored: string): BannerModel => ({ kind: 'connected', name: shownModel(stored) });
+  const connectedModel = (stored: string, chosen?: ReasoningEffort): BannerModel => {
+    const effort = sentEffort(entriesRef.current, stored, chosen);
+    return { kind: 'connected', name: shownModel(stored), ...(effort === undefined ? {} : { effort }) };
+  };
+
+  const noteEffortChoice = (model: string, chosen: ReasoningEffort | undefined): void => {
+    if (chosen === undefined || effortNotedRef.current) return;
+    const declared = declaredReasoning(entriesRef.current, model);
+    if (!declared.known) return;
+    effortNotedRef.current = true;
+    const text = effortChoiceText(declared, chosen, shownModel(model));
+    if (text !== undefined) note(text);
+  };
+
+  const applyEffort = async (chosen: ReasoningEffort): Promise<void> => {
+    const session = await backend.setEffort(chosen);
+    sessionEffortRef.current = session.effort;
+    setSessionEffort(session.effort);
+    note(`effort: ${chosen}; applies from the next run`);
+  };
 
   const showBanner = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): void => {
     const banner = bannerOf(shownModel, shownNotices, figure);
@@ -477,7 +505,7 @@ export function App(props: AppProps) {
     chooseRow(undefined);
     store.reset();
     renewHistory();
-    if (sessionModelRef.current !== undefined) showBanner(connectedModel(sessionModelRef.current), notices, true);
+    if (sessionModelRef.current !== undefined) showBanner(connectedModel(sessionModelRef.current, sessionEffortRef.current), notices, true);
   };
 
   const switchScreen = async (next: ScreenMode): Promise<void> => {
@@ -514,6 +542,9 @@ export function App(props: AppProps) {
   const showModel = (entry: MomongaModelEntry, announce = true): void => {
     endMeasuring();
     setModel(entry);
+    entriesRef.current = [...entriesRef.current.filter((known) => known.id !== entry.id), entry];
+    setEntriesVersion((version) => version + 1);
+    if (announce && entry.id === sessionModelRef.current) noteEffortChoice(entry.id, sessionEffortRef.current);
     const readiness = agentReadiness(entry.capabilities);
     if (readiness.state === 'probing') {
       setMeasuring({ since: now(), state: readiness.measuring });
@@ -530,12 +561,16 @@ export function App(props: AppProps) {
     setModeState(session.permissionMode);
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
+    setSessionEffort(session.effort);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
     const configured = (await readDisplays()).has(session.model);
     unconfiguredModel.current = !configured;
-    showBanner(connectedModel(session.model), notices, true);
+    sessionEffortRef.current = session.effort;
+    effortNotedRef.current = false;
+    showBanner(connectedModel(session.model, session.effort), notices, true);
     const announce = !startsFromRecord.current;
+    if (announce) noteEffortChoice(session.model, session.effort);
     if (announce) showAutoNotice(session);
     enterPhase({ kind: 'ready' });
     endMeasuring();
@@ -801,9 +836,9 @@ export function App(props: AppProps) {
           views.event(event);
           if (key !== undefined) replay?.notes?.after(key);
         }),
-      onChildStarted: (agent, childRunId, backlog, model) =>
+      onChildStarted: (agent, childRunId, backlog, model, effort) =>
         deliver(() => {
-          views.started(agent, childRunId, backlog, model);
+          views.started(agent, childRunId, backlog, model, effort);
           subagentStarted(store, agent, childRunId, now());
         }),
       onChildEnded: (_agent, childRunId, end) =>
@@ -1137,6 +1172,9 @@ export function App(props: AppProps) {
     const ran = command.run(parsed.args, {
       mode,
       model: sessionModel,
+      effort: sessionEffort,
+      shownModel,
+      setEffort: applyEffort,
       found,
       wait: waitFor,
       toast: (text) => view.showToast(text),
@@ -1287,7 +1325,7 @@ export function App(props: AppProps) {
   const beforeConversation = phase.kind === 'trust' || phase.kind === 'welcome';
   const syncBanner = useEffectEvent((): void => {
     if (sessionModel === undefined ? unconnected || beforeConversation : store.byKey(BANNER_KEY) !== undefined)
-      showBanner(sessionModel === undefined ? { kind: 'not-connected', login: unconnected } : { kind: 'connected', name: displays.get(sessionModel) ?? sessionModel }, notices, figureFits);
+      showBanner(sessionModel === undefined ? { kind: 'not-connected', login: unconnected } : connectedModel(sessionModel, sessionEffort), notices, figureFits);
   });
 
   const measured = useEffectEvent((entry: MomongaModelEntry): void => showModel(entry));
@@ -1715,6 +1753,7 @@ export function App(props: AppProps) {
             agent: shownAgent.agent,
             state: shownAgent.loading !== undefined ? loadingText(shownAgent.loading.applied, shownAgent.loading.backlog) : shownAgent.end !== undefined ? endStateOf(shownAgent.end) : awaitingApproval ? 'waiting for approval' : 'running',
             model: shownModel(viewed.state().answeringTarget ?? shownAgent.model),
+            effort: sentEffort(entriesRef.current, shownAgent.model, shownAgent.effort, viewed.state().answeringTarget),
           },
           columns,
         );
@@ -1746,7 +1785,7 @@ export function App(props: AppProps) {
   const figureFits = followedStart === undefined ? conversationArea : panelRows !== undefined && bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
   useEffect(() => {
     syncBanner();
-  }, [sessionModel, notices, unconnected, beforeConversation, displays, figureFits]);
+  }, [sessionModel, sessionEffort, entriesVersion, notices, unconnected, beforeConversation, displays, figureFits]);
   const tailPose = useTailWag(!a11y.reducedMotion && !a11y.screenReader && props.reopen === undefined && props.adoption === undefined && loading === undefined && onlyEntry?.kind === 'banner' && figureDrawn(onlyEntry.banner, transcriptWidth), timers);
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const view = useTranscriptView({

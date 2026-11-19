@@ -109,3 +109,14 @@ describe('what the consumers accept still loads', () => {
     expect(() => validatePriceTable(pricing)).not.toThrow();
   });
 });
+
+describe('models.effort', () => {
+  it('loads a level of the reasoning effort ladder into the resolved models', async () => {
+    const { models } = await loadFile({ models: { connections: [ollamaConnection('http://127.0.0.1:11434')], effort: 'high' } });
+    expect(models).toMatchObject({ effort: 'high' });
+  });
+
+  it('refuses a value that is not a level', async () => {
+    await refusedAt({ models: { connections: [ollamaConnection('http://127.0.0.1:11434')], effort: 'huge' } }, '/models/effort', /must be equal to one of the allowed values|one of/);
+  });
+});

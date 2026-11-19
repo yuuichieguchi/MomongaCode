@@ -93,7 +93,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
   const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
     const origin = permissions.defaultModeOrigin;
-    const { classifier } = snapshot.settings.models;
+    const { classifier, effort } = snapshot.settings.models;
     const autoModeKey = await autoFitKeyFor(snapshot.settings, signal);
     return {
       ...(permissions.defaultMode === undefined ? {} : { defaultMode: permissions.defaultMode }),
@@ -103,6 +103,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
       ...(hasCredentialRules(credentialRulesOf(snapshot.settings.credentials)) ? { credentials: credentialRulesOf(snapshot.settings.credentials) } : {}),
       ...(classifier === undefined ? {} : { autoModeClassifier: classifier }),
       ...(autoModeKey === undefined ? {} : { autoModeKey }),
+      ...(effort === undefined ? {} : { effort }),
     };
   };
 

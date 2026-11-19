@@ -5,6 +5,7 @@ import { anything, boolean, boundedInteger, closed, constant, enumOf, integer, n
 import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
 import { SURFACES } from './vocabulary.ts';
+import { REASONING_EFFORTS } from './capabilities.ts';
 import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, REPORT_ANOMALY_CAUSES, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -1545,11 +1546,12 @@ export const RUN_API_SCHEMAS = {
         sandboxNetwork: enumOf(SESSION_SANDBOX_NETWORKS),
         mcpServers: sessionMcpServers,
         terminalUi: boolean,
+        effort: enumOf(REASONING_EFFORTS),
       },
       ['cwd', 'env'],
     ),
   ),
-  PatchSessionRequest: root({ ...closed({ permissionMode, model: { type: 'string', minLength: 1 }, mcpServers: sessionMcpServers }, []), minProperties: 1 }),
+  PatchSessionRequest: root({ ...closed({ permissionMode, model: { type: 'string', minLength: 1 }, mcpServers: sessionMcpServers, effort: nullable(enumOf(REASONING_EFFORTS)) }, []), minProperties: 1 }),
   CreateRunRequest: root(
     closed(
       {
@@ -1678,6 +1680,7 @@ export const RUN_API_SCHEMAS = {
         cwd: string,
         permissionMode: storedPermissionMode,
         model: string,
+        effort: storedEnumOf(REASONING_EFFORTS),
         bypassAllowed: boolean,
         createdAt: integer,
         envKeys: { type: 'array', items: string },

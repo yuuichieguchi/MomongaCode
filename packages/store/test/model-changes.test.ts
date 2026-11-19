@@ -51,3 +51,26 @@ describe('readModelChanges', () => {
     expect(plan).toContain('events_model_changes');
   });
 });
+
+describe('the reasoning effort of a session', () => {
+  it('is unset on a new session, is set and unset by setEffort, and is read back from the row', () => {
+    const h = harness();
+    const session = newSession(h.store);
+    expect(session.effort).toBeNull();
+    const set = h.store.setEffort(session.id, 'high');
+    expect(set.kind === 'ok' && set.session.effort).toBe('high');
+    expect(h.store.getSession(session.id)?.effort).toBe('high');
+    h.store.setEffort(session.id, null);
+    expect(h.store.getSession(session.id)?.effort).toBeNull();
+    expect(h.store.setEffort('missing', 'low').kind).toBe('not_found');
+  });
+
+  it('gives a child run the effort it is created with on its own session', async () => {
+    const h = harness();
+    const session = newSession(h.store);
+    const parent = await enqueue(h.store, session.id);
+    mustClaim(h.store, 'w1');
+    const created = await h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c', input: 'x', pins: {}, model: session.model, effort: 'low' });
+    expect(created.kind === 'created' && created.session.effort).toBe('low');
+  });
+});

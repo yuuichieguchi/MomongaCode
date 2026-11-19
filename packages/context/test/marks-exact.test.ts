@@ -14,7 +14,7 @@ const portsWith = (meter = weightMeter()) => ({ meter, blobs: fakeBlobs(), instr
 
 const buildWith = (capabilities: Capabilities, history: HistoryItem[], extra: Partial<Parameters<typeof buildContext>[0]> = {}) =>
   buildContext(
-    {
+    { reasoningRoom: 0,
       capabilities,
       fence: TEST_FENCE,
       model: MODEL,
@@ -174,7 +174,7 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
     expect(previousSummaryPlus(newHistory)).toBeGreaterThanOrEqual(2 * summaryItemTokens);
 
     const built = await buildContext(
-      {
+      { reasoningRoom: 0,
         capabilities: proactiveCapabilities,
         model: MODEL,
         sources: sourcesWith({ history, summary }),
@@ -199,7 +199,7 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
     const { history, summary, highMark } = proactiveCase(newHistory);
 
     const built = await buildContext(
-      {
+      { reasoningRoom: 0,
         capabilities: proactiveCapabilities,
         model: MODEL,
         sources: sourcesWith({ history, summary }),

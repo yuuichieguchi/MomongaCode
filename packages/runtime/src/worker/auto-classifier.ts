@@ -74,7 +74,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
     const capabilities = await gateway.capabilities(classifier, { signal: ctx.control.signal });
     const input = [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: userPromptOf(ctx, cwd, request) }] }];
     const counted = await gateway.countTokens({ model: classifier, input, instructions: CLASSIFIER_INSTRUCTIONS, momonga: { ...EXACT_MODEL } }, { signal: ctx.control.signal });
-    if (counted.input_tokens > budgetFor(capabilities, counted.error_bound).I) {
+    if (counted.input_tokens > budgetFor(capabilities, counted.error_bound, 0).I) {
       return asked({ model: classifier, failure: `the tool call does not fit the context window of ${displayOf(view, views)}` });
     }
     const size = { inputTokens: counted.input_tokens, marginTokens: counted.error_bound, maxOutputTokens: outputReserveFor(capabilities) };

@@ -66,12 +66,14 @@ export const createChildRuns = ({ store, modelViews }: ChildRunsOptions): ChildR
       const parentPins = parentPinsOf(store, parentRunId);
       const model = agent.model === undefined ? parentPins.model : agentModelOf(agent.name, agent.model, await modelViews());
       const delegated = parentPins.delegation;
+      const effort = agent.effort ?? parentPins.effort;
       const created = await store.createChildRun({
         parentRunId,
         parentCallId,
         input: prompt,
         pins: { agent: pinOf(agent), ...(delegated === undefined ? {} : { mandate: { scope: delegated.scope, ...(delegated.hold === undefined ? {} : { hold: delegated.hold }) } }) },
         model,
+        ...(effort === undefined ? {} : { effort }),
       });
       if (created.kind === 'parent_not_active') throw new ChildRunError(`A subagent cannot start because the run is ${created.status}`);
       return outcomeOf(created.run);

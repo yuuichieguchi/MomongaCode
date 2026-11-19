@@ -1,6 +1,6 @@
 import type { ExternalEditorPort } from './external-editor.ts';
 import { ModelRefError, PERMISSION_MODE_DESCRIPTIONS, displayMapOf } from '@momonga/protocol';
-import type { Mandate, MomongaModelEntry, PermissionMode } from '@momonga/protocol';
+import type { Mandate, MomongaModelEntry, PermissionMode, ReasoningEffort } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
 import { selectableModes } from '../modes.ts';
@@ -38,6 +38,9 @@ export type ClipboardTextPort = { selected(): SelectedText | undefined; lastAnsw
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
   readonly model: string | undefined;
+  readonly effort: ReasoningEffort | undefined;
+  shownModel(model: string): string;
+  setEffort(effort: ReasoningEffort): Promise<void>;
   readonly found: FoundServers;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   toast(text: string): void;

@@ -54,7 +54,7 @@ describe('budget formulas at maxOutputTokens 1024 with estimated counting', () =
     { window: 200000, R: 1024, margin: 4000, I: 194976, ceiling: 149981, itemCap: 48744, summaryCap: 4096 },
   ])('a $window-token window has R $R, margin $margin, I $I and ceiling $ceiling', (row) => {
     const capabilities = capabilitiesFor(row.window, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
-    expect(budgetFor(capabilities, 0)).toEqual({ W: row.window, R: row.R, margin: row.margin, I: row.I });
+    expect(budgetFor(capabilities, 0, 0)).toEqual({ W: row.window, R: row.R, margin: row.margin, I: row.I });
     expect(outputReserveFor(capabilities)).toBe(row.R);
     expect(marginFloorFor(row.window)).toBe(row.margin);
     expect(inputCeilingFor(capabilities)).toBe(row.ceiling);
@@ -64,7 +64,7 @@ describe('budget formulas at maxOutputTokens 1024 with estimated counting', () =
 
   it.for([0, 7, 300])('adds the error bound %i on top of the margin floor', (errorBound) => {
     const capabilities = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
-    expect(budgetFor(capabilities, errorBound)).toEqual({ W: 4096, R: 1024, margin: 82 + errorBound, I: 2990 - errorBound });
+    expect(budgetFor(capabilities, errorBound, 0)).toEqual({ W: 4096, R: 1024, margin: 82 + errorBound, I: 2990 - errorBound });
   });
 });
 
@@ -80,6 +80,6 @@ describe('outputReserveFor by literal values', () => {
   ] as const)('a %i-token window with maxOutputTokens %i reserves %i', ([window, maxOutputTokens, reserve]) => {
     const capabilities = capabilitiesFor(window, { maxOutputTokens });
     expect(outputReserveFor(capabilities)).toBe(reserve);
-    expect(budgetFor(capabilities, 0).R).toBe(reserve);
+    expect(budgetFor(capabilities, 0, 0).R).toBe(reserve);
   });
 });

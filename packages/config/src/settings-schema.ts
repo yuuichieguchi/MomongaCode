@@ -548,6 +548,7 @@ export const SETTINGS_SCHEMA = {
       properties: {
         connections: { type: 'array', items: MODEL_CONNECTION_SCHEMA },
         start: MODEL_REFERENCE_SCHEMA,
+        effort: { type: 'string', enum: [...REASONING_EFFORTS] },
         fallback: { type: 'array', items: MODEL_REFERENCE_SCHEMA },
         servers: {
           type: 'object',

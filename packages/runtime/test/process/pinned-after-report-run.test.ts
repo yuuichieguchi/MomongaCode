@@ -49,7 +49,7 @@ describe('the pinned part admitted at run start, after the server reports it wit
     const [firstObserved] = payloadsOf(rows, 'meter.observed');
     expect(firstObserved).toMatchObject({ itemCount: 2, miss: 0 });
     expect(firstObserved?.['counted']).toBeLessThanOrEqual(ceiling - MIN_ROOM_TOKENS);
-    expect(firstObserved?.['reported'] + MIN_ROOM_TOKENS).toBeLessThanOrEqual(budgetFor(capabilities, 0).I);
+    expect(firstObserved?.['reported'] + MIN_ROOM_TOKENS).toBeLessThanOrEqual(budgetFor(capabilities, 0, 0).I);
     expect(firstObserved?.['reported']).toBeGreaterThan(ceiling - MIN_ROOM_TOKENS);
 
     expect((await launched.http('GET', `/v1/runs/${run.id}`)).json.run.error).toBeUndefined();

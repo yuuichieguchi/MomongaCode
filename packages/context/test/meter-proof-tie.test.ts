@@ -19,7 +19,7 @@ describe('the meter agrees with the B8m counterexample of meter-sides.test.ts', 
 
     const counted = await meter.count({ input: [piece('p', 0), piece('n', 4)], tools: [] });
 
-    const I0 = budgetFor(capabilitiesFor(76, capabilities), 0).I;
+    const I0 = budgetFor(capabilitiesFor(76, capabilities), 0, 0).I;
     expect(marginFloorFor(76)).toBe(32);
     expect(outputReserveFor({ contextWindow: 76, maxOutputTokens: 39 })).toBe(38);
     expect(I0).toBe(6);

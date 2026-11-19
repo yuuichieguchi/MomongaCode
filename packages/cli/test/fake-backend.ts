@@ -9,7 +9,7 @@ import { isTerminalStatus } from '../src/run/follow.ts';
 import { continuedSession, resolveSession } from '../src/run/resolve-session.ts';
 import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } from '../src/tui/backend.ts';
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
-import type { UserShellRecord } from '@momonga/protocol';
+import type { ReasoningCapability, ReasoningEffort, UserShellRecord } from '@momonga/protocol';
 import { editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
@@ -19,6 +19,7 @@ import type { FileLinkPorts } from '../src/tui/screen/file-links.ts';
 import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
 import { listingOf } from './models-shell-harness.ts';
+import { PROBING_PLAN } from './fake-models-listing.ts';
 import type { AgentView, McpServerView } from '@momonga/protocol';
 import { createFromTemplate } from '../src/tui/file-templates.ts';
 import { pendingProjectServerOf } from '../src/tui/project-items.ts';
@@ -124,6 +125,8 @@ export type FakeBackendOptions = {
   models?: readonly string[];
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
+  reasoning?: Readonly<Record<string, ReasoningCapability>>;
+  listedProbing?: boolean;
   conversations?: readonly FakeConversation[];
   settingsPlace?: { home: string; projectDir: string };
   files?: readonly string[];
@@ -289,7 +292,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     const toolCalling = options.toolCalling?.[model];
     return toolCalling === undefined ? {} : { toolCalling };
   };
-  const listedCapabilities = (model: string): Capabilities => ({ ...capabilitiesOf({ contextWindow: options.windows?.[model] ?? options.contextWindow ?? 8192 }), ...toolCallingOf(model) });
+  const reasoningOf = (model: string): { reasoning?: ReasoningCapability } => {
+    const reasoning = options.reasoning?.[model];
+    return reasoning === undefined ? {} : { reasoning };
+  };
+  const listedCapabilities = (model: string): Capabilities => ({ ...capabilitiesOf({ contextWindow: options.windows?.[model] ?? options.contextWindow ?? 8192 }), ...toolCallingOf(model), ...reasoningOf(model) });
 
   let modelsHome: string | undefined;
   const homeOfModels = (): string => {
@@ -301,7 +308,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const secrets = new Map<string, string>();
   const listings: number[] = [];
   const listedModels = async (): Promise<MomongaModelEntry[]> => {
-    const scripted = (options.models ?? [session.model]).map((id) => listedEntryOf(id, listedCapabilities(id), options.chain ?? [id]));
+    const scripted = (options.models ?? [session.model]).map((id) => listedEntryOf(id, options.listedProbing === true ? PROBING_PLAN : listedCapabilities(id), options.chain ?? [id]));
     const written = modelsHome !== undefined && fs.existsSync(modelsFile()) ? listingOf(modelsHome).data : [];
     return [...scripted, ...written.filter((entry) => !scripted.some((other) => other.id === entry.id))];
   };
@@ -435,6 +442,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     storeSecret: async (name, value) => {
       record(`secret:${name}`);
       secrets.set(name, value);
+    },
+    setEffort: async (effort: ReasoningEffort) => {
+      record(`effort:${effort}`);
+      session = { ...session, effort };
+      return session;
     },
     setModel: async (model: string) => {
       record(`model:${model}`);
@@ -610,7 +622,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
-      const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model) };
+      const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model), ...reasoningOf(session.model) };
       return listedEntryOf(session.model, capabilities, options.chain ?? [session.model]);
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],

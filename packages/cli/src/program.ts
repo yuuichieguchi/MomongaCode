@@ -2,8 +2,8 @@ import { colourOffWhenAsked } from './tui/screen/theme.ts';
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import { EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE, HELPER_COMMAND, LONGEST_LIMIT_MS, SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { EntryIo, SandboxNetworkSetting } from '@momonga/foundation';
-import { DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, PROMPT_TEXT_MAX_CHARS, TRACE_CONTENT_PAGE_OPTION, issueRunInput, messageOf, probeStepBoundMs } from '@momonga/protocol';
-import type { Mandate, PermissionMode } from '@momonga/protocol';
+import { REASONING_EFFORTS, DEFAULT_PROBE_STEP_SECONDS, PERMISSION_MODES, PROMPT_TEXT_MAX_CHARS, TRACE_CONTENT_PAGE_OPTION, issueRunInput, messageOf, probeStepBoundMs } from '@momonga/protocol';
+import type { Mandate, PermissionMode, ReasoningEffort } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
 import { registerProductCommands } from './commands/register.ts';
@@ -64,6 +64,7 @@ type RootOptions = {
   outputFormat: OutputFormat;
   permissionMode?: PermissionMode;
   model?: string;
+  effort?: ReasoningEffort;
   dangerouslySkipPermissions?: true;
   sandboxNetwork?: SandboxNetworkSetting;
   skill?: string;
@@ -195,6 +196,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .addOption(outputFormatOption())
     .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
     .option('--model <model>', 'the model of the session, for example devstral-small-2 (momonga models lists them; /model switches it in an interactive session)')
+    .addOption(new Option('--effort <level>', 'the reasoning effort the session asks of its model, sent only to a model that declares a reasoning control and moved to the nearest level it accepts (/effort changes it in an interactive session)').choices(REASONING_EFFORTS))
     .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
     .addOption(new Option('--sandbox-network <setting>', 'the network of a sandboxed command in this session: deny, ask or allow; wins over the setting sandboxNetwork').choices(SANDBOX_NETWORK_SETTINGS))
     .option('--skill <name>', 'run the prompt with this skill activated')
@@ -224,6 +226,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
       const session = {
         ...(permissionMode === undefined ? {} : { permissionMode }),
         ...(options.model === undefined ? {} : { model: options.model }),
+        ...(options.effort === undefined ? {} : { effort: options.effort }),
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
         ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       };

@@ -207,7 +207,7 @@ const candidateHistory = (capabilities: ReturnType<typeof capabilitiesFor>): His
   return withPad(pad);
 };
 
-const candidateInput = (capabilities: ReturnType<typeof capabilitiesFor>): BuildContextInput => ({
+const candidateInput = (capabilities: ReturnType<typeof capabilitiesFor>): BuildContextInput => ({ reasoningRoom: 0,
   capabilities,
   model: MODEL,
   sources: sourcesWith({ history: candidateHistory(capabilities) }),

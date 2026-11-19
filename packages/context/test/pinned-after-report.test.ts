@@ -14,14 +14,14 @@ const REPLY_TOKENS = 10;
 
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: OUTPUT });
 const ceiling = inputCeilingFor(sized);
-const inputBudget = budgetFor(sized, 0).I;
+const inputBudget = budgetFor(sized, 0, 0).I;
 const systemTokens = pinnedFloorFor(sized);
 const firstEstimate = systemTokens + TASK_TOKENS;
 const reportAtDeclaredBound = firstEstimate + errorBoundOfShape(ESTIMATED_ERROR_SHAPE, firstEstimate);
 
 const reply: HistoryItem = { seq: 1, item: { type: 'message', role: 'assistant', content: `reply#${REPLY_TOKENS}` } };
 
-const inputWith = (history: HistoryItem[]): BuildContextInput => ({
+const inputWith = (history: HistoryItem[]): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: sized,
   model: 'm',
   sources: sourcesWith({ systemPrompt: `system#${systemTokens}`, task: piece('task', TASK_TOKENS) as MessageInputItem, history }),

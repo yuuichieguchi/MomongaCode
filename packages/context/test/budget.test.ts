@@ -51,7 +51,7 @@ describe('budget formula', () => {
   });
 
   it('caps R at half the window for small windows', () => {
-    expect(productBudgetFor(capabilitiesFor(300), 0)).toEqual({ W: 300, R: 150, margin: 32, I: 118 });
+    expect(productBudgetFor(capabilitiesFor(300), 0, 0)).toEqual({ W: 300, R: 150, margin: 32, I: 118 });
   });
 
   it('adds the counter error_bound to the margin', async () => {

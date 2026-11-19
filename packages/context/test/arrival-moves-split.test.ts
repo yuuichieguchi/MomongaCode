@@ -8,7 +8,7 @@ import { TEST_FENCE } from '@momonga/testkit';
 
 const WINDOW = 8192;
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
-const I0 = budgetFor(sized, 0).I;
+const I0 = budgetFor(sized, 0, 0).I;
 const systemMessage: MessageInputItem = { type: 'message', role: 'system', content: SYSTEM_PROMPT };
 
 const memoryOf = (text: string): MemoryView => ({
@@ -35,7 +35,7 @@ const first: HistoryItem[] = [call(1, 'c1'), output(2, 'c1', 'a'.repeat(7000)), 
 const second: HistoryItem[] = [...first, assistant(6, 'more')];
 const memory = memoryOf('m'.repeat(4000));
 
-const inputWith = (history: HistoryItem[], memories: MemoryView[]): BuildContextInput => ({
+const inputWith = (history: HistoryItem[], memories: MemoryView[]): BuildContextInput => ({ reasoningRoom: 0,
   capabilities: sized,
   model: MODEL,
   sources: sourcesWith({ history, memories }),

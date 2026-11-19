@@ -19,6 +19,9 @@ export const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions:
   const context: SlashContext = {
     mode: 'manual',
     model: SESSION.model,
+    effort: undefined,
+    shownModel: (model: string) => model,
+    setEffort: async () => undefined,
     found: createFoundServers(),
     wait: <T>(_phase: string, work: (signal: AbortSignal) => Promise<T>) => work(new AbortController().signal),
     toast: (text) => void recorded.toasts.push(text),
