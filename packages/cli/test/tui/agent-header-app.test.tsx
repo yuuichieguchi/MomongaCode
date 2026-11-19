@@ -34,7 +34,7 @@ const openChild = async (size: { columns: number; rows: number }, childModel: st
 describe('the header of a subagent view names the model the child run runs on', () => {
   it('shows the model of the child run when it differs from the main one, with the standard effort it sends when none is chosen', async () => {
     const app = await openChild({ columns: 100, rows: 30 }, OTHER);
-    expect(headerOf(app.screen())).toBe('Subagent general-purpose · running · model: ollama/qwen3.8:27b · effort: medium');
+    expect(headerOf(app.screen())).toBe('Subagent general-purpose · running · model: ollama/qwen3.8:27b (effort: medium)');
     app.close();
   });
 
@@ -50,7 +50,7 @@ describe('the header of a subagent view names the model the child run runs on', 
     const app = await openChild({ columns: 100, rows: 30 }, OTHER);
     app.backend.following().onChildEvent(frame({ runId: 'child-1', type: 'model.responded', attempt: 0, target: BACKUP, response: { status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }), 'general-purpose');
     const shown = await app.type('', (lines) => headerOf(lines).includes('gemma9'), 'the header follows the fallback');
-    expect(headerOf(shown)).toBe('Subagent general-purpose · running · model: ollama/gemma9:12b · effort: medium');
+    expect(headerOf(shown)).toBe('Subagent general-purpose · running · model: ollama/gemma9:12b (effort: medium)');
     app.close();
   });
 
@@ -62,10 +62,10 @@ describe('the header of a subagent view names the model the child run runs on', 
 
   it('names the effort the child really sends, clamped to its model, and says not available when its model declares no effort', async () => {
     const clamped = await openChild({ columns: 100, rows: 30 }, OTHER, 'minimal');
-    expect(headerOf(clamped.screen())).toBe('Subagent general-purpose · running · model: ollama/qwen3.8:27b · effort: low');
+    expect(headerOf(clamped.screen())).toBe('Subagent general-purpose · running · model: ollama/qwen3.8:27b (effort: low)');
     clamped.close();
     const unsent = await openChild({ columns: 100, rows: 30 }, SCRIPTED_MODEL, 'high');
-    expect(headerOf(unsent.screen())).toBe('Subagent general-purpose · running · model: scripted-model · effort: not available');
+    expect(headerOf(unsent.screen())).toBe('Subagent general-purpose · running · model: scripted-model (effort: not available)');
     unsent.close();
   });
 

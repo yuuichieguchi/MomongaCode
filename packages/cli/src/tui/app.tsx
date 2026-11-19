@@ -73,7 +73,7 @@ import { watchFileLinks } from './screen/file-link-watch.ts';
 import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf, viewTargetsOf } from './screen/subagents.tsx';
 import type { ViewTarget } from './screen/subagents.tsx';
 import { agentHeader, createAgentViews, endStateOf } from './screen/agent-views.ts';
-import { declaredReasoning, effortChoiceText, effortInForce, effortLine, shownEffort } from './effort.ts';
+import { declaredReasoning, effortChoiceText, effortInForce, effortLine, modelWithEffort, shownEffort } from './effort.ts';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
@@ -655,7 +655,7 @@ export function App(props: AppProps) {
   const noteModelSwitch = async (model: string, previous: string | undefined): Promise<void> => {
     const name = shownModel(model);
     const shown = shownEffort(await backend.models(), model, sessionEffortRef.current);
-    const named = shown === undefined ? name : `${name} (${effortLine(shown, 'short')})`;
+    const named = shown === undefined ? name : modelWithEffort(name, effortLine(shown, 'short'));
     note(busyRef.current ? `model: ${named}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${named}; applies from the next run`);
   };
 
@@ -677,15 +677,15 @@ export function App(props: AppProps) {
     await applyModel(chosen, effort);
   };
 
+  const openedWith = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {
+    await openSession(chosen);
+    if (effort !== undefined) await applyEffort(effort);
+    return chosen;
+  };
+
   const switchModelThen = async (chosen: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void> => {
     const previous = sessionModelRef.current;
-    if (previous === undefined) {
-      await openSession(chosen);
-      if (effort !== undefined) await applyEffort(effort);
-      await then();
-      return;
-    }
-    const model = await switchModel(chosen, effort);
+    const model = previous === undefined ? await openedWith(chosen, effort) : await switchModel(chosen, effort);
     try {
       await then();
     } finally {
@@ -2019,7 +2019,7 @@ export function App(props: AppProps) {
   const statusFacts = (): StatusFacts => {
     const percent = contextPercentOf(transcript.contextTokens, capabilities?.contextWindow);
     const model = footerModel();
-    return { mode, tokens: formatTokens(sessionTokens(transcript)), context: percent === undefined ? 'unknown' : `${percent}%`, ...(model === undefined ? {} : { model: `${model.name} · ${model.effort}` }) };
+    return { mode, tokens: formatTokens(sessionTokens(transcript)), context: percent === undefined ? 'unknown' : `${percent}%`, ...(model === undefined ? {} : { model: modelWithEffort(model.name, model.effort) }) };
   };
   const say = useEffectEvent((text: string | undefined): void => {
     if (a11y.screenReader && text !== undefined) note(text);

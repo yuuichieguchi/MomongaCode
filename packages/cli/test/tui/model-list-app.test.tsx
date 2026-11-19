@@ -391,8 +391,10 @@ describe('choosing a model in the /model list switches nothing until its effort 
     await backend.called('effort:medium');
     expect(backend.calls.filter((call) => call === 'openSession' || call.startsWith('model:') || call.startsWith('effort:'))).toEqual(['openSession', 'effort:medium']);
     expect(backend.opened.at(-1)?.model).toBe(SOL);
-    expect(notesOf(app.frames.join('\n'))).toEqual([]);
-    expect(app.lastFrame()).toContain('gpt-6.2-sol · effort: medium');
+    const line = 'model: gpt-6.2-sol (effort: medium); applies from the next run';
+    await untilOutput(app, line);
+    expect(notesOf(app.frames.join('\n'))).toEqual([line]);
+    expect(app.lastFrame()).toContain('context: 0% · gpt-6.2-sol (effort: medium)');
     app.unmount();
   });
 

@@ -50,6 +50,8 @@ export const shownEffort = (entries: readonly MomongaModelEntry[], model: string
 export const effortLine = (shown: ShownEffort, form: 'full' | 'short'): string =>
   shown.kind === 'sent' ? `effort: ${shown.level}` : form === 'full' ? `effort: ${EFFORT_NOT_AVAILABLE} for this model` : `effort: ${EFFORT_NOT_AVAILABLE}`;
 
+export const modelWithEffort = (name: string, effort: string): string => `${name} (${effort})`;
+
 export const effortValue = (shown: ShownEffort): string => (shown.kind === 'sent' ? shown.level : EFFORT_NOT_AVAILABLE);
 
 export const effortRefusalText = (modelName: string): string => `effort is ${EFFORT_NOT_AVAILABLE} for ${modelName}: it declares no reasoning control`;

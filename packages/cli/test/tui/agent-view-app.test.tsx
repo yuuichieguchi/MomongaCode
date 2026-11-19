@@ -358,7 +358,7 @@ describe('the parts of a subagent view (design cli-tui 3.3, 2.6)', () => {
     terminal.emit(named('down'));
     terminal.emit(named('enter'));
     const loading = await untilFrame(app, 'loading the conversation 1 of 3 events');
-    expect(linesOf(loading)[0]).toBe('reviewer · loading the conversation 1 of 3 events · model: scripted-model · effort: not available');
+    expect(linesOf(loading)[0]).toBe('reviewer · loading the conversation 1 of 3 events · model: scripted-model (effort: not available)');
     expect(loading).not.toContain('backlog one');
     const before = app.frames.length;
     follow.onChildEvent(childFrame('child-1', { type: 'agent.message.delta', seq: 2, attempt: 0, itemId: 'c2', text: 'backlog two' }), 'reviewer');
@@ -376,12 +376,12 @@ describe('the parts of a subagent view (design cli-tui 3.3, 2.6)', () => {
     for (let index = 0; index < 60; index += 1) follow.onChildEvent(childFrame('child-1', { type: 'notice', level: 'info', message: `child line ${index}` }), 'reviewer');
     await openWithKeys(started, 2);
     const shown = await untilFrame(app, 'child line 59');
-    expect(linesOf(shown)[0]).toBe(`Subagent reviewer · running · model: ${SHOWN_MODEL} · effort: not available`);
+    expect(linesOf(shown)[0]).toBe(`Subagent reviewer · running · model: ${SHOWN_MODEL} (effort: not available)`);
     follow.onChildEvent(childFrame('child-1', { type: 'tool.call', callId: 'k1', providerCallId: 'p-k1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: {} }), 'reviewer');
     follow.onChildEvent(childFrame('child-1', { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'k1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'Bash ls', input: {} } }), 'reviewer');
-    await untilFrame(app, (now) => linesOf(now)[0] === `Subagent reviewer · waiting for approval · model: ${SHOWN_MODEL} · effort: not available`);
+    await untilFrame(app, (now) => linesOf(now)[0] === `Subagent reviewer · waiting for approval · model: ${SHOWN_MODEL} (effort: not available)`);
     follow.onChildEnded('reviewer', 'child-1', { kind: 'finished', run: runView({ id: 'child-1', status: 'CANCELLED' }) });
-    await untilFrame(app, (now) => linesOf(now)[0] === `Subagent reviewer · CANCELLED · model: ${SHOWN_MODEL} · effort: not available`);
+    await untilFrame(app, (now) => linesOf(now)[0] === `Subagent reviewer · CANCELLED · model: ${SHOWN_MODEL} (effort: not available)`);
     app.unmount();
   });
 

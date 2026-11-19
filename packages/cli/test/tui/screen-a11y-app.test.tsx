@@ -1,3 +1,4 @@
+import { SCRIPTED_MODEL } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import type { ResolvedTuiSettings } from '@momonga/config';
@@ -200,6 +201,17 @@ describe('the screen-reader display', () => {
     await command(started, '/help');
     const help = await untilOutput(started.app, 'Status');
     expect(help).toMatch(/Status\n {2}mode: \w+\n {2}tokens: 0\n {2}context: /);
+    started.app.unmount();
+  });
+
+  it('names the model with its effort in parentheses in the Status group of /help', async () => {
+    const started = await startWith({ ...READER, backend: { reasoning: { [SCRIPTED_MODEL]: { control: 'reasoning_effort', lowest: 'low' } } } });
+    await untilOutput(started.app, 'mode: manual · tokens: 0 · context:');
+    await command(started, '/help');
+    const help = await untilOutput(started.app, '  model: scripted-model (effort: medium)');
+    const lines = help.split('\n').map((line) => line.trimEnd());
+    const at = lines.lastIndexOf('Status');
+    expect(lines.slice(at, at + 5)).toEqual(['Status', '  mode: manual', '  tokens: 0', '  context: 0%', '  model: scripted-model (effort: medium)']);
     started.app.unmount();
   });
 
