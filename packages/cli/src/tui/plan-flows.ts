@@ -458,13 +458,12 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     });
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
     const { rows, listed: listedRows } = modelListRows({ listing, current, effort: ports.effort(), health, found });
-    if (rows.length + catalogChoices.length === 0) {
-      ports.info(messageOf('noModelConnected', 'tui'));
-      return;
-    }
     const displays = displayMapOf(listingViewsOf(entries));
     const allRows = [...rows, ...catalogChoices.map((entry) => entry.row), { label: MODEL_SETTINGS_ROW }];
-    const choice = await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: allRows, alt: { label: ALSO_AT_START_LABEL }, ...(rows.some((row) => row.steps !== undefined) ? { stepsLabel: CHANGE_EFFORT_LABEL } : {}) });
+    const choice =
+      allRows.length === 1
+        ? await ports.choose({ title: 'Models', lines: [messageOf('noModelConnected', 'tui')], rows: allRows })
+        : await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: allRows, alt: { label: ALSO_AT_START_LABEL }, ...(rows.some((row) => row.steps !== undefined) ? { stepsLabel: CHANGE_EFFORT_LABEL } : {}) });
     if (choice === undefined) return;
     if (choice.index === allRows.length - 1) {
       await runModelsHub(context);

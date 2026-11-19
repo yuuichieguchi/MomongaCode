@@ -38,7 +38,7 @@ const twoOnOllama = (): LocalServerDetection[] => [ollamaFound(OLLAMA_ADDRESS, [
 
 const LMSTUDIO_ONLY = { models: { connections: [S2.models.connections[1]] } };
 
-describe('the /models flows, one per row of 4.9.1', () => {
+describe('the flows of the Models screen, one per row of 4.9.1', () => {
   it('row 1: a found model that is already configured is not offered, and a server with nothing left to add says so (P-376)', async (context) => {
     const partly = flowOf(context, S1, [{ pick: SEARCH }, { pick: /^ollama/ }], { found: twoOnOllama });
     await runAddFlow(partly.context);
@@ -368,7 +368,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     expect(harness.bytes()).toBe(before);
   });
 
-  it('row 16: /models shows one block per server with its models, the start model and what needs a sign-in', async (context) => {
+  it('row 16: the Models screen shows one block per server with its models, the start model and what needs a sign-in', async (context) => {
     const harness = flowOf(context, threeModels({ start: 'qwen3.8:27b' }), []);
     await runModelsHub(harness.context);
     expect(harness.picks()[0]).toEqual({

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SCRIPTED_MODEL } from '@momonga/testkit';
 import { SETTINGS_TITLE } from '../../src/tui/settings-screen.tsx';
 import { slashMatches } from '../../src/tui/screen/menu.tsx';
+import { MODE_PICKER_TITLE } from '../../src/tui/slash.ts';
 import type { SlashCommand } from '../../src/tui/slash.ts';
 import { KEYS, TUI_TEST_TIMEOUT_MS } from '../ink-helpers.ts';
 import { freshPlace } from './settings-harness.tsx';
@@ -88,6 +89,7 @@ describe('the chosen row of the slash menu when it opens again', () => {
     await app.type(KEYS.backspace.repeat(5), (lines) => !lines.some((line) => line.includes('/model [')), 'the draft is emptied');
     await app.type('/mode', (lines) => lines.some((line) => line.includes('/model [')), 'the menu opens again');
     expect(chosenLine(app.screen())).toMatch(/^› \/mode \[/);
+    await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes(MODE_PICKER_TITLE)), 'Enter runs /mode');
     app.close();
   });
 

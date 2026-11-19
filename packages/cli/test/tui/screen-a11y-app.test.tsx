@@ -12,6 +12,7 @@ import type { FakeBackendOptions } from '../fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
+import { freshPlace } from './settings-harness.tsx';
 
 const GLYPHS = new RegExp(`[${SPINNER_FRAMES.join('')}]`);
 const BOX = /[│─╭╮╰╯]/;
@@ -150,6 +151,24 @@ describe('the screen-reader display', () => {
     expect(BOX.test(moved)).toBe(false);
     started.app.stdin.write(KEYS.enter);
     await started.backend.called('trust:untrusted');
+    started.app.unmount();
+  });
+
+  it('indents the child rows of a list with spaces, never with tree lines', async () => {
+    const place = freshPlace();
+    const started = await startWith({ ...READER, backend: { models: ['ollama/qwen3.8:27b', 'ollama/gemma-3-4b'], settingsPlace: { home: place.home, projectDir: place.project } }, screen: { screen: 'scrollback', columns: 100, rows: 40 } });
+    started.app.stdin.write('/model');
+    await untilFrame(started.app, 'choose the model from a list');
+    started.app.stdin.write(KEYS.enter);
+    await untilFrame(started.app, 'Model settings…');
+    started.app.stdin.write(KEYS.up);
+    await untilFrame(started.app, 'selected: Model settings…');
+    started.app.stdin.write(KEYS.enter);
+    const shown = (await untilFrame(started.app, 'Check the servers')).split('\n').map((line) => line.trimEnd());
+    expect(shown.join('\n')).not.toMatch(/[├└]/);
+    expect(shown).toContain(' 1. ollama');
+    expect(shown.some((line) => /^ 2\. {4}qwen3\.8:27b/.test(line))).toBe(true);
+    expect(shown.some((line) => /^ 3\. {4}gemma-3-4b/.test(line))).toBe(true);
     started.app.unmount();
   });
 

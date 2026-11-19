@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MODEL_SETTINGS_ROW } from '@momonga/protocol';
+import { MODEL_SETTINGS_ROW, messageOf } from '@momonga/protocol';
+import { MODELS_TITLE, START_ONE_TEXT } from '../src/tui/models/texts.ts';
 import type { MomongaModelList } from '@momonga/protocol';
 import type { TestContext } from 'vitest';
 import { offeredServers } from '../src/commands/models.ts';
@@ -89,6 +90,17 @@ describe('the /model list (6.2)', () => {
     expect(after.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', 'Found on this computer', `devstral-small-2  ·  ${OLLAMA_ADDRESS}`, MODEL_SETTINGS_ROW]);
     expect(connected).toEqual(['ollama/devstral-small-2:latest']);
     expect((after.written() as { models: { connections: { models: { id: string }[] }[] } }).models.connections[0]?.models.map((model) => model.id)).toContain('devstral-small-2:latest');
+  });
+
+  it('opens with the no-model line and the Model settings row alone when no model is connected, and that row opens the Models screen', async (context) => {
+    expect(START_ONE_TEXT).toContain(MODEL_SETTINGS_ROW);
+    const harness = flowOf(context, {}, [{ pick: MODEL_SETTINGS_ROW }]);
+    await pickerOf(harness).modelPicker(undefined);
+    expect(harness.picks()[0]?.rows).toEqual([MODEL_SETTINGS_ROW]);
+    expect(harness.picks()[0]?.lines).toEqual([messageOf('noModelConnected', 'tui')]);
+    expect(harness.picks()[1]?.title).toBe(MODELS_TITLE);
+    expect(harness.picks()[1]?.rows).toContain('Add a model');
+    expect(harness.picks()[2]?.rows).toEqual([MODEL_SETTINGS_ROW]);
   });
 
   it('opens without asking any server', async (context) => {
