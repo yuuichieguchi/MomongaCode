@@ -33,7 +33,15 @@ node "$ROOT/scripts/site/bounded.ts" "$MAIN_FETCH_BOUND_SECONDS" git fetch --qui
   || fail "$RELEASE_BRANCH could not be fetched from origin; check that origin is reachable, then run scripts/site-deploy.sh again; nothing was deployed"
 published="$(git rev-parse --verify --quiet "refs/remotes/origin/$RELEASE_BRANCH^{commit}")" || fail "$RELEASE_BRANCH of origin names no commit; nothing was deployed"
 commit="$(git rev-parse HEAD)"
-git merge-base --is-ancestor "$commit" "$published" || fail "HEAD is not a commit of $RELEASE_BRANCH on origin; push $RELEASE_BRANCH first, then run scripts/site-deploy.sh again; nothing was deployed"
+if ! git merge-base --is-ancestor "$commit" "$published"; then
+  [ "$(git symbolic-ref --quiet HEAD || true)" = "refs/heads/$RELEASE_BRANCH" ] \
+    || fail "HEAD is not a commit of $RELEASE_BRANCH on origin and $RELEASE_BRANCH is not checked out; check out $RELEASE_BRANCH, or a commit origin has on $RELEASE_BRANCH, then run scripts/site-deploy.sh again; nothing was deployed"
+  git merge-base --is-ancestor "$published" "$commit" \
+    || fail "$RELEASE_BRANCH of origin has commits that HEAD does not have; pull (or rebase) first, then run scripts/site-deploy.sh again; nothing was deployed"
+  step "push $RELEASE_BRANCH to origin"
+  node "$ROOT/scripts/site/bounded.ts" "$PUSH_BOUND_SECONDS" git push --quiet origin "refs/heads/$RELEASE_BRANCH:refs/heads/$RELEASE_BRANCH" \
+    || fail "$RELEASE_BRANCH could not be pushed to origin; check that origin is reachable and that its $RELEASE_BRANCH is not ahead of or diverged from HEAD, then run scripts/site-deploy.sh again; nothing was deployed"
+fi
 
 origin="$(node "$ROOT/scripts/site-target.ts" print-origin)"
 branch="$(node "$ROOT/scripts/site-target.ts" print-branch)"
