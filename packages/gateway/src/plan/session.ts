@@ -302,7 +302,7 @@ const parseRecord = (text: string): PlanRecord => {
 
 const renamingLabelOf = (value: string | undefined): string | undefined => {
   if (value === undefined) return undefined;
-  if (!isPlanLabel(value)) throw new Error('the plan record has an invalid rename target');
+  if (!isPlanLabel(value)) throw new Error('the plan record has an invalid rename label');
   return value;
 };
 
