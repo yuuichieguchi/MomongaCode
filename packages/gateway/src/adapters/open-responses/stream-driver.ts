@@ -55,7 +55,7 @@ export class OpenResponsesStreamDriver {
   }
 
   private async apply(event: OpenResponsesStreamEvent): Promise<void> {
-    if (event.type === 'error') throw new StreamFailure(event.code ?? UNNAMED_UPSTREAM_FAILURE, event.errorType, event.message ?? UNSTATED_FAILURE_MESSAGE);
+    if (event.type === 'error') throw new StreamFailure(event.code ?? UNNAMED_UPSTREAM_FAILURE, event.errorType, event.message ?? UNSTATED_FAILURE_MESSAGE, this.emitter.requestIds);
     if (event.type === 'ignored') return;
     if (!this.started) {
       if (event.type !== 'opening') throw new UpstreamProtocolError(`the upstream sent ${event.type} before response.created`);

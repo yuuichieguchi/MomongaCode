@@ -133,7 +133,7 @@ export const errorTypeOf = (failure: unknown): string => {
 const thrownSpanType = (error: unknown): string => (error instanceof GatewayError ? error.body.type : 'server_error');
 
 const classifiedFailure = (adapter: TargetRuntime['adapter'], error: ResponseError): ClassifiedError => {
-  const classified = adapter.classify(new StreamFailure(error.code, error.type ?? 'server_error', error.message));
+  const classified = adapter.classify(new StreamFailure(error.code, error.type ?? 'server_error', error.message, error.requestIds));
   return error.retryAfterMs === undefined ? classified : { ...classified, retryAfterMs: error.retryAfterMs };
 };
 

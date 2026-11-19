@@ -120,6 +120,11 @@ const ruleMessage = (rule: ErrorRule, by: ErrorMatch['kind'], code: string | nul
   return `${rule.message}${upstreamCode}.${requestId === undefined ? '' : ` Request id: ${requestId}`}`;
 };
 
+const withRequestId = (message: string, requestIds: Readonly<Record<string, string>>): string => {
+  const [requestId] = Object.values(requestIds);
+  return requestId === undefined ? message : `${message.replace(/\.$/, '')}. Request id: ${requestId}`;
+};
+
 const ruledError = (matched: { rule: ErrorRule; by: ErrorMatch['kind'] }, facts: UpstreamFacts, requestIds: Record<string, string>, param: string | null): ClassifiedError => {
   const { rule, by } = matched;
   return {
@@ -146,8 +151,8 @@ const classifyUpstreamHttp = (error: UpstreamHttpError, rules: ErrorRules): Clas
 const classifyStream = (error: StreamFailure, rules: ErrorRules): ClassifiedError => {
   const facts: UpstreamFacts = { status: null, code: error.code === '' ? null : error.code };
   const matched = ruleFor(rules, facts);
-  if (matched !== undefined) return ruledError(matched, facts, {}, null);
-  return { retryable: retryableFailureOf(error.errorType, error.code), error: body(error.errorType, error.code, error.message) };
+  if (matched !== undefined) return ruledError(matched, facts, error.requestIds, null);
+  return { retryable: retryableFailureOf(error.errorType, error.code), error: body(error.errorType, error.code, withRequestId(error.message, error.requestIds)) };
 };
 
 export const createUpstreamClassifier =

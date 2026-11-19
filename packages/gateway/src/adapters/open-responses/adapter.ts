@@ -36,7 +36,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
 
   const classify = createUpstreamClassifier(OPEN_RESPONSES_PROVIDER_LABEL, options.errorRules);
 
-  const failedEventError = (error: ResponseError): StreamFailure => new StreamFailure(error.code, error.type ?? 'server_error', error.message);
+  const failedEventError = (error: ResponseError): StreamFailure => new StreamFailure(error.code, error.type ?? 'server_error', error.message, error.requestIds);
 
   const classifyFailedEvent = (error: ResponseError): ClassifiedError => {
     const classified = classify(failedEventError(error));

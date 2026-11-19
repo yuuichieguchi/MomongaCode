@@ -63,6 +63,27 @@ describe('a stream error without a message or without an error object is classif
   });
 });
 
+describe('a stream failure carries the request id of its response (design 5.3)', () => {
+  const withRequestId = (reply: FakeUpstreamReply): FakeUpstreamReply => ({ ...reply, headers: { 'x-request-id': 'req_stream_9' } }) as FakeUpstreamReply;
+
+  it('composes the request id into a rule-matched response.failed', async () => {
+    expect(await terminalError(withRequestId(planErrorStreamReply('subscription_sharing_usage_limit_exceeded')))).toMatchObject({ code: 'plan_usage_limit', message: `${USAGE_SENTENCE} Request id: req_stream_9` });
+  });
+
+  it('composes the request id into a rule-matched error event', async () => {
+    expect(await terminalError(withRequestId(planErrorEventReply('subscription_sharing_usage_limit_exceeded', { shape: 'top_level' })))).toMatchObject({ code: 'plan_usage_limit', message: `${USAGE_SENTENCE} Request id: req_stream_9` });
+  });
+
+  it('composes the request id into an unmatched failure with no stated reason and into one with a message', async () => {
+    expect(await terminalError(withRequestId(planFailedWithoutErrorReply()))).toMatchObject({ message: `${UNSTATED_FAILURE_MESSAGE}. Request id: req_stream_9` });
+    expect(await terminalError(withRequestId(planErrorEventReply('some_new_code', { shape: 'nested', message: 'the server is busy' })))).toMatchObject({ message: 'the server is busy. Request id: req_stream_9' });
+  });
+
+  it('keeps the request ids out of the failure the client receives', async () => {
+    expect(await terminalError(withRequestId(planErrorStreamReply('subscription_sharing_usage_limit_exceeded')))).not.toHaveProperty('requestIds');
+  });
+});
+
 describe('an event without output_index is correlated by its item id', () => {
   it('decodes an item event and a delta event that give only the item id', () => {
     expect(parseOpenResponsesEvent(JSON.stringify({ type: 'response.output_item.added', item: { type: 'message', id: 'msg_1', content: [] } }))).toMatchObject({ type: 'item_added', at: { itemId: 'msg_1' } });

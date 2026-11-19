@@ -118,6 +118,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
       message: redactor.text(error.message),
       param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
       ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+      ...(error.requestIds === undefined ? {} : { requestIds: Object.fromEntries(Object.entries(error.requestIds).map(([name, id]) => [name, redactor.text(id)])) }),
       ...shapedPlan(error.plan),
     };
     return { ...event, response: { ...event.response, error: guarded } };

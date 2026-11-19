@@ -49,6 +49,7 @@ export type ResponseEmitterOptions = {
   model: string;
   request: AdapterRequest;
   retryAfterMs?: number;
+  requestIds?: Readonly<Record<string, string>>;
   wraps?: ReadonlyMap<string, WrapRecord>;
   nonStrict?: ReadonlyMap<string, unknown>;
   narrowings?: readonly SchemaNarrowing[];
@@ -353,13 +354,24 @@ export class ResponseEmitter {
     this.ended = true;
   }
 
+  get requestIds(): Readonly<Record<string, string>> | undefined {
+    const ids = this.options.requestIds;
+    return ids === undefined || Object.keys(ids).length === 0 ? undefined : ids;
+  }
+
   fail(code: string, errorType: ErrorType, message: string): void {
     this.closeOpenItems('incomplete');
     this.emit({
       type: 'response.failed',
       response: {
         ...this.resource({ status: 'failed', output: this.doneItems, usage: null }),
-        error: { code, message, type: errorType, ...(this.options.retryAfterMs === undefined ? {} : { retryAfterMs: this.options.retryAfterMs }) },
+        error: {
+          code,
+          message,
+          type: errorType,
+          ...(this.options.retryAfterMs === undefined ? {} : { retryAfterMs: this.options.retryAfterMs }),
+          ...(this.requestIds === undefined ? {} : { requestIds: { ...this.requestIds } }),
+        },
       },
     });
     this.ended = true;
