@@ -1,3 +1,4 @@
+import { MODEL_SETTINGS_ROW } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { SCRIPTED_MODEL } from '@momonga/testkit';
 import { KEYS, TUI_TEST_TIMEOUT_MS } from '../ink-helpers.ts';
@@ -239,7 +240,9 @@ describe('the footer names the model and its effort', () => {
     const app = await opened({ reasoning: DECLARED }, place);
     await app.type('', shows('scripted-model · effort: medium'), 'the standard level is in the footer');
     settingsWith(place, { own: { [SCRIPTED_MODEL]: 'xhigh' } });
-    await app.type(`/models${KEYS.enter}`, shows('Models'), 'the models hub opens');
+    await app.type(`/model${KEYS.enter}`, shows(MODEL_SETTINGS_ROW), 'the model list opens');
+    await app.type(`${KEYS.up}${KEYS.enter}`, shows('Check the servers'), 'the models screen opens from its last row');
+    await app.type(KEYS.ctrlC, shows(MODEL_SETTINGS_ROW), 'leaving the models screen comes back to the model list');
     await app.type(KEYS.ctrlC, shows('scripted-model · effort: xhigh'), 'the footer follows the written level');
     app.close();
   });

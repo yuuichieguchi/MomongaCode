@@ -118,7 +118,7 @@ describe('/config, the settings screen', () => {
   const insideFrame = (line: string): string => line.replace(/^│ ?/, '').replace(/ *│ *$/, '');
 
   const keyShown = (shownKey: string, label: string): boolean => {
-    const key = shownKey.replace(/^\d+\. /, '');
+    const key = shownKey.replace(/^ *\d+\. /, '');
     if (key === label) return true;
     const [head, tail] = key.split('…');
     const lastSegment = label.slice(label.lastIndexOf(' ') + 1);

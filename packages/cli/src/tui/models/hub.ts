@@ -1,7 +1,7 @@
 import { declaredCommandProblem, plainHttpWarningText } from '@momonga/config';
 import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
 import type { GatewayHealth } from '@momonga/protocol';
-import { SEPARATOR, addressesOf, configuredWindowsOf, modelRowOf, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
+import { SEPARATOR, addressesOf, configuredWindowsOf, modelRowText, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
 import { runAddFlow } from './add.ts';
 import { cancellable, chosenOf, hostOf, openEdit, proposeAndWrite } from './context.ts';
@@ -42,7 +42,7 @@ type HubRow =
 
 export type HubFacts = { document: ModelsDocument; plainHttp: readonly string[]; signInRequired: ReadonlySet<string> };
 
-const modelLabel = (model: ListedModel, facts: HubFacts): string => `${modelRowOf(model, facts.document.start)}${facts.signInRequired.has(model.model) ? `${SEPARATOR}${SIGN_IN_REQUIRED_WORD}` : ''}`;
+const modelLabel = (model: ListedModel, facts: HubFacts): string => `${modelRowText(model, facts.document.start)}${facts.signInRequired.has(model.model) ? `${SEPARATOR}${SIGN_IN_REQUIRED_WORD}` : ''}`;
 
 const ACTIONS_HEADING = 'Change';
 
@@ -54,7 +54,7 @@ export const hubRows = (facts: HubFacts): HubRow[] => {
     const address = served[0]?.address ?? null;
     return [
       { kind: 'server', provider, label: address === null ? provider : `${provider}${SEPARATOR}${address}` },
-      ...(facts.plainHttp.includes(provider) ? [{ kind: 'warning' as const, label: `  ${plainHttpWarningText(provider)}` }] : []),
+      ...(facts.plainHttp.includes(provider) ? [{ kind: 'warning' as const, label: plainHttpWarningText(provider) }] : []),
       ...served.map((model): HubRow => ({ kind: 'model', model: model.model, label: modelLabel(model, facts) })),
     ];
   });
@@ -181,7 +181,7 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
     const index = await chosenOf(context, {
       title: MODELS_TITLE,
       lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
-      rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
+      rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'model' || row.kind === 'warning' ? { child: true } : {}), ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
       initial: Math.min(at, rows.length - 1),
       filter: false,
     });

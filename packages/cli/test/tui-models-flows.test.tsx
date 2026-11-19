@@ -377,10 +377,10 @@ describe('the /models flows, one per row of 4.9.1', () => {
       lines: [],
       rows: [
         `ollama  ·  ${OLLAMA_ADDRESS}`,
-        '  ollama/gemma-3-4b  ·  32.8k tokens  ·  local',
-        '  qwen3.8:27b  ·  32.8k tokens  ·  local  ·  starts new sessions',
+        'ollama/gemma-3-4b  ·  32.8k tokens  ·  local',
+        'qwen3.8:27b  ·  32.8k tokens  ·  local  ·  starts new sessions',
         'lmstudio  ·  http://127.0.0.1:1234/v1',
-        '  lmstudio/gemma-3-4b  ·  4.1k tokens  ·  local',
+        'lmstudio/gemma-3-4b  ·  4.1k tokens  ·  local',
         'Change',
         ...HUB_ACTIONS,
       ],
@@ -390,14 +390,14 @@ describe('the /models flows, one per row of 4.9.1', () => {
 
     const plan = flowOf(context, S3, [], { health: { 'chatgpt/gpt-5.5': { ok: false, breaker: 'closed', reason: 'sign_in_required' } } });
     await runModelsHub(plan.context);
-    expect(plan.picks()[0]?.rows.slice(0, 4)).toEqual(['chatgpt', '  chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai  ·  https://api.openai.com/v1', '  openai/gpt-5.5  ·  400k tokens  ·  metered']);
+    expect(plan.picks()[0]?.rows.slice(0, 4)).toEqual(['chatgpt', 'chatgpt/gpt-5.5  ·  plan  ·  available  ·  starts new sessions  ·  sign in required', 'openai  ·  https://api.openai.com/v1', 'openai/gpt-5.5  ·  400k tokens  ·  metered']);
 
     const plain = flowOf(context, { models: { connections: [{ adapter: 'chat-completions', provider: 'gpu-box', baseUrl: 'http://192.168.1.20:8080/v1', models: [{ id: 'm', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }] } }, []);
     await runModelsHub(plain.context);
     expect(plain.picks()[0]?.rows.slice(0, 3)).toEqual([
       'gpu-box  ·  http://192.168.1.20:8080/v1',
-      '  The address of gpu-box is plain http to another computer: what you send to it is not encrypted.',
-      '  m  ·  8.2k tokens  ·  metered  ·  starts new sessions',
+      'The address of gpu-box is plain http to another computer: what you send to it is not encrypted.',
+      'm  ·  8.2k tokens  ·  metered  ·  starts new sessions',
     ]);
 
     const empty = flowOf(context, undefined, []);
@@ -438,8 +438,8 @@ describe('the /models flows, one per row of 4.9.1', () => {
     const harness = flowOf(context, threeModels(), [{ pick: 'Check the servers' }], { found: (request) => (request.typed[0] === OLLAMA_ADDRESS ? found() : []) });
     await runModelsHub(harness.context);
     expect(harness.phases).toEqual([CHECKING]);
-    expect(harness.picks()[1]?.rows).toContain('  qwen3.8:27b  ·  32.8k tokens  ·  local  ·  not listed by the server');
-    expect(harness.picks()[1]?.rows).toContain('  ollama/gemma-3-4b  ·  32.8k tokens  ·  local  ·  starts new sessions');
+    expect(harness.picks()[1]?.rows).toContain('qwen3.8:27b  ·  32.8k tokens  ·  local  ·  not listed by the server');
+    expect(harness.picks()[1]?.rows).toContain('ollama/gemma-3-4b  ·  32.8k tokens  ·  local  ·  starts new sessions');
 
     const cancelled = flowOf(context, threeModels(), [{ pick: 'Check the servers' }], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING });
     await runModelsHub(cancelled.context);

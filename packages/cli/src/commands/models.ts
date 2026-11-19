@@ -137,8 +137,10 @@ const windowPartsOf = (model: ListedModel): string[] => {
   return model.contextWindow === null ? [WINDOW_NOT_KNOWN] : [`${formatTokens(model.contextWindow)} tokens`, model.billing];
 };
 
-export const modelRowOf = (model: ListedModel, start: string | null): string =>
-  `${ROW_INDENT}${[model.name, ...windowPartsOf(model), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(SEPARATOR)}`;
+export const modelRowOf = (model: ListedModel, start: string | null): string => `${ROW_INDENT}${modelRowText(model, start)}`;
+
+export const modelRowText = (model: ListedModel, start: string | null): string =>
+  [model.name, ...windowPartsOf(model), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(SEPARATOR);
 
 const modelLinesOf = (document: ModelsDocument): string[] => {
   if (document.models.length === 0) return [messageOf('noModelConnected', 'cli')];
