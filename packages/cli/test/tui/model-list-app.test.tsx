@@ -9,6 +9,7 @@ import type { FakePlanOptions } from '../fake-plan-gateway.tsx';
 import { KEYS, TEST_KEY_SETTLE_MS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { systemTiming } from '@momonga/foundation';
+import { pollUntil } from '@momonga/testkit';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 import { freshPlace, stored, writeSettings } from './settings-harness.tsx';
 import type { Place } from './settings-harness.tsx';
@@ -308,7 +309,7 @@ describe('choosing a model in the /model list switches nothing until its effort 
     const output = await untilOutput(app, 'model: other-model (effort: medium); applies from the next run');
     expect(switches(backend)).toEqual([`model:${OTHER} effort:medium`]);
     expect(effortCalls(backend)).toEqual([]);
-    expect(notesOf(output)).toEqual(['effort: medium for other-model; saved', 'model: other-model (effort: medium); applies from the next run']);
+    expect(notesOf(app.frames.join('\n'))).toEqual(['model: other-model (effort: medium); applies from the next run']);
     expect(savedEffortOf(place)).toBe('medium');
     expect(app.lastFrame()).not.toContain('Reasoning effort');
     app.unmount();
@@ -335,10 +336,11 @@ describe('choosing a model in the /model list switches nothing until its effort 
     app.stdin.write(KEYS.tab);
     const output = await untilOutput(app, 'model: other-model (effort: medium); applies from the next run');
     await untilOutput(app, 'Starting model set to other-model');
+    expect(output).toContain('model: other-model (effort: medium); applies from the next run');
     expect(picker).toContain('Reasoning effort');
     expect(startOf(place)).toBe(OTHER);
     expect(switches(backend)).toEqual([`model:${OTHER} effort:medium`]);
-    expect(notesOf(output)).toEqual(['effort: medium for other-model; this session only', 'model: other-model (effort: medium); applies from the next run']);
+    expect(notesOf(app.frames.join('\n')).filter((line) => !line.startsWith('Starting model set'))).toEqual(['model: other-model (effort: medium); applies from the next run']);
     expect(savedEffortOf(place)).toBeUndefined();
     app.unmount();
   });
@@ -351,6 +353,46 @@ describe('choosing a model in the /model list switches nothing until its effort 
     expect(app.frames.join('\n')).not.toContain('Starting model set to');
     expect(startOf(place)).toBeUndefined();
     expect(switches(backend)).toEqual([]);
+    app.unmount();
+  });
+
+  it('while a run is working, the one line says that run keeps its model', async () => {
+    const place = freshPlace();
+    writeSettings(place.userFile, { models: { connections: [{ adapter: 'chat-completions', provider: 'scripted', baseUrl: 'http://127.0.0.1:9/v1', models: [{ id: 'other-model', capabilities: { contextWindow: 8192, maxOutputTokens: 1024, reasoning: REASONING } }] }] } });
+    const { app, backend } = await startPlan({ ...APPROVED, models: [QWEN, OTHER], reasoning: { ...APPROVED.reasoning, [OTHER]: REASONING }, catalogs: catalogOf([]), settingsPlace: { home: place.home, projectDir: place.project } });
+    await ready(app);
+    await submitLine(app, 'long task');
+    await pollUntil(() => backend.started.length === 1, { description: 'the run is started', boundMs: 5000 });
+    await submitLine(app, '/model');
+    await untilFrame(app, listShown);
+    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+    await untilFrame(app, pickerShown);
+    expect(switches(backend)).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    const line = 'model: other-model (effort: medium); the run that is working keeps ollama/qwen3.8:27b, the next run uses other-model';
+    await untilOutput(app, line);
+    expect(switches(backend)).toEqual([`model:${OTHER} effort:medium`]);
+    expect(notesOf(app.frames.join('\n'))).toEqual([line]);
+    app.unmount();
+  });
+
+  it('with no session open, opens none before the effort is chosen, then opens it with the chosen model and applies the effort', async () => {
+    const { app, backend } = await startPlan({ models: [], accounts: [account()], catalogs: catalogOf([usable('gpt-6.2-sol')]), reasoning: { [SOL]: REASONING } });
+    await untilFrame(app, 'Choose a model of chatgpt');
+    app.stdin.write(KEYS.escape);
+    await untilFrame(app, (frame) => frame.includes('no model connected · /login') && !frame.includes('Choose a model of chatgpt'));
+    await submitLine(app, '/model');
+    await untilFrame(app, listShown);
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, pickerShown);
+    expect(backend.calls.filter((call) => call === 'openSession' || call.startsWith('model:') || call.startsWith('effort:'))).toEqual([]);
+    app.stdin.write(KEYS.tab);
+    await untilFrame(app, (frame) => frame.includes('mode: manual') && !pickerShown(frame));
+    await backend.called('effort:medium');
+    expect(backend.calls.filter((call) => call === 'openSession' || call.startsWith('model:') || call.startsWith('effort:'))).toEqual(['openSession', 'effort:medium']);
+    expect(backend.opened.at(-1)?.model).toBe(SOL);
+    expect(notesOf(app.frames.join('\n'))).toEqual([]);
+    expect(app.lastFrame()).toContain('gpt-6.2-sol · effort: medium');
     app.unmount();
   });
 

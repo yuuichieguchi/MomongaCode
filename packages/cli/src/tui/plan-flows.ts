@@ -14,7 +14,7 @@ import { modelListRows } from './models/model-list.ts';
 import type { PlanListRow } from './models/model-list.ts';
 import { planProfileOf } from '@momonga/config';
 import { writeStart } from './models/order.ts';
-import { chooseEffort, effortAnswerText, writeModelEffort } from './commands/effort.ts';
+import { chooseEffort, writeModelEffort } from './commands/effort.ts';
 import { acceptedEffortsOf, declaredReasoning, sentEffort } from './effort.ts';
 import { followMeasurement, modelUnreadText, notReadyNoticeOf } from '../readiness.ts';
 import type { MeasurementPorts } from '../readiness.ts';
@@ -140,7 +140,6 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     await ports.switchedThen(model, chosen.level, async () => {
       await atSwitch();
       if (chosen.scope === 'saved') await writeModelEffort({ backend, info: ports.info, wait: ports.wait }, model, chosen.level);
-      ports.info(effortAnswerText(chosen.level, ports.shownModel(model), chosen.scope));
     });
     return undefined;
   };

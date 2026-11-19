@@ -217,7 +217,7 @@ describe('/model and the effort', () => {
     expect(app.backend.calls.filter((call) => call.startsWith('model:'))).toEqual([]);
     expect(outputOf(app)).not.toContain('model: other-model (');
     await app.type(`${KEYS.down}${KEYS.down}${KEYS.enter}`, shows('model: other-model (effort: high);'), 'the level is saved and the model line follows');
-    expect(outputOf(app)).toContain('effort: high for other-model; saved');
+    expect(outputOf(app)).not.toContain('for other-model; saved');
     expect(app.backend.calls.filter((call) => call.startsWith('model:') || call.startsWith('effort:'))).toEqual([`model:${OTHER} effort:high`]);
     expect(savedEffortOf(place, OTHER)).toBe('high');
     expect(outputOf(app).split('model: other-model (').length - 1).toBe(1);
@@ -244,7 +244,7 @@ describe('/model and the effort', () => {
     expect((stored(place.userFile) as { models: { start?: string } }).models.start).toBeUndefined();
     await app.type(`${KEYS.tab}`, shows('model: other-model (effort: medium);'), 'the level is set for the session');
     expect((stored(place.userFile) as { models: { start?: string } }).models.start).toBe(OTHER);
-    expect(outputOf(app)).toContain('effort: medium for other-model; this session only');
+    expect(outputOf(app)).not.toContain('for other-model; this session only');
     expect(app.backend.calls.filter((call) => call.startsWith('model:') || call.startsWith('effort:'))).toEqual([`model:${OTHER} effort:medium`]);
     app.close();
   });
