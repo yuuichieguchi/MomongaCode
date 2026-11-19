@@ -682,7 +682,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       if (action === 'select.escape' || action === 'select.interrupt') {
         gate.keyConsumed();
         current.cancel();
-      }
+      } else keepAside(event, keys);
       return;
     }
     if (current.kind === 'capture') {

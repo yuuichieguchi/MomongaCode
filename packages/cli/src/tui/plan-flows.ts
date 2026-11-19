@@ -8,7 +8,8 @@ import { addBuiltIn, addFoundModel, addFromFound, addService, builtInRowOf, foun
 import type { Added } from './models/add.ts';
 import { openEdit } from './models/context.ts';
 import type { FoundServers, ModelsFlowContext } from './models/context.ts';
-import { runModelsHub, runServerActions } from './models/hub.ts';
+import { planServesAccount } from './models/plan-account.ts';
+import { accountConnectionOf, runModelsHub, runRemoveServer, runRenameServer, runServerActions } from './models/hub.ts';
 import { modelListRows } from './models/model-list.ts';
 import { writeStart } from './models/order.ts';
 import { effortAnswerText, writeModelEffort } from './commands/effort.ts';
@@ -60,12 +61,6 @@ const CONNECT_TITLE = 'Connect a model';
 const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
 const SANDBOX_OFF_CONTINUE = 0;
 const SANDBOX_OFF_CANCEL = 1;
-
-const healthText = (health: TargetHealth | undefined): string => {
-  if (health === undefined) return 'health unknown';
-  if (health.ok) return 'ready';
-  return health.reason ?? 'not ready';
-};
 
 const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.reason === SIGN_IN_REQUIRED_CODE;
 
@@ -140,7 +135,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const accountInUse = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
     const entries = await backend.models();
     const serving = entries.filter((entry) =>
-      entry.chain.some((member) => member.plan !== undefined && member.plan.profile === profile.id && (member.plan.account === undefined ? account.active : member.plan.account === account.label)),
+      entry.chain.some((member) => member.plan !== undefined && planServesAccount(member.plan, account)),
     );
     if (account.pinnedBy.length === 0 && serving.length === 0 && (await catalogPicker(profile, account.label))) return;
     await ports.refreshConnection();
@@ -280,8 +275,28 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     return signInFlow(profile, label, false);
   };
 
+  const connectionRows = async (profile: PlanProfileView, records: readonly PlanAccountView[]): Promise<Choice[]> => {
+    const context = flowContext();
+    const rows = await Promise.all(
+      records.map(async (account): Promise<Choice[]> => {
+        const provider = await accountConnectionOf(context, account);
+        if (provider === undefined) return [];
+        const after = async (act: () => Promise<void>): Promise<void> => {
+          await act();
+          await ports.refreshConnection();
+        };
+        return [
+          { row: { label: `Rename account ${account.label}` }, act: () => after(() => runRenameServer(context, provider)) },
+          { row: { label: `Remove account ${account.label}` }, act: () => after(() => runRemoveServer(context, provider)) },
+        ];
+      }),
+    );
+    return rows.flat();
+  };
+
   const accountPicker = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<void> => {
     const records = accountsOf(profile.id, listed.accounts);
+    const connections = await connectionRows(profile, records);
     await chooseFrom({ title: profile.messages.pickerLabel }, [
       ...records.map((account) => {
         const label = `${accountRowLabel(account)}${account.active ? ' (current)' : ''}`;
@@ -298,6 +313,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
             if (answer.resumed && account.active) await accountInUse(profile, account);
           },
         })),
+      ...connections,
       { row: { label: 'Add another account or workspace' }, act: () => newAccount(profile, listed) },
     ]);
   };
@@ -355,29 +371,24 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       if (read.kind === 'read') await providerFlowOf(profileOf(read.value.profiles, args), read.value);
       return;
     }
-    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.health(), backend.dismissedNotices()]));
+    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.dismissedNotices()]));
     if (read.kind === 'cancelled') return;
-    const [listed, entries, health, dismissed] = read.value;
+    const [listed, entries, dismissed] = read.value;
     const invited = invitedProfiles(listed, dismissed);
-    const displays = displayMapOf(listingViewsOf(entries));
-    const local = entries.filter((entry) => entry.billing === 'local');
+    const keyed = [...new Set(entries.filter((entry) => entry.naming === 'account' && entry.chain[0]?.key !== undefined).map((entry) => entry.provider))];
     await chooseFrom({ title: CONNECT_TITLE }, [
       ...listed.profiles.map((profile) => {
         const label = `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}`;
         return { row: accountsOf(profile.id, listed.accounts).length === 0 ? signInRow(profile, label) : { label }, act: () => providerFlowOf(profile, listed) };
       }),
+      ...keyed.map((provider) => ({
+        row: { label: `${provider} [API key] · configured` },
+        act: async () => {
+          await runServerActions(flowContext(), provider);
+          await ports.refreshConnection();
+        },
+      })),
       { row: { label: 'Add an API key' }, act: addApiKey },
-      ...local.map((entry) => {
-        const display = displays.get(entry.id) ?? entry.id;
-        return {
-          row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` },
-          act: async () => {
-            await runServerActions(flowContext(), entry.provider);
-            await ports.refreshConnection();
-          },
-        };
-      }),
-      { row: { label: 'Add a local server' }, act: addLocalServer },
       ...(invited.length === 0 ? [] : [{ row: { label: NOT_NOW_LABEL }, act: () => answerNotNow(invited) }]),
     ]);
   };

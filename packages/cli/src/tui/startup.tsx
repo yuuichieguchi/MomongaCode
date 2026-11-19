@@ -7,7 +7,7 @@ import type { ShownEffort } from './effort.ts';
 
 export type StartupConfig = { version: string; home: string };
 
-export type BannerModel = { kind: 'connected'; name: string; effort?: ShownEffort } | { kind: 'not-connected'; login: boolean };
+export type BannerModel = { kind: 'connected'; name: string; effort?: ShownEffort } | { kind: 'not-connected'; login: boolean } | { kind: 'unread' };
 
 export type StartupBanner = { config: StartupConfig; model: BannerModel; cwd: string; notices: readonly string[]; figure: boolean };
 
@@ -51,14 +51,18 @@ export const NOT_CONNECTED_MODEL = 'not connected';
 
 export const LOGIN_POINTER = '  (use /login)';
 
-const modelText = (model: BannerModel): string => (model.kind === 'connected' ? model.name : model.login ? `${NOT_CONNECTED_MODEL}${LOGIN_POINTER}` : NOT_CONNECTED_MODEL);
+const modelLines = (model: BannerModel): string[] => {
+  switch (model.kind) {
+    case 'unread':
+      return [];
+    case 'not-connected':
+      return [`model: ${model.login ? `${NOT_CONNECTED_MODEL}${LOGIN_POINTER}` : NOT_CONNECTED_MODEL}`];
+    case 'connected':
+      return [`model: ${model.name}`, ...(model.effort === undefined ? [] : [effortLine(model.effort, 'full')])];
+  }
+};
 
-export const textLines = (config: StartupConfig, model: BannerModel, cwd: string): string[] => [
-  `MomongaCode v${config.version}`,
-  `model: ${modelText(model)}`,
-  ...(model.kind === 'connected' && model.effort !== undefined ? [effortLine(model.effort, 'full')] : []),
-  shortenHome(cwd, config.home),
-];
+export const textLines = (config: StartupConfig, model: BannerModel, cwd: string): string[] => [`MomongaCode v${config.version}`, ...modelLines(model), shortenHome(cwd, config.home)];
 
 export const artFits = (columns: number, lines: readonly string[]): boolean =>
   columns >= ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => [...line].length)) + BOX_CHROME_COLUMNS;

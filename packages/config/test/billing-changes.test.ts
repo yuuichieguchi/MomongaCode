@@ -62,7 +62,7 @@ describe('models.billingChanges', () => {
       { from: 'metered', to: 'plan', model: REMOTE_MODEL },
     ]);
     expect(await sentenceOf({ models: { connections: ALL, billingChanges: [{ from: 'local', to: 'metered', model: 'nowhere' }] } })).toBe(
-      'models.billingChanges[0].model: "nowhere" is not a configured model; configured models: remote/remote-model, home/home-model, plan-model, other/other-model',
+      'models.billingChanges[0].model: "nowhere" is not a configured model; configured models: remote-model, home/home-model, plan-model, other-model',
     );
   });
 });
@@ -71,7 +71,7 @@ describe('the load warning for a fallback step that would change who pays', () =
   it('is issued once per distinct adjacent pair over the chains of all models, naming both models by their display names', async () => {
     const { file, warnings, models } = await loadModelsSection({ connections: [HOME, REMOTE, OTHER], fallback: [REMOTE_MODEL, HOME_MODEL] });
     expect(models.chains.get(OTHER_MODEL)).toEqual([OTHER_MODEL, REMOTE_MODEL, HOME_MODEL]);
-    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'home/home-model', 'local', 'remote/remote-model', 'metered'), stepWarning(file, 'remote/remote-model', 'metered', 'home/home-model', 'local')]);
+    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'home/home-model', 'local', 'remote-model', 'metered'), stepWarning(file, 'remote-model', 'metered', 'home/home-model', 'local')]);
   });
 
   it('is silent once the user allows the pair', async () => {
@@ -81,18 +81,18 @@ describe('the load warning for a fallback step that would change who pays', () =
 
   it('still warns when the allowed pair is scoped to another first model', async () => {
     const { file, warnings } = await loadModelsSection({ connections: [HOME, REMOTE, OTHER], fallback: [REMOTE_MODEL], billingChanges: [{ from: 'local', to: 'metered', model: OTHER_MODEL }] });
-    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'home/home-model', 'local', 'remote/remote-model', 'metered')]);
+    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'home/home-model', 'local', 'remote-model', 'metered')]);
     const scoped = await loadModelsSection({ connections: [HOME, REMOTE, OTHER], fallback: [REMOTE_MODEL], billingChanges: [{ from: 'local', to: 'metered', model: HOME_MODEL }] });
     expect(billingWarnings(scoped.warnings)).toEqual([]);
   });
 
   it('treats the direction of the pair as part of it', async () => {
     const { file, warnings } = await loadModelsSection({ connections: [REMOTE, HOME], fallback: [HOME_MODEL], billingChanges: [{ from: 'local', to: 'metered' }] });
-    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'remote/remote-model', 'metered', 'home/home-model', 'local')]);
+    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'remote-model', 'metered', 'home/home-model', 'local')]);
   });
 
   it('covers a plan member by the same rule, in either direction', async () => {
     const { file, warnings } = await loadModelsSection({ connections: [SUB, REMOTE], fallback: [REMOTE_MODEL, SUB_MODEL] });
-    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'plan-model', 'plan', 'remote/remote-model', 'metered'), stepWarning(file, 'remote/remote-model', 'metered', 'plan-model', 'plan')]);
+    expect(billingWarnings(warnings)).toEqual([stepWarning(file, 'plan-model', 'plan', 'remote-model', 'metered'), stepWarning(file, 'remote-model', 'metered', 'plan-model', 'plan')]);
   });
 });

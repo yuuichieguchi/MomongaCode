@@ -24,7 +24,7 @@ describe('the model on the start screen', () => {
     const banner = await untilOutput(app, 'model: not connected  (use /login)');
     expect(banner).not.toContain('fallback:');
     await submitLine(app, 'hello');
-    await untilFrame(app, 'No model is connected. Use /login to connect one.');
+    await untilFrame(app, 'No model is connected. Use /login to sign in or add an API key, or /model to use a local server.');
     app.unmount();
   });
 

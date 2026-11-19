@@ -1,12 +1,16 @@
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { Agent, buildConnector, request } from 'undici';
+import { Agent, Pool, buildConnector, request } from 'undici';
 import { GENERATION_RETIRED_CODE } from './generation-codes.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import { acquireProcessLock } from './process-lock.ts';
 import type { AcquireProcessLockOptions } from './process-lock.ts';
 import { modeIsPrivate, ownerProblem } from './platform/privacy.ts';
+import { ABORT_SETTLE_LIMIT_MS } from './process-contract.ts';
+import { systemTiming } from './system-timing.ts';
+import { sleep } from './timing.ts';
+import type { Timing } from './timing.ts';
 import { assertScopedPipePath, assertSocketPathLength, assertUnixSocketPathFits, isPipePath } from './socket-path.ts';
 
 export interface UdsRequestOptions {
@@ -36,6 +40,7 @@ export interface UdsClientOptions {
   connectTimeoutMs: number;
   headersTimeoutMs?: number;
   bodyTimeoutMs?: number;
+  timing?: Pick<Timing, 'setTimeout' | 'clearTimeout'>;
 }
 
 export type SocketResolver = () => Promise<string>;
@@ -67,25 +72,45 @@ const isRetiredText = (text: string): boolean => {
   }
 };
 
+type PooledAgent = { agent: Agent; pools: Set<Pool> };
+
+const closeWithin = async ({ agent, pools }: PooledAgent, timing: Pick<Timing, 'setTimeout' | 'clearTimeout'>, limitMs: number): Promise<void> => {
+  const bound = new AbortController();
+  const closed = agent.close().then(() => 'closed' as const);
+  const outcome = await Promise.race([closed, sleep(timing, limitMs, bound.signal).then(() => 'bound' as const)]);
+  bound.abort();
+  if (outcome === 'closed') return;
+  await Promise.all([...pools].map((pool) => pool.destroy()));
+  await closed;
+};
+
 export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClientOptions): UdsClient => {
-  const newAgent = (): Agent =>
-    new Agent({
+  const newAgent = (): PooledAgent => {
+    const pools = new Set<Pool>();
+    const agent = new Agent({
       connect: dialResolved(resolveSocket, options.connectTimeoutMs),
       ...(options.headersTimeoutMs === undefined ? {} : { headersTimeout: options.headersTimeoutMs }),
       ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
+      factory: (origin, poolOptions) => {
+        const pool = new Pool(origin, poolOptions);
+        pools.add(pool);
+        return pool;
+      },
     });
+    return { agent, pools };
+  };
   let agent = newAgent();
   let closing: Promise<void> | undefined;
   let destroying: Promise<void> | undefined;
-  const retireAgent = (used: Agent): void => {
+  const retireAgent = (used: PooledAgent): void => {
     if (used === agent) agent = newAgent();
-    void used.close();
+    void used.agent.close();
   };
   return {
     request: async (options) => {
       const used = agent;
       const response = await request(`http://localhost${options.path}`, {
-        dispatcher: used,
+        dispatcher: used.agent,
         method: options.method as 'GET',
         ...(options.headers === undefined ? {} : { headers: options.headers }),
         ...(options.body === undefined ? {} : { body: options.body }),
@@ -114,11 +139,11 @@ export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClien
       };
     },
     close: () => {
-      closing ??= agent.close();
+      closing ??= closeWithin(agent, options.timing ?? systemTiming, ABORT_SETTLE_LIMIT_MS);
       return closing;
     },
     destroy: () => {
-      destroying ??= agent.destroy().then(() => undefined);
+      destroying ??= Promise.all([agent.agent.destroy(), ...[...agent.pools].map((pool) => pool.destroy())]).then(() => undefined);
       return destroying;
     },
   };

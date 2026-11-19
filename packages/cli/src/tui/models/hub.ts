@@ -1,6 +1,7 @@
 import { declaredCommandProblem, plainHttpWarningText } from '@momonga/config';
 import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
-import type { GatewayHealth } from '@momonga/protocol';
+import type { GatewayHealth, PlanAccountView } from '@momonga/protocol';
+import { planServesAccount } from './plan-account.ts';
 import { SEPARATOR, addressesOf, configuredWindowsOf, modelRowText, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
 import { runAddFlow } from './add.ts';
@@ -40,25 +41,46 @@ type HubRow =
   | { readonly kind: 'heading'; readonly label: string }
   | { readonly kind: 'action'; readonly action: HubAction; readonly label: string };
 
-export type HubFacts = { document: ModelsDocument; plainHttp: readonly string[]; signInRequired: ReadonlySet<string> };
+export type HubFacts = { document: ModelsDocument; plainHttp: readonly string[]; signInRequired: ReadonlySet<string>; keyedElsewhere: ReadonlySet<string> };
 
 const modelLabel = (model: ListedModel, facts: HubFacts): string => `${modelRowText(model, facts.document.start)}${facts.signInRequired.has(model.model) ? `${SEPARATOR}${SIGN_IN_REQUIRED_WORD}` : ''}`;
 
+const SERVERS_HEADING = 'Servers';
+const MODELS_HEADING = 'Models';
 const ACTIONS_HEADING = 'Change';
+
+const grouped = (heading: string, rows: readonly HubRow[]): HubRow[] => (rows.length === 0 ? [] : [{ kind: 'heading', label: heading }, ...rows]);
 
 export const hubRows = (facts: HubFacts): HubRow[] => {
   const { models } = facts.document;
-  const providers = [...new Set(models.map((model) => model.provider))];
-  const blocks = providers.flatMap((provider): HubRow[] => {
-    const served = models.filter((model) => model.provider === provider);
-    const address = served[0]?.address ?? null;
+  const providers = [...new Set(models.map((model) => model.provider))].filter((provider) => !facts.keyedElsewhere.has(provider));
+  const servers = providers.flatMap((provider): HubRow[] => {
+    const address = models.find((model) => model.provider === provider)?.address ?? null;
     return [
       { kind: 'server', provider, label: address === null ? provider : `${provider}${SEPARATOR}${address}` },
       ...(facts.plainHttp.includes(provider) ? [{ kind: 'warning' as const, label: plainHttpWarningText(provider) }] : []),
-      ...served.map((model): HubRow => ({ kind: 'model', model: model.model, label: modelLabel(model, facts) })),
     ];
   });
-  return [...blocks, { kind: 'heading', label: ACTIONS_HEADING }, ...HUB_ACTIONS.map((action): HubRow => ({ kind: 'action', action, label: action }))];
+  return [
+    ...grouped(SERVERS_HEADING, servers),
+    ...grouped(MODELS_HEADING, models.map((model): HubRow => ({ kind: 'model', model: model.model, label: modelLabel(model, facts) }))),
+    { kind: 'heading', label: ACTIONS_HEADING },
+    ...HUB_ACTIONS.map((action): HubRow => ({ kind: 'action', action, label: action })),
+  ];
+};
+
+const firstChoosableFrom = (rows: readonly HubRow[], from: number): number => {
+  const found = rows.findIndex((row, index) => index >= from && row.kind !== 'heading' && row.kind !== 'warning');
+  return found < 0 ? from : found;
+};
+
+const keyedElsewhereOf = (edit: ModelsEdit, accounts: readonly PlanAccountView[]): ReadonlySet<string> => {
+  const local = new Set(edit.resolved.views.filter((view) => view.naming === 'server').map((view) => view.provider));
+  return new Set(
+    edit.resolved.connections
+      .filter(({ plan, provider, apiKeyEnv, apiKeySecret }) => (plan !== undefined && accounts.some((account) => planServesAccount(plan, account))) || (!local.has(provider) && (apiKeyEnv !== undefined || apiKeySecret !== undefined)))
+      .map((connection) => connection.provider),
+  );
 };
 
 const signInRequiredOf = (document: ModelsDocument, health: GatewayHealth): ReadonlySet<string> =>
@@ -101,6 +123,13 @@ const serverMenu = async (context: ModelsFlowContext, opened: Opened, provider: 
   if (action === 'Name this server') await nameServer(context, opened, provider);
   if (action === 'Remove server') await removeServer(context, opened, provider);
 };
+
+export const runRenameServer = async (context: ModelsFlowContext, provider: string): Promise<void> => nameServer(context, await openEdit(context), provider);
+
+export const runRemoveServer = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider);
+
+export const accountConnectionOf = async (context: ModelsFlowContext, account: PlanAccountView): Promise<string | undefined> =>
+  (await openEdit(context)).edit.resolved.connections.find((connection) => connection.plan !== undefined && planServesAccount(connection.plan, account))?.provider;
 
 export const runServerActions = async (context: ModelsFlowContext, provider: string): Promise<void> => serverMenu(context, await openEdit(context), provider);
 
@@ -177,14 +206,14 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
   let at = 0;
   for (;;) {
     const opened = await openEdit(context);
-    const [listing, health] = await Promise.all([context.backend.modelList(), context.backend.health()]);
+    const [listing, health, { accounts }] = await Promise.all([context.backend.modelList(), context.backend.health(), context.backend.plan.accounts()]);
     const document = modelsDocumentOf(listing, addressesOf(opened.edit.resolved), notListed, configuredWindowsOf(opened.edit.resolved));
-    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health) });
+    const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit, accounts) });
     const index = await chosenOf(context, {
       title: MODELS_TITLE,
       lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
-      rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'model' || row.kind === 'warning' ? { child: true } : {}), ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
-      initial: Math.min(at, rows.length - 1),
+      rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
+      initial: firstChoosableFrom(rows, Math.min(at, rows.length - 1)),
       filter: false,
     });
     const row = index === undefined ? undefined : rows[index];

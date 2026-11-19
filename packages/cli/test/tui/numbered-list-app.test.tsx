@@ -28,8 +28,8 @@ const rowOf = (rows: readonly Numbered[], number: number): Numbered => {
   return row;
 };
 
-describe('a numbered list reads as one column of labels and a tree of child rows', () => {
-  it('right-aligns the numbers, keeps the marker in the first column and indents child rows under their parent, at 40 columns', async () => {
+describe('a numbered list reads as one column of labels, grouped under headings', () => {
+  it('right-aligns the numbers, keeps the marker in the first column, and draws no tree lines, at 40 columns', async () => {
     const place = freshPlace();
     const app = await startOnTerminal({ columns: COLUMNS, rows: 40 }, { settingsPlace: { home: place.home, projectDir: place.project }, models: ['ollama/qwen3.8:27b', 'ollama/gemma-3-4b', 'lmstudio/devstral'] });
     await app.type(`/model${KEYS.enter}`, shows(MODEL_SETTINGS_ROW), 'the model list opens');
@@ -38,22 +38,14 @@ describe('a numbered list reads as one column of labels and a tree of child rows
     const rows = numberedRows(hub);
     expect(rows.length).toBeGreaterThanOrEqual(12);
     for (const line of hub) expect(line.length, line).toBeLessThanOrEqual(COLUMNS);
+    expect(hub.join('\n')).not.toMatch(/[├└]/);
     const nine = rowOf(rows, 9);
     const ten = rowOf(rows, 10);
     expect(nine.label).toBe(ten.label);
     for (const row of rows) expect(row.dot, row.line).toBe(ten.dot);
     expect(rows.find((row) => row.line.startsWith('›'))?.marker).toBe(0);
-    const server = rowOf(rows, 1);
-    const first = rowOf(rows, 2);
-    const second = rowOf(rows, 3);
-    expect(server.text).toMatch(/^ollama/);
-    const childIndent = (row: Numbered): number => row.text.search(/[a-z0-9]/i);
-    expect(childIndent(first)).toBeGreaterThanOrEqual(2);
-    expect(childIndent(second)).toBe(childIndent(first));
-    expect(first.text).toMatch(/^├─ ollama\/qwen/);
-    expect(second.text).toMatch(/^└─ ollama\/gemma/);
-    expect(rowOf(rows, 4).text).toMatch(/^lmstudio/);
-    expect(rowOf(rows, 5).text).toMatch(/^└─ lmstudio\/devstral/);
+    expect(rows.slice(0, 5).map((row) => row.text.split('  ')[0])).toEqual(['ollama', 'lmstudio', 'ollama/qwen3.8:27b', 'ollama/gemma-3-4b', 'lmstudio/devstral']);
+    for (const row of rows) expect(row.label, row.line).toBe(ten.label);
     app.close();
   });
 });

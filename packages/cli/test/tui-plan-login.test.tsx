@@ -26,15 +26,16 @@ const routesOf = (backend: FakePlanBackend): string[] => backend.planCalls.map((
 const bodyOf = (backend: FakePlanBackend, route: string): unknown => backend.planCalls.find((call) => call.route === route)?.body;
 
 describe('/login opens the generic list of every way to connect', () => {
-  it('lists the subscription, API-key and local-server groups even with one shipped profile, and signs in to nothing yet', async () => {
+  it('lists the subscription and API-key groups even with one shipped profile, no local server, and signs in to nothing yet', async () => {
     const { app, backend } = await startPlan({ accounts: [] });
     await ready(app);
     await submitLine(app, '/login');
-    const listed = await untilFrame(app, 'Add a local server');
+    const listed = await untilFrame(app, 'Add an API key');
     expect(listed).toContain('OpenAI (ChatGPT subscription)');
     expect(listed).toContain('[subscription]');
     expect(listed).toContain('not signed in');
     expect(listed).toContain('Add an API key');
+    expect(listed).not.toContain('local server');
     expect(routesOf(backend)).not.toContain('sign-in/begin');
     app.unmount();
   });
@@ -43,7 +44,7 @@ describe('/login opens the generic list of every way to connect', () => {
     const { app, backend } = await startPlan({ accounts: [], callbackArrives: false });
     await ready(app);
     await submitLine(app, '/login');
-    const listed = await untilFrame(app, 'Add a local server');
+    const listed = await untilFrame(app, 'Add an API key');
     expect(flat(listed)).toContain(SENTENCE);
     await choose(app, 'OpenAI (ChatGPT subscription)');
     const waiting = await untilFrame(app, PASTE_LABEL);
@@ -63,7 +64,7 @@ describe('/login opens the generic list of every way to connect', () => {
     await choose(app, 'OpenAI (ChatGPT subscription)');
     await untilFrame(app, PASTE_LABEL);
     app.stdin.write(KEYS.escape);
-    const listed = await untilFrame(app, (shown) => shown.includes('Add a local server') && !shown.includes(PASTE_LABEL));
+    const listed = await untilFrame(app, (shown) => shown.includes('Add an API key') && !shown.includes(PASTE_LABEL));
     expect(listed).toContain('not signed in');
     expect(routesOf(backend).filter((route) => route === 'sign-in/begin')).toHaveLength(1);
     expect(routesOf(backend)).not.toContain('sign-in/complete');
@@ -75,7 +76,7 @@ describe('/login opens the generic list of every way to connect', () => {
     const { app, backend } = await startPlan({ accounts: [account({ label: 'work' })] });
     await ready(app);
     await submitLine(app, '/login');
-    const listed = await untilFrame(app, 'Add a local server');
+    const listed = await untilFrame(app, 'Add an API key');
     expect(flat(listed)).not.toContain(SENTENCE);
     await choose(app, 'OpenAI (ChatGPT subscription)');
     await untilFrame(app, 'Add another account or workspace');
@@ -87,7 +88,7 @@ describe('/login opens the generic list of every way to connect', () => {
     const { app } = await startPlan({ accounts: [account({ label: 'work' })] });
     await ready(app);
     await submitLine(app, '/login');
-    const listed = await untilFrame(app, 'Add a local server');
+    const listed = await untilFrame(app, 'Add an API key');
     expect(listed).toContain('signed in as work');
     app.unmount();
   });
@@ -98,7 +99,7 @@ describe('/login opens the generic list of every way to connect', () => {
     await submitLine(app, '/login chatgpt');
     const picker = await untilFrame(app, 'Add another account or workspace');
     expect(picker).toContain('work · ada@example.com · active');
-    expect(picker).not.toContain('Add a local server');
+    expect(picker).not.toContain('Add an API key');
     expect(picker).not.toContain('Add an API key');
     app.unmount();
   });

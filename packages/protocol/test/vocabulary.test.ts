@@ -64,7 +64,7 @@ describe('every fixedBy names a section of a permanent design document (design/p
 
 describe('messageOf: one builder per message, which names the command of the surface it is shown on', () => {
   it('says how to connect a model with a command of the surface', () => {
-    expect(messageOf('noModelConnected', 'tui')).toBe('No model is connected. Use /login to connect one.');
+    expect(messageOf('noModelConnected', 'tui')).toBe('No model is connected. Use /login to sign in or add an API key, or /model to use a local server.');
     expect(messageOf('noModelConnected', 'cli')).toBe('No model is connected. Run momonga models add to add one, or momonga auth login to sign in.');
     for (const surface of SURFACES.filter((candidate) => candidate !== 'tui')) expect(messageOf('noModelConnected', surface)).not.toContain('/login');
   });

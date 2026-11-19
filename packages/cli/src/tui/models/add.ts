@@ -78,7 +78,7 @@ const displaysWith = (edit: ModelsEdit, added: readonly ModelView[]): ReadonlyMa
 
 export const foundDisplays = (edit: ModelsEdit, server: DetectedLocalServer): string[] => {
   const { defaultTag } = kindOf(server);
-  const views = server.models.map((model) => viewOf(server, server.provider, model.id, defaultTag));
+  const views = server.models.map((model) => viewOf({ baseUrl: server.address }, server.provider, model.id, defaultTag));
   const displays = displaysWith(edit, views);
   return views.map((view) => displays.get(view.canon) ?? view.canon);
 };
@@ -90,7 +90,7 @@ export const foundNotConfigured = (edit: ModelsEdit, servers: readonly DetectedL
   return servers.flatMap((server) => {
     const { defaultTag } = kindOf(server);
     const displays = foundDisplays(edit, server);
-    return server.models.flatMap((model, index) => (configured.has(viewOf(server, server.provider, model.id, defaultTag).canon) ? [] : [{ server, model, display: displays[index] ?? model.id }]));
+    return server.models.flatMap((model, index) => (configured.has(viewOf({ baseUrl: server.address }, server.provider, model.id, defaultTag).canon) ? [] : [{ server, model, display: displays[index] ?? model.id }]));
   });
 };
 

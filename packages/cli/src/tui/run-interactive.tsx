@@ -1,7 +1,8 @@
 import { synchronizedFramesOf } from './terminal/synchronized.ts';
 import { render } from 'ink';
 import path from 'node:path';
-import { resolveLayoutLocks } from '@momonga/foundation';
+import { ABORT_SETTLE_LIMIT_MS, resolveLayoutLocks, sleep } from '@momonga/foundation';
+import type { Timing } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { writeTuiSetting } from '@momonga/config';
 import { TARGET_NOT_READY, reopenSessionCommand } from '@momonga/protocol';
@@ -211,11 +212,20 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   }
   const [moveFailure] = moveFailures;
   if (moveFailure !== undefined) throw moveFailure;
-  await tasks.settle();
+  await settledWithin(ports.timers, tasks.settle(), ABORT_SETTLE_LIMIT_MS);
   await backend.close();
   const exitCode = exitCodeOf(ports, refusalOf(outcome));
   writeReopenLine(ports, outcome);
   return exitCode;
+};
+
+const settledWithin = async (timers: Pick<Timing, 'setTimeout' | 'clearTimeout'>, pending: Promise<void>, limitMs: number): Promise<void> => {
+  const bound = new AbortController();
+  try {
+    await Promise.race([pending, sleep(timers, limitMs, bound.signal)]);
+  } finally {
+    bound.abort();
+  }
 };
 
 const repairedStart = async (ports: CliPorts, terminal: Terminal, output: TerminalOutputPort, first: Extract<TuiStart, { kind: 'broken' }>, reread: () => Promise<TuiStart>): Promise<Extract<TuiStart, { kind: 'loaded' }> | undefined> => {
