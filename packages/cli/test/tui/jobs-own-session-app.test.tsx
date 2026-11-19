@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import { App } from '../../src/tui/app.tsx';
 import { shellFormOf } from '../../src/tui/commands/shell-commands.ts';
@@ -6,7 +6,7 @@ import { NEEDS_SESSION_NOTE } from '../../src/tui/slash.ts';
 import type { ShellPort } from '../../src/tui/slash.ts';
 import { fakeBackend, runView } from '../fake-backend.ts';
 import type { FakeBackendOptions, FakeConversation } from '../fake-backend.ts';
-import { KEYS, renderObservable, untilFrame } from '../ink-helpers.ts';
+import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from '../ink-helpers.ts';
 import { runStarted, type } from '../tui-harness.tsx';
 import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
 import { contextOf } from './slash-context.ts';
@@ -41,7 +41,7 @@ const open = async (options: FakeBackendOptions, reopen?: { kind: 'id'; id: stri
 const typedJobs = async (app: Awaited<ReturnType<typeof open>>['app'], argvs: string[][]): Promise<void> => {
   await type(app, '/jobs', '> /jobs');
   app.stdin.write(KEYS.enter);
-  for (let tries = 0; tries < 200 && argvs.length === 0; tries += 1) await new Promise((resolve) => setImmediate(resolve));
+  await vi.waitFor(() => expect(argvs).toHaveLength(1), { timeout: FRAME_BOUND_MS });
 };
 
 describe('/jobs typed in the terminal UI lists the jobs of the session it is typed in', () => {
@@ -94,7 +94,7 @@ describe('/jobs typed in the terminal UI lists the jobs of the session it is typ
     const { context } = contextOf({ shell, sessions: { ...contextOf().context.sessions, current: () => OWN_SESSION } });
 
     await shellFormOf('jobs').run(typed, context);
-    for (let tries = 0; tries < 200 && argvs.length === 0; tries += 1) await new Promise((resolve) => setImmediate(resolve));
+    await vi.waitFor(() => expect(argvs).toHaveLength(1), { timeout: FRAME_BOUND_MS });
 
     expect(argvs).toEqual([expected]);
   });
@@ -104,7 +104,7 @@ describe('/jobs typed in the terminal UI lists the jobs of the session it is typ
     const { context } = contextOf({ shell, sessions: { ...contextOf().context.sessions, current: () => OWN_SESSION } });
 
     await shellFormOf('jobs').run('--json', context);
-    for (let tries = 0; tries < 200 && argvs.length === 0; tries += 1) await new Promise((resolve) => setImmediate(resolve));
+    await vi.waitFor(() => expect(argvs).toHaveLength(1), { timeout: FRAME_BOUND_MS });
 
     expect(argvs).toEqual([['jobs', OWN_SESSION, '--json']]);
   });
