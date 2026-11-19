@@ -1,6 +1,9 @@
 import { acceptedReasoningEfforts, sentReasoningEffort } from '@momonga/protocol';
 import type { MomongaModelEntry, ReasoningCapability, ReasoningEffort } from '@momonga/protocol';
 import type { RowSteps } from './select.tsx';
+import { effortChoiceText } from '../effort-text.ts';
+
+export { effortChoiceText };
 
 export type DeclaredReasoning = { readonly known: false } | { readonly known: true; readonly reasoning: ReasoningCapability | undefined };
 
@@ -31,14 +34,6 @@ export const sentEffort = (entries: readonly MomongaModelEntry[], model: string,
   if (answering === undefined || answering === model) return sent;
   const member = entryOf(entries, model)?.chain.find((candidate) => candidate.model === answering);
   return member === undefined ? sent : sentFor(declaredOf(member.capabilities), sent);
-};
-
-export const effortChoiceText = (declared: DeclaredReasoning, chosen: ReasoningEffort, modelName: string): string | undefined => {
-  if (!declared.known) return undefined;
-  const sent = sentReasoningEffort(declared.reasoning, chosen);
-  if (sent === chosen) return undefined;
-  if (sent === undefined) return `effort ${chosen} was chosen, but ${modelName} declares no reasoning effort, so none is sent`;
-  return `effort ${chosen} was chosen; ${modelName} does not accept it, so ${sent} is used`;
 };
 
 export type ShownEffort = { readonly kind: 'sent'; readonly level: ReasoningEffort } | { readonly kind: 'not-available' };

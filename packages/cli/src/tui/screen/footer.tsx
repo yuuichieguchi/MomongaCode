@@ -4,7 +4,11 @@ import { formatTokens } from '../../format-tokens.ts';
 import type { KeyTable } from '../keys/table.ts';
 import { displayWidth } from './wrap.ts';
 
-export type FooterFacts = { mode: string; tokens: number; contextPercent: number | undefined; imageInput: boolean; answer: string | undefined; newline: string | undefined };
+export type FooterModel = { readonly name: string; readonly effort: string };
+
+export type FooterFacts = { mode: string; tokens: number; contextPercent: number | undefined; imageInput: boolean; answer: string | undefined; newline: string | undefined; model?: FooterModel };
+
+const modelForms = ({ name, effort }: FooterModel): string[] => [`${name} · ${effort}`, effort];
 
 export const contextPercentOf = (contextTokens: number, contextWindow: number | undefined): number | undefined => (contextWindow === undefined ? undefined : Number((200n * BigInt(contextTokens) + BigInt(contextWindow)) / (2n * BigInt(contextWindow))));
 
@@ -47,6 +51,7 @@ export const footerSegments = (facts: FooterFacts, keys: KeyTable): RowSegment[]
   { side: 'left', forms: modeForms(facts.mode, keys.keyHint('mode.cycle')) },
   { side: 'left', forms: [`tokens: ${formatTokens(facts.tokens)}`] },
   { side: 'left', forms: [`context: ${facts.contextPercent === undefined ? 'unknown' : `${facts.contextPercent}%`}`] },
+  ...(facts.model === undefined ? [] : [{ side: 'left' as const, forms: modelForms(facts.model) }]),
   ...(facts.imageInput ? [{ side: 'left' as const, forms: [IMAGE_HINT] }] : []),
   ...(facts.answer !== undefined || facts.newline === undefined ? [] : [{ side: 'right' as const, forms: [facts.newline] }]),
 ];

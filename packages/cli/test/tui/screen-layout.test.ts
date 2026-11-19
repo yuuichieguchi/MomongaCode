@@ -139,6 +139,14 @@ describe('the footer row', () => {
     expect(row).not.toContain('new line');
   });
 
+  it('names the model and the effort it runs at after the context share, before the image and newline hints, and keeps the effort alone before it drops the segment', () => {
+    const withModel = { ...facts, newline: undefined, model: { name: 'qwen3.8:27b', effort: 'effort: high' } };
+    const full = 'mode: manual (shift+tab) · tokens: 0 · context: 0% · qwen3.8:27b · effort: high';
+    expect(footerRow(withModel, 80)).toBe(full);
+    expect(footerRow(withModel, full.length - 1)).toBe('mode: manual (shift+tab) · tokens: 0 · context: 0% · effort: high');
+    expect(footerRow(withModel, 'mode: manual (shift+tab) · tokens: 0 · context: 0%'.length)).toBe('mode: manual (shift+tab) · tokens: 0 · context: 0%');
+  });
+
   it('drops whole segments as the row narrows: the newline hint first, then the image hint, the context, the tokens; then the mode loses its key and its label (P10)', () => {
     const wide = { ...facts, imageInput: true };
     const full = 'mode: manual (shift+tab) · tokens: 0 · context: 0% · image input: paste a file path';

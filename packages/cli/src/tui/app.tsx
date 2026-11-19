@@ -47,10 +47,13 @@ import type { KeyBindings } from './keys/store.ts';
 import { chordPressOf, DEFAULT_KEY_TABLE, newlineKeyHint } from './keys/table.ts';
 import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
 import { a11yOf, applyA11y, NOTHING_ASKED, statusLine, statusLines } from './screen/a11y.ts';
-import type { AskedA11y, StoredA11y } from './screen/a11y.ts';
+import type { AskedA11y, StatusFacts, StoredA11y } from './screen/a11y.ts';
 import { AtList, AttachmentLines, heldAttachments } from './screen/attachments.tsx';
 import type { Attachment } from './screen/attachments.tsx';
 import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen/footer.tsx';
+import type { FooterModel } from './screen/footer.tsx';
+
+const modelFactOf = (model: FooterModel | undefined): { model?: FooterModel } => (model === undefined ? {} : { model });
 import { formatTokens } from '../format-tokens.ts';
 import { HistoryView, useBackgroundAnswered } from './screen/history-view.tsx';
 import type { ViewSource } from './screen/viewport.ts';
@@ -1953,9 +1956,15 @@ export function App(props: AppProps) {
   useEffect(() => {
     keepHistory();
   }, [a11y.screenReader, terminalState.screen]);
-  const statusFacts = (): { mode: string; tokens: string; context: string } => {
+  const footerModel = (): FooterModel | undefined => {
+    if (sessionModel === undefined) return undefined;
+    const shown = shownEffort(entriesRef.current, sessionModel, sessionEffort);
+    return shown?.kind === 'sent' ? { name: shownModel(sessionModel), effort: effortLine(shown, 'short') } : undefined;
+  };
+  const statusFacts = (): StatusFacts => {
     const percent = contextPercentOf(transcript.contextTokens, capabilities?.contextWindow);
-    return { mode, tokens: formatTokens(sessionTokens(transcript)), context: percent === undefined ? 'unknown' : `${percent}%` };
+    const model = footerModel();
+    return { mode, tokens: formatTokens(sessionTokens(transcript)), context: percent === undefined ? 'unknown' : `${percent}%`, ...(model === undefined ? {} : { model: `${model.name} · ${model.effort}` }) };
   };
   const say = useEffectEvent((text: string | undefined): void => {
     if (a11y.screenReader && text !== undefined) note(text);
@@ -1991,6 +2000,7 @@ export function App(props: AppProps) {
           imageInput,
           answer: shownHint,
           newline: newlineHintText(newlineKeyHint(keys, terminalState.negotiation)),
+          ...modelFactOf(footerModel()),
         }
       : undefined;
 

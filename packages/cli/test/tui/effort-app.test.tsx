@@ -222,3 +222,14 @@ describe('/model and the effort', () => {
     app.close();
   });
 });
+
+describe('the footer names the model and its effort', () => {
+  it('shows the level in force beside the model, and follows /effort', async () => {
+    const place = freshPlace();
+    settingsWith(place, {});
+    const app = await opened({ reasoning: DECLARED }, place);
+    await app.type('', shows('context: 0% · scripted-model · effort: medium'), 'the footer names the effort');
+    await app.type(`/effort high --session${KEYS.enter}`, shows('scripted-model · effort: high'), 'the footer follows');
+    app.close();
+  });
+});

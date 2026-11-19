@@ -1,7 +1,7 @@
 import { EXIT_CONFIG, EXIT_FAILURE, EXIT_INTERRUPTED, EXIT_OK, EXIT_WAITING_FOR_APPROVAL, isRecord } from '@momonga/foundation';
 import type { MomongaPaths, SandboxNetworkSetting } from '@momonga/foundation';
-import { TARGET_NOT_READY, WORDS, agentReadiness, approvalEndingText, approvalShownLines, attachRunCommand, budgetSentence, fallbackNoticeTextOn, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
-import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
+import { TARGET_NOT_READY, WORDS, agentReadiness, displayMapOf, approvalEndingText, approvalShownLines, attachRunCommand, budgetSentence, fallbackNoticeTextOn, heldEndOf, isOpaqueEvent, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
+import type { BudgetExhausted, Mandate, MomongaModelEntry, ReasoningEffort, PermissionMode, PermissionOption, PlanAccountRef, PublicRunEvent, QuiescentBehaviour, RunReport, Surface, UnknownEffectCall } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
@@ -11,6 +11,8 @@ import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { shellModelsOf } from '../plain-http.ts';
 import { escapedLines } from '../terminal-writer.ts';
+import { effortChoiceText } from '../effort-text.ts';
+import { listingViewsOf } from '../client/gateway-client.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
@@ -42,6 +44,7 @@ export type HeadlessOptions = {
   bypassAllowed?: boolean;
   sandboxNetwork?: SandboxNetworkSetting;
   model?: string;
+  effort?: ReasoningEffort;
   reopen?: HeadlessReopen;
   capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
   modelList(): Promise<ListedModels>;
@@ -560,6 +563,7 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
       ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.effort === undefined ? {} : { effort: options.effort }),
     };
     return await openSession(ports, paths, options.reopen === undefined ? typed : { ...typed, reopen: options.reopen, modelList: options.modelList });
   } catch (error) {
@@ -649,9 +653,17 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
 
 type RunStart = { kind: 'started'; id: string } | { kind: 'refused' } | { kind: 'interrupted' };
 
+const writeEffortNote = async (ports: Pick<CliPorts, 'stderr'>, options: Pick<HeadlessOptions, 'modelList'>, model: string, capabilities: MomongaModelEntry['capabilities'], effort: ReasoningEffort): Promise<void> => {
+  if (!('contextWindow' in capabilities)) return;
+  const shown = displayMapOf(listingViewsOf((await options.modelList()).data)).get(model) ?? model;
+  const text = effortChoiceText({ known: true, reasoning: capabilities.reasoning }, effort, shown);
+  if (text !== undefined) ports.stderr.write(noteText([`momonga: ${text}`]));
+};
+
 const startedRun = async (ports: CliPorts, session: CliSession, options: HeadlessOptions, prompt: string): Promise<RunStart> => {
   if (session.created.trustNotice !== undefined) ports.stderr.write(noteText([`momonga: ${session.created.trustNotice}`]));
-  const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
+  const capabilities = await options.capabilitiesOf(session.created.session.model);
+  const readiness = agentReadiness(capabilities);
   if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
     const message = readinessShownText(readiness, 'cli');
     ports.stderr.write(`${escapedLines(leadWith('momonga: ', message.split('\n')))}\n`);
@@ -659,6 +671,7 @@ const startedRun = async (ports: CliPorts, session: CliSession, options: Headles
     return { kind: 'refused' };
   }
   if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'cli').split('\n')))}\n`);
+  if (options.effort !== undefined) await writeEffortNote(ports, options, session.created.session.model, capabilities, options.effort);
   const sessionId = session.created.session.id;
   const invocation = await resolveSkillInvocation(session.client, sessionId, prompt, options.skill);
   const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));

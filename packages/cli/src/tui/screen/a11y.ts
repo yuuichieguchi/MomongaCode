@@ -44,8 +44,10 @@ export const applyA11y = (next: A11y): void => {
 
 export const currentA11y = (): A11y => current;
 
-export const statusLines = (facts: { mode: string; tokens: string; context: string }): string[] => [`mode: ${facts.mode}`, `tokens: ${facts.tokens}`, `context: ${facts.context}`];
+export type StatusFacts = { mode: string; tokens: string; context: string; model?: string };
+
+export const statusLines = (facts: StatusFacts): string[] => [`mode: ${facts.mode}`, `tokens: ${facts.tokens}`, `context: ${facts.context}`, ...(facts.model === undefined ? [] : [`model: ${facts.model}`])];
 
 export const STATUS_SEPARATOR = ' · ';
 
-export const statusLine = (facts: { mode: string; tokens: string; context: string }): string => statusLines(facts).join(STATUS_SEPARATOR);
+export const statusLine = (facts: StatusFacts): string => statusLines(facts).join(STATUS_SEPARATOR);
