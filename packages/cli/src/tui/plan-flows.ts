@@ -16,7 +16,7 @@ import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
-import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, cancelledText, catalogUnreadHint, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
+import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, accountInUseLine, accountNotSessionModelLine, cancelledText, catalogUnreadHint, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
@@ -42,7 +42,7 @@ export type PlanFlows = {
   logout(): Promise<void>;
   modelPicker(current: string | undefined): Promise<void>;
   providerFlow(profile: PlanProfileView): Promise<void>;
-  catalogPicker(profile: PlanProfileView, account: string): Promise<void>;
+  catalogPicker(profile: PlanProfileView, account: string): Promise<boolean>;
   welcome(profiles: readonly PlanProfileView[]): Promise<void>;
   usageLimit(profile: PlanProfileView): Promise<void>;
   planUseNotEnabled(profile: PlanProfileView, account: string | undefined): Promise<void>;
@@ -106,7 +106,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     await connectAdded(await addService(flowContext()));
   };
 
-  const catalogPicker = async (profile: PlanProfileView, account: string): Promise<void> => {
+  const catalogPicker = async (profile: PlanProfileView, account: string): Promise<boolean> => {
     let catalog: PlanModelsResponse;
     try {
       catalog = await backend.plan.accountModels(account, { profile: profile.id });
@@ -114,13 +114,13 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       if (!(error instanceof GatewayAnswerError)) throw error;
       ports.failed(error.message);
       ports.info(catalogUnreadHint(profile.id, account));
-      return;
+      return false;
     }
     if (catalog.models.length === 0) {
       ports.info(`${profile.messages.identityLabel} lists no model for ${account}`);
-      return;
+      return false;
     }
-    await chooseFrom(
+    return chooseFrom(
       { title: `Choose a model of ${account}` },
       catalog.models.map((entry) =>
         entry.usable
@@ -136,19 +136,24 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     );
   };
 
+  const accountInUse = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
+    const entries = await backend.models();
+    const serving = entries.filter((entry) =>
+      entry.chain.some((member) => member.plan !== undefined && member.plan.profile === profile.id && (member.plan.account === undefined ? account.active : member.plan.account === account.label)),
+    );
+    if (account.pinnedBy.length === 0 && serving.length === 0 && (await catalogPicker(profile, account.label))) return;
+    await ports.refreshConnection();
+    const current = ports.model();
+    const configured = [...account.pinnedBy, ...serving.map((entry) => entry.id)];
+    if (current !== undefined && !configured.includes(current)) ports.info(accountNotSessionModelLine(account.label, displayMapOf(listingViewsOf(entries)).get(current) ?? current));
+  };
+
   const afterSignIn = async (profile: PlanProfileView, account: PlanAccountView, firstSignIn: boolean): Promise<void> => {
     if (firstSignIn) {
       const { title, body, action } = profile.messages.firstSignIn;
       await ports.pick({ title, lines: [body, `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`], rows: [{ label: action }] });
     }
-    const serves = (await backend.models()).some((entry) =>
-      entry.chain.some((member) => member.plan !== undefined && member.plan.profile === profile.id && (member.plan.account === undefined ? account.active : member.plan.account === account.label)),
-    );
-    if (account.pinnedBy.length === 0 && !serves) {
-      await catalogPicker(profile, account.label);
-      return;
-    }
-    await ports.refreshConnection();
+    await accountInUse(profile, account);
   };
 
   const sandboxAccepted = async (): Promise<boolean> => {
@@ -244,8 +249,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     switch (savedAccountAction(account)) {
       case 'activate':
         await backend.plan.setActive({ profile: profile.id, account: account.label });
-        ports.info(`${profile.messages.identityLabel}: using ${account.label}`);
-        await ports.refreshConnection();
+        ports.info(accountInUseLine(profile, account.label));
+        await accountInUse(profile, { ...account, active: true });
         return undefined;
       case 'sign-in':
         return signInFlow(profile, account.label, account.state === PLAN_DISABLED_STATE);
@@ -289,6 +294,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
           act: async () => {
             const answer = await backend.plan.resume(account.label, { profile: profile.id });
             ports.info(resumeLine(account.label, answer.resumed));
+            if (answer.resumed && account.active) await accountInUse(profile, account);
           },
         })),
       { row: { label: 'Add another account or workspace' }, act: () => newAccount(profile, listed) },

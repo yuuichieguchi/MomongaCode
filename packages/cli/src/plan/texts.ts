@@ -79,5 +79,9 @@ export const listProblemLine = (problem: { file: string; cause: string }): strin
 
 export const resumeLine = (label: string, resumed: boolean): string => (resumed ? `Resumed plan use for ${label}` : `${label} is not paused`);
 
+export const accountInUseLine = (profile: { messages: { identityLabel: string } }, account: string): string => `${profile.messages.identityLabel} account in use: ${account}`;
+
+export const accountNotSessionModelLine = (account: string, model: string): string => `${account} is signed in and selected, but this session still runs on ${model}; /model lists the models of ${account} and switches to one.`;
+
 export const catalogUnreadHint = (profile: string, account: string): string =>
   `To use a model of ${account} by its name: momonga models add --plan ${profile} --account ${account} --model <own name> --window <tokens> --yes`;

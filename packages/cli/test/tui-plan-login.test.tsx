@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PLAN_LABEL_REFUSAL } from '@momonga/protocol';
+import type { PlanModelsResponse } from '@momonga/protocol';
 import { runView } from './fake-backend.ts';
 import { KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
@@ -241,6 +242,73 @@ describe('the account picker and a new sign-in', () => {
     await eventually(() => backend.started.length > 0, 'the initial prompt');
     await untilTypedAfter(app);
     expect(backend.started.map((run) => run.text)).toEqual(['start here']);
+    app.unmount();
+  });
+});
+
+describe('an account that becomes the one in use', () => {
+  const GPT = { readAt: '2026-11-10T00:00:00.000Z', models: [{ slug: 'gpt-5.1', displayName: 'GPT-5.1', usable: true, contextWindow: 272000, maxOutputTokens: 128000 }] } satisfies PlanModelsResponse;
+
+  const STARTUP = { version: '1.2.3', home: '/Users/ada' };
+
+  const figureModel = (shown: string): string => /model: (\S+)/.exec(shown.split('\n').filter((line) => line.includes('model: ')).at(-1) ?? '')?.[1] ?? '';
+
+  it('an active account that serves no configured model, chosen from /login, opens its model list, and Enter on a model moves the session, and the start figure to it', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ pinnedBy: [] })], catalogs: { chatgpt: GPT } }, { startup: STARTUP });
+    await ready(app);
+    await submitLine(app, '/login');
+    await choose(app, 'OpenAI (ChatGPT subscription)');
+    await choose(app, 'chatgpt · ada@example.com');
+    await untilOutput(app, 'ChatGPT account in use: chatgpt');
+    await untilFrame(app, 'Choose a model of chatgpt');
+    await choose(app, 'gpt-5.1');
+    await untilOutput(app, 'model: chatgpt/gpt-5.1');
+    expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });
+    const after = await untilFrame(app, (shown) => figureModel(shown) === 'chatgpt/gpt-5.1');
+    expect(after).not.toContain('still runs on');
+    expect(app.frames.join('\n')).not.toContain('ChatGPT: using');
+    app.unmount();
+  });
+
+  it('leaving the model list without a choice says the account is selected and the session still runs on its model', async () => {
+    const { app } = await startPlan({ accounts: [account({ pinnedBy: [] })], catalogs: { chatgpt: GPT } }, { startup: STARTUP });
+    await ready(app);
+    const before = figureModel(app.lastFrame() ?? '');
+    expect(before).not.toBe('');
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'chatgpt · ada@example.com');
+    await untilFrame(app, 'Choose a model of chatgpt');
+    app.stdin.write(KEYS.escape);
+    const shown = flat(await untilOutput(app, 'still runs on'));
+    expect(shown).toContain(`chatgpt is signed in and selected, but this session still runs on ${before}; /model lists the models of chatgpt and switches to one.`);
+    expect(figureModel(app.lastFrame() ?? '')).toBe(before);
+    app.unmount();
+  });
+
+  it('an active account that already serves a configured model other than the session model names the account, says the session model is unchanged and opens no list', async () => {
+    const { app, backend } = await startPlan({ accounts: [account()], catalogs: { chatgpt: GPT } }, { startup: STARTUP });
+    await ready(app);
+    const before = figureModel(app.lastFrame() ?? '');
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'chatgpt · ada@example.com');
+    const shown = flat(await untilOutput(app, 'still runs on'));
+    expect(shown).toContain('ChatGPT account in use: chatgpt');
+    expect(shown).toContain(`chatgpt is signed in and selected, but this session still runs on ${before}; /model lists the models of chatgpt and switches to one.`);
+    await untilTypedAfter(app);
+    expect(app.frames.join('\n')).not.toContain('Choose a model of chatgpt');
+    expect(routesOf(backend)).not.toContain('accounts/chatgpt/models');
+    expect(figureModel(app.lastFrame() ?? '')).toBe(before);
+    app.unmount();
+  });
+
+  it('switching to another account that serves no configured model opens that account\'s model list', async () => {
+    const { app } = await startPlan({ accounts: [account({ label: 'home' }), account({ label: 'work', email: 'w@example.com', active: false, pinnedBy: [] })], catalogs: { work: GPT } });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'work · w@example.com');
+    await untilOutput(app, 'ChatGPT account in use: work');
+    const picker = await untilFrame(app, 'Choose a model of work');
+    expect(picker).toContain('gpt-5.1');
     app.unmount();
   });
 });

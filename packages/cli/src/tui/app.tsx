@@ -782,7 +782,9 @@ export function App(props: AppProps) {
     }
     enterPhase({ kind: 'unconnected' });
     const usable = listed.accounts.find((account) => account.active && (account.state === 'active' || account.state === PLAN_DISABLED_STATE));
-    if (usable !== undefined) runFlow(() => flows.catalogPicker(profileOf(listed.profiles, usable.profile), usable.label));
+    if (usable !== undefined) runFlow(async () => {
+      await flows.catalogPicker(profileOf(listed.profiles, usable.profile), usable.label);
+    });
   };
 
   const boot = useEffectEvent(async (): Promise<void> => {
