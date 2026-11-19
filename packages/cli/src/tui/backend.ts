@@ -119,6 +119,7 @@ export type TuiBackend = {
   ruleHistory(id: string): Promise<GoverningFactView[]>;
   ignoreMarker(name: string): Promise<void>;
   model(): Promise<MomongaModelEntry>;
+  modelOf(model: string): Promise<MomongaModelEntry>;
   startupNotices(): Promise<readonly string[]>;
   readImage(file: string): Promise<ImageAttachment>;
   loadHistory(): Promise<readonly string[]>;
@@ -420,6 +421,7 @@ export const createTuiBackend = (
     ruleHistory: (id) => runtime().ruleHistory(id),
     ignoreMarker: (name) => runtime().ignoreMarker(name),
     model: () => withGateway((gateway) => gateway.modelOf(current().model)),
+    modelOf: (model) => withGateway((gateway) => gateway.modelOf(model)),
     startupNotices: async () => [...stopNotices.splice(0), ...(await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat()],
     readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),

@@ -123,6 +123,9 @@ export type FakeBackendOptions = {
   autoModeAvailable?: boolean;
   modelPending?: Promise<void>;
   modelFailure?: Error;
+  modelOfFailures?: Readonly<Record<string, Error>>;
+  setModelFailure?: Error;
+  modelsLockFailure?: Error;
   models?: readonly string[];
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
@@ -440,7 +443,9 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     modelsHost: (signal) => ({
       home: homeOfModels(),
       settingsFile: modelsFile(),
-      lock: testKernelLock,
+      lock: options.modelsLockFailure === undefined ? testKernelLock : () => {
+        throw options.modelsLockFailure;
+      },
       platform: 'linux',
       interrupt: signal,
       files: {
@@ -470,6 +475,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     setModel: async (model: string, effort?: ReasoningEffort) => {
       record(effort === undefined ? `model:${model}` : `model:${model} effort:${effort}`);
+      if (options.setModelFailure !== undefined) throw options.setModelFailure;
       const { effort: _dropped, ...rest } = session;
       session = model === session.model && effort === undefined ? { ...session } : { ...rest, model, ...(effort === undefined ? {} : { effort }) };
       return session;
@@ -646,6 +652,14 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (options.modelFailure !== undefined) throw options.modelFailure;
       const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model), ...reasoningOf(session.model) };
       return { ...listedEntryOf(session.model, capabilities, options.chain ?? [session.model]), ...savedEffortOf(session.model) };
+    },
+    modelOf: async (model: string) => {
+      if (options.modelPending !== undefined) await options.modelPending;
+      const failure = options.modelOfFailures?.[model];
+      if (failure !== undefined) throw failure;
+      const entry = (await listedModels()).find((listed) => listed.id === model);
+      if (entry === undefined) throw new Error(`the fake gateway does not list the model ${model}`);
+      return entry;
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {

@@ -178,7 +178,8 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       failed: harness.context.info,
       toast: harness.context.info,
       connected: async (model) => void connected.push(model),
-      connectedThen: async (model, then) => {
+      warn: harness.context.info,
+      switchedThen: async (model, _effort, then) => {
         connected.push(model);
         await then();
       },

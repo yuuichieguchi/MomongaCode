@@ -38,7 +38,8 @@ const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
     failed: harness.context.info,
     toast: harness.context.info,
     connected: async (model) => void connected.push(model),
-    connectedThen: async (model, then) => {
+    warn: harness.context.info,
+    switchedThen: async (model, _effort, then) => {
       connected.push(model);
       await then();
     },
@@ -84,7 +85,7 @@ describe('the /model list (6.2)', () => {
     expect(modelListRows({ listing, current: undefined, health, found: [], plan: [] }).rows.map((row) => row.label)).toEqual(['chatgpt/gpt-5.5 → openai/gpt-5.5  plan     sign in required', 'openai/gpt-5.5                    metered  -']);
   });
 
-  it('shows the found models that are not configured below a separator, only after a search the user started', async (context) => {
+  it('shows the found models that are not configured below a separator, only after a search the user started; a chosen one is added and, with its numbers unknown, not switched to', async (context) => {
     const before = flowOf(context, threeModels(), []);
     await pickerOf(before).modelPicker(undefined);
     expect(before.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b    local', 'ollama/qwen3.8:27b   local', 'lmstudio/gemma-3-4b  local', MODEL_SETTINGS_ROW]);
@@ -95,7 +96,8 @@ describe('the /model list (6.2)', () => {
     const connected: string[] = [];
     await pickerOf(after, connected).modelPicker(undefined);
     expect(after.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b        local', 'ollama/qwen3.8:27b       local', 'lmstudio/gemma-3-4b      local', 'Found on this computer', 'ollama/devstral-small-2  local', MODEL_SETTINGS_ROW]);
-    expect(connected).toEqual(['ollama/devstral-small-2:latest']);
+    expect(after.infos).toEqual(['Added ollama/devstral-small-2. It is used from the next request.', 'the numbers of this model are not known\nChoose a model with /model, or set one up through its Model settings… row.']);
+    expect(connected).toEqual([]);
     expect((after.written() as { models: { connections: { models: { id: string }[] }[] } }).models.connections[0]?.models.map((model) => model.id)).toContain('devstral-small-2:latest');
   });
 

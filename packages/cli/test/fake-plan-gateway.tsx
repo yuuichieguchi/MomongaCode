@@ -96,6 +96,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   const listedModels = base.models;
   const listing = base.modelList;
   const sessionModel = base.model;
+  const listedModelOf = base.modelOf;
   const planCalls: PlanCall[] = [];
   const dismissals: string[] = [];
   const listenerPaths: string[] = [];
@@ -210,6 +211,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       return { ...listed, data: listed.data.map(withBilling) };
     },
     model: async () => withBilling(await sessionModel()),
+    modelOf: async (model: string) => withBilling(await listedModelOf(model)),
     health: async (): Promise<GatewayHealth> => ({
       ok: true,
       models: Object.fromEntries(members().map((member) => [member, options.health?.[member] ?? { ok: true, breaker: 'closed' as const }])),

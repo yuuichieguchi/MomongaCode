@@ -181,7 +181,7 @@ describe('/model and the effort', () => {
     const place = freshPlace();
     settingsWith(place, { own: { [OTHER]: 'low' } });
     const app = await opened({ reasoning: TWO_DECLARED, models: [SCRIPTED_MODEL, OTHER], session: { effort: 'xhigh' } }, place);
-    await app.type(`/model other-model${KEYS.enter}`, shows('model: other-model · effort: low;'), 'the switch names the effort');
+    await app.type(`/model other-model${KEYS.enter}`, shows('model: other-model (effort: low);'), 'the switch names the effort');
     expect(app.backend.calls).toContain(`model:${OTHER}`);
     app.close();
   });
@@ -214,13 +214,13 @@ describe('/model and the effort', () => {
     await app.type(`${KEYS.down}${KEYS.enter}`, shows('Reasoning effort'), 'the effort picker opens');
     const picker = await app.type('', shows('tab: this session only'), 'the effort picker is drawn');
     expect(listBlockOf(picker, 'Reasoning effort')).toBe(['Reasoning effort', '› 1. low  in use', '  2. medium', '  3. high', '  4. xhigh', '  up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n'));
-    expect(app.backend.calls).toContain(`model:${OTHER}`);
-    expect(outputOf(app)).not.toContain('model: other-model ·');
-    await app.type(`${KEYS.down}${KEYS.down}${KEYS.enter}`, shows('model: other-model · effort: high;'), 'the level is saved and the model line follows');
+    expect(app.backend.calls.filter((call) => call.startsWith('model:'))).toEqual([]);
+    expect(outputOf(app)).not.toContain('model: other-model (');
+    await app.type(`${KEYS.down}${KEYS.down}${KEYS.enter}`, shows('model: other-model (effort: high);'), 'the level is saved and the model line follows');
     expect(outputOf(app)).toContain('effort: high for other-model; saved');
-    expect(app.backend.calls).toContain('effort:high');
+    expect(app.backend.calls.filter((call) => call.startsWith('model:') || call.startsWith('effort:'))).toEqual([`model:${OTHER} effort:high`]);
     expect(savedEffortOf(place, OTHER)).toBe('high');
-    expect(outputOf(app).split('model: other-model ·').length - 1).toBe(1);
+    expect(outputOf(app).split('model: other-model (').length - 1).toBe(1);
     app.close();
   });
 
@@ -229,22 +229,23 @@ describe('/model and the effort', () => {
     settingsWith(place, {});
     const app = await opened({ reasoning: DECLARED, models: [SCRIPTED_MODEL, OTHER] }, place);
     await app.type(`/model${KEYS.enter}`, shows(MODEL_SETTINGS_ROW), 'the model list opens');
-    await app.type(`${KEYS.down}${KEYS.enter}`, shows('model: other-model · effort: not available;'), 'the switch is made');
+    await app.type(`${KEYS.down}${KEYS.enter}`, shows('model: other-model (effort: not available);'), 'the switch is made');
     expect(outputOf(app)).not.toContain('Reasoning effort');
     expect(outputOf(app)).not.toContain('declares no reasoning control');
     app.close();
   });
 
-  it('writes the start model on tab, then opens the same effort step', async () => {
+  it('writes the start model on tab only when the level is chosen in the effort step that follows', async () => {
     const place = freshPlace();
     settingsWith(place, {});
     const app = await opened({ reasoning: TWO_DECLARED, models: [SCRIPTED_MODEL, OTHER] }, place);
     await app.type(`/model${KEYS.enter}`, shows(MODEL_SETTINGS_ROW), 'the model list opens');
-    await app.type(`${KEYS.down}${KEYS.tab}`, shows('Reasoning effort'), 'the effort picker opens after the start model is written');
+    await app.type(`${KEYS.down}${KEYS.tab}`, shows('Reasoning effort'), 'the effort picker opens before the start model is written');
+    expect((stored(place.userFile) as { models: { start?: string } }).models.start).toBeUndefined();
+    await app.type(`${KEYS.tab}`, shows('model: other-model (effort: medium);'), 'the level is set for the session');
     expect((stored(place.userFile) as { models: { start?: string } }).models.start).toBe(OTHER);
-    await app.type(`${KEYS.tab}`, shows('model: other-model · effort: medium;'), 'the level is set for the session');
     expect(outputOf(app)).toContain('effort: medium for other-model; this session only');
-    expect(app.backend.calls).toContain('effort:medium');
+    expect(app.backend.calls.filter((call) => call.startsWith('model:') || call.startsWith('effort:'))).toEqual([`model:${OTHER} effort:medium`]);
     app.close();
   });
 });

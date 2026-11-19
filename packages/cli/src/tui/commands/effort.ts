@@ -62,9 +62,10 @@ const levelsOf = (entries: readonly MomongaModelEntry[], model: string, context:
   return accepted;
 };
 
-const pickEffort = async (context: EffortContext, model: string, entries: readonly MomongaModelEntry[], accepted: readonly ReasoningEffort[]): Promise<void> => {
-  const inForce = sentEffort(entries, model, context.effort);
-  const choice = await context.overlays.choose({
+export type ChosenEffort = { readonly level: ReasoningEffort; readonly scope: EffortScope };
+
+export const chooseEffort = async (overlays: Pick<OverlayPorts, 'choose'>, accepted: readonly ReasoningEffort[], inForce: ReasoningEffort | undefined): Promise<ChosenEffort | undefined> => {
+  const choice = await overlays.choose({
     title: EFFORT_PICKER_TITLE,
     rows: accepted.map((level) => ({ label: level, ...(level === inForce ? { value: IN_FORCE_MARK } : {}) })),
     initial: inForce === undefined ? 0 : Math.max(0, accepted.indexOf(inForce)),
@@ -73,15 +74,15 @@ const pickEffort = async (context: EffortContext, model: string, entries: readon
     filter: false,
     alt: { label: SESSION_ONLY_LABEL },
   });
-  const chosen = choice === undefined ? undefined : accepted[choice.index];
-  if (choice === undefined || chosen === undefined) return;
-  await applyEffort(context, model, chosen, choice.alt ? 'session' : 'saved');
+  const level = choice === undefined ? undefined : accepted[choice.index];
+  if (choice === undefined || level === undefined) return undefined;
+  return { level, scope: choice.alt ? 'session' : 'saved' };
 };
 
-export const effortStepOf = async (context: EffortContext, model: string, entries: readonly MomongaModelEntry[]): Promise<void> => {
-  const accepted = acceptedEffortsOf(declaredReasoning(entries, model));
-  if (accepted.length === 0) return;
-  await pickEffort(context, model, entries, accepted);
+const pickEffort = async (context: EffortContext, model: string, entries: readonly MomongaModelEntry[], accepted: readonly ReasoningEffort[]): Promise<void> => {
+  const chosen = await chooseEffort(context.overlays, accepted, sentEffort(entries, model, context.effort));
+  if (chosen === undefined) return;
+  await applyEffort(context, model, chosen.level, chosen.scope);
 };
 
 export const effortCommand: SlashCommand = {

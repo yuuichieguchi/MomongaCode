@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PlanModelsResponse, ReasoningCapability, TargetHealth } from '@momonga/protocol';
+import type { PlanModelsResponse, ReasoningCapability, TargetHealth, ToolCallingState } from '@momonga/protocol';
 import type { ResolvedTuiSettings } from '@momonga/config';
 import { App } from '../../src/tui/app.tsx';
 import type { TuiBackend } from '../../src/tui/backend.ts';
@@ -10,6 +10,8 @@ import { KEYS, TEST_KEY_SETTLE_MS, TUI_TEST_TIMEOUT_MS, renderObservable, settle
 import type { Instance } from '../ink-helpers.ts';
 import { systemTiming } from '@momonga/foundation';
 import { fakeScreenTerminal } from './screen-fakes.ts';
+import { freshPlace, stored, writeSettings } from './settings-harness.tsx';
+import type { Place } from './settings-harness.tsx';
 
 vi.setConfig({ testTimeout: TUI_TEST_TIMEOUT_MS });
 
@@ -244,102 +246,203 @@ describe('the rows of the /model list', () => {
   });
 });
 
-describe('the effort step after a configured model is chosen', () => {
-  it('keeps the level and the chosen model when the effort picker is left with esc', async () => {
-    const { app, backend } = await startPlan(APPROVED);
-    await openList(app);
-    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
-    await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('tab: this session only'));
-    await backend.called(`model:${LUNA}`);
-    app.stdin.write(KEYS.escape);
-    await untilOutput(app, 'model: gpt-6-luna (effort: medium); applies from the next run');
-    expect(backend.calls.filter((call) => call.startsWith('effort:'))).toEqual([]);
+const SOL = 'chatgpt/gpt-6.2-sol';
+const EFFORT_HINT = 'up/down to move · enter to choose · tab: this session only · esc: go back';
+const EFFORT_BLOCK = ['Reasoning effort', '  1. low', '› 2. medium  in use', '  3. high', '  4. xhigh', EFFORT_HINT].join('\n');
+const LOADING_BLOCK = 'Loading models…';
+const UNAVAILABLE_MESSAGE = 'the model gpt-6-luna cannot be used yet: the settings give no context window and output limit for it';
+const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up through its Model settings… row.';
+
+const switches = (backend: { calls: readonly string[] }): string[] => backend.calls.filter((call) => call.startsWith('model:'));
+const effortCalls = (backend: { calls: readonly string[] }): string[] => backend.calls.filter((call) => call.startsWith('effort:'));
+const shownLines = (frame: string): string[] => frame.split('\n').map(lineOf).filter((line) => line !== '');
+const pickerShown = (frame: string): boolean => frame.includes('Reasoning effort') && frame.includes('tab: this session only');
+const listShown = (frame: string): boolean => frame.includes('Model settings…') && frame.includes('esc: go back');
+const loadingShown = (frame: string): boolean => shownLines(frame).includes(LOADING_BLOCK);
+const notesOf = (output: string): string[] =>
+  output
+    .split('\n')
+    .map(lineOf)
+    .filter((line) => /^(model:|effort:|Starting model set|model information unavailable|the model gpt-6-luna|Choose a model with|PATCH |the settings could not)/.test(line.trim()))
+    .map((line) => line.trim())
+    .filter((line, index, all) => all.indexOf(line) === index);
+
+const chooseLuna = async (options: FakePlanOptions, key: string = KEYS.enter) => {
+  const started = await startPlan({ ...APPROVED, ...options });
+  await openList(started.app);
+  started.app.stdin.write(`${KEYS.down}${key}`);
+  return started;
+};
+
+const OTHER = 'scripted/other-model';
+
+const chooseOther = async (key: string) => {
+  const place = freshPlace();
+  writeSettings(place.userFile, { models: { connections: [{ adapter: 'chat-completions', provider: 'scripted', baseUrl: 'http://127.0.0.1:9/v1', models: [{ id: 'other-model', capabilities: { contextWindow: 8192, maxOutputTokens: 1024, reasoning: REASONING } }] }] } });
+  const started = await startPlan({ ...APPROVED, models: [QWEN, OTHER], reasoning: { ...APPROVED.reasoning, [OTHER]: REASONING }, catalogs: catalogOf([]), settingsPlace: { home: place.home, projectDir: place.project } });
+  await openList(started.app);
+  started.app.stdin.write(`${KEYS.down}${key}`);
+  return { ...started, place };
+};
+
+type SettingsDocument = { models: { start?: string; connections: { models: { id: string; effort?: string }[] }[] } };
+
+const savedEffortOf = (place: Place): string | undefined => (stored(place.userFile) as SettingsDocument).models.connections[0]?.models.find((entry) => entry.id === 'other-model')?.effort;
+
+const startOf = (place: Place): string | undefined => (stored(place.userFile) as SettingsDocument).models.start;
+
+const chooseSol = async (options: FakePlanOptions) => {
+  const started = await startPlan({ ...APPROVED, probing: [SOL], ...options });
+  await openList(started.app);
+  started.app.stdin.write(`${KEYS.down}${KEYS.down}${KEYS.enter}`);
+  return started;
+};
+
+describe('choosing a model in the /model list switches nothing until its effort is chosen', () => {
+  it('opens the effort picker without a switch, then switches model and effort together and saves the effort', async () => {
+    const { app, backend, place } = await chooseOther(KEYS.enter);
+    const picker = await untilFrame(app, pickerShown);
+    expect(listBlock(picker, 'Reasoning effort')).toBe(EFFORT_BLOCK);
+    expect(switches(backend)).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    const output = await untilOutput(app, 'model: other-model (effort: medium); applies from the next run');
+    expect(switches(backend)).toEqual([`model:${OTHER} effort:medium`]);
+    expect(effortCalls(backend)).toEqual([]);
+    expect(notesOf(output)).toEqual(['effort: medium for other-model; saved', 'model: other-model (effort: medium); applies from the next run']);
+    expect(savedEffortOf(place)).toBe('medium');
     expect(app.lastFrame()).not.toContain('Reasoning effort');
+    app.unmount();
+  });
+
+  it('esc on the effort picker shows the model list again as it was and switches nothing', async () => {
+    const { app, backend } = await chooseLuna({});
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.escape);
+    const again = await untilFrame(app, (frame) => listShown(frame) && !pickerShown(frame));
+    expect(listBlock(again)).toBe(APPROVED_BLOCK);
+    expect(switches(backend)).toEqual([]);
+    expect(effortCalls(backend)).toEqual([]);
+    expect(notesOf(app.lastFrame() ?? '')).toEqual([]);
+    app.unmount();
+  });
+
+  it('tab on the list takes effect only when the effort is chosen', async () => {
+    const { app, backend, place } = await chooseOther(KEYS.tab);
+    const picker = await untilFrame(app, pickerShown);
+    expect(app.frames.join('\n')).not.toContain('Starting model set to');
+    expect(startOf(place)).toBeUndefined();
+    expect(switches(backend)).toEqual([]);
+    app.stdin.write(KEYS.tab);
+    const output = await untilOutput(app, 'model: other-model (effort: medium); applies from the next run');
+    await untilOutput(app, 'Starting model set to other-model');
+    expect(picker).toContain('Reasoning effort');
+    expect(startOf(place)).toBe(OTHER);
+    expect(switches(backend)).toEqual([`model:${OTHER} effort:medium`]);
+    expect(notesOf(output)).toEqual(['effort: medium for other-model; this session only', 'model: other-model (effort: medium); applies from the next run']);
+    expect(savedEffortOf(place)).toBeUndefined();
+    app.unmount();
+  });
+
+  it('tab on the list and esc on the effort picker set no starting model', async () => {
+    const { app, backend, place } = await chooseOther(KEYS.tab);
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.escape);
+    await untilFrame(app, (frame) => listShown(frame) && !pickerShown(frame));
+    expect(app.frames.join('\n')).not.toContain('Starting model set to');
+    expect(startOf(place)).toBeUndefined();
+    expect(switches(backend)).toEqual([]);
+    app.unmount();
+  });
+
+  it('an unavailable model is not switched to: its notice is shown once and the list is closed', async () => {
+    const unavailable: ToolCallingState = { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNAVAILABLE_MESSAGE, param: 'model' };
+    const { app, backend } = await chooseLuna({ toolCalling: { [LUNA]: unavailable } });
+    const output = await untilOutput(app, UNAVAILABLE_REMEDY);
+    await untilFrame(app, (frame) => !listShown(frame) && frame.includes('mode: manual'));
+    expect(notesOf(output)).toEqual([UNAVAILABLE_MESSAGE, UNAVAILABLE_REMEDY]);
+    expect(output.split(UNAVAILABLE_REMEDY).length - 1).toBe(1);
+    expect(switches(backend)).toEqual([]);
+    expect(app.lastFrame()).not.toContain('Reasoning effort');
+    app.unmount();
+  });
+
+  it('a failed switch after the effort is chosen keeps the earlier model, writes no effort and shows the error', async () => {
+    const { app, backend } = await chooseLuna({ setModelFailure: new Error('PATCH /v1/sessions/s-1 answered 500: the daemon refused') });
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.enter);
+    const output = await untilOutput(app, 'PATCH /v1/sessions/s-1 answered 500: the daemon refused');
+    expect(notesOf(output)).toEqual(['PATCH /v1/sessions/s-1 answered 500: the daemon refused']);
+    expect((await backend.models()).find((entry) => entry.id === LUNA)?.effort).toBeUndefined();
+    expect(app.lastFrame()).not.toContain('Reasoning effort');
+    await submitLine(app, '/model');
+    expect(listBlock(await untilFrame(app, listShown))).toBe(APPROVED_BLOCK);
+    app.unmount();
+  });
+
+  it('a failed effort write keeps the switched model and effort and shows the model line and the error', async () => {
+    const { app, backend } = await chooseLuna({ modelsLockFailure: new Error('the settings could not be locked') });
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.enter);
+    const output = await untilOutput(app, 'the settings could not be locked');
+    expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
+    expect(notesOf(output)).toEqual(['model: gpt-6-luna (effort: medium); applies from the next run', 'the settings could not be locked']);
     app.unmount();
   });
 });
 
 describe('the effort step after a plan model that is not configured is chosen', () => {
-  it('adds and connects the model, then opens the reasoning effort picker for it; esc keeps the level and the model line follows once', async () => {
-    const { app, backend } = await startPlan({ ...APPROVED, reasoning: { ...APPROVED.reasoning, 'chatgpt/gpt-6.2-sol': REASONING } });
-    await openList(app);
-    app.stdin.write(`${KEYS.down}${KEYS.down}${KEYS.enter}`);
-    const picker = await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('tab: this session only'));
-    expect(listBlock(picker, 'Reasoning effort')).toContain('medium  in use');
-    await backend.called('model:chatgpt/gpt-6.2-sol');
-    expect(backend.planCalls.some((call) => call.route === 'accounts/chatgpt/targets')).toBe(true);
-    app.stdin.write(KEYS.escape);
-    const output = await untilOutput(app, 'model: gpt-6.2-sol (effort: medium); applies from the next run');
-    expect(output.split('model: gpt-6.2-sol').length - 1).toBe(1);
-    expect(backend.calls.filter((call) => call.startsWith('effort:'))).toEqual([]);
-    app.unmount();
-  });
-
-  const SOL = 'chatgpt/gpt-6.2-sol';
-
-  const chosenWhileMeasured = async (options: FakePlanOptions) => {
-    const started = await startPlan({ ...APPROVED, probing: [SOL], ...options });
-    await openList(started.app);
-    started.app.stdin.write(`${KEYS.down}${KEYS.down}${KEYS.enter}`);
-    await started.backend.called(`model:${SOL}`);
-    return started;
-  };
-
-  const LOADING_BLOCK = 'Loading models…';
-
-  const loadingBlockOf = (frame: string): string => {
-    const lines = frame.split('\n').map(lineOf);
-    const start = lines.indexOf(LOADING_BLOCK);
-    return start === -1 ? '' : lines.slice(start, start + 2).join('\n').trimEnd();
-  };
-
-  it('shows the loading row while the capabilities of the added model are not loaded, then opens the effort picker', async () => {
+  it('shows only Loading models… while the information of the added model is read, then opens the effort picker without a switch', async () => {
     const pending = Promise.withResolvers<void>();
-    const { app } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
-    const waiting = await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
-    expect(loadingBlockOf(waiting)).toBe(LOADING_BLOCK);
-    expect(waiting).not.toContain('reading…');
-    expect(waiting).not.toContain('esc cancels');
-    expect(waiting.split('\n').map(lineOf).filter((line) => line !== '')).toEqual([LOADING_BLOCK]);
-    expect(waiting).not.toContain('Reasoning effort');
+    const { app, backend } = await chooseSol({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
+    const waiting = await untilFrame(app, loadingShown);
+    expect(shownLines(waiting)).toEqual([LOADING_BLOCK]);
+    expect(switches(backend)).toEqual([]);
     pending.resolve();
-    const picker = await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('tab: this session only'));
-    expect(listBlock(picker, 'Reasoning effort')).toBe(['Reasoning effort', '  1. low', '› 2. medium  in use', '  3. high', '  4. xhigh', 'up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n'));
-    expect(picker).not.toContain('reading…');
+    const picker = await untilFrame(app, pickerShown);
+    expect(listBlock(picker, 'Reasoning effort')).toBe(EFFORT_BLOCK);
+    expect(switches(backend)).toEqual([]);
+    app.stdin.write(KEYS.enter);
+    const output = await untilOutput(app, 'model: gpt-6.2-sol (effort: medium); applies from the next run');
+    expect(switches(backend)).toEqual([`model:${SOL} effort:medium`]);
+    expect(output.split('model: gpt-6.2-sol').length - 1).toBe(1);
     app.unmount();
   });
 
-  it('opens nothing more when the loaded model has no reasoning control', async () => {
+  it('switches a model with no reasoning control once its information is read', async () => {
     const pending = Promise.withResolvers<void>();
-    const { app } = await chosenWhileMeasured({ reasoning: {}, modelPending: pending.promise });
-    await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
+    const { app, backend } = await chooseSol({ reasoning: {}, modelPending: pending.promise });
+    await untilFrame(app, loadingShown);
+    expect(switches(backend)).toEqual([]);
     pending.resolve();
     const output = await untilOutput(app, 'model: gpt-6.2-sol (effort: not available); applies from the next run');
+    expect(switches(backend)).toEqual([`model:${SOL}`]);
+    expect(notesOf(output)).toEqual(['model: gpt-6.2-sol (effort: not available); applies from the next run']);
     expect(output).not.toContain('Reasoning effort');
-    expect(app.lastFrame()).not.toContain('reading…');
     app.unmount();
   });
 
-  it('ends the wait when the model information cannot be read, shows what is shown for that failure, and opens no picker', async () => {
-    const { app } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelFailure: new Error('the probe failed') });
-    const output = await untilOutput(app, 'model information unavailable: the probe failed');
-    const after = await untilOutput(app, 'model: gpt-6.2-sol; applies from the next run');
-    expect(output).not.toContain('Reasoning effort');
-    expect(after).not.toContain('are not known yet');
-    expect(app.lastFrame()).not.toContain('reading…');
-    app.unmount();
-  });
-
-  it('ends the wait on the cancel key: the model stays chosen and no picker opens', async () => {
+  it('esc during Loading models… shows the model list again, the added model stays added and nothing is switched', async () => {
     const pending = Promise.withResolvers<void>();
-    const { app, backend } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
-    await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
+    const { app, backend } = await chooseSol({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
+    await untilFrame(app, loadingShown);
     app.stdin.write(KEYS.escape);
-    await untilOutput(app, 'model: gpt-6.2-sol; applies from the next run');
+    const again = await untilFrame(app, (frame) => listShown(frame) && !loadingShown(frame));
+    expect(listBlock(again)).toContain('›  1. ollama/qwen3.8:27b (current)  local');
+    expect((await backend.models()).some((entry) => entry.id === SOL)).toBe(true);
     pending.resolve();
-    await untilFrame(app, 'mode: manual');
+    expect(switches(backend)).toEqual([]);
+    expect(notesOf(app.lastFrame() ?? '')).toEqual([]);
+    app.unmount();
+  });
+
+  it('a model whose information cannot be read is not switched to: the warning is shown once and the list is closed', async () => {
+    const { app, backend } = await chooseSol({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelOfFailures: { [SOL]: new Error('the probe failed') } });
+    const output = await untilOutput(app, 'model information unavailable: the probe failed');
+    await untilFrame(app, (frame) => !loadingShown(frame) && frame.includes('mode: manual'));
+    expect(notesOf(output)).toEqual(['model information unavailable: the probe failed']);
+    expect(output.split('model information unavailable').length - 1).toBe(1);
+    expect(switches(backend)).toEqual([]);
     expect(app.lastFrame()).not.toContain('Reasoning effort');
-    expect(backend.calls).toContain(`model:${SOL}`);
     app.unmount();
   });
 });

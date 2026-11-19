@@ -2,8 +2,11 @@ import { agentReadiness, escapeTerminalLine, readinessShownText } from '@momonga
 import type { Measuring, MomongaModelEntry, Readiness, RemedySurface } from '@momonga/protocol';
 import type { MomongaPaths, Timing } from '@momonga/foundation';
 
-export const readinessNoticeOf = (readiness: Readiness, surface: RemedySurface): string | undefined =>
-  readiness.state === 'ready' ? undefined : readinessShownText(readiness, surface).split('\n').map(escapeTerminalLine).join('\n');
+export const notReadyNoticeOf = (readiness: Exclude<Readiness, { state: 'ready' }>, surface: RemedySurface): string => readinessShownText(readiness, surface).split('\n').map(escapeTerminalLine).join('\n');
+
+export const readinessNoticeOf = (readiness: Readiness, surface: RemedySurface): string | undefined => (readiness.state === 'ready' ? undefined : notReadyNoticeOf(readiness, surface));
+
+export const modelUnreadText = (error: unknown): string => `model information unavailable: ${error instanceof Error ? error.message : String(error)}`;
 
 export type MeasurementPorts = { read(): Promise<MomongaModelEntry>; timers: Pick<Timing, 'setTimeout' | 'clearTimeout'> };
 

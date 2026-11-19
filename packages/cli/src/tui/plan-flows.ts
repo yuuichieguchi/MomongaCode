@@ -14,8 +14,9 @@ import { modelListRows } from './models/model-list.ts';
 import type { PlanListRow } from './models/model-list.ts';
 import { planProfileOf } from '@momonga/config';
 import { writeStart } from './models/order.ts';
-import { effortStepOf } from './commands/effort.ts';
-import { followMeasurement } from '../readiness.ts';
+import { chooseEffort, effortAnswerText, writeModelEffort } from './commands/effort.ts';
+import { acceptedEffortsOf, declaredReasoning, sentEffort } from './effort.ts';
+import { followMeasurement, modelUnreadText, notReadyNoticeOf } from '../readiness.ts';
 import type { MeasurementPorts } from '../readiness.ts';
 import { ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
@@ -32,9 +33,10 @@ export type PlanFlowPorts = OverlayPorts & {
   readonly backend: TuiBackend;
   info(text: string): void;
   failed(text: string): void;
+  warn(text: string): void;
   toast(text: string): void;
   connected(model: string, effort?: ReasoningEffort): Promise<void>;
-  connectedThen(model: string, then: () => Promise<void>): Promise<void>;
+  switchedThen(model: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void>;
   readonly effort: () => ReasoningEffort | undefined;
   setEffort(effort: ReasoningEffort | null): Promise<void>;
   shownModel(model: string): string;
@@ -61,6 +63,10 @@ export type PlanFlows = {
 };
 
 const AGAIN = 'again';
+const BACK_TO_LIST = 'back to the list';
+type ModelChosen = typeof BACK_TO_LIST | undefined;
+type ChosenRead = { readonly kind: 'read'; readonly entries: readonly MomongaModelEntry[]; readonly entry: MomongaModelEntry | undefined } | { readonly kind: 'cancelled' } | { readonly kind: 'failed'; readonly error: unknown };
+type Measured = { readonly kind: 'read'; readonly entry: MomongaModelEntry } | { readonly kind: 'failed'; readonly error: unknown };
 type Acted = typeof AGAIN | undefined;
 type Choice = { row: PickRow; act(): Promise<Acted | void> };
 
@@ -90,32 +96,54 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     if (added?.model !== undefined) await ports.connected(added.model);
   };
 
-  const loadedEntry = async (retryAfterSeconds: number): Promise<MomongaModelEntry | undefined> => {
-    let stop = (): void => undefined;
-    const loaded = await ports.loading(LOADING_PHASE, () =>
-      new Promise<MomongaModelEntry | undefined>((resolve) => {
-        stop = followMeasurement({ read: () => backend.model(), timers: ports.timers }, retryAfterSeconds, resolve, () => resolve(undefined), () => undefined);
-      }),
-      LOADING_HINTS.none,
-    );
-    stop();
-    return loaded.kind === 'read' ? loaded.value : undefined;
-  };
-
-  const effortStep = async (model: string): Promise<void> => {
+  const chosenRead = async (model: string): Promise<ChosenRead> => {
     const entries = await backend.models();
     const entry = entries.find((candidate) => candidate.id === model);
     const readiness = entry === undefined ? undefined : agentReadiness(entry.capabilities);
-    const loaded = readiness?.state === 'probing' ? await loadedEntry(readiness.retryAfterSeconds) : entry;
-    if (loaded === undefined) return;
-    await effortStepOf({ backend, overlays: { choose: ports.choose }, effort: ports.effort(), shownModel: ports.shownModel, setEffort: ports.setEffort, info: ports.info, wait: ports.wait }, model, [...entries.filter((other) => other.id !== loaded.id), loaded]);
+    if (readiness?.state !== 'probing') return { kind: 'read', entries, entry };
+    let stop = (): void => undefined;
+    const measured = await ports.loading(
+      LOADING_PHASE,
+      () =>
+        new Promise<Measured>((resolve) => {
+          stop = followMeasurement({ read: () => backend.modelOf(model), timers: ports.timers }, readiness.retryAfterSeconds, (read) => resolve({ kind: 'read', entry: read }), (error) => resolve({ kind: 'failed', error }), () => undefined);
+        }),
+      LOADING_HINTS.none,
+    );
+    stop();
+    if (measured.kind === 'cancelled') return measured;
+    if (measured.value.kind === 'failed') return measured.value;
+    const read = measured.value.entry;
+    return { kind: 'read', entries: [...entries.filter((other) => other.id !== read.id), read], entry: read };
   };
 
-  const chosenWithEffort = async (model: string, before: () => Promise<void>): Promise<void> =>
-    ports.connectedThen(model, async () => {
-      await before();
-      await effortStep(model);
+  const chosenWithEffort = async (model: string, atSwitch: () => Promise<void>): Promise<ModelChosen> => {
+    const read = await chosenRead(model);
+    if (read.kind === 'cancelled') return BACK_TO_LIST;
+    if (read.kind === 'failed') {
+      ports.warn(modelUnreadText(read.error));
+      return undefined;
+    }
+    const readiness = read.entry === undefined ? undefined : agentReadiness(read.entry.capabilities);
+    if (readiness?.state === 'unavailable') {
+      ports.warn(notReadyNoticeOf(readiness, 'tui'));
+      return undefined;
+    }
+    const accepted = acceptedEffortsOf(declaredReasoning(read.entries, model));
+    if (accepted.length === 0) {
+      await ports.switchedThen(model, undefined, atSwitch);
+      return undefined;
+    }
+    const sessionModel = ports.model();
+    const chosen = await chooseEffort({ choose: ports.choose }, accepted, sentEffort(read.entries, model, sessionModel === undefined || sessionModel === model ? ports.effort() : undefined));
+    if (chosen === undefined) return BACK_TO_LIST;
+    await ports.switchedThen(model, chosen.level, async () => {
+      await atSwitch();
+      if (chosen.scope === 'saved') await writeModelEffort({ backend, info: ports.info, wait: ports.wait }, model, chosen.level);
+      ports.info(effortAnswerText(chosen.level, ports.shownModel(model), chosen.scope));
     });
+    return undefined;
+  };
 
   const chooseFrom = async (request: { title?: string; lines?: readonly string[] }, choices: readonly Choice[]): Promise<boolean> => {
     for (;;) {
@@ -468,10 +496,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const blockedPlanOf = (entry: MomongaModelEntry, health: GatewayHealth): { profile: string; account?: string } | undefined =>
     entry.chain.find((member) => member.plan !== undefined && isSignInRequired(health.models[member.model]))?.plan;
 
-  const useConfigured = async (entry: MomongaModelEntry, health: GatewayHealth, listed: PlanAccountsResponse, atStart: boolean, display: string): Promise<void> => {
+  const useConfigured = async (entry: MomongaModelEntry, health: GatewayHealth, listed: PlanAccountsResponse, atStart: boolean, display: string): Promise<ModelChosen> => {
     const plan = blockedPlanOf(entry, health);
     if (plan !== undefined) await targetSignIn(listed, plan);
-    await chosenWithEffort(entry.id, async () => {
+    return chosenWithEffort(entry.id, async () => {
       if (!atStart) return;
       await writeStart(flowContext(), entry.id);
       ports.toast(startingModelSetText(display));
@@ -502,8 +530,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const { listing, health, listed, catalogs, remembered, opened } = read.value;
     const entries = listing.data;
     const served = new Set(entries.flatMap((entry) => entry.chain.map((member) => member.upstream)));
-    const nothingMore = async (): Promise<void> => undefined;
-    const catalogChoices = catalogs.flatMap((read): { plan: PlanListRow; act(): Promise<void> }[] => {
+    const nothingMore = async (): Promise<undefined> => undefined;
+    const catalogChoices = catalogs.flatMap((read): { plan: PlanListRow; act(): Promise<ModelChosen> }[] => {
       if (read.kind === 'unread') return [{ plan: { kind: 'note', label: catalogNotCurrent(read.account.label, read.reason) }, act: nothingMore }];
       const { account, profile, catalog } = read;
       const billing = planProfileOf(profile.id).targetDefaults.billing;
@@ -516,7 +544,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
                 plan: { kind: 'model', slug: entry.slug, billing, searchTexts: searchTextsOf(entry) },
                 act: async () => {
                   const created = await backend.plan.addTarget(account.label, { profile: profile.id, slug: entry.slug });
-                  await chosenWithEffort(created.model, nothingMore);
+                  return chosenWithEffort(created.model, nothingMore);
                 },
               }
             : { plan: { kind: 'model', slug: entry.slug, billing, reason: entry.reason, searchTexts: searchTextsOf(entry) }, act: nothingMore },
@@ -526,6 +554,16 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const { rows, listed: listedRows } = modelListRows({ listing, current, health, found, plan: catalogChoices.map((choice) => choice.plan) });
     const displays = displayMapOf(listingViewsOf(entries));
     const allRows = [...rows, { label: MODEL_SETTINGS_ROW }];
+    const chosenRow = async (index: number, atStart: boolean): Promise<ModelChosen> => {
+      const row = listedRows[index];
+      if (row === undefined) return catalogChoices[index - listedRows.length]?.act();
+      if (row.kind === 'configured') return useConfigured(row.entry, health, listed, atStart, displays.get(row.entry.id) ?? row.entry.id);
+      if (row.kind === 'found' && opened !== undefined) {
+        const added = await addFoundModel(context, opened, row.found.server, row.found.model, row.found.display);
+        if (added?.model !== undefined) return chosenWithEffort(added.model, nothingMore);
+      }
+      return undefined;
+    };
     const choice =
       allRows.length === 1
         ? await ports.choose({ title: 'Models', lines: [messageOf('noModelConnected', 'tui')], rows: allRows })
@@ -537,16 +575,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       await modelPicker(ports.model());
       return;
     }
-    const row = listedRows[choice.index];
-    if (row === undefined) {
-      await catalogChoices[choice.index - listedRows.length]?.act();
-      return;
-    }
-    if (row.kind === 'configured') await useConfigured(row.entry, health, listed, choice.alt, displays.get(row.entry.id) ?? row.entry.id);
-    if (row.kind === 'found' && opened !== undefined) {
-      const added = await addFoundModel(context, opened, row.found.server, row.found.model, row.found.display);
-      if (added?.model !== undefined) await chosenWithEffort(added.model, nothingMore);
-    }
+    if ((await chosenRow(choice.index, choice.alt)) === BACK_TO_LIST) await modelPicker(current);
   };
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {

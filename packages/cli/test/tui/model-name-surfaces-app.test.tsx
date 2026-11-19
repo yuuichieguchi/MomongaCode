@@ -37,7 +37,8 @@ describe('a model is shown by one name on every surface of a session', () => {
   it('the switch line, the footer and the header of a subagent name each model by its one name', async () => {
     const app = await opened();
     await app.type('/model\r', holds('gpt-6-luna'), 'the model list is open');
-    const switched = await app.type('2', holds('model: gpt-6-luna'), 'the switch line is written');
+    await app.type('2', holds('Reasoning effort'), 'the effort picker opens');
+    const switched = await app.type(KEYS.enter, holds('model: gpt-6-luna'), 'the switch line is written');
     expect(switched.join('\n')).not.toContain(PLAN);
     await app.type('go', holds('go'), 'the prompt is typed');
     const sent = await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('tokens:') && line.includes('gpt-6-luna · ')), 'the footer names the model');

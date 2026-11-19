@@ -9,7 +9,7 @@ import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
 import { modelChosen } from './transcript.ts';
-import { followMeasurement, readinessNoticeOf } from '../readiness.ts';
+import { followMeasurement, modelUnreadText, readinessNoticeOf } from '../readiness.ts';
 import { isPrompt } from '../run/prompt-event.ts';
 import { isTerminalStatus } from '../run/follow.ts';
 import { describeRunEnd } from '../run/headless.ts';
@@ -450,6 +450,10 @@ export function App(props: AppProps) {
     append({ kind: 'info', text });
   };
 
+  const warningNote = (text: string): void => {
+    append({ kind: 'notice', level: 'warning', text });
+  };
+
   const failedNote = (text: string): void => {
     append({ kind: 'error', text });
   };
@@ -555,7 +559,7 @@ export function App(props: AppProps) {
 
   const modelUnread = (error: unknown, announce = true): void => {
     endMeasuring();
-    if (announce) append({ kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` });
+    if (announce) warningNote(modelUnreadText(error));
   };
 
   const showModel = (entry: MomongaModelEntry, announce = true): void => {
@@ -673,16 +677,20 @@ export function App(props: AppProps) {
     await applyModel(chosen, effort);
   };
 
-  const connectModelThen = async (chosen: string, then: () => Promise<void>): Promise<void> => {
+  const switchModelThen = async (chosen: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void> => {
     const previous = sessionModelRef.current;
     if (previous === undefined) {
       await openSession(chosen);
+      if (effort !== undefined) await applyEffort(effort);
       await then();
       return;
     }
-    const model = await switchModel(chosen, undefined);
-    await then();
-    await noteModelSwitch(model, previous);
+    const model = await switchModel(chosen, effort);
+    try {
+      await then();
+    } finally {
+      await noteModelSwitch(model, previous);
+    }
   };
 
   const refreshConnection = async (): Promise<void> => {
@@ -755,7 +763,7 @@ export function App(props: AppProps) {
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), connected: connectModel, connectedThen: connectModelThen, effort: () => sessionEffortRef.current, setEffort: applyEffort, shownModel, timers, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), warn: warningNote, connected: connectModel, switchedThen: switchModelThen, effort: () => sessionEffortRef.current, setEffort: applyEffort, shownModel, timers, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();
