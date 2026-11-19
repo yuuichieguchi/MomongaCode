@@ -116,7 +116,7 @@ describe('the invitation is one line that takes no key', () => {
     await backend.called('openSession');
     await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login');
-    const shown = await untilRow(app, 'Add a local server');
+    const shown = await untilRow(app, 'Add an API key');
     expect(shown).not.toContain(NOT_NOW_LABEL);
     expect(app.frames.join('\n')).not.toContain(LINE);
     app.unmount();
@@ -181,7 +181,7 @@ describe('a key typed between two lists of one flow never acts on the list that 
     };
     await submitLine(app, '/login');
     await choose(app, 'ChatGPT');
-    await untilFrame(app, (shown) => !shown.includes('Add a local server'));
+    await untilFrame(app, (shown) => !shown.includes('Add an API key'));
     app.stdin.write(KEYS.down);
     app.stdin.write('x');
     held.resolve();

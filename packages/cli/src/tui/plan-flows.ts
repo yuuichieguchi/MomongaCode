@@ -355,29 +355,24 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       if (read.kind === 'read') await providerFlowOf(profileOf(read.value.profiles, args), read.value);
       return;
     }
-    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.health(), backend.dismissedNotices()]));
+    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.dismissedNotices()]));
     if (read.kind === 'cancelled') return;
-    const [listed, entries, health, dismissed] = read.value;
+    const [listed, entries, dismissed] = read.value;
     const invited = invitedProfiles(listed, dismissed);
-    const displays = displayMapOf(listingViewsOf(entries));
-    const local = entries.filter((entry) => entry.billing === 'local');
+    const keyed = [...new Set(entries.filter((entry) => entry.chain[0]?.key !== undefined).map((entry) => entry.provider))];
     await chooseFrom({ title: CONNECT_TITLE }, [
       ...listed.profiles.map((profile) => {
         const label = `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}`;
         return { row: accountsOf(profile.id, listed.accounts).length === 0 ? signInRow(profile, label) : { label }, act: () => providerFlowOf(profile, listed) };
       }),
+      ...keyed.map((provider) => ({
+        row: { label: `${provider} [API key] · configured` },
+        act: async () => {
+          await runServerActions(flowContext(), provider);
+          await ports.refreshConnection();
+        },
+      })),
       { row: { label: 'Add an API key' }, act: addApiKey },
-      ...local.map((entry) => {
-        const display = displays.get(entry.id) ?? entry.id;
-        return {
-          row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` },
-          act: async () => {
-            await runServerActions(flowContext(), entry.provider);
-            await ports.refreshConnection();
-          },
-        };
-      }),
-      { row: { label: 'Add a local server' }, act: addLocalServer },
       ...(invited.length === 0 ? [] : [{ row: { label: NOT_NOW_LABEL }, act: () => answerNotNow(invited) }]),
     ]);
   };

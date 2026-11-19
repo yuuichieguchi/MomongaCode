@@ -65,6 +65,7 @@ export type FakePlanOptions = FakeBackendOptions & {
   health?: Readonly<Record<string, TargetHealth>>;
   billing?: Readonly<Record<string, TargetBilling>>;
   planTargets?: Readonly<Record<string, { profile: string; account?: string }>>;
+  keyGroups?: Readonly<Record<string, string>>;
   dismissed?: Readonly<Record<string, string>>;
   callbackArrives?: boolean;
   completeHeld?: Promise<void>;
@@ -107,7 +108,8 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   const withBilling = (entry: MomongaModelEntry): MomongaModelEntry => {
     const chain = entry.chain.map((member) => {
       const plan = options.planTargets?.[member.model];
-      return { ...member, billing: options.billing?.[member.model] ?? ('metered' as const), ...(plan === undefined ? {} : { plan }) };
+      const group = options.keyGroups?.[member.model];
+      return { ...member, billing: options.billing?.[member.model] ?? ('metered' as const), ...(plan === undefined ? {} : { plan }), ...(group === undefined ? {} : { key: { group } }) };
     });
     return { ...entry, billing: chain[0]?.billing ?? entry.billing, chain };
   };
