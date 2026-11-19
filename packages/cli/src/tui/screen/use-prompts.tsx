@@ -15,7 +15,7 @@ import { capturedOf } from '../keys/capture.ts';
 import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
 import { OverlayView, pickerSpec } from '../picker.tsx';
 import type { Loaded, Overlay, OverlayPorts, PickChoice, PickRequest, WaitingOverlay } from '../picker.tsx';
-import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel } from '../select.tsx';
+import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectHover, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel } from '../select.tsx';
 import type { SelectFrame, SelectLayout, SelectLine, SelectOutcome, SelectSpec, SelectState, SelectStep, TextRow } from '../select.tsx';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
 import { promptTakesFocus, toolOf, withElicitationFlow } from '../transcript.ts';
@@ -102,6 +102,7 @@ export type Prompts = {
   paste(text: string): boolean;
   panel(facts: PanelFacts): ReactNode | undefined;
   press(facts: PanelFacts, row: number): void;
+  hover(facts: PanelFacts, row: number): boolean;
   wheel(facts: PanelFacts, rows: number): void;
 };
 
@@ -399,6 +400,17 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     if (active.sending || detailOf(active) !== undefined || !takes(active, 'choice', 'pointer')) return;
     const index = selectRowAt(layoutOf(active), row);
     if (index !== undefined) apply(active, selectClick(active.spec, stateOf(active), index));
+  };
+
+  const selectHoverAt = (active: Active, row: number): boolean => {
+    if (active.sending || detailOf(active) !== undefined) return false;
+    const index = selectRowAt(layoutOf(active), row);
+    if (index === undefined) return false;
+    const state = stateOf(active);
+    const next = selectHover(active.spec, state, index);
+    if (next === state) return false;
+    if (next.index !== state.index) apply(active, { state: next });
+    return true;
   };
 
   const selectScroll = (active: Active, rows: number): void => {
@@ -826,6 +838,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     press: (facts, row) => {
       const active = panelActive(facts);
       if (active !== undefined) selectPress(active, row);
+    },
+    hover: (facts, row) => {
+      const active = panelActive(facts);
+      return active === undefined ? false : selectHoverAt(active, row);
     },
     wheel: (facts, rows) => {
       const active = panelActive(facts);

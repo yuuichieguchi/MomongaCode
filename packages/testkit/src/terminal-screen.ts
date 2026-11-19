@@ -6,6 +6,7 @@ export type TerminalScreen = {
   write(bytes: string | Uint8Array): Promise<void>;
   text(): string[];
   lineAt(row: number): string;
+  inverseAt(row: number, column: number): boolean;
   everyLine(): string[];
   cursor(): TerminalCursor;
   onAnswer(listener: (answer: string) => void): void;
@@ -29,6 +30,7 @@ export const createTerminalScreen = ({ columns, rows }: { readonly columns: numb
     write: (bytes) => new Promise<void>((resolve) => terminal.write(bytes, resolve)),
     text: () => Array.from({ length: rows }, (_, row) => lineAt(row)),
     lineAt,
+    inverseAt: (row, column) => (terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.getCell(column)?.isInverse() ?? 0) !== 0,
     everyLine: () => Array.from({ length: terminal.buffer.active.length }, (_, index) => bufferLine(index)),
     cursor: () => ({ row: terminal.buffer.active.cursorY, column: terminal.buffer.active.cursorX }),
     onAnswer: (listener) => {

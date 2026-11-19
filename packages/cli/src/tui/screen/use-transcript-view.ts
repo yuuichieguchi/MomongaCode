@@ -47,7 +47,9 @@ export type TranscriptViewHost = {
   timers: ScreenTimers;
 };
 
-export type TranscriptViewState = { source: ViewSource; window: ViewWindow; position: Position; selection: Selection | undefined; toast: string | undefined; showToast(text: string): void; act(action: ActionId): boolean; place(position: Position): void };
+export type TranscriptHover = { readonly row: number; readonly range: readonly [number, number] | undefined };
+
+export type TranscriptViewState = { hoverAt(event: MouseEvent): TranscriptHover | undefined; source: ViewSource; window: ViewWindow; position: Position; selection: Selection | undefined; toast: string | undefined; showToast(text: string): void; act(action: ActionId): boolean; place(position: Position): void };
 
 type Drag = { anchor: Point; selecting: boolean };
 
@@ -105,13 +107,39 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
     return visible === undefined ? undefined : { entryId: visible.entryId, rowIndex: visible.rowIndex, col: event.col - 1 };
   };
 
-  const linkAt = (point: Point): OpenedLink | undefined => {
+  const writtenLinkAt = (point: Point) => {
     const index = source.indexOfId(point.entryId);
     const row = index === undefined ? undefined : source.rowsOf(source.at(index))[point.rowIndex];
     const range = row === undefined ? undefined : indexRangeOf(row, point.col, point.col);
     if (row === undefined || range === undefined) return undefined;
-    const written = row.links?.find(([start, end]) => start <= range[0] && range[0] < end);
+    return row.links?.find(([start, end]) => start <= range[0] && range[0] < end);
+  };
+
+  const linkAt = (point: Point): OpenedLink | undefined => {
+    const written = writtenLinkAt(point);
     return written === undefined ? undefined : openedLinkOf(written);
+  };
+
+  const linkSpanAt = (point: Point): [number, number] | undefined => {
+    const written = writtenLinkAt(point);
+    return written === undefined ? undefined : [written[0], written[1]];
+  };
+
+  const thoughtHeadAt = (point: Point): string | undefined => {
+    const index = source.indexOfId(point.entryId);
+    const clicked = index === undefined ? undefined : source.at(index).entry;
+    return clicked?.kind === 'thought' && clicked.endedAt !== undefined && point.rowIndex === 0 ? clicked.itemId : undefined;
+  };
+
+  const hoverAt = (event: MouseEvent): TranscriptHover | undefined => {
+    const hit = regionAt(allocation, event.row);
+    if (hit?.region !== 'viewport') return undefined;
+    if (!clamped(source, held.position).following && hit.row === allocation.viewport - 1) return { row: hit.row, range: undefined };
+    const point = pointAt(event);
+    if (point === undefined) return undefined;
+    if (thoughtHeadAt(point) !== undefined) return { row: hit.row, range: undefined };
+    const link = linkSpanAt(point);
+    return link === undefined ? undefined : { row: hit.row, range: link };
   };
 
   const press = (event: MouseEvent): void => {
@@ -149,10 +177,9 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
     }
     const point = pointAt(event);
     if (point === undefined) return;
-    const index = source.indexOfId(point.entryId);
-    const clicked = index === undefined ? undefined : source.at(index).entry;
-    if (clicked?.kind === 'thought' && clicked.endedAt !== undefined && point.rowIndex === 0) {
-      toggleThought(store, clicked.itemId);
+    const thought = thoughtHeadAt(point);
+    if (thought !== undefined) {
+      toggleThought(store, thought);
       return;
     }
     const link = linkAt(point);
@@ -163,7 +190,7 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
     const step = viewportMoveOf(event, height, keys);
     if (step !== undefined) move(step);
     else if (event.kind === 'press' && event.button === 'left') press(event);
-    else if (event.kind === 'move' && held.drag !== undefined) drag(event, held.drag);
+    else if (event.kind === 'move' && event.button !== 'none' && held.drag !== undefined) drag(event, held.drag);
     else if (event.kind === 'release' && held.drag !== undefined) release(event, held.drag);
   };
 
@@ -209,5 +236,5 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
 
   useEffect(() => terminal.input.claim('transcript', (event) => onEvent(event)), [terminal]);
 
-  return { source, window, position, selection: held.selection, toast: held.toast, showToast: (text) => change({ toast: text }), act: (action) => host.fullscreen && (actOnSelection(action) || actOnViewport(action, true)), place: (next) => change({ position: next }) };
+  return { hoverAt, source, window, position, selection: held.selection, toast: held.toast, showToast: (text) => change({ toast: text }), act: (action) => host.fullscreen && (actOnSelection(action) || actOnViewport(action, true)), place: (next) => change({ position: next }) };
 };

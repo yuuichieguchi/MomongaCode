@@ -70,6 +70,7 @@ export type SlashMenu = {
   open: boolean;
   rows: number;
   act(text: string, action: MenuAction): SlashMenuAct | undefined;
+  hover(row: number, rows: number): boolean;
   press(row: number, rows: number): SlashMenuAct | undefined;
   wheel(rows: number): void;
   view(rows: number): ReactNode;
@@ -94,6 +95,13 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
   const shown = matchesFor(host.text);
   const state = stateFor(host.text);
 
+  const commandIndexAt = (count: number, row: number, rows: number): number | undefined => {
+    const span = spanAt(count, state.top, windowRows(rows));
+    const lead = span.start > 0 ? 1 : 0;
+    const at = span.start + row - lead;
+    return row < lead || at >= span.end ? undefined : at;
+  };
+
   const moveTo = (text: string, index: number, count: number): void => keep({ ...stateFor(text), index, top: topFor(index, stateFor(text).top, count, cap) });
 
   return {
@@ -115,12 +123,16 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
       if (action === 'menu.complete') return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
       return command === undefined ? undefined : { kind: 'run', text: `/${command.name}` };
     },
+    hover: (row, rows) => {
+      const at = shown === undefined ? undefined : commandIndexAt(shown.length, row, rows);
+      if (at === undefined) return false;
+      if (at !== state.index) keep({ ...state, index: at });
+      return true;
+    },
     press: (row, rows) => {
       if (shown === undefined) return undefined;
-      const span = spanAt(shown.length, state.top, windowRows(rows));
-      const lead = span.start > 0 ? 1 : 0;
-      const at = span.start + row - lead;
-      const command = row < lead || at >= span.end ? undefined : shown[at];
+      const at = commandIndexAt(shown.length, row, rows);
+      const command = at === undefined ? undefined : shown[at];
       return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
     },
     wheel: (rows) => {

@@ -198,7 +198,7 @@ export type ToolViewHost = {
   reportError(error: unknown): void;
 };
 
-export type ToolView = { shown: boolean; view: ReactNode; showNewest(): void; key(event: KeyEvent, keys: KeyTable): boolean };
+export type ToolView = { shown: boolean; view: ReactNode; showNewest(): void; key(event: KeyEvent, keys: KeyTable): boolean; expandsAt(screenRow: number): boolean };
 
 type Opened = { callId: string; index: number; width: number; lines: () => Iterator<ViewLine>; pager: Pager; top: number };
 
@@ -309,6 +309,15 @@ export const useToolView = (host: ToolViewHost): ToolView => {
     return true;
   };
 
+  const expandAt = (screenRow: number): { index: number; entry: ToolEntry } | undefined => {
+    if (host.window === undefined || host.yielded || current() !== undefined) return undefined;
+    const hit = regionAt(host.allocation, screenRow);
+    const visible = hit?.region === 'viewport' ? host.window.rows[hit.row] : undefined;
+    const index = visible === undefined ? undefined : store.indexOfId(visible.entryId);
+    const entry = index === undefined ? undefined : toolAt(store, index);
+    return visible !== undefined && index !== undefined && entry !== undefined && isExpandRow(visible.row) ? { index, entry } : undefined;
+  };
+
   const onEvent = useEffectEvent((event: TerminalEvent): boolean => {
     if (event.type !== 'mouse') return false;
     const shown = current();
@@ -317,12 +326,9 @@ export const useToolView = (host: ToolViewHost): ToolView => {
       else if (event.button === 'wheel-down') place(shown, shown.top + WHEEL_ROWS);
       return true;
     }
-    if (host.window === undefined || host.yielded || event.kind !== 'release' || event.button !== 'left') return false;
-    const hit = regionAt(host.allocation, event.row);
-    const visible = hit?.region === 'viewport' ? host.window.rows[hit.row] : undefined;
-    const index = visible === undefined ? undefined : store.indexOfId(visible.entryId);
-    const entry = index === undefined ? undefined : toolAt(store, index);
-    if (visible !== undefined && index !== undefined && entry !== undefined && isExpandRow(visible.row)) open(index, entry);
+    if (event.kind !== 'release' || event.button !== 'left') return false;
+    const expand = expandAt(event.row);
+    if (expand !== undefined) open(expand.index, expand.entry);
     return false;
   });
 
@@ -334,5 +340,6 @@ export const useToolView = (host: ToolViewHost): ToolView => {
     view: shown === undefined ? null : createElement(DetailView, { text: shown.pager.rows.slice(shown.top, shown.top + capacity()).map(textRowOf), frame: host.frame, top: 0, keys: host.keys }),
     showNewest,
     key,
+    expandsAt: (screenRow) => expandAt(screenRow) !== undefined,
   };
 };

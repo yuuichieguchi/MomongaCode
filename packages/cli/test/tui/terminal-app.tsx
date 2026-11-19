@@ -7,13 +7,15 @@ import { App } from '../../src/tui/app.tsx';
 import { createInputParser } from '../../src/tui/terminal/parser.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import { TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
-import type { FakeBackendOptions } from '../fake-backend.ts';
+import type { FakeBackend, FakeBackendOptions } from '../fake-backend.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
 const SHOWN_BOUND_MS = 20_000;
 
 export type TerminalApp = {
   screen(): string[];
+  inverseAt(row: number, column: number): boolean;
+  backend: FakeBackend;
   type(text: string, shown: (screen: string[]) => boolean, description: string): Promise<string[]>;
   close(): void;
 };
@@ -32,7 +34,8 @@ export const startOnTerminal = async (size: { columns: number; rows: number }, o
   });
   const stdin = Object.assign(new EventEmitter(), { isTTY: false, setEncoding: () => undefined, setRawMode: () => undefined, ref: () => undefined, unref: () => undefined, read: () => null, resume: () => undefined, pause: () => undefined });
   const terminal = fakeScreenTerminal(size);
-  const instance = render(<App backend={fakeBackend(options)} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} startup={{ version: '1.2.3', home: options.settingsPlace?.home ?? '/home/none' }} onExit={() => undefined} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true, onRender: () => terminal.framed() });
+  const backend = fakeBackend(options);
+  const instance = render(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} startup={{ version: '1.2.3', home: options.settingsPlace?.home ?? '/home/none' }} onExit={() => undefined} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true, onRender: () => terminal.framed() });
   const parser = createInputParser();
   const screen = (): string[] => shown.text();
   const until = async (holds: (lines: string[]) => boolean, description: string): Promise<string[]> => {
@@ -45,6 +48,8 @@ export const startOnTerminal = async (size: { columns: number; rows: number }, o
   await until((lines) => lines.some((line) => line.includes('mode: manual')), 'the app is ready');
   return {
     screen,
+    inverseAt: (row, column) => shown.inverseAt(row, column),
+    backend,
     type: async (text, holds, description) => {
       for (const event of parser.push(Buffer.from(text, 'utf8'))) terminal.emit(event);
       return until(holds, description);

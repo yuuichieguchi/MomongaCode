@@ -84,7 +84,7 @@ import { clipboardReadMessage } from './screen/clipboard.ts';
 
 const READING_CLIPBOARD = 'reading the clipboard';
 import { KEY_SETTLE_MS } from './terminal/constants.ts';
-import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
+import type { KeyEvent, MouseEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 import { NEWLINE_HINT } from './terminal/negotiation.ts';
 import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
@@ -193,6 +193,10 @@ type Replay = { queue: ReplayQueue; before: number; notes: NoteReplay | undefine
 
 type ScreenFacts = { overlay: boolean; position: Position; tasks: BackgroundTasks; terminal: ScreenTerminal; flush(): Promise<void> };
 
+type Pointed = { readonly place: 'panel' | 'menu' | 'agents' | 'viewport'; readonly row: number; readonly range: readonly [number, number] | undefined };
+
+type Hovered = Pointed & { readonly screen: string; readonly at: MouseEvent };
+
 export function App(props: AppProps) {
   const { backend, terminal, onExit } = props;
   const { exit, waitUntilRenderFlush } = useApp();
@@ -276,6 +280,8 @@ export function App(props: AppProps) {
   const [probe, setProbe] = useState<{ sessionId: string | undefined; model: string; retryAfterSeconds: number } | undefined>(undefined);
   const [followedSession, setFollowedSession] = useState<{ id: string; after: number } | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
+  const [hovered, setHovered] = useState<Hovered | undefined>(undefined);
+  const hoveredRef = useRef<Hovered | undefined>(undefined);
   const [historyGeneration, setHistoryGeneration] = useState(0);
   const { adoption, move } = props;
   const [feed, setFeed] = useState(() => createHistoryFeed(adoption?.record.printed ?? 0));
@@ -1825,6 +1831,40 @@ export function App(props: AppProps) {
     return true;
   });
   useEffect(() => terminal.input.claim('agent-list', (event) => onListPointer(event)), [terminal]);
+  const screenOfHover = `${terminalState.screen} ${columns}x${rows}`;
+  const drawnHoverAt = (event: MouseEvent): Pointed | undefined => {
+    const listed = regionAt(allocation, event.row);
+    if (listed !== undefined && listTargetAt(event.row) !== undefined) return { place: 'agents', row: listed.row, range: undefined };
+    const shown = view.hoverAt(event);
+    if (shown !== undefined) return { place: 'viewport', row: shown.row, range: shown.range };
+    const expand = regionAt(allocation, event.row);
+    return expand?.region === 'viewport' && toolView.expandsAt(event.row) ? { place: 'viewport', row: expand.row, range: undefined } : undefined;
+  };
+  const hoverAt = (event: MouseEvent): Pointed | undefined => {
+    if (!fullscreen || switching || toolView.shown) return undefined;
+    const pointed = regionAt(pointerAllocation, event.row);
+    if (pointed?.region === 'input' && panel !== undefined) return prompts.hover(panelFacts, pointed.row) ? { place: 'panel', row: pointed.row, range: undefined } : undefined;
+    if (pointed?.region === 'menu' && inputShown && completionOpen) return (atMenu.open ? atMenu.hover(editorRef.current, pointed.row) : slashMenu.hover(pointed.row, allocation.menu)) ? { place: 'menu', row: pointed.row, range: undefined } : undefined;
+    const target = listTargetAt(event.row);
+    const chosen = listFocusRef.current;
+    const sameRow = chosen !== undefined && target !== undefined && (chosen.kind === 'main' ? target.kind === 'main' : target.kind === 'agent' && target.runId === chosen.runId);
+    if (target !== undefined && !sameRow && keyRouteOf(routeFacts()) === 'agents') chooseRow(target);
+    return drawnHoverAt(event);
+  };
+  const keepHover = (next: Hovered | undefined): void => {
+    const before = hoveredRef.current;
+    if (before?.place === next?.place && before?.row === next?.row && before?.range?.[0] === next?.range?.[0] && before?.range?.[1] === next?.range?.[1] && before?.screen === next?.screen) return;
+    hoveredRef.current = next;
+    setHovered(next);
+  };
+  const onPointer = useEffectEvent((event: TerminalEvent): void => {
+    if (event.type === 'focus' && event.direction === 'out') keepHover(undefined);
+    if (event.type !== 'mouse' || event.kind !== 'move' || event.button !== 'none') return;
+    const at = hoverAt(event);
+    keepHover(at === undefined ? undefined : { ...at, screen: screenOfHover, at: event });
+  });
+  useEffect(() => terminal.input.observe((event) => onPointer(event)), [terminal]);
+  const shownHover = hovered !== undefined && hovered.screen === screenOfHover && fullscreen && !switching && !toolView.shown ? drawnHoverAt(hovered.at) : undefined;
   const onChord = useEffectEvent((event: TerminalEvent): boolean => {
     if (event.type !== 'key') return false;
     const step = keys.chordStep(chordContextsOf(routeFacts()), chord.current, event);
@@ -1918,7 +1958,7 @@ export function App(props: AppProps) {
           transcript: fullscreen && toolView.shown ? (
             toolView.view
           ) : fullscreen ? (
-            <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={viewed.count()} following={view.position.following} selection={view.selection} />
+            <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={viewed.count()} following={view.position.following} selection={view.selection} hovered={shownHover?.place === 'viewport' ? shownHover : undefined} />
           ) : (
             <HistoryView key={`${historyGeneration}:${shownAgent?.runId ?? ''}`} store={viewed} source={view.source} feed={shownFeed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
           ),
@@ -1949,7 +1989,7 @@ export function App(props: AppProps) {
               )}
             </>
           ),
-          subagents: <AgentList {...listFacts} focus={shownFocus} now={now} timers={timers} />,
+          subagents: <AgentList {...listFacts} focus={shownFocus} now={now} timers={timers} hovered={shownHover?.place === 'agents' ? shownHover.row : undefined} />,
         }}
       />
     </TailPoseContext>

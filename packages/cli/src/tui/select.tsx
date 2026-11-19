@@ -219,6 +219,8 @@ export const selectClick = (spec: SelectSpec, state: SelectState, index: number)
   return { state: { ...state, index, confirming: undefined } };
 };
 
+export const selectHover = (spec: SelectSpec, state: SelectState, index: number): SelectState => (stopsOf(spec, state.filter).includes(index) ? { ...state, index, confirming: undefined } : state);
+
 export const selectWheel = (spec: SelectSpec, state: SelectState, rows: number, capacity: number): SelectState => {
   const count = listedOf(spec, state.filter).length;
   if (count <= capacity) return state;

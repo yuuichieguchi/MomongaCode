@@ -110,6 +110,7 @@ export type AtMenu = {
   labels: readonly string[];
   index: number;
   act(editor: EditorState, action: MenuAction): AtAct | undefined;
+  hover(editor: EditorState, row: number): boolean;
   press(editor: EditorState, row: number): AtAct | undefined;
 };
 
@@ -201,6 +202,12 @@ export const useAtMenu = (host: AtMenuHost): AtMenu => {
         return { kind: 'handled' };
       }
       return chosen(editor, current, current.index);
+    },
+    hover: (editor, row) => {
+      const current = shownFor(editor);
+      if (current === undefined || row >= current.labels.length) return false;
+      if (current.index !== row) keep({ key: current.key, index: row, closed: held.current.closed });
+      return true;
     },
     press: (editor, row) => {
       const current = shownFor(editor);

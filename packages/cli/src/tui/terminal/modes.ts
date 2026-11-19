@@ -8,7 +8,7 @@ export type ScreenMode = (typeof SCREEN_MODES)[number];
 
 export const TERMINAL_MODES = [
   { name: 'alt-screen', enter: `${ESC}[?1049h`, leave: `${ESC}[?1049l` },
-  { name: 'mouse', enter: `${ESC}[?1000;1002;1006h`, leave: `${ESC}[?1000;1002;1006l` },
+  { name: 'mouse', enter: `${ESC}[?1000;1002;1003;1006h`, leave: `${ESC}[?1000;1002;1003;1006l` },
   { name: 'bracketed-paste', enter: `${ESC}[?2004h`, leave: `${ESC}[?2004l` },
   { name: 'focus', enter: `${ESC}[?1004h`, leave: `${ESC}[?1004l` },
   { name: 'kitty-keys', enter: `${ESC}[>${KITTY_FLAGS}u`, leave: `${ESC}[<u` },

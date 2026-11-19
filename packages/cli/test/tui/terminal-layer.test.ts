@@ -16,9 +16,9 @@ const SCROLLBACK_START = `${ESC}[?2004h${START_QUERIES}`;
 const KITTY_REPLY = `${ESC}[?7u`;
 const DA1_REPLY = `${ESC}[?1;2c`;
 const MOUSE_REPLY = `${ESC}[?1006;2$y`;
-const ENTER_MOUSE = `${ESC}[?1000;1002;1006h`;
+const ENTER_MOUSE = `${ESC}[?1000;1002;1003;1006h`;
 const ENTER_MODIFY_OTHER_KEYS = `${ESC}[>4;2m`;
-const LEAVE_ALL = `${ESC}[?1049l${ESC}[?1000;1002;1006l${ESC}[?2004l${ESC}[?1004l${ESC}[<u${ESC}[>4m${ESC}[23;2t`;
+const LEAVE_ALL = `${ESC}[?1049l${ESC}[?1000;1002;1003;1006l${ESC}[?2004l${ESC}[?1004l${ESC}[<u${ESC}[>4m${ESC}[23;2t`;
 
 const plain = { ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 
@@ -121,7 +121,7 @@ describe('the mode table', () => {
   it('is one table of data, each mode with its enter and its leave sequence, in the order of the restore', () => {
     expect(TERMINAL_MODES).toEqual([
       { name: 'alt-screen', enter: `${ESC}[?1049h`, leave: `${ESC}[?1049l` },
-      { name: 'mouse', enter: `${ESC}[?1000;1002;1006h`, leave: `${ESC}[?1000;1002;1006l` },
+      { name: 'mouse', enter: `${ESC}[?1000;1002;1003;1006h`, leave: `${ESC}[?1000;1002;1003;1006l` },
       { name: 'bracketed-paste', enter: `${ESC}[?2004h`, leave: `${ESC}[?2004l` },
       { name: 'focus', enter: `${ESC}[?1004h`, leave: `${ESC}[?1004l` },
       { name: 'kitty-keys', enter: `${ESC}[>7u`, leave: `${ESC}[<u` },
@@ -276,7 +276,7 @@ describe('a terminal that cannot do fullscreen', () => {
     t.feed(`${ESC}[?1049;${value}$y`);
     expect(t.layer.state().screen).toBe('fullscreen');
     t.feed(`${MOUSE_REPLY}${DA1_REPLY}`);
-    expect(t.writes).toEqual([FULLSCREEN_START, ENTER_MOUSE, ENTER_MODIFY_OTHER_KEYS, `${ESC}[?1000;1002;1006l${ESC}[?1049l`]);
+    expect(t.writes).toEqual([FULLSCREEN_START, ENTER_MOUSE, ENTER_MODIFY_OTHER_KEYS, `${ESC}[?1000;1002;1003;1006l${ESC}[?1049l`]);
     expect(t.layer.state()).toMatchObject({ screen: 'scrollback', enabled: ['bracketed-paste', 'kitty-keys', 'modify-other-keys'] });
     expect(t.requests).toEqual([{ type: 'notice', text: NO_FULLSCREEN_NOTICE }]);
     expect(NO_FULLSCREEN_NOTICE).toBe('This terminal does not support the full screen; using its own history.');
@@ -305,7 +305,7 @@ describe('switching the screen mode', () => {
     t.feed(MOUSE_REPLY);
     t.writes.length = 0;
     t.layer.setScreen('scrollback');
-    expect(t.writes).toEqual([`${ESC}[?1000;1002;1006l${ESC}[?1049l`]);
+    expect(t.writes).toEqual([`${ESC}[?1000;1002;1003;1006l${ESC}[?1049l`]);
     t.layer.setScreen('scrollback');
     expect(t.writes).toHaveLength(1);
   });
@@ -316,7 +316,7 @@ describe('switching the screen mode', () => {
     t.feed(MOUSE_REPLY);
     t.writes.length = 0;
     t.layer.setScreen('fullscreen');
-    expect(t.writes).toEqual([`${ESC}[?1049h${ESC}[?1000;1002;1006h`]);
+    expect(t.writes).toEqual([`${ESC}[?1049h${ESC}[?1000;1002;1003;1006h`]);
     expect(t.layer.state()).toMatchObject({ screen: 'fullscreen', enabled: ['alt-screen', 'mouse', 'bracketed-paste', 'kitty-keys'] });
   });
 });
@@ -529,7 +529,7 @@ describe('suspend', () => {
     expect(t.log).toEqual([`write:${LEAVE_ALL}`, 'raw:false', 'kill:SIGSTOP']);
     t.log.length = 0;
     t.raise('SIGCONT');
-    expect(t.log).toEqual(['raw:true', `write:${ESC}[?1049h${ESC}[?1000;1002;1006h${ESC}[?2004h${ESC}[?1004h${ESC}[>7u${ESC}[>4;2m${ESC}[22;2t`]);
+    expect(t.log).toEqual(['raw:true', `write:${ESC}[?1049h${ESC}[?1000;1002;1003;1006h${ESC}[?2004h${ESC}[?1004h${ESC}[>7u${ESC}[>4;2m${ESC}[22;2t`]);
     expect(t.requests).toEqual([{ type: 'redraw' }]);
     expect(t.listening('SIGCONT')).toBe(false);
     t.feed('a');
@@ -639,7 +639,7 @@ describe('the handover', () => {
     t.layer.setScreen('fullscreen');
     t.log.length = 0;
     t.layer.close();
-    expect(t.log).toEqual([`write:${ESC}[?1049l${ESC}[?1000;1002;1006l${ESC}[?2004l${ESC}[<u`, 'raw:false']);
+    expect(t.log).toEqual([`write:${ESC}[?1049l${ESC}[?1000;1002;1003;1006l${ESC}[?2004l${ESC}[<u`, 'raw:false']);
   });
 
   it('keeps the adopted hint until a received Shift+Enter proves more', () => {

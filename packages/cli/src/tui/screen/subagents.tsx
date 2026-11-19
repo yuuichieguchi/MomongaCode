@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { KeyTable } from '../keys/table.ts';
 import type { Subagent } from '../transcript.ts';
+import { styleOf } from './theme.ts';
 import { every } from './timers.ts';
 import { displayWidth } from './wrap.ts';
 import type { ScreenTimers } from './timers.ts';
@@ -74,20 +75,28 @@ export const agentListLines = ({ subagents, shown, focus, keys, screenReader, co
 
 export const agentListRequest = (facts: Omit<AgentListFacts, 'now' | 'rows'>): number => agentListLines({ ...facts, now: 0, rows: Number.MAX_SAFE_INTEGER }).length;
 
-export type AgentListProps = Omit<AgentListFacts, 'now'> & { now(): number; timers: ScreenTimers };
+export type AgentListProps = Omit<AgentListFacts, 'now'> & { now(): number; timers: ScreenTimers; hovered: number | undefined };
 
-export function AgentList({ now, timers, ...facts }: AgentListProps) {
+const wholeRow = (text: string, columns: number): string => `${text}${' '.repeat(Math.max(0, columns - displayWidth(text)))}`;
+
+export function AgentList({ now, timers, hovered, ...facts }: AgentListProps) {
   const [at, setAt] = useState(now);
   const running = facts.subagents.length > 0 && !facts.screenReader;
   useEffect(() => (running ? every(timers, TICK_MS, () => setAt(now())) : undefined), [running, now, timers]);
   const lines = agentListLines({ ...facts, now: Math.max(at, ...facts.subagents.map((subagent) => subagent.startedAt)) });
   return (
     <>
-      {lines.map((line, index) => (
-        <Text key={index} dimColor={!line.chosen} inverse={line.chosen} wrap="truncate">
-          {line.text}
-        </Text>
-      ))}
+      {lines.map((line, index) =>
+        line.chosen || (index === hovered && line.target !== undefined) ? (
+          <Text key={index} {...styleOf(['selection'])} wrap="truncate">
+            {wholeRow(line.text, facts.columns)}
+          </Text>
+        ) : (
+          <Text key={index} dimColor wrap="truncate">
+            {line.text}
+          </Text>
+        ),
+      )}
     </>
   );
 }
