@@ -33,6 +33,12 @@
       "packages/eval/src/context-report.ts": {
         "cap": 1
       },
+      "packages/gateway/src/plan/session.ts": {
+        "limit": 1
+      },
+      "packages/protocol/src/model-settings.ts": {
+        "limit": 1
+      },
       "packages/runtime/src/process/background-jobs.ts": {
         "job": 10
       },
@@ -167,9 +173,6 @@
       "packages/cli/src/tui/commands/mcp.ts": {
         "project": 1
       },
-      "packages/cli/src/tui/commands/models.ts": {
-        "limit": 1
-      },
       "packages/cli/src/tui/commands/permissions.ts": {
         "directory": 4
       },
@@ -188,7 +191,7 @@
         "limit": 1
       },
       "packages/cli/src/tui/models/texts.ts": {
-        "limit": 2
+        "limit": 1
       },
       "packages/cli/src/tui/screen/prompt-panel.tsx": {
         "project": 2
