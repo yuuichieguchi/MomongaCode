@@ -1,6 +1,4 @@
 import http from 'node:http';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createChatCompletionsAdapter, createOllamaAdapter, createOpenResponsesAdapter, keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
@@ -10,7 +8,7 @@ import { GuardedAdapterError, guardAdapter } from '../src/core/guarded-adapter.t
 import { createRedactor } from '../src/core/redaction.ts';
 import { StreamFailure } from '../src/core/stream-failure.ts';
 import { UpstreamHttpError, UpstreamProtocolError } from '../src/adapters/shared/failures.ts';
-import { START_MS, registerCleanup } from './gateway-helpers.ts';
+import { START_MS, makeDir, registerCleanup } from './gateway-helpers.ts';
 import { OLLAMA_CAPABILITIES } from './ollama-support.ts';
 import { EVERY_REASONING_IS_OWN, REASONING_ORIGIN_CODEC } from './own-reasoning.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
@@ -22,7 +20,7 @@ const REQUEST = { model: 'remote-model', fence: TEST_FENCE, input: [{ type: 'mes
 type Reply = { contentType: string; body: string };
 
 const serve = async (reply: Reply): Promise<string> => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mrid-'));
+  const dir = makeDir();
   const socketPath = path.join(dir, 's.sock');
   const server = http.createServer((request, response) => {
     request.resume();
@@ -34,7 +32,6 @@ const serve = async (reply: Reply): Promise<string> => {
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
   registerCleanup(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    fs.rmSync(dir, { recursive: true, force: true });
   });
   return socketPath;
 };
@@ -65,7 +62,7 @@ const adapterFor = (kind: AdapterKind, socketPath: string): ProviderAdapter => {
 type Run = { events: StreamEvent[]; thrown: unknown; seen: unknown[]; guarded: ProviderAdapter };
 
 const run = async (kind: AdapterKind, reply: Reply | 'refused'): Promise<Run> => {
-  const socketPath = reply === 'refused' ? path.join(os.tmpdir(), `mrid-absent-${process.pid}.sock`) : await serve(reply);
+  const socketPath = reply === 'refused' ? path.join(makeDir(), 'absent.sock') : await serve(reply);
   const inner = adapterFor(kind, socketPath);
   const seen: unknown[] = [];
   const guarded = guardAdapter({ ...inner, classify: (error) => { seen.push(error); return inner.classify(error); } }, createRedactor({ credentials: [] }), REASONING_ORIGIN_CODEC);
