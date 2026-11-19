@@ -67,12 +67,9 @@ describe('approval subject digest and supersede', () => {
     const { store, claim } = await setup();
     const first = await request(store, claim, OPTIONS, FIRST);
     await request(store, claim, OPTIONS, SECOND);
-    expect(await store.resolveApproval(first.id, 'allow_once')).toEqual({
-      kind: 'approval_not_pending',
-      status: 'superseded',
-      approval: expect.objectContaining({ id: first.id, status: 'superseded' }),
-    });
-    expect((await store.resolveApproval(first.id, 'allow_once')).approval).not.toHaveProperty('optionId');
+    const late = await store.resolveApproval(first.id, 'allow_once');
+    expect(late).toEqual({ kind: 'approval_not_pending', status: 'superseded', approval: expect.objectContaining({ id: first.id, status: 'superseded' }) });
+    expect(late.kind === 'approval_not_pending' ? late.approval : undefined).not.toHaveProperty('optionId');
     expect(store.approvals.get(first.id)).not.toHaveProperty('optionId');
   });
 
