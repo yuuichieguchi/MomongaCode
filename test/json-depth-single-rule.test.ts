@@ -21,7 +21,7 @@ const BOUNDARIES = [
 
 const CONSTANT_DECLARATION = /\b(?:const|let|var)\s+([A-Z][A-Z0-9_]*DEPTH[A-Z0-9_]*)\s*=\s*\d/g;
 
-const UNRELATED_TO_JSON = new Set(['MAX_CAUSE_DEPTH']);
+const UNRELATED_TO_JSON = new Set(['MAX_CAUSE_DEPTH', 'MAX_GLOB_BRACE_DEPTH']);
 
 const isJsonParse = (call: SourceNode): boolean => memberChain(childOf(call, 'callee')) === 'JSON.parse';
 
