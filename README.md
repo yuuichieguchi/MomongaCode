@@ -296,7 +296,7 @@ Instruction files named `AGENTS.md` are read into the context.
 
 ### Installer options
 
-You set nothing. The install command in section 1 works from the first release on, once the repository is public: no release has been published yet, and the repository is private until the release, so until then there is nothing to download.
+You set nothing. The install command in section 1 works from the first release on: no release has been published yet, so until then there is nothing to download.
 
 The script downloads `SHA256SUMS` and `SHA256SUMS.sig` from the latest GitHub release of `yuuichieguchi/MomongaCode`, verifies the signature with `ssh-keygen` against the release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails. `ssh-keygen` must be available; on Windows that means the OpenSSH Client optional feature.
 
