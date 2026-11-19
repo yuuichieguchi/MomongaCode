@@ -131,6 +131,8 @@ describe('gateway client malformed replies', () => {
     ['with a chain member that does not say what answers', listedEntry('fake/main', {}, [{ ...listedMember('fake/main', {}), answers: 'someone' }])],
     ['without the server name', { ...listedEntry('fake/main', {}), provider: undefined }],
     ['without its own name', { ...listedEntry('fake/main', {}), ownName: undefined }],
+    ['without its naming', { ...listedEntry('fake/main', {}), naming: undefined }],
+    ['with a naming this version does not know', { ...listedEntry('fake/main', {}), naming: 'person' }],
     ['in the shape of an earlier build', { id: 'default', targets: ['primary'], capabilities: {}, targetCapabilities: { primary: {} }, targetCounters: { primary: 'c'.repeat(64) } }],
   ])('rejects a models entry %s', async (_label, entry) => {
     const { client } = await clientReplying(jsonReply(200, JSON.stringify(listingBody([entry]))));

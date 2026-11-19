@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { modelNamingOf } from '@momonga/protocol';
 import { S1, S2H, S3, S4 } from './model-fixtures.ts';
 import { loadFile, loadModelsSection } from './load-models.ts';
 
@@ -19,5 +20,14 @@ describe('a model is named by its server or by its own name, from facts of its c
 
   it('a plan account and a hosted provider reached with a key are named by the model own name', async () => {
     expect(await namingsOf(S3)).toEqual({ 'chatgpt/gpt-5.5': 'account', 'openai/gpt-5.5': 'account' });
+  });
+
+  it('the naming read from a written connection is the naming of its resolved models, for every kind', async () => {
+    const anthropic = { models: { connections: [{ adapter: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', models: [{ id: 'claude-x', capabilities: { contextWindow: 200000, maxOutputTokens: 8192 } }] }] } };
+    for (const document of [S1, S2H, S3, S4, anthropic]) {
+      const { connections } = (document as { models: { connections: { models: unknown[] }[] } }).models;
+      const written = connections.flatMap((connection) => connection.models.map(() => modelNamingOf(connection)));
+      expect((await loadFile(document)).models.views.map((view) => view.naming)).toEqual(written);
+    }
   });
 });

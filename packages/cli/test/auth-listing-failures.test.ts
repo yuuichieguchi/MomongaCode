@@ -113,6 +113,7 @@ describe('the gateway client checks every field of the model list (settlement J-
   it.for([
     ['the entry does not say it is a model', { ...ENTRY, object: undefined }, 'object'],
     ['the provider of a chain member is not text', { ...ENTRY, chain: [{ ...MEMBER, provider: 7 }] }, 'chain'],
+    ['the entry carries no naming', { ...ENTRY, naming: undefined }, 'naming'],
   ] as const)('lists an entry as unreadable, naming its field, when %s', async ([_name, entry, field], context) => {
     const listed = await listedBy(context, { ...LIST, data: [entry] });
     expect(listed).toMatchObject({ data: [{ id: 'local/m', capabilities: { toolCalling: { state: 'unavailable', code: 'model_entry_unreadable', message: expect.stringContaining(field) } } }] });

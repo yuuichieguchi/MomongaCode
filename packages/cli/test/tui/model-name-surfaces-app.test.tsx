@@ -40,8 +40,8 @@ describe('a model is shown by one name on every surface of a session', () => {
     const switched = await app.type('2', holds('model: gpt-6-luna'), 'the switch line is written');
     expect(switched.join('\n')).not.toContain(PLAN);
     await app.type('go', holds('go'), 'the prompt is typed');
-    const sent = await app.type(KEYS.enter, holds('gpt-6-luna · '), 'the footer names the model');
-    expect(sent.join('\n')).not.toContain(PLAN);
+    const sent = await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('tokens:') && line.includes('gpt-6-luna · ')), 'the footer names the model');
+    expect(sent.find((line) => line.includes('tokens:'))).not.toContain(PLAN);
     await app.backend.called('openSession');
     app.backend.following().onChildStarted('general-purpose', 'child-1', 0, LOCAL, undefined);
     const listed = await app.type('', holds('general-purpose · starting'), 'the child is listed');
