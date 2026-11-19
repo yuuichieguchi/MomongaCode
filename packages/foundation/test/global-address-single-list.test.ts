@@ -16,6 +16,7 @@ const MARKS: readonly Mark[] = [
   { what: 'an IPv6 range in CIDR form', pattern: /[0-9a-f]{0,4}::(?:[0-9a-f:]*)\/\d{1,3}\b/i },
   { what: 'the base of a private, loopback, shared or link-local IPv4 range', pattern: /\b(?:10\.0\.0\.0|127\.0\.0\.0|172\.16\.0\.0|192\.168\.0\.0|169\.254\.0\.0|100\.64\.0\.0|198\.18\.0\.0|224\.0\.0\.0|240\.0\.0\.0)\b/ },
   { what: 'an IPv4 range written as octets', pattern: /\[\s*(?:10|127|172|192|169|100|198|224|240)\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\]/ },
+  { what: 'the base of a private, loopback, shared or link-local IPv4 range written as a number', pattern: /\b0x(?:7f000000|0a000000|ac100000|c0a80000|a9fe0000|64400000|c6120000|e0000000|f0000000)\b/i },
   { what: 'the base of a local IPv6 range', pattern: /\b(?:fe80|fec0|fc00|fd00|ff00)::/i },
   { what: 'an IPv6 range written as a group value', pattern: /\b0x(?:fe80|fec0|fc00|ff00|ff9b|2002|ffc0|fe00)\b/i },
   { what: 'a pattern for an embedded IPv4 address', pattern: /::ffff:/i },
@@ -64,6 +65,7 @@ describe('the address ranges are written once', () => {
     "const LOCAL = 'fc00::/7';",
     'const RANGE = [ipv4Number([10, 0, 0, 0]), 8];',
     'if ((g0 & 0xffc0) === 0xfe80) return false;',
+    'const RANGES = [[0x7f000000, 8], [0xc0a80000, 16]];',
     'const MAPPED = /^::ffff:(.+)$/i;',
     "list.addAddress('::1', 'ipv6');",
   ])('recognises %s as a second list', (line) => {

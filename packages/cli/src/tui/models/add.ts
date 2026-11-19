@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { baseUrlProblem, providerNameOf, serverNameFromCommand } from '@momonga/config';
-import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, managedServerOf, modelNamingOf, withDefaultTag } from '@momonga/protocol';
+import { baseUrlProblem, modelNamingOf, providerNameOf, serverNameFromCommand } from '@momonga/config';
+import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonOf, displayMapOf, managedServerOf, withDefaultTag } from '@momonga/protocol';
 import type { ManagedServerDescription, DetectedLocalServer, DetectedModel, LocalServerDetection, ModelView } from '@momonga/protocol';
 import { describeFailure } from '../../failure.ts';
 import { wholeNumberWithin } from '../../models-check.ts';

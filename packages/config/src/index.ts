@@ -59,6 +59,7 @@ export type { AdapterKind, AdapterTable, AdapterTraits, MeasuredBy, ProbeKind, P
 export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } from './probe-key.ts';
 export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
 export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
+export { modelNamingOf } from './model-naming.ts';
 export { chainOf, credentialEnvNames, outputBoundFieldOf, plainHttpWarningText, resolveModels } from './models.ts';
 export { PROJECT_MANDATE_FILE, PROJECT_MANDATE_USER_ONLY_KEYS, loadProjectMandate, parseProjectMandate, projectMandateState } from './project-mandate.ts';
 export type { ProjectMandate, ProjectMandateInput, ProjectMandateState, ProjectMandateStateInput } from './project-mandate.ts';

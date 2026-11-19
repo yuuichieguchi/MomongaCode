@@ -1,16 +1,17 @@
 import { isIP } from 'node:net';
 
+const LOOPBACK_IPV4 = '127.0.0.0/8';
+const LOOPBACK_IPV6 = '::1/128';
+
+const OWN_NETWORK_IPV4: readonly string[] = ['10.0.0.0/8', '100.64.0.0/10', LOOPBACK_IPV4, '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16'];
+const OWN_NETWORK_IPV6: readonly string[] = [LOOPBACK_IPV6, 'fc00::/7', 'fe80::/10'];
+
 const NON_GLOBAL_IPV4: readonly string[] = [
+  ...OWN_NETWORK_IPV4,
   '0.0.0.0/8',
-  '10.0.0.0/8',
-  '100.64.0.0/10',
-  '127.0.0.0/8',
-  '169.254.0.0/16',
-  '172.16.0.0/12',
   '192.0.0.0/24',
   '192.0.2.0/24',
   '192.88.99.0/24',
-  '192.168.0.0/16',
   '198.18.0.0/15',
   '198.51.100.0/24',
   '203.0.113.0/24',
@@ -19,15 +20,13 @@ const NON_GLOBAL_IPV4: readonly string[] = [
   '255.255.255.255/32',
 ];
 
-const LOOPBACK_IPV4 = '127.0.0.0/8';
-const LOOPBACK_IPV6 = '::1/128';
 const MAPPED_IPV4 = '::ffff:0:0/96';
 
 const IPV4_IN_LAST_32_BITS: readonly string[] = [MAPPED_IPV4, '::/96', '64:ff9b::/96', '64:ff9b:1::/48'];
 const IPV4_AFTER_FIRST_16_BITS: readonly string[] = ['2002::/16'];
 
 const GLOBAL_UNICAST_IPV6 = '2000::/3';
-const NON_GLOBAL_IPV6: readonly string[] = ['::/128', LOOPBACK_IPV6, '2001::/23', '2001:db8::/32', '3fff::/20', 'fc00::/7', 'fe80::/10', 'fec0::/10', 'ff00::/8'];
+const NON_GLOBAL_IPV6: readonly string[] = [...OWN_NETWORK_IPV6, '::/128', '2001::/23', '2001:db8::/32', '3fff::/20', 'fec0::/10', 'ff00::/8'];
 
 type Bits = { readonly value: bigint; readonly width: number };
 type Range = { readonly base: bigint; readonly width: number; readonly prefix: number };
@@ -68,6 +67,7 @@ const withinAny = (bits: Bits, ranges: readonly Range[]): boolean => ranges.some
 const RANGES = {
   nonGlobalIpv4: NON_GLOBAL_IPV4.map(rangeOf),
   nonGlobalIpv6: NON_GLOBAL_IPV6.map(rangeOf),
+  ownNetwork: [...OWN_NETWORK_IPV4, ...OWN_NETWORK_IPV6].map(rangeOf),
   globalUnicastIpv6: rangeOf(GLOBAL_UNICAST_IPV6),
   loopback: [rangeOf(LOOPBACK_IPV4), rangeOf(LOOPBACK_IPV6)],
   ipv4InLast32Bits: IPV4_IN_LAST_32_BITS.map(rangeOf),
@@ -97,6 +97,8 @@ const isGlobalUnicastBits = (bits: Bits): boolean => {
 export type AddressAllowance = { readonly loopback: boolean };
 
 export const isLoopbackAddress = (address: string): boolean => isLoopbackBits(bitsOf(address));
+
+export const isOwnNetworkAddress = (address: string): boolean => withinAny(bitsOf(address), RANGES.ownNetwork);
 
 export const isAddressInRange = (address: string, cidr: string): boolean => within(bitsOf(address), rangeOf(cidr));
 

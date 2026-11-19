@@ -176,7 +176,6 @@ export {
   displayMapOf,
   displayOf,
   hasTag,
-  modelNamingOf,
   modelRefErrorOf,
   parseCanon,
   resolveStoredModelRef,

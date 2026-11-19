@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { answeredLater, isRecord } from '@momonga/foundation';
 import {
-  modelNamingOf,
   PROVIDER_NAME_PATTERN,
   SERVER_ADAPTER_LABELS,
   SERVER_KINDS,
@@ -12,6 +11,7 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
+import { modelNamingOf } from './model-naming.ts';
 import type { ModelView, ModelViews, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';

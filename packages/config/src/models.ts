@@ -2,7 +2,6 @@ import path from 'node:path';
 import { askedPaths, endpointHostOf, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import type { PathAsking } from '@momonga/foundation';
 import {
-  modelNamingOf,
   DEFAULT_ANTHROPIC_API_VERSION,
   SERVER_KINDS,
   acceptedReasoningEfforts,
@@ -15,6 +14,7 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
+import { modelNamingOf } from './model-naming.ts';
 import type { AnthropicApiVersion, ModelNaming, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningCapability, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { ConfigError, toConfigError } from './config-error.ts';
 import { chainRoomVerdict, roomNumbersText } from './chain-room.ts';

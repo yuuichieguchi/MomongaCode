@@ -223,7 +223,7 @@ export {
   SECRET_TOOL_BINARY,
 } from './secret-store.ts';
 export type { SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
-export { isAcceptableAddress, isLoopbackAddress } from './global-address.ts';
+export { isAcceptableAddress, isLoopbackAddress, isOwnNetworkAddress } from './global-address.ts';
 export { claimsLoopback, normalizedHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, routeOf } from './network-route.ts';
 export { EDITOR_ENV_NAMES, ENVIRONMENT_VARIABLES, HOOK_FOLDER_ENV, NETWORK_ENV_NAMES, NO_COLOR_ENV, NO_MOTION_ENV, SCREEN_READER_ENV } from './environment-variables.ts';

@@ -7,48 +7,6 @@ export const MODEL_NAMINGS = ['server', 'account'] as const;
 
 export type ModelNaming = (typeof MODEL_NAMINGS)[number];
 
-const IPV4_OWN_RANGES: readonly (readonly [number, number])[] = [
-  [0x7f000000, 8],
-  [0x0a000000, 8],
-  [0xac100000, 12],
-  [0xc0a80000, 16],
-  [0xa9fe0000, 16],
-  [0x64400000, 10],
-];
-
-const ipv4Of = (host: string): number | undefined => {
-  const parts = host.split('.');
-  if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/.test(part))) return undefined;
-  return parts.reduce((value, part) => value * 256 + Number(part), 0);
-};
-
-const inRange = (address: number, [base, bits]: readonly [number, number]): boolean => Math.floor(address / 2 ** (32 - bits)) === Math.floor(base / 2 ** (32 - bits));
-
-const isOwnIpv6 = (host: string): boolean => {
-  const first = Number.parseInt(host.split(':')[0] || '0', 16);
-  return host === '::1' || (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
-};
-
-const isOwnNetworkHost = (hostname: string): boolean => {
-  if (hostname.startsWith('[')) return isOwnIpv6(hostname.slice(1, -1));
-  const ipv4 = ipv4Of(hostname);
-  if (ipv4 !== undefined) return IPV4_OWN_RANGES.some((range) => inRange(ipv4, range));
-  return !hostname.includes('.') || hostname.endsWith('.local') || hostname.endsWith('.localhost');
-};
-
-const textOf = (connection: object, key: string): string | undefined => {
-  const value: unknown = Reflect.get(connection, key);
-  return typeof value === 'string' ? value : undefined;
-};
-
-export const modelNamingOf = (connection: object): ModelNaming => {
-  if (Reflect.get(connection, 'plan') !== undefined) return 'account';
-  if (textOf(connection, 'adapter') === 'managed' || textOf(connection, 'socketPath') !== undefined) return 'server';
-  const baseUrl = textOf(connection, 'baseUrl');
-  if (baseUrl === undefined || !URL.canParse(baseUrl)) return 'account';
-  return isOwnNetworkHost(new URL(baseUrl).hostname) ? 'server' : 'account';
-};
-
 export type ModelView = { canon: string; provider: string; ownName: string; defaultTag?: string; naming: ModelNaming };
 export type ModelViews = readonly ModelView[];
 

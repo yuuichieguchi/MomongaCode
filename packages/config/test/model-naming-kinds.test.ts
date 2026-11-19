@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { modelNamingOf } from '@momonga/protocol';
+import { modelNamingOf } from '@momonga/config';
 import { S1, S2H, S3, S4 } from './model-fixtures.ts';
 import { loadFile, loadModelsSection } from './load-models.ts';
 

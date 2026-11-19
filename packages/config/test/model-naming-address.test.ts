@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { modelNamingOf } from '../src/index.ts';
+import { modelNamingOf } from '@momonga/config';
 
 const at = (baseUrl: string, more: Record<string, unknown> = {}): string => modelNamingOf({ adapter: 'chat-completions', baseUrl, ...more });
 

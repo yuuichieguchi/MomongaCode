@@ -1,10 +1,9 @@
 import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
-import { ConfigError, ModelsEditRefused, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
+import { ConfigError, ModelsEditRefused, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, modelNamingOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
 import {
-  modelNamingOf,
   REASONING_EFFORTS,
   isReasoningEffort,
   GENERIC_SERVER_KIND,
