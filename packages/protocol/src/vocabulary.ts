@@ -210,6 +210,7 @@ export const ADD_MODEL_COMMAND = `${WORDS.command} models add`;
 export const SIGN_IN_COMMAND = `${WORDS.command} auth login`;
 
 export const TUI_SIGN_IN_COMMAND = '/login';
+export const TUI_MODEL_COMMAND = '/model';
 
 export const signOutCommand = (account: string): string => `${WORDS.command} auth logout ${account}`;
 
@@ -234,7 +235,7 @@ const SHELL_CONNECT_MODEL_REMEDY = `Run ${ADD_MODEL_COMMAND} to add one, or ${SI
 
 const CONNECT_MODEL_REMEDY: Readonly<Record<Surface, string>> = {
   cli: SHELL_CONNECT_MODEL_REMEDY,
-  tui: `Use ${TUI_SIGN_IN_COMMAND} to connect one.`,
+  tui: `Use ${TUI_SIGN_IN_COMMAND} to sign in or add an API key, or ${TUI_MODEL_COMMAND} to use a local server.`,
   acp: SHELL_CONNECT_MODEL_REMEDY,
   gateway: SHELL_CONNECT_MODEL_REMEDY,
 };

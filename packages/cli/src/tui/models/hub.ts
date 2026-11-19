@@ -75,7 +75,11 @@ const firstChoosableFrom = (rows: readonly HubRow[], from: number): number => {
 
 const keyedElsewhereOf = (edit: ModelsEdit): ReadonlySet<string> => {
   const local = new Set(edit.resolved.views.filter((view) => view.naming === 'server').map((view) => view.provider));
-  return new Set(edit.resolved.connections.filter((connection) => !local.has(connection.provider) && (connection.apiKeyEnv !== undefined || connection.apiKeySecret !== undefined)).map((connection) => connection.provider));
+  return new Set(
+    edit.resolved.connections
+      .filter((connection) => connection.plan !== undefined || (!local.has(connection.provider) && (connection.apiKeyEnv !== undefined || connection.apiKeySecret !== undefined)))
+      .map((connection) => connection.provider),
+  );
 };
 
 const signInRequiredOf = (document: ModelsDocument, health: GatewayHealth): ReadonlySet<string> =>
@@ -118,6 +122,13 @@ const serverMenu = async (context: ModelsFlowContext, opened: Opened, provider: 
   if (action === 'Name this server') await nameServer(context, opened, provider);
   if (action === 'Remove server') await removeServer(context, opened, provider);
 };
+
+export const runRenameServer = async (context: ModelsFlowContext, provider: string): Promise<void> => nameServer(context, await openEdit(context), provider);
+
+export const runRemoveServer = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider);
+
+export const accountConnectionOf = async (context: ModelsFlowContext, profile: string, account: string): Promise<string | undefined> =>
+  (await openEdit(context)).edit.resolved.connections.find((connection) => connection.plan?.profile === profile && connection.plan.account === account)?.provider;
 
 export const runServerActions = async (context: ModelsFlowContext, provider: string): Promise<void> => serverMenu(context, await openEdit(context), provider);
 

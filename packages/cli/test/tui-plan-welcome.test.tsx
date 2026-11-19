@@ -11,7 +11,7 @@ vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
 const DESCRIPTION = 'Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
 const PASTE_LABEL = 'On a remote machine? Paste the redirect URL here';
-const NO_MODEL = 'No model is connected. Use /login to connect one.';
+const NO_MODEL = 'No model is connected. Use /login to sign in or add an API key, or /model to use a local server.';
 const NEEDS_SESSION = 'This command needs a session. Connect a model first with /login.';
 const UNCONNECTED_FOOTER = 'no model connected · /login';
 

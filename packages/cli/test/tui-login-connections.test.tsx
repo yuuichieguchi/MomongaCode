@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { PLAN_TEST_TIMEOUT_MS, choose, startPlan, submitLine, untilRow } from './fake-plan-gateway.tsx';
+import { PLAN_TEST_TIMEOUT_MS, account, choose, eventually, startPlan, submitLine, untilRow } from './fake-plan-gateway.tsx';
+import { KEYS } from './ink-helpers.ts';
 import { untilFrame } from './ink-helpers.ts';
 import { freshPlace } from './tui/settings-harness.tsx';
 
@@ -9,12 +10,14 @@ vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
 const LOCAL = 'ollama/qwen3.8:27b';
 const KEYED = 'openai/gpt-5.5';
+const LOCAL_KEYED = 'lmstudio/m';
 
 const placeWith = () => {
   const place = freshPlace();
   fs.mkdirSync(path.dirname(place.userFile), { recursive: true, mode: 0o700 });
   const connections = [
     { adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434', models: [{ id: 'qwen3.8:27b', capabilities: { contextWindow: 32768, maxOutputTokens: 8192 } }] },
+    { adapter: 'chat-completions', provider: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', apiKeyEnv: 'LMSTUDIO_KEY', models: [{ id: 'm', capabilities: { contextWindow: 32768, maxOutputTokens: 8192 } }] },
     { adapter: 'open-responses', provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKeyEnv: 'OPENAI_API_KEY', models: [{ id: 'gpt-5.5', capabilities: { contextWindow: 32768, maxOutputTokens: 8192 } }] },
   ];
   fs.writeFileSync(place.userFile, JSON.stringify({ models: { connections } }), { mode: 0o600 });
@@ -25,17 +28,18 @@ const connectionsIn = (file: string): { provider?: string }[] => (JSON.parse(fs.
 
 const openLogin = async () => {
   const place = placeWith();
-  const started = await startPlan({ session: { model: LOCAL }, models: [LOCAL, KEYED], billing: { [LOCAL]: 'local' }, keyGroups: { [KEYED]: 'openai' }, accounts: [], settingsPlace: { home: place.home, projectDir: place.project } });
+  const started = await startPlan({ session: { model: LOCAL }, models: [LOCAL, LOCAL_KEYED, KEYED], billing: { [LOCAL]: 'local' }, keyGroups: { [KEYED]: 'openai', [LOCAL_KEYED]: 'lmstudio' }, accounts: [], settingsPlace: { home: place.home, projectDir: place.project } });
   await untilFrame(started.app, 'mode: manual');
   await submitLine(started.app, '/login');
   return { ...started, place };
 };
 
 describe('/login holds what needs a sign-in or a key', () => {
-  it('lists one row per API-key provider and no local server', async () => {
+  it('lists one row per API-key provider outside the person own network and no local server, keyed or not', async () => {
     const { app } = await openLogin();
     const listed = await untilRow(app, 'openai [API key] · configured');
     expect(listed).not.toContain('local server');
+    expect(listed).not.toContain('lmstudio');
     expect(listed).not.toContain(LOCAL);
     app.unmount();
   });
@@ -56,7 +60,51 @@ describe('/login holds what needs a sign-in or a key', () => {
     await untilFrame(app, 'Remove openai and its model?');
     await choose(app, 'Yes');
     await untilFrame(app, 'Removed');
-    expect(connectionsIn(place.userFile).map((connection) => connection.provider)).toEqual([undefined]);
+    expect(connectionsIn(place.userFile).map((connection) => connection.provider)).toEqual([undefined, 'lmstudio']);
+    app.unmount();
+  });
+});
+
+const PLAN_MODEL = 'work/gpt-6-luna';
+
+const openAccounts = async () => {
+  const place = freshPlace();
+  fs.mkdirSync(path.dirname(place.userFile), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(place.userFile, JSON.stringify({ models: { connections: [{ adapter: 'open-responses', plan: { profile: 'chatgpt', account: 'work' }, models: [{ id: 'gpt-6-luna', capabilities: { contextWindow: 32768, maxOutputTokens: 8192 } }] }] } }), { mode: 0o600 });
+  const started = await startPlan({ session: { model: PLAN_MODEL }, models: [PLAN_MODEL], planTargets: { [PLAN_MODEL]: { profile: 'chatgpt', account: 'work' } }, accounts: [account({ label: 'work', pinnedBy: [PLAN_MODEL] })], settingsPlace: { home: place.home, projectDir: place.project } });
+  await untilFrame(started.app, 'mode: manual');
+  await submitLine(started.app, '/login');
+  await choose(started.app, '[subscription]');
+  return { ...started, place };
+};
+
+describe('the account picker renames and removes the connection of an account', () => {
+  it('shows a rename and a remove row for the account', async () => {
+    const { app } = await openAccounts();
+    const picker = await untilRow(app, 'Remove account work');
+    expect(picker).toContain('Rename account work');
+    expect(picker).not.toContain('Name this server');
+    app.unmount();
+  });
+
+  it('rename writes the new server name after the confirm', async () => {
+    const { app, place } = await openAccounts();
+    await choose(app, 'Rename account work');
+    await untilFrame(app, 'Name (lower-case');
+    app.stdin.write('job');
+    app.stdin.write(KEYS.enter);
+    await choose(app, 'Yes');
+    await eventually(() => connectionsIn(place.userFile)[0]?.provider === 'job', 'the new name is written');
+    app.unmount();
+  });
+
+  it('remove asks the confirm row and then removes the connection', async () => {
+    const { app, place } = await openAccounts();
+    await choose(app, 'Remove account work');
+    await untilFrame(app, 'Remove work and its model?');
+    await choose(app, 'Yes');
+    await untilFrame(app, 'Removed');
+    expect(connectionsIn(place.userFile)).toEqual([]);
     app.unmount();
   });
 });
