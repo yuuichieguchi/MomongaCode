@@ -126,6 +126,7 @@ momonga [options] [prompt]
 | `momonga models set-program [id] [field] [value]` | change the command, args, readyPath or modelFile of a declared program |
 | `momonga models forget-program [id]` | forget a declared program that no server uses |
 | `momonga models timeouts` | how long a request waits for the first reply and without any data, in whole minutes, 1 or more |
+| `momonga models effort [level]` | the reasoning effort of the models that have none saved for themselves |
 | `momonga models dialects` | the declared schema dialects |
 | `momonga models dialects show` | print the declared schema dialects as JSON |
 | `momonga models dialects set` | replace the declared schema dialects with the object of a JSON file |
@@ -610,6 +611,14 @@ momonga [options] [prompt]
 | `--yes` | write the change; without it the change is only shown |
 | `-h, --help` | display help for the command |
 
+### momonga models effort
+
+| Option | Meaning |
+| --- | --- |
+| `--clear` | remove it, so those models run at medium |
+| `--yes` | write the change; without it the change is only shown |
+| `-h, --help` | display help for the command |
+
 ### momonga models dialects set
 
 | Option | Meaning |
@@ -937,6 +946,8 @@ The file `~/.momonga/keybindings.json` changes the keys of the interactive sessi
 | `select.escape` | select | `escape` | decline or go back |
 | `select.interrupt` | select | `ctrl+c` | interrupt |
 | `select.alt` | select | `tab` | the second choice of a list that has one |
+| `select.less` | select | `left` | the previous value of the highlighted row of a list whose rows carry one |
+| `select.more` | select | `right` | the next value of the highlighted row of a list whose rows carry one |
 | `select.detail` | select | `ctrl+o` | show all of what is asked |
 | `select.filterBack` | select | `backspace` | delete the last character of the filter |
 | `select.delete` | select | `delete` | delete the highlighted row of a list that has it, after asking |

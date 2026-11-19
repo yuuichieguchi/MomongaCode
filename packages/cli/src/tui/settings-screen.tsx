@@ -1,5 +1,6 @@
-import { STANDARD_REASONING_EFFORT } from '@momonga/protocol';
-import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
+import { STANDARD_REASONING_EFFORT, isReasoningEffort } from '@momonga/protocol';
+import type { ReasoningEffort } from '@momonga/protocol';
+import { ConfigError, EVERY_MODEL_EFFORT_LABEL, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
 import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsShadow, SettingsSnapshot } from '@momonga/config';
 import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { openInEditor } from './external-editor.ts';
@@ -18,6 +19,8 @@ export const SAVE_TO_TITLE = 'Save to:';
 export const SAVING_SETTING = 'saving the setting';
 export const APPLIES_NOW = 'applies now';
 export const APPLIES_NEXT_SESSION = 'applies from the next session';
+
+export const EVERY_MODEL_EFFORT_KEY = 'models.effort';
 export const APPLIES_NEXT_DAEMON_START = 'applies when the daemon next starts';
 export const NOT_SET = 'not set';
 export const NONE = 'none';
@@ -127,7 +130,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP' },
   'mcp.connectTimeoutMs': { label: 'Connect timeout (ms)', section: 'MCP' },
   'models.dialects': { label: 'Schema dialects', section: 'Models' },
-  'models.effort': { label: 'Reasoning effort of a new session', section: 'Models', standing: STANDARD_REASONING_EFFORT },
+  'models.effort': { label: EVERY_MODEL_EFFORT_LABEL, section: 'Models', standing: STANDARD_REASONING_EFFORT },
   env: { label: 'Environment variables', section: 'Environment variables' },
   'credentials.env': { label: 'Variables treated as credentials', section: 'Credentials' },
   'credentials.keep': { label: 'Variables kept for commands', section: 'Credentials' },
@@ -432,6 +435,10 @@ const editScalar = async (context: SlashContext, snapshot: SettingsSnapshot, lea
   if (live !== undefined && chosen.value !== undefined) {
     await context.background(SAVING_SETTING, (signal) => live.store(context, wordOf(chosen.value), signal));
     return { kind: 'written' };
+  }
+  if (leaf.key === EVERY_MODEL_EFFORT_KEY) {
+    if (chosen.value !== undefined && !isReasoningEffort(chosen.value)) throw new TypeError(`${EVERY_MODEL_EFFORT_KEY} offered a value that is not a level`);
+    return writeEveryModelEffort(context, chosen.value);
   }
   const layer = await saveTargetOf(context, snapshot, source);
   if (layer === undefined) return LEFT;
@@ -763,6 +770,12 @@ const editMandate = async (context: SlashContext, mandate: ProjectMandateState):
 };
 
 export const DIALECTS_KEY = 'models.dialects';
+
+const writeEveryModelEffort = async (context: SlashContext, effort: ReasoningEffort | undefined): Promise<Outcome> => {
+  const host = context.backend.modelsHost(new AbortController().signal, context.info);
+  await context.background(SAVING_SETTING, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setEffort', effort }], { lock: host.lock(), signal }));
+  return { kind: 'written' };
+};
 
 const writeDialects = async (context: SlashContext, dialects: object): Promise<Refusal | undefined> => {
   const host = context.backend.modelsHost(new AbortController().signal, context.info);

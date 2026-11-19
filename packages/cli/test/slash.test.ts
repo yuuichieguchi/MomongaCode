@@ -178,7 +178,7 @@ describe('built-in commands', () => {
   it('/model is described in the help with its usage', async () => {
     const { context, infos } = contextOf({ commands: [...BUILTIN_SLASH_COMMANDS, pickerCommand] });
     await run('help', '', context);
-    expect(infos[0]).toContain('/model [model] [--start]  choose the model from a list, or switch to another from the next run');
+    expect(infos[0]).toContain('/model [model] [effort] [--start]  choose the model from a list, or switch to another from the next run');
   });
 
   it('/clear, /resume <id> and /exit call their hooks', async () => {

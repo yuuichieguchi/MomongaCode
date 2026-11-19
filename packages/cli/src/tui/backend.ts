@@ -89,8 +89,8 @@ export type TuiBackend = {
   toolResult(runId: string, callId: string, offset: number): Promise<ToolResultPage>;
   setMode(mode: PermissionMode): Promise<SessionView>;
   models(): Promise<readonly MomongaModelEntry[]>;
-  setModel(model: string): Promise<SessionView>;
-  setEffort(effort: ReasoningEffort): Promise<SessionView>;
+  setModel(model: string, effort?: ReasoningEffort): Promise<SessionView>;
+  setEffort(effort: ReasoningEffort | null): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
   startRun(text: string, options?: StartRunOptions): Promise<RunView>;
   compact(instructions?: string): Promise<RunView>;
@@ -301,8 +301,8 @@ export const createTuiBackend = (
       return session;
     },
     models: () => withGateway((gateway) => gateway.models()),
-    setModel: async (model) => {
-      session = await runtime().setModel(current().id, model);
+    setModel: async (model, effort) => {
+      session = await (effort === undefined ? runtime().setModel(current().id, model) : runtime().updateSession(current().id, { model, effort }));
       return session;
     },
     setEffort: async (effort) => {

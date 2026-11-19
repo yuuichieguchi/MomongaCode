@@ -676,6 +676,15 @@ const registerModels: CommandGroup = (program, deps) => {
     deps,
     'timeouts',
   );
+  formOf(
+    models
+      .command('effort [level]')
+      .description('the reasoning effort of the models that have none saved for themselves')
+      .option('--clear', 'remove it, so those models run at medium')
+      .option(YES_FLAG, YES_HELP),
+    deps,
+    'effort',
+  );
   const dialects = models.command('dialects').description('the declared schema dialects');
   formOf(dialects.command('show').description('print the declared schema dialects as JSON'), deps, 'dialects show');
   formOf(dialects.command('set').description('replace the declared schema dialects with the object of a JSON file').option('--file <path>', 'the JSON file').option(YES_FLAG, YES_HELP), deps, 'dialects set');

@@ -31,6 +31,7 @@ const OPERATIONS = [
   'setServerField',
   'forgetServer',
   'setTimeouts',
+  'setEffort',
   'setDialects',
 ] as const;
 
@@ -56,6 +57,7 @@ const FIXED_ROWS: readonly WriterRow[] = [
   { path: 'models.dialects.*', operations: ['setDialects'], inSession: ['/config'], shell: ['momonga models dialects set'] },
   { path: 'models.headersTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
   { path: 'models.idleTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
+  { path: 'models.effort', operations: ['setEffort'], inSession: ['/config'], shell: ['momonga models effort'] },
 ];
 
 const fieldOfLeaf = (leaf: string, prefix: string): string =>

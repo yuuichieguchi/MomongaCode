@@ -51,7 +51,7 @@ describe('/config, the settings screen', () => {
     expect(frame).toContain('Automatic updates  off  user');
     expect(frame).toContain('Loop guidance  on  project');
     expect(frame).toContain('Schema dialects  none  default');
-    expect(frame).toContain('Reasoning effort of a new session  medium  default');
+    expect(frame).toContain('Reasoning effort of a model with none saved  medium  default');
     expect(frame).toContain('Sandbox  ');
     for (const [name, link] of Object.entries(COMMAND_LINKS)) expect(frame).toContain(`${link.label}  /${name}`);
     expect(frame).toContain('up/down to move · enter to choose · type to filter · esc: go back');

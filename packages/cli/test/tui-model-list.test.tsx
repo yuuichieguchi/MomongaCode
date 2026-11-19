@@ -35,6 +35,7 @@ const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
     info: harness.context.info,
     toast: harness.context.info,
     connected: async (model) => void connected.push(model),
+    effort: () => undefined,
     refreshConnection: async () => undefined,
     signedIn: async () => undefined,
     found: harness.context.found,

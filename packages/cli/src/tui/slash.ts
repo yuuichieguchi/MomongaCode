@@ -1,5 +1,5 @@
 import type { ExternalEditorPort } from './external-editor.ts';
-import { ModelRefError, PERMISSION_MODE_DESCRIPTIONS, displayMapOf } from '@momonga/protocol';
+import { ModelRefError, PERMISSION_MODE_DESCRIPTIONS, displayMapOf, isReasoningEffort } from '@momonga/protocol';
 import type { Mandate, MomongaModelEntry, PermissionMode, ReasoningEffort } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
@@ -14,6 +14,8 @@ import type { KeyBindingsScreen } from './commands/keybindings.ts';
 import type { FoundServers } from './models/context.ts';
 import { writeStart } from './models/order.ts';
 import { startingModelSetText } from './models/texts.ts';
+import { acceptedEffortsOf, declaredReasoning, effortRefusalText } from './effort.ts';
+import { effortAnswerText, unknownEffortText, writeModelEffort } from './commands/effort.ts';
 import type { OverlayPorts } from './picker.tsx';
 import type { NegotiationState } from './terminal/negotiation.ts';
 import type { ScreenMode } from './terminal/modes.ts';
@@ -40,7 +42,7 @@ export type SlashContext = ModeAvailability & {
   readonly model: string | undefined;
   readonly effort: ReasoningEffort | undefined;
   shownModel(model: string): string;
-  setEffort(effort: ReasoningEffort): Promise<void>;
+  setEffort(effort: ReasoningEffort | null): Promise<void>;
   readonly found: FoundServers;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   toast(text: string): void;
@@ -52,7 +54,7 @@ export type SlashContext = ModeAvailability & {
   compact(instructions: string | undefined): Promise<void>;
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
-  setModel(model: string): Promise<void>;
+  setModel(model: string, effort?: ReasoningEffort): Promise<void>;
   background<T>(label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   readonly autoMode: AutoModePort;
   readonly shell: ShellPort;
@@ -216,9 +218,33 @@ const mode: SlashCommand = {
   },
 };
 
+const typedLevelOf = (words: readonly string[]): ReasoningEffort | undefined => {
+  const last = words.at(-1);
+  return words.length > 1 && isReasoningEffort(last) ? last : undefined;
+};
+
+const acceptedLevelOf = (entries: readonly MomongaModelEntry[], model: string, level: ReasoningEffort, context: SlashContext): boolean => {
+  const declared = declaredReasoning(entries, model);
+  const name = context.shownModel(model);
+  if (!declared.known) {
+    context.info(`the capabilities of ${name} are not known yet, so its reasoning efforts are not known; switch with /model ${name} and use /effort when it is ready`);
+    return false;
+  }
+  const accepted = acceptedEffortsOf(declared);
+  if (accepted.length === 0) {
+    context.info(effortRefusalText(name));
+    return false;
+  }
+  if (accepted.includes(level)) return true;
+  context.info(unknownEffortText(level, name, accepted));
+  return false;
+};
+
 export const switchModel = async (args: string, entries: readonly MomongaModelEntry[], context: SlashContext): Promise<void> => {
-  const words = args.split(/\s+/).filter((word) => word !== '');
-  const text = words.filter((word) => word !== START_FLAG).join(' ');
+  const words = args.split(/\s+/).filter((word) => word !== '' && word !== START_FLAG);
+  const started = args.split(/\s+/).includes(START_FLAG);
+  const level = typedLevelOf(words);
+  const text = (level === undefined ? words : words.slice(0, -1)).join(' ');
   let chosen: string;
   try {
     chosen = listedModelOf(entries, text);
@@ -227,12 +253,17 @@ export const switchModel = async (args: string, entries: readonly MomongaModelEn
     context.info(error.message);
     return;
   }
-  await context.setModel(chosen);
-  if (!words.includes(START_FLAG)) return;
+  if (level !== undefined && !acceptedLevelOf(entries, chosen, level, context)) return;
+  await context.setModel(chosen, level);
+  if (level !== undefined) {
+    await writeModelEffort(context, chosen, level);
+    context.info(effortAnswerText(level, context.shownModel(chosen), 'saved'));
+  }
+  if (!started) return;
   await writeStart(context, chosen);
   context.toast(startingModelSetText(displayMapOf(listingViewsOf(entries)).get(chosen) ?? chosen));
 };
 
-export const MODEL_USAGE = `[model] [${START_FLAG}]`;
+export const MODEL_USAGE = `[model] [effort] [${START_FLAG}]`;
 
 export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, mode, exit];

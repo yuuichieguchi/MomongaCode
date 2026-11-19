@@ -1,11 +1,12 @@
 import { displayMapOf } from '@momonga/protocol';
-import type { GatewayHealth, MomongaModelEntry, MomongaModelList } from '@momonga/protocol';
+import type { GatewayHealth, MomongaModelEntry, MomongaModelList, ReasoningEffort } from '@momonga/protocol';
 import { SIGN_IN_REQUIRED_CODE } from '@momonga/protocol';
 import { listingViewsOf } from '../../client/gateway-client.ts';
 import { SEPARATOR } from '../../commands/models.ts';
 import type { PickRow } from '../picker.tsx';
 import type { FoundModel } from './add.ts';
 import { SIGN_IN_REQUIRED_WORD } from './texts.ts';
+import { effortStepsOf } from '../effort.ts';
 
 export const CURRENT_MARK = 'current';
 export const FOUND_SEPARATOR = 'Found on this computer';
@@ -16,7 +17,7 @@ export type ModelListRow =
   | { readonly kind: 'separator' }
   | { readonly kind: 'found'; readonly found: FoundModel };
 
-export type ModelListFacts = { readonly listing: Pick<MomongaModelList, 'data'>; readonly current: string | undefined; readonly health: Pick<GatewayHealth, 'models'>; readonly found: readonly FoundModel[] };
+export type ModelListFacts = { readonly listing: Pick<MomongaModelList, 'data'>; readonly current: string | undefined; readonly effort?: ReasoningEffort | undefined; readonly health: Pick<GatewayHealth, 'models'>; readonly found: readonly FoundModel[] };
 
 const stateWordOf = (entry: MomongaModelEntry, health: Pick<GatewayHealth, 'models'>): string | undefined => {
   const state = health.models[entry.chain[0]?.model ?? entry.id];
@@ -33,9 +34,12 @@ export const configuredRowText = (entry: MomongaModelEntry, displays: ReadonlyMa
 
 export const foundRowText = (found: FoundModel): string => [found.display, found.server.address].join(SEPARATOR);
 
-export const modelListRows = ({ listing, current, health, found }: ModelListFacts): { rows: PickRow[]; listed: ModelListRow[] } => {
+export const modelListRows = ({ listing, current, effort, health, found }: ModelListFacts): { rows: PickRow[]; listed: ModelListRow[] } => {
   const displays = displayMapOf(listingViewsOf(listing.data));
-  const rows: PickRow[] = listing.data.map((entry) => ({ label: configuredRowText(entry, displays, current, health) }));
+  const rows: PickRow[] = listing.data.map((entry) => {
+    const steps = effortStepsOf(entry, entry.id === current ? effort : undefined);
+    return { label: configuredRowText(entry, displays, current, health), ...(steps === undefined ? {} : { steps }) };
+  });
   const listed: ModelListRow[] = listing.data.map((entry) => ({ kind: 'configured', entry }));
   if (found.length === 0) return { rows, listed };
   return {

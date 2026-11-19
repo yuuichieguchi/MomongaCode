@@ -1,5 +1,5 @@
-import { PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
-import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
+import { isReasoningEffort, PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import type { ReasoningEffort, DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
@@ -10,6 +10,7 @@ import { openEdit } from './models/context.ts';
 import type { FoundServers, ModelsFlowContext } from './models/context.ts';
 import { modelListRows } from './models/model-list.ts';
 import { writeStart } from './models/order.ts';
+import { effortAnswerText, writeModelEffort } from './commands/effort.ts';
 import { ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, configuredSwitchText, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
@@ -24,7 +25,8 @@ export type PlanFlowPorts = OverlayPorts & {
   readonly backend: TuiBackend;
   info(text: string): void;
   toast(text: string): void;
-  connected(model: string): Promise<void>;
+  connected(model: string, effort?: ReasoningEffort): Promise<void>;
+  readonly effort: () => ReasoningEffort | undefined;
   refreshConnection(): Promise<void>;
   signedIn(): Promise<void>;
   readonly found: FoundServers;
@@ -62,6 +64,15 @@ const healthText = (health: TargetHealth | undefined): string => {
 };
 
 const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.reason === SIGN_IN_REQUIRED_CODE;
+
+const CHANGE_EFFORT_LABEL = 'change the effort';
+
+const changedEffortOf = (row: PickRow | undefined, step: number | undefined): ReasoningEffort | undefined => {
+  const steps = row?.steps;
+  if (steps === undefined || step === undefined || step === steps.at) return undefined;
+  const level = steps.values[step];
+  return isReasoningEffort(level) ? level : undefined;
+};
 
 export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const { backend } = ports;
@@ -379,10 +390,14 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const blockedPlanOf = (entry: MomongaModelEntry, health: GatewayHealth): { profile: string; account?: string } | undefined =>
     entry.chain.find((member) => member.plan !== undefined && isSignInRequired(health.models[member.model]))?.plan;
 
-  const useConfigured = async (entry: MomongaModelEntry, health: GatewayHealth, listed: PlanAccountsResponse, atStart: boolean, display: string): Promise<void> => {
+  const useConfigured = async (entry: MomongaModelEntry, health: GatewayHealth, listed: PlanAccountsResponse, atStart: boolean, display: string, effort: ReasoningEffort | undefined): Promise<void> => {
     const plan = blockedPlanOf(entry, health);
     if (plan !== undefined) await targetSignIn(listed, plan);
-    await ports.connected(entry.id);
+    await ports.connected(entry.id, effort);
+    if (effort !== undefined) {
+      await writeModelEffort(flowContext(), entry.id, effort);
+      ports.info(effortAnswerText(effort, display, 'saved'));
+    }
     if (!atStart) return;
     await writeStart(flowContext(), entry.id);
     ports.toast(startingModelSetText(display));
@@ -430,20 +445,21 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         );
     });
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
-    const { rows, listed: listedRows } = modelListRows({ listing, current, health, found });
+    const { rows, listed: listedRows } = modelListRows({ listing, current, effort: ports.effort(), health, found });
     if (rows.length + catalogChoices.length === 0) {
       ports.info(messageOf('noModelConnected', 'tui'));
       return;
     }
     const displays = displayMapOf(listingViewsOf(entries));
-    const choice = await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: [...rows, ...catalogChoices.map((entry) => entry.row)], alt: { label: ALSO_AT_START_LABEL } });
+    const allRows = [...rows, ...catalogChoices.map((entry) => entry.row)];
+    const choice = await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: allRows, alt: { label: ALSO_AT_START_LABEL }, ...(rows.some((row) => row.steps !== undefined) ? { stepsLabel: CHANGE_EFFORT_LABEL } : {}) });
     if (choice === undefined) return;
     const row = listedRows[choice.index];
     if (row === undefined) {
       await catalogChoices[choice.index - listedRows.length]?.act();
       return;
     }
-    if (row.kind === 'configured') await useConfigured(row.entry, health, listed, choice.alt, displays.get(row.entry.id) ?? row.entry.id);
+    if (row.kind === 'configured') await useConfigured(row.entry, health, listed, choice.alt, displays.get(row.entry.id) ?? row.entry.id, changedEffortOf(allRows[choice.index], choice.step));
     if (row.kind === 'found' && opened !== undefined) await connectAdded(await addFoundModel(context, opened, row.found.server, row.found.model, row.found.display));
   };
 

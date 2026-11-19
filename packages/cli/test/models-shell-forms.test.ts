@@ -247,6 +247,16 @@ const WRITING: readonly WritingCase[] = [
     written: (document) => expect(document.models['headersTimeoutMs']).toBe(600000),
   },
   {
+    form: 'effort',
+    settings: threeModels(),
+    missing: input([]),
+    input: input(['high']),
+    confirm: 'Run the models with no reasoning effort saved at high?',
+    summaries: ['Set Reasoning effort of a model with none saved to high.'],
+    written: (document) => expect(document.models['effort']).toBe('high'),
+    refused: { input: input(['huge']), sentence: 'huge is not a reasoning effort; the levels are none, minimal, low, medium, high, xhigh.\n' },
+  },
+  {
     form: 'dialects set',
     settings: threeModels(),
     missing: input([]),

@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { TestContext } from 'vitest';
 import type { ResolvedModel } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
-import type { Capabilities, ChainMemberEntry, LocalServerDetection, MomongaModelEntry, MomongaModelList, UnavailableCapabilities } from '@momonga/protocol';
+import type { ReasoningEffort, Capabilities, ChainMemberEntry, LocalServerDetection, MomongaModelEntry, MomongaModelList, UnavailableCapabilities } from '@momonga/protocol';
 import { withTempDir, testKernelLock } from '@momonga/testkit';
 import type { DetectRequest, ModelsShell, ServerProgram } from '../src/commands/models.ts';
 import { userModelsAt } from './user-models.ts';
@@ -108,6 +108,11 @@ const memberOf = (model: ResolvedModel, index: number): ChainMemberEntry => ({
   capabilities: capabilitiesOf(model),
 });
 
+const startEffortOf = (resolved: { effort?: ReasoningEffort; efforts: ReadonlyMap<string, ReasoningEffort> }, canon: string): { effort?: ReasoningEffort } => {
+  const level = resolved.efforts.get(canon) ?? resolved.effort;
+  return level === undefined ? {} : { effort: level };
+};
+
 export const listingOf = (home: string): MomongaModelList => {
   const { resolved } = userModelsAt(home);
   const modelOf = (canon: string): ResolvedModel => resolved.models.get(canon) as ResolvedModel;
@@ -122,6 +127,7 @@ export const listingOf = (home: string): MomongaModelList => {
       capabilities: capabilitiesOf(model),
       state: 'available',
       chain: (resolved.chains.get(model.canon) ?? [model.canon]).map((canon, index) => memberOf(modelOf(canon), index)),
+      ...startEffortOf(resolved, model.canon),
     }),
   );
   return { object: 'list', data, start: resolved.start ?? null, roles: resolved.roles };

@@ -6,7 +6,7 @@ export type { ApprovedItem, EditProjectMandateOptions, ProjectMandateEdit } from
 export type { EditUserSettingsOptions, SettingsEdit } from './edit-user-settings.ts';
 export { settingsFileLock, settingsWriterPorts } from './file-lock.ts';
 export type { SettingsFileLockOptions, SettingsLockPort, SettingsWriterOptions, SettingsWriterPorts } from './file-lock.ts';
-export { ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand, settableFieldPath } from './models-writers.ts';
+export { EVERY_MODEL_EFFORT_LABEL, ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand, settableFieldPath } from './models-writers.ts';
 export type {
   ModelsEditPlan,
   ModelsEditPorts,

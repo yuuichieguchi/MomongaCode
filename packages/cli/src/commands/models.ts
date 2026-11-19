@@ -4,6 +4,8 @@ import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, Mode
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
 import {
+  REASONING_EFFORTS,
+  isReasoningEffort,
   GENERIC_SERVER_KIND,
   LOCAL_SERVER_CANDIDATES,
   MODEL_NOT_LISTED_CODE,
@@ -269,6 +271,7 @@ export const MODELS_FORMS = [
   'set-program',
   'forget-program',
   'timeouts',
+  'effort',
   'dialects show',
   'dialects set',
 ] as const;
@@ -791,6 +794,16 @@ const proposeTimeouts = async (_shell: ModelsHost, edit: ModelsEdit, input: Form
   };
 };
 
+const proposeEffort = async (_shell: ModelsHost, _edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
+  const clear = input.options['clear'] === true;
+  const word = clear ? undefined : argument(input, 0);
+  if (word !== undefined && !isReasoningEffort(word)) throw new ShellRefusal(`${word} is not a reasoning effort; the levels are ${REASONING_EFFORTS.join(', ')}.`);
+  return {
+    operations: [{ kind: 'setEffort', effort: word }],
+    confirm: () => (word === undefined ? 'Clear the reasoning effort of the models with none saved, so they run at medium?' : `Run the models with no reasoning effort saved at ${word}?`),
+  };
+};
+
 const proposeDialectsSet = async (shell: ModelsHost, _edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const file = requiredOption(input, 'file');
   const dialects = outsideJsonOf(await shell.files.readText(file), file);
@@ -853,6 +866,7 @@ const FORM_SPECS: Readonly<Record<ModelsForm, FormSpec>> = {
   'set-program': { usage: usage('set-program', '<id> <command|args|readyPath|modelFile> <value> [--yes]'), propose: proposeSetProgram },
   'forget-program': { usage: usage('forget-program', '<id> [--yes]'), propose: proposeForgetProgram },
   timeouts: { usage: usage('timeouts', '[--headers <minutes>] [--idle <minutes>] [--yes]'), propose: proposeTimeouts },
+  effort: { usage: usage('effort', `<${REASONING_EFFORTS.join('|')}> | --clear [--yes]`), propose: proposeEffort },
   'dialects show': { usage: usage('dialects show', ''), print: dialectRows },
   'dialects set': { usage: usage('dialects set', '--file <path> [--yes]'), propose: proposeDialectsSet },
 };

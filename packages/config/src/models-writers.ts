@@ -11,7 +11,7 @@ import {
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
-import type { ModelView, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { ModelView, ModelViews, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
 import { ConfigError } from './config-error.ts';
@@ -46,6 +46,7 @@ export type ModelsOperation =
   | { kind: 'setServerField'; id: string; field: 'command' | 'args' | 'readyPath' | 'modelFile'; value: unknown }
   | { kind: 'forgetServer'; id: string }
   | { kind: 'setTimeouts'; headersTimeoutMs?: number; idleTimeoutMs?: number }
+  | { kind: 'setEffort'; effort: ReasoningEffort | undefined }
   | { kind: 'setDialects'; dialects: object };
 
 export type ModelsOperations = readonly [ModelsOperation, ...ModelsOperation[]];
@@ -731,6 +732,18 @@ const setTimeouts = (document: Json, operation: Extract<ModelsOperation, { kind:
   return { summary: (_after, last) => `Waits saved: first reply ${durationText(last.resolved.headersTimeoutMs)}, no data ${durationText(last.resolved.idleTimeoutMs)}.` };
 };
 
+export const EVERY_MODEL_EFFORT_LABEL = 'Reasoning effort of a model with none saved';
+
+const setEffort = (document: Json, operation: Extract<ModelsOperation, { kind: 'setEffort' }>): Applied => {
+  const models = modelsIn(document);
+  if (operation.effort === undefined) {
+    delete models['effort'];
+    return { summary: () => `Cleared ${EVERY_MODEL_EFFORT_LABEL}.` };
+  }
+  models['effort'] = operation.effort;
+  return { summary: () => `Set ${EVERY_MODEL_EFFORT_LABEL} to ${operation.effort}.` };
+};
+
 const setDialects = (document: Json, operation: Extract<ModelsOperation, { kind: 'setDialects' }>): Applied => {
   modelsIn(document)['dialects'] = structuredClone(operation.dialects);
   return { summary: () => 'Schema dialects saved.' };
@@ -770,6 +783,8 @@ const apply = (document: Json, state: State, operation: ModelsOperation, ports: 
       return forgetServer(document, state, operation);
     case 'setTimeouts':
       return setTimeouts(document, operation);
+    case 'setEffort':
+      return setEffort(document, operation);
     case 'setDialects':
       return setDialects(document, operation);
   }

@@ -69,7 +69,7 @@ import { watchFileLinks } from './screen/file-link-watch.ts';
 import { AgentList, agentListDrawn, agentListLines, agentListRequest, chosenIndexOf, viewTargetsOf } from './screen/subagents.tsx';
 import type { ViewTarget } from './screen/subagents.tsx';
 import { agentHeader, createAgentViews, endStateOf } from './screen/agent-views.ts';
-import { declaredReasoning, effortChoiceText, shownEffort } from './effort.ts';
+import { declaredReasoning, effortChoiceText, effortInForce, effortLine, shownEffort } from './effort.ts';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
@@ -476,19 +476,24 @@ export function App(props: AppProps) {
   };
 
   const noteEffortChoice = (model: string, chosen: ReasoningEffort | undefined): void => {
-    if (chosen === undefined || effortNotedRef.current) return;
+    const inForce = effortInForce(entriesRef.current, model, chosen);
+    if (inForce === undefined || effortNotedRef.current) return;
     const declared = declaredReasoning(entriesRef.current, model);
     if (!declared.known) return;
     effortNotedRef.current = true;
-    const text = effortChoiceText(declared, chosen, shownModel(model));
+    const text = effortChoiceText(declared, inForce, shownModel(model));
     if (text !== undefined) note(text);
   };
 
-  const applyEffort = async (chosen: ReasoningEffort): Promise<void> => {
+  const rereadModel = (): void => {
+    void backend.model().then((entry) => showModel(entry, false), modelUnread);
+  };
+
+  const applyEffort = async (chosen: ReasoningEffort | null): Promise<void> => {
     const session = await backend.setEffort(chosen);
     sessionEffortRef.current = session.effort;
     setSessionEffort(session.effort);
-    note(`effort: ${chosen}; applies from the next run`);
+    rereadModel();
   };
 
   const showBanner = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): void => {
@@ -615,16 +620,20 @@ export function App(props: AppProps) {
     prompts.flow(work).catch(reportError);
   };
 
-  const applyModel = async (chosen: string): Promise<void> => {
+  const applyModel = async (chosen: string, effort?: ReasoningEffort): Promise<void> => {
     const previous = sessionModelRef.current;
-    const session = await backend.setModel(chosen);
+    const session = await backend.setModel(chosen, effort);
     modelChosen(store);
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
+    sessionEffortRef.current = session.effort;
+    setSessionEffort(session.effort);
     unconfiguredModel.current = false;
     await readDisplays();
     const name = shownModel(session.model);
-    note(busyRef.current ? `model: ${name}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${name}; applies from the next run`);
+    const shown = shownEffort(await backend.models(), session.model, session.effort);
+    const named = shown === undefined ? name : `${name} · ${effortLine(shown, 'short')}`;
+    note(busyRef.current ? `model: ${named}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${named}; applies from the next run`);
     endMeasuring();
     void backend.model().then(showModel, modelUnread);
   };
@@ -633,12 +642,13 @@ export function App(props: AppProps) {
     setProfiles(listed.profiles);
   };
 
-  const connectModel = async (chosen: string): Promise<void> => {
+  const connectModel = async (chosen: string, effort?: ReasoningEffort): Promise<void> => {
     if (sessionModelRef.current === undefined) {
       await openSession(chosen);
+      if (effort !== undefined) await applyEffort(effort);
       return;
     }
-    await applyModel(chosen);
+    await applyModel(chosen, effort);
   };
 
   const refreshConnection = async (): Promise<void> => {
@@ -710,7 +720,7 @@ export function App(props: AppProps) {
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, toast: (text) => view.showToast(text), connected: connectModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, toast: (text) => view.showToast(text), connected: connectModel, effort: () => sessionEffortRef.current, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();

@@ -307,9 +307,17 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const detections: DetectRequest[] = [];
   const secrets = new Map<string, string>();
   const listings: number[] = [];
+  const writtenEntries = (): MomongaModelEntry[] => {
+    const readHome = modelsHome ?? options.settingsPlace?.home;
+    return readHome !== undefined && fs.existsSync(momongaLayout(readHome, process.platform, {}).settingsFile) ? listingOf(readHome).data : [];
+  };
+  const savedEffortOf = (id: string): { effort?: ReasoningEffort } => {
+    const effort = writtenEntries().find((entry) => entry.id === id)?.effort;
+    return effort === undefined ? {} : { effort };
+  };
   const listedModels = async (): Promise<MomongaModelEntry[]> => {
-    const scripted = (options.models ?? [session.model]).map((id) => listedEntryOf(id, options.listedProbing === true ? PROBING_PLAN : listedCapabilities(id), options.chain ?? [id]));
-    const written = modelsHome !== undefined && fs.existsSync(modelsFile()) ? listingOf(modelsHome).data : [];
+    const written = writtenEntries();
+    const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true ? PROBING_PLAN : listedCapabilities(id), options.chain ?? [id]), ...savedEffortOf(id) }));
     return [...scripted, ...written.filter((entry) => !scripted.some((other) => other.id === entry.id))];
   };
 
@@ -443,14 +451,16 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`secret:${name}`);
       secrets.set(name, value);
     },
-    setEffort: async (effort: ReasoningEffort) => {
-      record(`effort:${effort}`);
-      session = { ...session, effort };
+    setEffort: async (effort: ReasoningEffort | null) => {
+      record(`effort:${effort ?? 'none chosen'}`);
+      const { effort: _dropped, ...rest } = session;
+      session = effort === null ? rest : { ...rest, effort };
       return session;
     },
-    setModel: async (model: string) => {
-      record(`model:${model}`);
-      session = { ...session, model };
+    setModel: async (model: string, effort?: ReasoningEffort) => {
+      record(effort === undefined ? `model:${model}` : `model:${model} effort:${effort}`);
+      const { effort: _dropped, ...rest } = session;
+      session = model === session.model && effort === undefined ? { ...session } : { ...rest, model, ...(effort === undefined ? {} : { effort }) };
       return session;
     },
     setMode: async (mode: PermissionMode) => {
@@ -623,7 +633,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
       const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model), ...reasoningOf(session.model) };
-      return listedEntryOf(session.model, capabilities, options.chain ?? [session.model]);
+      return { ...listedEntryOf(session.model, capabilities, options.chain ?? [session.model]), ...savedEffortOf(session.model) };
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {
