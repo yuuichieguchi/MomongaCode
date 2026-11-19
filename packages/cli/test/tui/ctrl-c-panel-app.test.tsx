@@ -1,52 +1,91 @@
 import { describe, expect, it } from 'vitest';
+import type { ElicitationRequestView } from '@momonga/protocol';
 import { EXIT_ARM_MS } from '../../src/tui/app.tsx';
+import type { AppProps } from '../../src/tui/app.tsx';
+import { createKeyBindings } from '../../src/tui/keys/store.ts';
 import type { FakeBackend } from '../fake-backend.ts';
 import { runView } from '../fake-backend.ts';
-import { KEYS, untilFrame } from '../ink-helpers.ts';
+import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
+import type { Instance } from '../ink-helpers.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 
 const HINT = 'Press ctrl+c again to exit';
+const CTRL_T = '\u0014';
 const OPTIONS = [
   { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
   { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
 ];
+const FORM: ElicitationRequestView = { key: 'profile', mode: 'form', message: 'Tell me about you', requestedSchema: { type: 'object', properties: { name: { type: 'string', title: 'Your name' } }, required: ['name'] } };
 
 const callStarted = (backend: FakeBackend): void => {
   backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'sleep 60', rawInput: { command: 'sleep 60' } }));
 };
 
-const panels = [
+const inputAsked = async (backend: FakeBackend, app: Instance): Promise<void> => {
+  backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'mcp__calc__ask', kind: 'other', title: 'mcp__calc__ask {}', rawInput: {} }));
+  backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'c1', server: 'calc', requests: [FORM] }));
+  await untilFrame(app, (shown) => shown.includes('MCP server calc asks for input') && shown.includes('to confirm the value'));
+};
+
+type Panel = { name: string; open: (backend: FakeBackend, app: Instance) => Promise<void> };
+
+const panels: readonly Panel[] = [
   {
     name: 'the approval panel',
-    open: (backend: FakeBackend): void => {
+    open: async (backend, app) => {
       callStarted(backend);
       backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: OPTIONS, shown: { title: 'approval', input: {} } }));
+      await untilFrame(app, (shown) => shown.includes('Permission requested: sleep 60') && shown.includes('cancel the run'));
     },
   },
   {
     name: 'the effect-unknown panel',
-    open: (backend: FakeBackend): void => {
+    open: async (backend, app) => {
       callStarted(backend);
       backend.emit(frame({ type: 'tool.unknown.requested', approvalId: 'ap1', callIds: ['c1'], options: OPTIONS }));
+      await untilFrame(app, (shown) => shown.includes('1. Allow once') && shown.includes('cancel the run'));
     },
   },
-] as const;
+  {
+    name: 'the MCP input panel at its field stage',
+    open: inputAsked,
+  },
+  {
+    name: 'the MCP input panel at its decision stage',
+    open: async (backend, app) => {
+      await inputAsked(backend, app);
+      app.stdin.write(KEYS.escape);
+      await untilFrame(app, (shown) => shown.includes('2. Decline') && shown.includes('cancel the run'));
+    },
+  },
+];
 
-const opened = async (open: (backend: FakeBackend) => void, clock?: ReturnType<typeof manualClock>) => {
-  const started = await start({}, clock === undefined ? {} : { now: clock.now, timers: clock.timers });
+const opened = async (panel: Panel, extra: Partial<AppProps> = {}) => {
+  const started = await start({}, extra);
   await untilFrame(started.app, 'mode: manual');
   await runStarted(started.backend, started.app, 'go');
-  open(started.backend);
-  await untilFrame(started.app, (shown) => shown.includes('ctrl+c: cancel the run'));
+  await panel.open(started.backend, started.app);
   return started;
+};
+
+const unansweredCancel = (backend: FakeBackend): (() => void) => {
+  const answer = Promise.withResolvers<void>();
+  const cancel = backend.cancel;
+  backend.cancel = async (runId) => {
+    await cancel(runId);
+    await answer.promise;
+  };
+  return answer.resolve;
 };
 
 const cancels = (backend: FakeBackend): number => backend.calls.filter((call) => call === 'cancel:run-1').length;
 
-describe.each(panels)('ctrl+c while $name is open', ({ open }) => {
+const EXITED = { reopen: 'session-1' };
+
+describe.each(panels)('ctrl+c while $name is open', (panel) => {
   it('cancels the run, shows the exit hint, and exits at the second press within the window', async () => {
-    const { app, backend, exited, outcomes } = await opened(open);
+    const { app, backend, exited, outcomes } = await opened(panel);
     app.stdin.write(KEYS.ctrlC);
     await backend.called('cancel:run-1');
     await untilFrame(app, HINT);
@@ -54,29 +93,24 @@ describe.each(panels)('ctrl+c while $name is open', ({ open }) => {
     backend.finish(runView({ status: 'CANCELLED' }));
     await untilFrame(app, (shown) => shown.includes('CANCELLED') && shown.includes(HINT));
     app.stdin.write(KEYS.ctrlC);
-    expect(await exited).toEqual({ reopen: 'session-1' });
+    expect(await exited).toEqual(EXITED);
   });
 
   it('exits at the second press while the cancel request is still unanswered', async () => {
-    const { app, backend, exited } = await opened(open);
-    const answer = Promise.withResolvers<void>();
-    const cancel = backend.cancel;
-    backend.cancel = async (runId) => {
-      await cancel(runId);
-      await answer.promise;
-    };
+    const { app, backend, exited } = await opened(panel);
+    const answer = unansweredCancel(backend);
     app.stdin.write(KEYS.ctrlC);
     await backend.called('cancel:run-1');
     await untilFrame(app, HINT);
     app.stdin.write(KEYS.ctrlC);
-    expect(await exited).toEqual({ reopen: 'session-1' });
+    expect(await exited).toEqual(EXITED);
     expect(cancels(backend)).toBe(1);
-    answer.resolve();
+    answer();
   });
 
   it(`does not exit at a second press after ${EXIT_ARM_MS} ms and shows the hint again`, async () => {
     const clock = manualClock();
-    const { app, backend, outcomes } = await opened(open, clock);
+    const { app, backend, outcomes } = await opened(panel, { now: clock.now, timers: clock.timers });
     app.stdin.write(KEYS.ctrlC);
     await backend.called('cancel:run-1');
     await untilFrame(app, HINT);
@@ -88,5 +122,51 @@ describe.each(panels)('ctrl+c while $name is open', ({ open }) => {
     await untilFrame(app, HINT);
     expect(outcomes).toEqual([]);
     app.unmount();
+  });
+});
+
+describe('the panel interrupt bound to another key than the input interrupt', () => {
+  const rebound = async () => {
+    const content = JSON.stringify({ bindings: [{ context: 'select', bindings: { 'ctrl+t': 'select.interrupt' } }] });
+    const keyBindings = createKeyBindings({
+      file: '/home/u/.momonga/keybindings.json',
+      shownFile: '~/.momonga/keybindings.json',
+      files: { stat: async () => ({ mtimeMs: 1, size: Buffer.byteLength(content) }), read: async () => content, write: async () => undefined },
+    });
+    await keyBindings.load();
+    const started = await opened(panels[0] as Panel, { keyBindings });
+    const answer = unansweredCancel(started.backend);
+    started.app.stdin.write(CTRL_T);
+    await started.backend.called('cancel:run-1');
+    await untilFrame(started.app, HINT);
+    return { ...started, answer };
+  };
+
+  it('exits at the input interrupt pressed within the window', async () => {
+    const { app, backend, exited, answer } = await rebound();
+    answer();
+    backend.finish(runView({ status: 'CANCELLED' }));
+    await untilOutput(app, 'CANCELLED');
+    await untilFrame(app, (shown) => shown.includes(HINT));
+    app.stdin.write(KEYS.ctrlC);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
+  });
+
+  it('exits at the panel interrupt pressed again within the window while the panel is still open', async () => {
+    const { app, backend, exited, answer } = await rebound();
+    expect(app.lastFrame()).toContain('Permission requested: sleep 60');
+    app.stdin.write(CTRL_T);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
+    answer();
+  });
+
+  it('exits at the input interrupt pressed while the panel is still open', async () => {
+    const { app, backend, exited, answer } = await rebound();
+    app.stdin.write(KEYS.ctrlC);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
+    answer();
   });
 });

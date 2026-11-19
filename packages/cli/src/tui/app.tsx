@@ -63,6 +63,7 @@ import type { ScreenTerminal } from './screen/input.ts';
 import type { RowRequests } from './screen/layout.ts';
 import { allocate, drawnTranscriptRows, inputTopOf, menuRowsCap, naturalRows, panelRowsCap, regionAt } from './screen/layout.ts';
 import { chordContextsOf, keyRouteOf } from './screen/key-route.ts';
+import { SELECT_CONTEXTS } from './select.tsx';
 import type { KeyRoute, KeyRouteFacts } from './screen/key-route.ts';
 import { InvitationLine, invitationKeyOf, invitationRows, isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
@@ -712,7 +713,7 @@ export function App(props: AppProps) {
     panelRows: panelRowsCap(rows),
     keys,
     screenReader: a11y.screenReader,
-    interruptRun: () => interruptRun('prompt.interrupt'),
+    interruptRun: () => cancelAndArmExit('prompt.interrupt'),
     reportError,
     fail,
     exit: () => finish({}),
@@ -1517,11 +1518,6 @@ export function App(props: AppProps) {
     exitOnSecondPress(action);
   };
 
-  const interruptRun = (action: ExitAction): void => {
-    if (armedExit.current?.action === action) exitOnSecondPress(action);
-    else cancelAndArmExit(action);
-  };
-
   useEffect(
     () => () => {
       if (armedExit.current !== undefined) timers.clearTimeout(armedExit.current.timer);
@@ -1624,7 +1620,8 @@ export function App(props: AppProps) {
       else if (invitationShown) prompts.dismissInvitation();
     } else if (action === 'prompt.interrupt') {
       if (starting) finish({});
-      else if (armedExit.current?.action === action || working) interruptRun(action);
+      else if (armedExit.current?.action === action) exitOnSecondPress(action);
+      else if (working) cancelAndArmExit(action);
       else if (current.text === '') exitOnSecondPress(action);
       else replaceEditor(emptyEditor(current.history));
     } else if (action === 'prompt.exit') {
@@ -1717,11 +1714,17 @@ export function App(props: AppProps) {
   const onKey = (event: KeyEvent, pressed: KeyTable): void => {
     bindings.poll(now());
     const action = pressed.actionOf(EDITOR_CONTEXTS, event);
+    const route = keyRouteOf(routeFacts());
+    const interrupts = action === 'prompt.interrupt' || (route === 'prompt' && pressed.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.interrupt');
+    if (interrupts && armedExit.current?.action === 'prompt.interrupt') {
+      exitOnSecondPress('prompt.interrupt');
+      return;
+    }
     if (armedExit.current === undefined || armedExit.current.action !== action) {
       disarmExit();
       setHint(undefined);
     }
-    routeKey(keyRouteOf(routeFacts()), event, pressed);
+    routeKey(route, event, pressed);
   };
 
   const replayHeldKeys = useEffectEvent((events: readonly KeyEvent[]): void => {

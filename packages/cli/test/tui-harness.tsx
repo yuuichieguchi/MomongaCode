@@ -20,7 +20,7 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const startStillStarting = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Partial<FakeScreenSize> = {}) => {
+export const startStillStarting = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption' | 'keyBindings'>> = {}, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakeBackend(options);
   const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
   const outcomes: TuiOutcome[] = [];
