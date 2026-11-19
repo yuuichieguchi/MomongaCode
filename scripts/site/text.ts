@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
-const HTML_ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+const HTML_ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\u00a0': '&#160;' };
 
-export const escapeHtml = (text: string): string => text.replace(/[&<>"]/g, (character) => HTML_ESCAPES[character] as string);
+export const escapeHtml = (text: string): string => text.replace(/[&<>"\u00a0]/g, (character) => HTML_ESCAPES[character] as string);
 
 const NAMED_ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 

@@ -528,7 +528,8 @@ tr:target td {
 }
 
 .hero > [data-source] > p {
-  max-width: 40rem;
+  max-width: 60ch;
+  text-wrap: balance;
   margin-left: auto;
   margin-right: auto;
 }
@@ -602,8 +603,8 @@ tr:target td {
 }
 
 .landing-intro {
-  max-width: 40rem;
   margin: 0 auto 2rem;
+  text-wrap: balance;
   color: var(--notice);
   text-align: center;
 }
@@ -633,6 +634,7 @@ tr:target td {
   font-weight: 600;
   line-height: 1.35;
   text-align: center;
+  text-wrap: balance;
   text-decoration: none;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -677,6 +679,7 @@ tr:target td {
   font-size: 1.35rem;
   font-weight: 600;
   line-height: 1.35;
+  text-wrap: balance;
 }
 
 .card:hover .card-title {

@@ -9,7 +9,8 @@ import { createTempRoot, removeTempRoot } from '../scripts/support/temp.ts';
 import { lexer } from 'marked';
 import type { Tokens } from 'marked';
 import { buildSite, llmsLinkText, siteOutput, writeSite } from '../scripts/site.ts';
-import { firstSentence, sentenceHtml } from '../scripts/site/sentence.ts';
+import { readDocument, renderBlocks } from '../scripts/site/markdown.ts';
+import { firstSentence, joinLastWords, joinLastWordsOfTokens, sentenceHtml } from '../scripts/site/sentence.ts';
 import { INSTALLERS, SITE_BRANCH, SITE_ORIGIN, SITE_OUTPUT, WORKER_NAME } from '../scripts/site-target.ts';
 import type { SearchRecord } from '../site/client/search.ts';
 import { ART_WIDTH, FIGURE, TAIL_WAG_FRAMES, TAIL_WAG_MS } from '../packages/cli/src/tui/figure.ts';
@@ -701,6 +702,23 @@ describe('the website', () => {
     expect(html).not.toContain('class="card-text" data-source>An interactive session');
   });
 
+  it('joins the last three words of each centred text block of the landing page with no-break spaces', () => {
+    const html = mainOf(text('index.html'));
+    expect(html).toContain('command&#160;is&#160;<code>momonga</code>.</p>');
+    const hero = /<section class="hero">([\s\S]*?)<\/section>/.exec(html)?.[1] ?? '';
+    const heroParagraphs = [...hero.matchAll(/<p>([\s\S]*?)<\/p>/g)].map((match) => match[1] as string);
+    const intros = [...html.matchAll(/<p class="landing-intro" data-source>([\s\S]*?)<\/p>/g)].map((match) => match[1] as string);
+    const cardTexts = [...html.matchAll(/<p class="card-text" data-source>([\s\S]*?)<\/p>/g)].map((match) => match[1] as string);
+    expect(heroParagraphs).toHaveLength(2);
+    expect(intros).toHaveLength(1);
+    expect(cardTexts).toHaveLength(AREA_CARDS.length);
+    for (const block of [...heroParagraphs, ...intros, ...cardTexts]) {
+      const shown = decode(block.replace(/<[^>]*>/g, ''));
+      expect(shown, block).toMatch(/(?:^| )[^ \u00a0]+\u00a0[^ \u00a0]+\u00a0[^ \u00a0]+$/);
+      expect([...shown].filter((character) => character === '\u00a0'), block).toHaveLength(2);
+    }
+  });
+
   it('makes each area card one link and nests no link in it', () => {
     const html = mainOf(text('index.html'));
     const anchors = [...html.matchAll(/<a\b[^>]*\sclass="card"[^>]*>([\s\S]*?)<\/a>/g)];
@@ -907,6 +925,100 @@ describe('llmsLinkText', () => {
   it('escapes the brackets and backslashes of a link title in llms.txt', () => {
     expect(llmsLinkText('Plain title')).toBe('Plain title');
     expect(llmsLinkText('[x] and a\\b')).toBe('\\[x\\] and a\\\\b');
+  });
+});
+
+describe('joinLastWords', () => {
+  const NBSP = '\u00a0';
+
+  it('joins the last three plain words with no-break spaces', () => {
+    expect(joinLastWords([{ kind: 'text', text: 'aims to be No. 1 in them.' }])).toEqual([{ kind: 'text', text: `aims to be No. 1${NBSP}in${NBSP}them.` }]);
+  });
+
+  it('joins the words before a code span that is the last word, and never changes the code span', () => {
+    expect(
+      joinLastWords([
+        { kind: 'text', text: 'The command is ' },
+        { kind: 'code', text: 'momonga' },
+        { kind: 'text', text: '.' },
+      ]),
+    ).toEqual([
+      { kind: 'text', text: `The command${NBSP}is${NBSP}` },
+      { kind: 'code', text: 'momonga' },
+      { kind: 'text', text: '.' },
+    ]);
+    expect(
+      joinLastWords([
+        { kind: 'text', text: 'then run ' },
+        { kind: 'code', text: 'momonga eval' },
+      ]),
+    ).toEqual([
+      { kind: 'text', text: `then${NBSP}run${NBSP}` },
+      { kind: 'code', text: 'momonga eval' },
+    ]);
+  });
+
+  it('leaves a block of one or two words as it is', () => {
+    expect(joinLastWords([{ kind: 'text', text: 'Hello' }])).toEqual([{ kind: 'text', text: 'Hello' }]);
+    expect(joinLastWords([{ kind: 'text', text: 'Hello there.' }])).toEqual([{ kind: 'text', text: 'Hello there.' }]);
+    expect(joinLastWords([{ kind: 'text', text: 'Run ' }, { kind: 'code', text: 'momonga eval' }])).toEqual([{ kind: 'text', text: 'Run ' }, { kind: 'code', text: 'momonga eval' }]);
+  });
+
+  it('joins words inside and around a link at the end of a paragraph without changing the source tokens', () => {
+    const [paragraph] = lexer('Then read [the full guide](docs/guide.md) now.') as Tokens.Paragraph[];
+    if (paragraph === undefined) throw new Error('no paragraph');
+    const joined = joinLastWordsOfTokens('test.md', paragraph.tokens);
+    const [before, link, after] = joined as [Tokens.Text, Tokens.Link, Tokens.Text];
+    expect(before.text).toBe('Then read ');
+    expect((link.tokens[0] as Tokens.Text).text).toBe(`the full${NBSP}guide`);
+    expect(after.text).toBe(`${NBSP}now.`);
+    expect(((paragraph.tokens[1] as Tokens.Link).tokens[0] as Tokens.Text).text).toBe('the full guide');
+  });
+
+  const joinedOf = (markdown: string): Tokens.Generic[] => {
+    const [paragraph] = lexer(markdown) as Tokens.Paragraph[];
+    if (paragraph === undefined) throw new Error('no paragraph');
+    return joinLastWordsOfTokens('test.md', paragraph.tokens) as Tokens.Generic[];
+  };
+  const innerTextOf = (token: Tokens.Generic | undefined): string => ((token?.tokens as Tokens.Generic[] | undefined)?.[0] as Tokens.Text).text;
+
+  it('joins the last words inside strong, em and del', () => {
+    expect(innerTextOf(joinedOf('Read **the full guide**')[1])).toBe(`the${NBSP}full${NBSP}guide`);
+    expect(innerTextOf(joinedOf('Read *the full guide*')[1])).toBe(`the${NBSP}full${NBSP}guide`);
+    expect(innerTextOf(joinedOf('Read ~~the full guide~~')[1])).toBe(`the${NBSP}full${NBSP}guide`);
+  });
+
+  it('joins across an escape token among the last words and leaves the escape as it is', () => {
+    expect(joinedOf('one two \\*three four').map((token) => [token.type, token.text])).toEqual([
+      ['text', `one two${NBSP}`],
+      ['escape', '*'],
+      ['text', `three${NBSP}four`],
+    ]);
+  });
+
+  it('keeps whitespace at the end of a block and joins the words before it', () => {
+    expect(joinLastWords([{ kind: 'text', text: 'one two three  ' }])).toEqual([{ kind: 'text', text: `one${NBSP}two${NBSP}three  ` }]);
+  });
+
+  it('never joins across a hard line break and keeps the break', () => {
+    expect(joinedOf('Line one  \nline two three').map((token) => [token.type, token.text])).toEqual([
+      ['text', 'Line one'],
+      ['br', undefined],
+      ['text', `line${NBSP}two${NBSP}three`],
+    ]);
+    expect(joinedOf('a b c  \nd e').map((token) => [token.type, token.text])).toEqual([
+      ['text', 'a b c'],
+      ['br', undefined],
+      ['text', `d${NBSP}e`],
+    ]);
+  });
+
+  it('builds a paragraph with a hard line break, keeping the break and joining the words after it', () => {
+    const document = readDocument('test.md', 'Line one  \nline two three\n');
+    const [block] = document.blocks;
+    if (block?.token.type !== 'paragraph') throw new Error('no paragraph');
+    const joined = { ...block, token: { ...block.token, tokens: joinLastWordsOfTokens('test.md', block.token.tokens) } };
+    expect(renderBlocks(document, [joined], (_, href) => href, 1, '/').html).toBe('<p>Line one<br>line&#160;two&#160;three</p>');
   });
 });
 

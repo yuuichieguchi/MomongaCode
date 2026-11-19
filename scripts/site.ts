@@ -11,7 +11,7 @@ import type { Block } from './site/markdown.ts';
 import { assertDistinctAddresses, linkResolver, readSources, urlOfKey } from './site/pages.ts';
 import type { DocPage, SiteFacts, SourceSet } from './site/pages.ts';
 import { iconCss, themeCss } from './site/style.ts';
-import { firstSentence, sentenceHtml } from './site/sentence.ts';
+import { firstSentence, joinLastWords, joinLastWordsOfTokens, sentenceHtml } from './site/sentence.ts';
 import type { Segment } from './site/sentence.ts';
 import { contentHash, escapeHtml, shownTitle } from './site/text.ts';
 
@@ -76,7 +76,7 @@ const installBlock = (): string => {
 type Card = { href: string; title: string; sentence: readonly Segment[] };
 
 const cardHtml = (card: Card): string =>
-  `<a class="card" href="${escapeHtml(card.href)}"><h3 class="card-title" data-source>${escapeHtml(card.title)}</h3><p class="card-text" data-source>${sentenceHtml(card.sentence)}</p></a>`;
+  `<a class="card" href="${escapeHtml(card.href)}"><h3 class="card-title" data-source>${escapeHtml(card.title)}</h3><p class="card-text" data-source>${sentenceHtml(joinLastWords(card.sentence))}</p></a>`;
 
 const tileHtml = (href: string, title: string): string => `<a class="tile" href="${escapeHtml(href)}"><span class="tile-title" data-source>${escapeHtml(title)}</span></a>`;
 
@@ -112,7 +112,7 @@ const sectionHeading = (source: SourceSet, section: DocPage): string => {
 const introOf = (source: SourceSet, section: DocPage): string => {
   const paragraph = section.blocks.find((block) => block.token.type === 'paragraph')?.token;
   if (paragraph?.type !== 'paragraph') throw new Error(`${source.spec.file}: the section ${section.title} has no paragraph`);
-  return `<p class="landing-intro" data-source>${sentenceHtml(firstSentence(source.spec.file, paragraph.tokens))}</p>`;
+  return `<p class="landing-intro" data-source>${sentenceHtml(joinLastWords(firstSentence(source.spec.file, paragraph.tokens)))}</p>`;
 };
 
 type Front = { title: Block; lead: Block; name: string; description: string };
@@ -132,16 +132,17 @@ const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFact
   const after: Block[] = installation.blocks.slice(lastCode + 1);
   const why = sectionOf(guide, 2);
   const features = sectionOf(guide, 4);
+  const joined = (block: Block): Block => (block.token.type === 'paragraph' ? { ...block, token: { ...block.token, tokens: joinLastWordsOfTokens(guide.spec.file, block.token.tokens) } } : block);
   const rendered = (blocks: readonly Block[]): string => sourceText(renderBlocks(guide.document, blocks, link, 1, '/').html);
   const release = `https://github.com/${facts.repo}/releases/tag/v${facts.version}`;
   const body = [
     '<main id="content" class="landing">',
     '<section class="hero">',
     landingFigure(),
-    rendered([title, lead]),
+    rendered([title, joined(lead)]),
     `<p class="version"><a href="${escapeHtml(release)}" data-ui>v${escapeHtml(facts.version)}</a></p>`,
     installBlock(),
-    rendered(after),
+    rendered(after.map(joined)),
     '</section>',
     `<section class="landing-section">${sectionHeading(guide, why)}${introOf(guide, why)}<div class="cards">${areaCards(guide, why)
       .map((card) => cardHtml(card))
