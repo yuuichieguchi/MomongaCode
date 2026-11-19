@@ -82,7 +82,7 @@ describe('the /model list (6.2)', () => {
     await pickerOf(before).modelPicker(undefined);
     expect(before.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'ollama/qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', MODEL_SETTINGS_ROW]);
 
-    const steps: Step[] = [{ pick: /^ollama\/devstral-small-2/ }, { type: '32768' }, { pick: 'Yes' }];
+    const steps: Step[] = [{ pick: /^ollama\/devstral-small-2/ }, { pick: 'Yes' }];
     const after = flowOf(context, threeModels(), steps);
     after.context.found.remember(offeredServers([ollamaFound(OLLAMA_ADDRESS, ['qwen3.8:27b', 'devstral-small-2:latest'])]));
     const connected: string[] = [];
