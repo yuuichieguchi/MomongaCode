@@ -10,7 +10,7 @@ import { displayWidth, segmentsOf, withoutTabs, wrapLine } from './screen/wrap.t
 
 export type RowSteps = { readonly name: string; readonly values: readonly string[]; readonly at: number };
 
-export type SelectRow = { readonly label: string; readonly value?: string; readonly kept?: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean; readonly description?: string; readonly steps?: RowSteps };
+export type SelectRow = { readonly label: string; readonly value?: string; readonly kept?: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean; readonly description?: string; readonly steps?: RowSteps; readonly searchTexts?: readonly string[] };
 
 export type SelectLine = string | { readonly text: string; readonly token?: StyleToken; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
 
@@ -113,7 +113,7 @@ const PART_GAP = '  ';
 
 export const rowText = (row: SelectRow): string => (row.value === undefined ? row.label : `${row.label}${PART_GAP}${row.value}`);
 
-const matches = (row: SelectRow, filter: string): boolean => rowText(row).toLowerCase().includes(filter.toLowerCase());
+const matches = (row: SelectRow, filter: string): boolean => [rowText(row), ...(row.searchTexts ?? [])].some((text) => text.toLowerCase().includes(filter.toLowerCase()));
 
 const listedOf = (spec: SelectSpec, filter: string): number[] => spec.rows.flatMap((row, index) => (filter === '' || (row.separator !== true && matches(row, filter)) ? [index] : []));
 

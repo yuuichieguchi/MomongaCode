@@ -144,6 +144,51 @@ describe('the rows of the /model list', () => {
     app.unmount();
   });
 
+  it('keeps the plan models when the typed filter is their provider name, which no row shows', async () => {
+    const { app } = await startPlan(APPROVED);
+    await openList(app);
+    app.stdin.write('openai');
+    const filtered = listBlock(await untilFrame(app, 'filter: openai'));
+    expect(filtered).toBe(
+      [
+        'Models',
+        'a change applies from the next run',
+        'filter: openai',
+        '› 1. gpt-6.2-sol                   plan',
+        '  2. gpt-6.2-astra                 plan',
+        '  3. gpt-6.2-nova                  plan',
+        '  4. gpt-6.2-terra                 plan',
+        '  5. gpt-6.2-luma                  plan',
+        '  6. gpt-6.2-vela                  plan',
+        '  7. gpt-6.2-orion                 plan',
+        '  8. gpt-6.2-lyra                  plan',
+        '  9. gpt-6.2-mira                  plan',
+        HINT,
+      ].join('\n'),
+    );
+    app.unmount();
+  });
+
+  it('keeps a plan model when the typed filter is its display name, which its row does not show', async () => {
+    const { app } = await startPlan({ ...APPROVED, catalogs: catalogOf(SLUGS.map((slug) => (slug === 'gpt-6.2-sol' ? { ...usable(slug), displayName: 'Sol Prime' } : usable(slug)))) });
+    await openList(app);
+    app.stdin.write('prime');
+    const filtered = listBlock(await untilFrame(app, 'filter: prime'));
+    expect(filtered).toBe(['Models', 'a change applies from the next run', 'filter: prime', '› 1. gpt-6.2-sol                   plan', HINT].join('\n'));
+    app.unmount();
+  });
+
+  it('leaves no model row when the typed filter is contained in nothing', async () => {
+    const { app } = await startPlan(APPROVED);
+    await openList(app);
+    app.stdin.write('zzqx');
+    const filtered = await untilFrame(app, 'filter: zzqx');
+    expect(filtered).not.toContain('gpt-');
+    expect(filtered).not.toContain('qwen');
+    expect(filtered).not.toContain('Model settings');
+    app.unmount();
+  });
+
   it('keeps the state column and its - when a typed filter hides the only row with a state', async () => {
     const { app } = await startPlan({ ...APPROVED, health: { [LUNA]: SIGN_IN } });
     const before = await openList(app);

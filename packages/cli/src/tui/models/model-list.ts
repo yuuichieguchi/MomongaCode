@@ -17,11 +17,11 @@ export type ModelListRow =
   | { readonly kind: 'separator' }
   | { readonly kind: 'found'; readonly found: FoundModel };
 
-export type PlanListRow = { readonly kind: 'model'; readonly slug: string; readonly billing: TargetBilling; readonly reason?: string } | { readonly kind: 'note'; readonly label: string };
+export type PlanListRow = { readonly kind: 'model'; readonly slug: string; readonly billing: TargetBilling; readonly reason?: string; readonly searchTexts: readonly string[] } | { readonly kind: 'note'; readonly label: string };
 
 export type ModelListFacts = { readonly listing: Pick<MomongaModelList, 'data'>; readonly current: string | undefined; readonly health: Pick<GatewayHealth, 'models'>; readonly found: readonly FoundModel[]; readonly plan: readonly PlanListRow[] };
 
-type ModelCells = { readonly name: string; readonly billing: TargetBilling; readonly state?: string; readonly disabled?: true };
+type ModelCells = { readonly name: string; readonly billing: TargetBilling; readonly state?: string; readonly disabled?: true; readonly searchTexts?: readonly string[] };
 
 type ListItem = { readonly cells: ModelCells } | { readonly row: PickRow };
 
@@ -40,7 +40,7 @@ const configuredCellsOf = (entry: MomongaModelEntry, displays: ReadonlyMap<strin
 };
 
 const planItemOf = (row: PlanListRow): ListItem =>
-  row.kind === 'note' ? { row: { label: row.label, disabled: true } } : { cells: { name: row.slug, billing: row.billing, ...(row.reason === undefined ? {} : { state: row.reason, disabled: true }) } };
+  row.kind === 'note' ? { row: { label: row.label, disabled: true } } : { cells: { name: row.slug, billing: row.billing, searchTexts: row.searchTexts, ...(row.reason === undefined ? {} : { state: row.reason, disabled: true }) } };
 
 const pickRowsOf = (items: readonly ListItem[]): PickRow[] => {
   const cells = items.flatMap((item) => ('cells' in item ? [item.cells] : []));
@@ -51,7 +51,7 @@ const pickRowsOf = (items: readonly ListItem[]): PickRow[] => {
     if (!('cells' in item)) return item.row;
     const label = labels[next] as string;
     next += 1;
-    return { label, ...(item.cells.disabled === undefined ? {} : { disabled: true }) };
+    return { label, ...(item.cells.disabled === undefined ? {} : { disabled: true }), ...(item.cells.searchTexts === undefined ? {} : { searchTexts: item.cells.searchTexts }) };
   });
 };
 

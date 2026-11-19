@@ -507,18 +507,19 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       if (read.kind === 'unread') return [{ plan: { kind: 'note', label: catalogNotCurrent(read.account.label, read.reason) }, act: nothingMore }];
       const { account, profile, catalog } = read;
       const billing = planProfileOf(profile.id).targetDefaults.billing;
+      const searchTextsOf = (entry: { readonly displayName: string }): readonly string[] => [entry.displayName, profile.messages.pickerLabel];
       return catalog.models
         .filter((entry) => !served.has(entry.slug))
         .map((entry) =>
           entry.usable
             ? {
-                plan: { kind: 'model', slug: entry.slug, billing },
+                plan: { kind: 'model', slug: entry.slug, billing, searchTexts: searchTextsOf(entry) },
                 act: async () => {
                   const created = await backend.plan.addTarget(account.label, { profile: profile.id, slug: entry.slug });
                   await chosenWithEffort(created.model, nothingMore);
                 },
               }
-            : { plan: { kind: 'model', slug: entry.slug, billing, reason: entry.reason }, act: nothingMore },
+            : { plan: { kind: 'model', slug: entry.slug, billing, reason: entry.reason, searchTexts: searchTextsOf(entry) }, act: nothingMore },
         );
     });
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
