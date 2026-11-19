@@ -53,7 +53,7 @@ describe('the first screen shows the start screen at the top with the list direc
     const rows = rowsOf(frame);
     expect(rowIndexOf(rows, VERSION)).toBeLessThan(8);
     expect(rowIndexOf(rows, TRUST_ROW)).toBeLessThan(bannerEndOf(rows) + 12);
-    expect(frame).toContain('model: not connected');
+    expect(frame).not.toContain('model:');
     expect(frame).not.toContain('(use /login)');
     app.unmount();
   });
