@@ -115,7 +115,10 @@ for (const file of ['install.sh', 'install.ps1']) fs.copyFileSync(path.join(root
 const SITE_DEPLOY_FAILED = 'the release v1.2.3 is published but momongacode.com was not updated: run scripts/site-deploy.sh again';
 const siteBranchNotMoved = (commit: string): string =>
   `site-deploy.sh: the branch site of origin could not be moved to ${commit}: check that origin is reachable and that its branch site is not ahead of or diverged from ${commit}, then run scripts/site-deploy.sh again`;
-const NOT_ON_ORIGIN_MAIN = 'site-deploy.sh: HEAD is not a commit of main on origin; push main first, then run scripts/site-deploy.sh again; nothing was deployed\n';
+const ORIGIN_AHEAD_OF_RELEASE = 'release.sh: main of origin has commits that HEAD does not have; pull (or rebase) first, then run scripts/release.sh again; nothing was built\n';
+const RELEASE_PUSH_FAILED = 'release.sh: main could not be pushed to origin; check that origin is reachable and that its main is not ahead of or diverged from HEAD, then run scripts/release.sh again; nothing was published\n';
+const ORIGIN_AHEAD_OF_DEPLOY = 'site-deploy.sh: main of origin has commits that HEAD does not have; pull (or rebase) first, then run scripts/site-deploy.sh again; nothing was deployed\n';
+const NOT_ON_ORIGIN_MAIN = 'site-deploy.sh: HEAD is not a commit of main on origin and main is not checked out; check out main, or a commit origin has on main, then run scripts/site-deploy.sh again; nothing was deployed\n';
 const SITE_URLS = ['https://momongacode.com/install.sh', 'https://momongacode.com/install.ps1'];
 
 const git = (cwd: string, ...args: string[]): string => {
@@ -315,6 +318,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'rm -f',
       'ssh-keygen -Y',
       `node ${work}/scripts/release-key.ts`,
+      `node ${work}/scripts/site/bounded.ts`,
       'gh release',
       'gh release',
       'git fetch',
@@ -322,6 +326,17 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     ]);
     expect(result.stdout).toContain('- second change (');
     expect(result.stdout).toContain('- first change (');
+    expect(result.stdout).toContain(`DRY_RUN: node ${work}/scripts/site/bounded.ts 120 git push --quiet origin refs/heads/main:refs/heads/main\n`);
+  });
+
+  it('dry run with a local commit not yet on origin pushes nothing', () => {
+    const published = originRef('refs/heads/main');
+    commitLocally('unpushed change');
+    const result = release({ DRY_RUN: '1' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(loggedCalls()).toEqual([]);
+    expect(originRef('refs/heads/main')).toBe(published);
+    expect(result.stdout).toContain('git push --quiet origin refs/heads/main:refs/heads/main');
   });
 
   it('live run with stubs performs the steps in the documented order', () => {
@@ -751,9 +766,11 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     const earlier = git(work, 'rev-parse', 'HEAD').trim();
     commit('third change');
     git(work, 'checkout', '--quiet', '--detach', earlier);
+    const published = originRef('refs/heads/main');
     const result = siteDeploy();
     expect(result.status, result.stderr).toBe(0);
     expect(originRef('refs/heads/site')).toBe(earlier);
+    expect(originRef('refs/heads/main')).toBe(published);
   });
 
   it('site-deploy.sh run alone refuses to move a branch site of origin that is ahead of HEAD', () => {
@@ -770,18 +787,38 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(loggedNames()).not.toContain('curl');
   });
 
-  it('site-deploy.sh refuses when HEAD is a local commit that origin main does not have', () => {
+  it('site-deploy.sh pushes main first when HEAD is a local commit of main that origin does not have', () => {
     commit('second change');
     commitLocally('third change');
+    const head = git(work, 'rev-parse', 'HEAD').trim();
+    const result = siteDeploy();
+    expect(result.status, result.stderr).toBe(0);
+    expect(originRef('refs/heads/main')).toBe(head);
+    expect(originRef('refs/heads/site')).toBe(head);
+  });
+
+  it('site-deploy.sh refuses when main of origin has diverged from HEAD', () => {
+    commit('on origin only');
+    git(work, 'reset', '--quiet', '--hard', 'HEAD~1');
+    commitLocally('local only');
+    const published = originRef('refs/heads/main');
+    const result = siteDeploy();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(ORIGIN_AHEAD_OF_DEPLOY);
+    expect(originRef('refs/heads/main')).toBe(published);
+    expect(originHasRef('refs/heads/site')).toBe(false);
+    expect(loggedCalls()).toEqual([]);
+  });
+
+  it('site-deploy.sh refuses a detached HEAD that main of origin does not contain', () => {
+    commit('second change');
+    git(work, 'checkout', '--quiet', '--detach');
+    commitLocally('detached change');
     const result = siteDeploy();
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(NOT_ON_ORIGIN_MAIN);
     expect(originHasRef('refs/heads/site')).toBe(false);
     expect(loggedCalls()).toEqual([]);
-    git(work, 'push', '--quiet', 'origin', 'main');
-    const pushed = siteDeploy();
-    expect(pushed.status, pushed.stderr).toBe(0);
-    expect(originRef('refs/heads/site')).toBe(git(work, 'rev-parse', 'HEAD').trim());
   });
 
   it('site-deploy.sh refuses a dirty working tree', () => {
@@ -856,11 +893,54 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(loggedCalls()).toEqual([]);
   });
 
-  it('refuses a HEAD that origin does not have, so the release never carries unpushed commits', () => {
+  it('pushes local commits that origin does not have yet and releases them', () => {
     commitLocally('unpushed change');
+    commitLocally('another unpushed change');
+    const head = git(work, 'rev-parse', 'HEAD').trim();
+    const result = release();
+    expect(result.status, result.stderr).toBe(0);
+    expect(originRef('refs/heads/main')).toBe(head);
+    expect(releasedCommit()).toBe(head);
+    expect(originRef('refs/heads/site')).toBe(head);
+  });
+
+  it('pushes nothing when the site build fails', () => {
+    const published = originRef('refs/heads/main');
+    commitLocally('unpushed change');
+    const result = release({ STUB_SITE_FAIL: '1' });
+    expect(result.status).not.toBe(0);
+    expect(originRef('refs/heads/main')).toBe(published);
+    expect(loggedNames()).not.toContain('gh');
+  });
+
+  it('stops before any gh call when the push of main fails', () => {
+    const published = originRef('refs/heads/main');
+    commitLocally('unpushed change');
+    git(work, 'config', 'remote.origin.pushurl', path.join(path.dirname(work), 'unreachable.git'));
     const result = release();
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toBe('release.sh: HEAD is not origin/main; push or pull so that the release lands on a published commit\n');
+    expect(result.stderr.endsWith(RELEASE_PUSH_FAILED)).toBe(true);
+    expect(loggedNames()).toContain('ssh-keygen');
+    expect(loggedNames()).not.toContain('gh');
+    expect(originRef('refs/heads/main')).toBe(published);
+    expect(originTags()).toBe('');
+  });
+
+  it.each([
+    ['ahead of', (): void => {
+      commit('on origin only');
+      git(work, 'reset', '--quiet', '--hard', 'HEAD~1');
+    }],
+    ['diverged from', (): void => {
+      commit('on origin only');
+      git(work, 'reset', '--quiet', '--hard', 'HEAD~1');
+      commitLocally('local only');
+    }],
+  ] as const)('refuses at the start when main of origin is %s HEAD', (_label, arrange) => {
+    arrange();
+    const result = release();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toBe(ORIGIN_AHEAD_OF_RELEASE);
     expect(loggedCalls()).toEqual([]);
   });
 

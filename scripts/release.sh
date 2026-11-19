@@ -23,6 +23,8 @@ readonly OTHER_ASSETS=(momonga-linux-x64 momonga-linux-arm64 momonga-win-x64.exe
 
 DRY_RUN="${DRY_RUN:-0}"
 readonly RELEASE_BRANCH="${MOMONGA_RELEASE_BRANCH:-main}"
+readonly PUSH_BOUND_SECONDS=120
+readonly FETCH_BOUND_SECONDS=120
 
 fail() {
   printf 'release.sh: %s\n' "$*" >&2
@@ -153,9 +155,9 @@ cd "$ROOT"
 
 current_branch="$(git symbolic-ref --quiet --short HEAD)" || fail "HEAD is not on a branch; releases are cut from $RELEASE_BRANCH"
 [ "$current_branch" = "$RELEASE_BRANCH" ] || fail "releases are cut from $RELEASE_BRANCH, not $current_branch"
-git fetch --quiet origin "$RELEASE_BRANCH" || fail "could not fetch origin/$RELEASE_BRANCH"
+node "$ROOT/scripts/site/bounded.ts" "$FETCH_BOUND_SECONDS" git fetch --quiet origin "$RELEASE_BRANCH" || fail "could not fetch origin/$RELEASE_BRANCH"
 commit="$(git rev-parse HEAD)"
-[ "$commit" = "$(git rev-parse "refs/remotes/origin/$RELEASE_BRANCH")" ] || fail "HEAD is not origin/$RELEASE_BRANCH; push or pull so that the release lands on a published commit"
+git merge-base --is-ancestor "refs/remotes/origin/$RELEASE_BRANCH" "$commit" || fail "$RELEASE_BRANCH of origin has commits that HEAD does not have; pull (or rebase) first, then run scripts/release.sh again; nothing was built"
 
 version="$(node --print "JSON.parse(require('node:fs').readFileSync('packages/cli/package.json', 'utf8')).version")"
 [ -n "$version" ] || fail "packages/cli/package.json has no version"
@@ -235,6 +237,10 @@ run write_checksums
 run rm -f "$SIGNATURE"
 run ssh-keygen -Y sign -f "$RELEASE_SIGNING_KEY" -n "$SIGNATURE_NAMESPACE" "$CHECKSUMS"
 run node "$RELEASE_KEY_TOOL" verify "$CHECKSUMS" "$SIGNATURE"
+
+step "push $RELEASE_BRANCH to origin"
+run node "$ROOT/scripts/site/bounded.ts" "$PUSH_BOUND_SECONDS" git push --quiet origin "refs/heads/$RELEASE_BRANCH:refs/heads/$RELEASE_BRANCH" \
+  || fail "$RELEASE_BRANCH could not be pushed to origin; check that origin is reachable and that its $RELEASE_BRANCH is not ahead of or diverged from HEAD, then run scripts/release.sh again; nothing was published"
 
 step "publish $tag"
 printf 'release notes:\n%s\n' "$notes"
