@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { KEYS, untilFrame } from './ink-helpers.ts';
-import type { Instance } from './ink-helpers.ts';
-import { account, eventually, IDENTITY_UNCONFIRMED, PLAN_TEST_TIMEOUT_MS, startPlan, untilRow } from './fake-plan-gateway.tsx';
+import { account, AUTHORIZATION_URL, eventually, IDENTITY_UNCONFIRMED, PLAN_TEST_TIMEOUT_MS, startPlan, untilRow } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend, FakePlanOptions } from './fake-plan-gateway.tsx';
 import { manualClock } from './tui/screen-clock.ts';
-import type { ManualClock } from './tui/screen-clock.ts';
+import { UNDER_HANDS_PAUSE_LINE } from '../src/tui/screen/prompt-settle.ts';
 import { KEY_RELEASED } from '../src/tui/terminal/events.ts';
 import { KEY_SETTLE_MS } from '../src/tui/terminal/constants.ts';
 
@@ -83,6 +82,25 @@ describe('a panel that follows a wait or another list of the same flow opens fre
     clock.advance(QUIET);
     app.stdin.write(KEYS.enter);
     await eventually(() => backend.planCalls.some((call) => call.route === 'accounts/chatgpt/targets'), 'the model chosen with Enter');
+    app.unmount();
+  });
+
+  it('Esc on the waiting screen returns to the list fresh', async () => {
+    const clock = manualClock(1_000_000);
+    const { app } = await startPlan({ ...FIRST_SIGN_IN, callbackArrives: false }, {}, {}, { now: clock.now, timers: clock.timers, keySettleMs: KEY_SETTLE_MS });
+    await untilFrame(app, 'mode: manual');
+    app.stdin.write('/login');
+    await untilFrame(app, '/login');
+    clock.advance(QUIET);
+    app.stdin.write(KEYS.enter);
+    await untilRow(app, SUBSCRIPTION);
+    clock.advance(QUIET);
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, AUTHORIZATION_URL);
+    clock.advance(BROWSER_TIME);
+    app.stdin.write(KEYS.escape);
+    const list = await untilFrame(app, (shown) => shown.includes(SUBSCRIPTION) && !shown.includes(AUTHORIZATION_URL));
+    expect(flat(list)).not.toContain(UNDER_HANDS_PAUSE_LINE);
     app.unmount();
   });
 

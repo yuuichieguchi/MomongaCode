@@ -646,8 +646,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const waitingKey = (current: WaitingOverlay, event: KeyEvent, keys: KeyTable): void => {
     if (current.delivered) return;
     const action = selectActionOf(event, keys);
-    if (action === 'select.escape' || action === 'select.interrupt') current.handlers.cancel();
-    else if (action === 'select.copy') {
+    if (action === 'select.escape' || action === 'select.interrupt') {
+      gate.keyConsumed();
+      current.handlers.cancel();
+    } else if (action === 'select.copy') {
       backend.copyToClipboard(current.view.url.href).catch(host.reportError);
       showOverlay({ ...current, status: CLIPBOARD_ASKED });
     } else if (action === 'select.decide') submitWaiting(current);
@@ -661,6 +663,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       showOverlay({ ...current, problem });
       return;
     }
+    gate.keyConsumed();
     closeOverlay();
     current.resolve(captured.kind === 'key' || captured.kind === 'remove' ? captured : undefined);
   };
@@ -676,7 +679,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     }
     if (current.kind === 'loading') {
       const action = selectActionOf(event, keys);
-      if (action === 'select.escape' || action === 'select.interrupt') current.cancel();
+      if (action === 'select.escape' || action === 'select.interrupt') {
+        gate.keyConsumed();
+        current.cancel();
+      }
       return;
     }
     if (current.kind === 'capture') {
@@ -721,6 +727,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const textKey = (current: TextOverlay, event: KeyEvent, keys: KeyTable): void => {
     const action = selectActionOf(event, keys);
     if (action === 'select.escape') {
+      gate.keyConsumed();
       closeOverlay();
       current.resolve(undefined);
       return;
