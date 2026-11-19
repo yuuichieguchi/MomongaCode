@@ -9,6 +9,7 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
+import { PLAN_TEST_TIMEOUT_MS, choose, startPlan, submitLine } from '../fake-plan-gateway.tsx';
 
 const HINT = 'Press ctrl+c again to exit';
 const CTRL_T = '\u0014';
@@ -168,5 +169,48 @@ describe('the panel interrupt bound to another key than the input interrupt', ()
     expect(await exited).toEqual(EXITED);
     expect(cancels(backend)).toBe(1);
     answer();
+  });
+});
+
+describe('ctrl+c with the exit armed and no panel open', () => {
+  it('goes back from a list that opened after the exit was armed, and does not exit', { timeout: PLAN_TEST_TIMEOUT_MS }, async () => {
+    const { app, backend, outcomes } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
+    await backend.called('openSession');
+    await untilFrame(app, 'mode: manual');
+    const held = Promise.withResolvers<void>();
+    backend.sandbox = async () => {
+      await held.promise;
+      return 'none';
+    };
+    await submitLine(app, '/login');
+    await choose(app, 'ChatGPT');
+    await untilFrame(app, (shown) => !shown.includes('Add an API key'));
+    app.stdin.write(KEYS.ctrlC);
+    await untilFrame(app, HINT);
+    held.resolve();
+    await untilFrame(app, (shown) => shown.includes('The sandbox is off') && shown.includes(HINT));
+    app.stdin.write(KEYS.ctrlC);
+    await untilFrame(app, (shown) => !shown.includes('The sandbox is off'));
+    app.stdin.write('typed');
+    await untilFrame(app, '> typed');
+    expect(outcomes).toEqual([]);
+    app.unmount();
+  });
+
+  it('falls through the tool view to the input and exits at the second press', async () => {
+    const { app, backend, exited } = await start();
+    await untilFrame(app, 'mode: manual');
+    await runStarted(backend, app, 'go');
+    backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash seq', rawInput: {} }));
+    backend.emit(frame({ type: 'tool.completed', callId: 'c1', status: 'completed', output: Array.from({ length: 30 }, (_, index) => `out ${index}`).join('\n') }));
+    await untilFrame(app, 'out 29');
+    app.stdin.write(KEYS.ctrlO);
+    await untilFrame(app, (shown) => shown.startsWith('out 0'));
+    app.stdin.write(KEYS.ctrlC);
+    await backend.called('cancel:run-1');
+    await untilFrame(app, HINT);
+    app.stdin.write(KEYS.ctrlC);
+    expect(await exited).toEqual(EXITED);
+    expect(cancels(backend)).toBe(1);
   });
 });

@@ -1715,7 +1715,7 @@ export function App(props: AppProps) {
     bindings.poll(now());
     const action = pressed.actionOf(EDITOR_CONTEXTS, event);
     const route = keyRouteOf(routeFacts());
-    const interrupts = action === 'prompt.interrupt' || (route === 'prompt' && pressed.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.interrupt');
+    const interrupts = route === 'prompt' && (action === 'prompt.interrupt' || pressed.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.interrupt');
     if (interrupts && armedExit.current?.action === 'prompt.interrupt') {
       exitOnSecondPress('prompt.interrupt');
       return;
