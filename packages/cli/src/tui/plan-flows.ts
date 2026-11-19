@@ -1,7 +1,7 @@
 import { isReasoningEffort, PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
-import type { ReasoningEffort, DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
+import type { ReasoningEffort, DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanModelsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
-import { listingViewsOf } from '../client/gateway-client.ts';
+import { GatewayAnswerError, listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
 import { NO_SERVER_ANSWERED_TEXT } from '../models-texts.ts';
 import { addBuiltIn, addFoundModel, addFromFound, addService, builtInRowOf, foundNotConfigured, searchServers } from './models/add.ts';
@@ -16,7 +16,7 @@ import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
-import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, cancelledText, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
+import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, cancelledText, catalogUnreadHint, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
@@ -107,7 +107,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const catalogPicker = async (profile: PlanProfileView, account: string): Promise<void> => {
-    const catalog = await backend.plan.accountModels(account, { profile: profile.id });
+    let catalog: PlanModelsResponse;
+    try {
+      catalog = await backend.plan.accountModels(account, { profile: profile.id });
+    } catch (error) {
+      if (!(error instanceof GatewayAnswerError)) throw error;
+      ports.failed(error.message);
+      ports.info(catalogUnreadHint(profile.id, account));
+      return;
+    }
     if (catalog.models.length === 0) {
       ports.info(`${profile.messages.identityLabel} lists no model for ${account}`);
       return;

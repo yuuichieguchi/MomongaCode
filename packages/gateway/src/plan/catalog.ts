@@ -28,7 +28,9 @@ export const NO_REPORTED_WINDOW = 'the server reports no context window for this
 
 const CATALOG_LABEL = 'plan catalog';
 
-type RecordEntry = { contextWindow: number; maxOutputTokens: number; source: 'reported' } | { unreported: true };
+type RecordEntry = { contextWindow: number; maxOutputTokens: number; source: 'reported' } | { unreported: true; reason?: string };
+
+export const unusableReasonOf = (entry: { unreported: true; reason?: string }): string => entry.reason ?? NO_REPORTED_WINDOW;
 
 export type CatalogRecord = { readAt: string; models: Readonly<Record<string, RecordEntry>> };
 
@@ -57,7 +59,10 @@ const listErrorOf = (response: ListAnswer, clock: Clock): UpstreamHttpError => {
 export const catalogKey = (profile: string, account: string): string => `${profile}/${account}`;
 
 const recordEntryOf = (entry: unknown): RecordEntry => {
-  if (isRecord(entry) && ownEntry(entry, 'unreported') === true) return { unreported: true };
+  if (isRecord(entry) && ownEntry(entry, 'unreported') === true) {
+    const reason = ownEntry(entry, 'reason');
+    return typeof reason === 'string' ? { unreported: true, reason } : { unreported: true };
+  }
   const contextWindow = isRecord(entry) ? ownEntry(entry, 'contextWindow') : undefined;
   const maxOutputTokens = isRecord(entry) ? ownEntry(entry, 'maxOutputTokens') : undefined;
   if (typeof contextWindow !== 'number' || typeof maxOutputTokens !== 'number') throw new Error('the plan catalog record has an unrecognised entry');
@@ -77,7 +82,7 @@ const parseRecord = (text: string): CatalogRecord => {
 type Listed = { models: PlanCatalogEntry[]; entryKeys: string[] };
 
 const listedOf = (profile: PlanProfile, body: unknown): Listed | undefined => {
-  const { listKey, filter, idKey, labelKey } = profile.catalog;
+  const { listKey, filter, unusableWhen, idKey, labelKey } = profile.catalog;
   const listed = isRecord(body) ? body[listKey] : undefined;
   if (!Array.isArray(listed)) return undefined;
   const entryKeys = new Set<string>();
@@ -88,6 +93,7 @@ const listedOf = (profile: PlanProfile, body: unknown): Listed | undefined => {
     for (const key of Object.keys(entry)) entryKeys.add(key);
     const label = entry[labelKey];
     const displayName = typeof label === 'string' && label !== '' ? label : slug;
+    if (entry[unusableWhen.field] === unusableWhen.equals) return [{ slug, displayName, usable: false, reason: unusableWhen.reason }];
     const contextWindow = reportedContextWindow(entry);
     return [contextWindow === undefined ? { slug, displayName, usable: false, reason: NO_REPORTED_WINDOW } : { slug, displayName, usable: true, contextWindow, maxOutputTokens: maxOutputTokensFor(contextWindow) }];
   });
@@ -101,7 +107,7 @@ const requestIdHeaderNames = (headers: Record<string, string>): string[] => Obje
 const recordOf = (response: PlanModelsResponse): CatalogRecord => ({
   readAt: response.readAt,
   models: Object.fromEntries(
-    response.models.map((entry): [string, RecordEntry] => [entry.slug, entry.usable ? { contextWindow: entry.contextWindow, maxOutputTokens: entry.maxOutputTokens, source: 'reported' } : { unreported: true }]),
+    response.models.map((entry): [string, RecordEntry] => [entry.slug, entry.usable ? { contextWindow: entry.contextWindow, maxOutputTokens: entry.maxOutputTokens, source: 'reported' } : entry.reason === NO_REPORTED_WINDOW ? { unreported: true } : { unreported: true, reason: entry.reason }]),
   ),
 });
 
@@ -146,7 +152,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     try {
       return await sendAuthorized(request.auth, signal, async (bearer) => {
         const response = await fetch(url, { method: 'GET', redirect: 'manual', signal, headers: { accept: 'application/json', ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }) } });
-        const read = await readTextLimited(responseBytes(response), PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
+        const read = await readTextLimited(responseBytes(response), response.status === SUCCESS_STATUS ? PLAN_SIGN_IN_DEFAULTS.catalogBodyBytes : PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
         return { status: response.status, headers: Object.fromEntries(response.headers), body: bytesOf(read.text), text: read.text, truncated: read.truncated };
       });
     } finally {
@@ -180,7 +186,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
       }
       if (response.truncated) {
         end({ outcome: 'list_invalid', requestIdHeaders });
-        throw new Error(`the ${request.profile.messages.identityLabel} model list is larger than ${PLAN_SIGN_IN_DEFAULTS.authBodyBytes} bytes`);
+        throw new Error(`the ${request.profile.messages.identityLabel} model list is larger than ${PLAN_SIGN_IN_DEFAULTS.catalogBodyBytes} bytes`);
       }
       const listed = listedOf(request.profile, usableUpstreamJson(response.text));
       if (listed === undefined) {

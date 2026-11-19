@@ -91,7 +91,7 @@ describe('what the route cannot carry, as data', () => {
 
 describe('the model list shape', () => {
   it('names where the list and the ids are and nothing about a capability', () => {
-    expect(profile().catalog).toEqual({ path: '/models', listKey: 'models', filter: { field: 'visibility', equals: 'list' }, idKey: 'slug', labelKey: 'display_name' });
+    expect(profile().catalog).toEqual({ path: '/models', listKey: 'models', filter: { field: 'visibility', equals: 'list' }, unusableWhen: { field: 'supported_in_api', equals: false, reason: 'not available through the API' }, idKey: 'slug', labelKey: 'display_name' });
   });
 });
 

@@ -78,3 +78,6 @@ export const resetHostWarning = (profiles: readonly { messages: { identityLabel:
 export const listProblemLine = (problem: { file: string; cause: string }): string => `could not list ${problem.file}: ${problem.cause}`;
 
 export const resumeLine = (label: string, resumed: boolean): string => (resumed ? `Resumed plan use for ${label}` : `${label} is not paused`);
+
+export const catalogUnreadHint = (profile: string, account: string): string =>
+  `To use a model of ${account} by its name: momonga models add --plan ${profile} --account ${account} --model <own name> --window <tokens> --yes`;
