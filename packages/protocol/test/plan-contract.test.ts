@@ -99,6 +99,7 @@ describe('the plan admin routes', () => {
       signInComplete: '/sign-in/complete',
       signInCancel: '/sign-in/cancel',
       signOut: '/sign-out',
+      accountRename: '/accounts/rename',
       accounts: '/accounts',
       accountsActive: '/accounts/active',
       accountResume: '/accounts/:account/resume',
