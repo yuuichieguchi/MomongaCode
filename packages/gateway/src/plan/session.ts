@@ -78,6 +78,7 @@ export type PlanRecord = {
   cause?: string;
   interrupted?: boolean;
   paused?: PlanPause;
+  renamingTo?: string;
 };
 
 export type PlanPaths = { sessions: string; host: string; active: string };
@@ -128,6 +129,7 @@ export type PlanSessions = {
   selectActive(ref: NamedPlanAccountRef, signal: AbortSignal): Promise<void>;
   pointerReady(): Promise<void>;
   signOut(ref: NamedPlanAccountRef, signal: AbortSignal): Promise<SignOutReport>;
+  rename(ref: NamedPlanAccountRef, to: string, signal: AbortSignal): Promise<NamedPlanAccountRef>;
   authSource(target: PlanAccountRef): AuthSource;
   signedOutSource(profile: string): AuthSource;
   activeLabel(profile: string): string | undefined;
@@ -161,6 +163,7 @@ type Account = {
   forced: GenerationFlight<SharedCall<void>>;
   persisting: boolean;
   resumedSignOut: Promise<SignOutReport | undefined> | undefined;
+  resumedRename: Promise<void> | undefined;
   unloads: number;
   users: number;
 };
@@ -185,6 +188,8 @@ type RefreshTrigger = { kind: 'lazy' } | { kind: 'forced'; generation: number };
 
 const PERSIST_LIMIT_LABEL = 'the persist limit';
 const SIGN_OUT_LIMIT_LABEL = 'the sign-out limit';
+const RENAME_LIMIT_LABEL = 'the rename limit';
+const NO_HOLD = (): boolean => false;
 
 const RECORD_KEY_PREFIX = 'plan/';
 
@@ -291,7 +296,19 @@ const parseRecord = (text: string): PlanRecord => {
     ...optional('cause', stringField(value, 'cause')),
     ...optional('interrupted', booleanField(value, 'interrupted')),
     ...optional('paused', parsePause(ownEntry(value, 'paused'))),
+    ...optional('renamingTo', renamingLabelOf(stringField(value, 'renamingTo'))),
   };
+};
+
+const renamingLabelOf = (value: string | undefined): string | undefined => {
+  if (value === undefined) return undefined;
+  if (!isPlanLabel(value)) throw new Error('the plan record has an invalid rename target');
+  return value;
+};
+
+const withoutRenaming = (record: PlanRecord): PlanRecord => {
+  const { renamingTo: _renamingTo, ...kept } = record;
+  return kept;
 };
 
 const serialize = (record: PlanRecord): string => JSON.stringify(record);
@@ -394,6 +411,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       forced: createGenerationFlight(),
       persisting: false,
       resumedSignOut: undefined,
+      resumedRename: undefined,
       unloads: 0,
       users: 0,
     };
@@ -476,6 +494,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     }
     adopt(account, record, 'lazy');
     if (unfinishedSignOutOf(account) !== undefined && account.resumedSignOut === undefined) resumeSignOut(account);
+    if (recordOf(account)?.renamingTo !== undefined && account.resumedRename === undefined) resumeRename(account);
   };
 
   const storedIsHeld = (account: Account, text: string | undefined): boolean => account.loaded !== undefined && account.stored !== undefined && account.stored.text === text;
@@ -1197,6 +1216,73 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       return (await applyChange(account, withoutPause, signal)) !== undefined;
     });
 
+  const keyText = (key: string, what: string, signal: AbortSignal): Promise<string | undefined> =>
+    store.withKey(key, (entry) => recordAccess('read', what, () => entry.read(), signal), signal, NO_HOLD);
+
+  const putKeyText = (key: string, what: string, text: string, signal: AbortSignal): Promise<void> =>
+    store.withKey(key, (entry) => recordAccess('write', what, () => entry.write(text), signal), signal, NO_HOLD);
+
+  const dropKey = (key: string, what: string, signal: AbortSignal): Promise<void> =>
+    store.withKey(key, (entry) => recordAccess('write', what, () => entry.remove(), signal), signal, NO_HOLD);
+
+  const completeRename = async (from: NamedPlanAccountRef, signal: AbortSignal): Promise<void> => {
+    const fromKey = recordKey(from.profile, from.account);
+    const what = `the plan account ${from.account}`;
+    const text = await keyText(fromKey, what, signal);
+    if (text === undefined) return;
+    const record = parseRecord(text);
+    if (record.renamingTo === undefined) return;
+    const to = record.renamingTo;
+    const toKey = recordKey(from.profile, to);
+    const moved = serialize({ ...withoutRenaming(record), account: to });
+    const existing = await keyText(toKey, `the plan account ${to}`, signal);
+    if (existing === undefined) await putKeyText(toKey, `the plan account ${to}`, moved, signal);
+    else if (existing !== moved) throw new Error(`${to} is already saved; choose another label`);
+    if (activeLabels.get(from.profile) === from.account) await moveActive({ profile: from.profile, account: to });
+    await dropKey(fromKey, what, signal);
+    accounts.delete(fromKey);
+    accounts.delete(toKey);
+    accountOf(from.profile, to);
+  };
+
+  function resumeRename(account: Account): void {
+    const limit = operationLimit(closing.signal, HOST_READ_BOUND_MS, RENAME_LIMIT_LABEL, options.timing);
+    const from = { profile: account.profile.id, account: account.label };
+    const flight = completeRename(from, limit.signal)
+      .catch((error: unknown) => {
+        if (!endedByLifetime(error)) options.warn(`the rename of ${account.profile.id} account ${account.label} did not finish: ${describeError(error)}; it is resumed at the next load`);
+      })
+      .finally(() => {
+        limit.dispose();
+        if (account.resumedRename === flight) account.resumedRename = undefined;
+      });
+    account.resumedRename = flight;
+  }
+
+  const rename = async (ref: NamedPlanAccountRef, to: string, signal: AbortSignal): Promise<NamedPlanAccountRef> => {
+    const target = { profile: ref.profile, account: to };
+    const fromKey = recordKey(ref.profile, ref.account);
+    const toKey = recordKey(ref.profile, to);
+    const what = `the plan account ${ref.account}`;
+    const taken = await keyText(toKey, `the plan account ${to}`, signal);
+    if (taken !== undefined) throw new Error(`${to} is already saved; choose another label`);
+    await store.withKey(
+      fromKey,
+      async (entry) => {
+        const text = await recordAccess('read', what, () => entry.read(), signal);
+        if (text === undefined) throw new Error(`no ${ref.profile} account is labelled ${JSON.stringify(ref.account)}`);
+        const record = parseRecord(text);
+        if (record.state === 'signing_out') throw new Error(`${ref.account} is being signed out`);
+        if (record.renamingTo !== undefined) throw new Error(`${ref.account} has a rename that is not finished`);
+        await recordAccess('write', what, () => entry.write(serialize({ ...record, renamingTo: to })), signal);
+      },
+      signal,
+      NO_HOLD,
+    );
+    await completeRename(ref, signal);
+    return target;
+  };
+
   const selectActive = (ref: NamedPlanAccountRef, signal: AbortSignal): Promise<void> =>
     forAccount(ref, async (account) => {
       await load(account, signal);
@@ -1313,6 +1399,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     listProblems,
     resume,
     selectActive,
+    rename,
     pointerReady,
     signOut: (ref, signal) => forAccount(ref, (account) => signOutAccount(account, signal)),
     authSource,

@@ -183,6 +183,7 @@ const NO_PLAN: PlanGatewayClient = {
   signInComplete: noPlanRoute('sign-in/complete'),
   signInCancel: noPlanRoute('sign-in/cancel'),
   signOut: noPlanRoute('sign-out'),
+  rename: noPlanRoute('accounts/rename'),
   setActive: noPlanRoute('accounts/active'),
   resume: noPlanRoute('accounts/resume'),
   resetHost: noPlanRoute('host/reset'),

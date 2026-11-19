@@ -78,7 +78,7 @@ const openAccounts = async () => {
   return { ...started, place };
 };
 
-describe('the account picker renames and removes the connection of an account', () => {
+describe('the account picker renames and removes every account', () => {
   it('shows a rename and a remove row for the account', async () => {
     const { app } = await openAccounts();
     const picker = await untilRow(app, 'Remove account work');
@@ -87,27 +87,48 @@ describe('the account picker renames and removes the connection of an account', 
     app.unmount();
   });
 
-  it('rename writes the new server name after the confirm', async () => {
+  it('rename changes the label of the account and points its connection to the new label', async () => {
     const { app, place } = await openAccounts();
     await choose(app, 'Rename account work');
-    await untilFrame(app, 'Name (lower-case');
+    await untilFrame(app, 'enter to confirm');
+    app.stdin.write('\u007f'.repeat(4));
     app.stdin.write('job');
     app.stdin.write(KEYS.enter);
-    await choose(app, 'Yes');
-    await eventually(() => connectionsIn(place.userFile)[0]?.provider === 'job', 'the new name is written');
+    await eventually(() => connectionsWithAccount(place.userFile).includes('job'), 'the connection points to the new label');
     app.unmount();
   });
 
-  it('remove asks the confirm row and then removes the connection', async () => {
+  it('when the connection cannot be pointed to the new label, the account is renamed back and the connection keeps its label', async () => {
+    const { app, place, backend } = await openAccounts();
+    fs.chmodSync(path.dirname(place.userFile), 0o500);
+    await choose(app, 'Rename account work');
+    await untilFrame(app, 'enter to confirm');
+    app.stdin.write('\u007f'.repeat(4));
+    app.stdin.write('job');
+    app.stdin.write(KEYS.enter);
+    await eventually(() => backend.planCalls.filter((call) => call.route === 'accounts/rename').length === 2, 'the account is renamed back');
+    expect(backend.planCalls.filter((call) => call.route === 'accounts/rename').at(-1)).toEqual({ route: 'accounts/rename', body: { profile: 'chatgpt', account: 'job', to: 'work' } });
+    expect(connectionsWithAccount(place.userFile)).toEqual(['work']);
+    fs.chmodSync(path.dirname(place.userFile), 0o700);
+    app.unmount();
+  });
+
+  it('remove signs the account out after one confirm and removes the connection that it serves', async () => {
     const { app, place } = await openAccounts();
     await choose(app, 'Remove account work');
-    await untilFrame(app, 'Remove work and its model?');
-    await choose(app, 'Yes');
-    await untilFrame(app, 'Removed');
-    expect(connectionsIn(place.userFile)).toEqual([]);
+    await untilFrame(app, '1-9 or enter to choose');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, 'again to sign out work');
+    app.stdin.write(KEYS.enter);
+    await eventually(() => connectionsIn(place.userFile).length === 0, 'the connection is removed');
     app.unmount();
   });
 });
+
+const connectionsWithAccount = (file: string): string[] =>
+  (JSON.parse(fs.readFileSync(file, 'utf8')) as { models: { connections: { plan?: { account?: string } }[] } }).models.connections.flatMap((connection) =>
+    connection.plan?.account === undefined ? [] : [connection.plan.account],
+  );
 
 const openProfileOnly = async (accounts: ReturnType<typeof account>[]) => {
   const place = freshPlace();
@@ -128,18 +149,20 @@ describe('a connection pinned only to its profile belongs to the active account 
     const picker = await untilRow(app, 'Remove account work');
     expect(picker).toContain('Rename account work');
     await choose(app, 'Remove account work');
-    await untilFrame(app, 'Remove chatgpt and its model?');
-    await choose(app, 'Yes');
+    await untilFrame(app, '1-9 or enter to choose');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, 'again to sign out work');
+    app.stdin.write(KEYS.enter);
     await eventually(() => connectionsIn(place.userFile).length === 0, 'the connection is removed');
     app.unmount();
   });
 
-  it('with two accounts only the active one carries the rows', async () => {
+  it('every saved account carries the rename and remove rows, also one with no connection', async () => {
     const { app } = await openProfileOnly([account({ label: 'work', pinnedBy: [PROFILE_MODEL] }), account({ label: 'home', active: false, pinnedBy: [] })]);
     await submitLine(app, '/login');
     await choose(app, '[subscription]');
-    const picker = await untilRow(app, 'Remove account work');
-    expect(picker).not.toContain('account home');
+    const picker = await untilRow(app, 'Remove account home');
+    expect(picker).toContain('Rename account home');
     app.unmount();
   });
 

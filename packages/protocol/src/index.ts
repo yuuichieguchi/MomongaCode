@@ -300,6 +300,8 @@ export type {
   PlanSignInFailure,
   PlanSignOutRequest,
   PlanSignOutResponse,
+  PlanRenameRequest,
+  PlanRenameResponse,
   PlanRevocation,
   PlanTargetRequest,
   PlanTargetResponse,

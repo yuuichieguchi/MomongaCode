@@ -92,6 +92,11 @@ export const writeConfirmed = async ({ host }: Opened, context: ModelsFlowContex
   return written.value;
 };
 
+export const proposeWrite = async (opened: Opened, context: ModelsFlowContext, form: ModelsForm, input: FormInput): Promise<ModelsEditResult | undefined> => {
+  const proposal = await refusedSentence(context, () => proposeForm(opened.host, opened.edit, form, input));
+  return proposal === undefined ? undefined : writeConfirmed(opened, context, proposal.value);
+};
+
 export const proposeAndWrite = async (opened: Opened, context: ModelsFlowContext, form: ModelsForm, input: FormInput): Promise<ModelsEditResult | undefined> => {
   const proposal = await refusedSentence(context, () => proposeForm(opened.host, opened.edit, form, input));
   return proposal === undefined ? undefined : confirmAndWrite(opened, context, proposal.value);

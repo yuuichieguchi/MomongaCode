@@ -205,6 +205,7 @@ export const createTuiBackend = (
     signInComplete: (request) => withGateway((gateway) => gateway.plan.signInComplete(request)),
     signInCancel: (request) => withGateway((gateway) => gateway.plan.signInCancel(request)),
     signOut: (request) => withGateway((gateway) => gateway.plan.signOut(request)),
+    rename: (request) => withGateway((gateway) => gateway.plan.rename(request)),
     setActive: (request) => withGateway((gateway) => gateway.plan.setActive(request)),
     resume: (account, request) => withGateway((gateway) => gateway.plan.resume(account, request)),
     resetHost: () => withGateway((gateway) => gateway.plan.resetHost()),

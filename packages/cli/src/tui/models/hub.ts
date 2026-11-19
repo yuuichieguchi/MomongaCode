@@ -5,7 +5,7 @@ import { planServesAccount } from './plan-account.ts';
 import { SEPARATOR, addressesOf, configuredWindowsOf, isLocalServer, modelRowText, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
 import { runAddFlow } from './add.ts';
-import { cancellable, chosenOf, hostOf, openEdit, proposeAndWrite } from './context.ts';
+import { cancellable, chosenOf, hostOf, openEdit, proposeAndWrite, proposeWrite, writeConfirmed } from './context.ts';
 import type { ModelsFlowContext, Opened } from './context.ts';
 import { runModelFields, runServerFields } from './fields.ts';
 import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from './order.ts';
@@ -135,16 +135,16 @@ const signInRequiredOf = (document: ModelsDocument, health: GatewayHealth): Read
 
 const removeModel = (context: ModelsFlowContext, opened: Opened, model: string) => proposeAndWrite(opened, context, 'remove', { args: [model], options: {} });
 
-const removeServer = async (context: ModelsFlowContext, opened: Opened, provider: string): Promise<void> => {
+const removeServer = async (context: ModelsFlowContext, opened: Opened, provider: string, write: typeof proposeAndWrite = proposeAndWrite): Promise<void> => {
   const connection = opened.edit.resolved.connections.find((candidate) => candidate.provider === provider);
   const declared = connection?.server !== undefined && Object.hasOwn(declaredOf(opened.edit), connection.server);
   if (!declared) {
-    await proposeAndWrite(opened, context, 'remove-server', { args: [provider], options: {} });
+    await write(opened, context, 'remove-server', { args: [provider], options: {} });
     return;
   }
   const way = await chosenOf(context, { title: provider, rows: [{ label: REMOVE_SERVER_ONLY_ROW }, { label: FORGET_PROGRAM_TOO_ROW }] });
   if (way === undefined) return;
-  await proposeAndWrite(opened, context, 'remove-server', { args: [provider], options: way === 1 ? { forgetProgram: true } : {} });
+  await write(opened, context, 'remove-server', { args: [provider], options: way === 1 ? { forgetProgram: true } : {} });
 };
 
 const nameServer = async (context: ModelsFlowContext, opened: Opened, provider: string): Promise<void> => {
@@ -171,9 +171,19 @@ const serverMenu = async (context: ModelsFlowContext, opened: Opened, provider: 
   if (action === 'Remove server') await removeServer(context, opened, provider);
 };
 
-export const runRenameServer = async (context: ModelsFlowContext, provider: string): Promise<void> => nameServer(context, await openEdit(context), provider);
+export const runRemoveServingConnection = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider, proposeWrite);
 
-export const runRemoveServer = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider);
+export const repointAccountConnections = async (context: ModelsFlowContext, profile: string, from: string, to: string): Promise<boolean> => {
+  const opened = await openEdit(context);
+  const repoint = (provider: string) => ({ kind: 'setConnectionField' as const, provider, path: ['plan', 'account'], value: to });
+  const [first, ...rest] = opened.edit.resolved.connections.filter((connection) => connection.plan?.profile === profile && connection.plan.account === from);
+  if (first === undefined) return true;
+  const written = await writeConfirmed(opened, context, {
+    operations: [repoint(first.provider), ...rest.map((connection) => repoint(connection.provider))],
+    confirm: () => '',
+  });
+  return written !== undefined;
+};
 
 export const accountConnectionOf = async (context: ModelsFlowContext, account: PlanAccountView): Promise<string | undefined> =>
   (await openEdit(context)).edit.resolved.connections.find((connection) => connection.plan !== undefined && planServesAccount(connection.plan, account))?.provider;

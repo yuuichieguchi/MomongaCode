@@ -274,6 +274,12 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       return context.json(await planApi().signOut(body, signal));
     }).catch(closedOr),
   );
+  app.post(planRoute(PLAN_ROUTES.accountRename), (context) =>
+    planOperation(context, async (signal) => {
+      const body = await planBody(context);
+      return context.json(await planApi().rename(body, signal));
+    }).catch(closedOr),
+  );
   app.post(planRoute(PLAN_ROUTES.accountResume), (context) =>
     planOperation(context, async (signal) => {
       const body = await planBody(context);
