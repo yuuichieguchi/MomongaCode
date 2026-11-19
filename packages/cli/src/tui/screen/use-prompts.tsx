@@ -393,7 +393,9 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       if (layout.more > 0) scrollDetail(active, 0);
       return;
     }
-    apply(active, selectKey(active.spec, stateOf(active), event, keys, layout.capacity));
+    const step = selectKey(active.spec, stateOf(active), event, keys, layout.capacity);
+    if (step.outcome !== undefined) gate.keyConsumed();
+    apply(active, step);
   };
 
   const selectPress = (active: Active, row: number): void => {
@@ -637,6 +639,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       showOverlay({ ...current, problem });
       return;
     }
+    gate.keyConsumed();
     current.handlers.deliver(text);
   };
 
@@ -694,6 +697,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       showOverlay({ ...current, error });
       return;
     }
+    gate.keyConsumed();
     closeOverlay();
     current.resolve(text);
   };
