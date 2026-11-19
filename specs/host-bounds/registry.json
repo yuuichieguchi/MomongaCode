@@ -105,6 +105,7 @@
     {"name":"HEADER_BYTES","file":"packages/gateway/src/core/image-size.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"PLAN_ACCESS_LIFETIME_MS","file":"packages/gateway/src/defaults.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
     {"name":"PLAN_ATTEMPT_TIMEOUT_MS","file":"packages/gateway/src/defaults.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
+    {"name":"PLAN_CATALOG_MAX_BYTES","file":"packages/gateway/src/defaults.ts","kind":"stated","owner":"gateway","row":"gateway-config.md"},
     {"name":"PLAN_REFRESH_BUDGET_MS","file":"packages/gateway/src/defaults.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
     {"name":"PLAN_REVOCATION_TIMEOUT_MS","file":"packages/gateway/src/defaults.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
     {"name":"PLAN_SKEW_MS","file":"packages/gateway/src/defaults.ts","kind":"P","owner":"gateway","row":"gateway-config.md"},
