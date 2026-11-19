@@ -196,6 +196,7 @@ export type ToolBody<Input> = {
   description: string;
   conciseDescription?: string;
   conciseParameterDescriptions?: Readonly<Record<string, string>>;
+  offeredWithout?(denied: (subject: PermissionSubject) => boolean): AnyTool | null;
   kind: ToolKind;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;

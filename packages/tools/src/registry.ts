@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { modelVisibleTools } from '@momonga/policy';
-import type { PermissionRule } from '@momonga/policy';
+import { deniedByNamedRule, modelVisibleTools } from '@momonga/policy';
+import type { PermissionRule, PermissionSubject } from '@momonga/policy';
 import { TOOL_NAME_PATTERN } from '@momonga/protocol';
 import type { FitRankedFunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
 import { compileToolSchemas } from './validate.ts';
@@ -129,8 +129,11 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     forModel: ({ mode, rules, conciseDescriptions }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
       const concise = conciseDescriptions === true;
+      const denied = (subject: PermissionSubject): boolean => subject.kind !== 'path' && deniedByNamedRule(rules, subject);
       return frozenTools
         .filter((tool) => visible.has(tool.name))
+        .map((tool) => (tool.offeredWithout === undefined ? tool : tool.offeredWithout(denied)))
+        .filter((tool) => tool !== null)
         .map((tool, index) => {
           const useConcise = concise && hasConciseVariant(tool);
           return {

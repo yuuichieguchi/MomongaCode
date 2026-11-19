@@ -45,6 +45,8 @@ export const suggestAllowRule = async (
     case 'repo':
     case 'forge':
       return subject.approval === 'always' ? undefined : subject.tool;
+    case 'agent':
+      return `${subject.tool}(${subject.agent})`;
     case 'none':
       return tool.name;
   }

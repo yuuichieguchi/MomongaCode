@@ -55,9 +55,13 @@ export const childToolResultOf = (
   };
 };
 
-export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildRunSpawner): AnyTool => {
-  const byName = new Map(agents.map((agent) => [agent.name, agent]));
-  return defineTool<AgentInput>({
+const agentSubject = (agent: string) => ({ kind: 'agent' as const, tool: AGENT_TOOL_NAME, agent });
+
+export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildRunSpawner): AnyTool => agentToolOffering(agents, agents, runs);
+
+const agentToolOffering = (agents: readonly AgentDefinition[], callable: readonly AgentDefinition[], runs: ChildRunSpawner): AnyTool => {
+  const byName = new Map(callable.map((agent) => [agent.name, agent]));
+  const tool: AnyTool = defineTool<AgentInput>({
     name: AGENT_TOOL_NAME,
     description: [
       'Delegates a task to a subagent that works in its own context with its own tools and returns its final message as the result. Give the subagent everything it needs in prompt, because it cannot see this conversation. Several Agent calls in one response run as parallel subagents.',
@@ -85,7 +89,12 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
     },
     timeoutMs: SPAWN_TOOL_TIMEOUT_MS,
     title: (input) => input.description,
-    subject: () => ({ kind: 'none', tool: AGENT_TOOL_NAME }),
+    subject: (input) => agentSubject(input.subagent_type),
+    offeredWithout: (denied) => {
+      const offered = agents.filter((agent) => !denied(agentSubject(agent.name)));
+      if (offered.length === 0) return null;
+      return offered.length === agents.length ? tool : agentToolOffering(offered, callable, runs);
+    },
     execute: async (input, ctx) => {
       const agent = byName.get(input.subagent_type);
       if (agent === undefined) throw new ToolExecutionError(`Unknown subagent "${input.subagent_type}"`);
@@ -103,4 +112,5 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
     },
     reconcile: async () => ({ outcome: 'not_applied', output: '' }),
   });
+  return tool;
 };

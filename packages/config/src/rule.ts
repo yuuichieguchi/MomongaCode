@@ -1,6 +1,6 @@
 import { FileRuleError, checkExceptionGrammar, checkFilePatternGrammar, HOST_SUFFIX_PREFIX, parseHostEntry, parseHostPattern } from '@momonga/foundation';
 import type { FileRuleAccess, FileRuleSpec } from '@momonga/foundation';
-import { COMMAND_TOOL_NAME, OPERATION_RULE_TOOLS, TOOL_NAMES } from '@momonga/protocol';
+import { AGENT_TOOL_NAME, COMMAND_TOOL_NAME, OPERATION_RULE_TOOLS, TOOL_NAMES } from '@momonga/protocol';
 import type { PATH_TOOL_NAMES } from '@momonga/protocol';
 
 export type RuleEffect = 'allow' | 'ask' | 'deny';
@@ -73,7 +73,7 @@ const MCP_EVERY_TOOL = '*';
 const MCP_SERVER_RULE_FORMS = `the rule for every tool of a server is ${MCP_TOOL_PREFIX}<server>${MCP_NAME_SEPARATOR}${MCP_EVERY_TOOL} or ${MCP_TOOL_PREFIX}<server>`;
 
 const OPERATION_TOOLS: readonly string[] = OPERATION_RULE_TOOLS;
-const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, COMMAND_TOOL_NAME, ...OPERATION_TOOLS, NETWORK_RULE_SUBJECT];
+const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, COMMAND_TOOL_NAME, AGENT_TOOL_NAME, ...OPERATION_TOOLS, NETWORK_RULE_SUBJECT];
 const MCP_NAME = /^[A-Za-z0-9_-]+$/;
 
 export const hasBalancedParentheses = (value: string): boolean => {
@@ -120,6 +120,7 @@ const validateSpecifier = (text: string, tool: string, specifier: string): void 
     if (specifier.endsWith(COMMAND_PREFIX_SUFFIX) && specifier.slice(0, -COMMAND_PREFIX_SUFFIX.length).trim() === '') throw new RuleParseError(text, 'empty command prefix');
     return;
   }
+  if (tool === AGENT_TOOL_NAME) return;
   if (OPERATION_TOOLS.includes(tool)) {
     if (/[()]/.test(specifier)) throw new RuleParseError(text, 'parentheses are not allowed in an operation specifier');
     return;
