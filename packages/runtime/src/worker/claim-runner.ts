@@ -194,8 +194,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
         if (!control.raisedDuringCancel(cause)) {
           journal.append([{ type: 'notice', level: 'error', message: `The run was cancelled after an error: ${describeError(cause)}`, code: 'cancelled_after_error' }]);
         }
-        const keys = [control.inFlight.modelKey, control.inFlight.compactionKey].filter((key): key is string => key !== undefined);
-        const failures = await cancelUpstream(options, control, keys);
+        const failures = await cancelUpstream(options, control, inFlightKeysOf(claim, journal, control));
         if (control.shuttingDown()) {
           await terminals.yieldLease();
           return;
@@ -323,6 +322,12 @@ const requeueOrStop = async (
   await terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
+const inFlightKeysOf = (claim: Claim, journal: Journal, control: ClaimContext['control']): string[] => {
+  const folded = journal.state.inFlightModelRequest;
+  const keys = [folded === undefined ? undefined : modelKey(claim.runId, folded.step, folded.attempt), control.inFlight.modelKey, control.inFlight.compactionKey];
+  return [...new Set(keys.filter((key): key is string => key !== undefined))];
+};
+
 const endCancelled = async (options: WorkerOptions, claim: Claim, journal: Journal, control: ClaimContext['control'], terminals: ClaimContext['terminals']): Promise<void> => {
   const run = options.store.getRun(claim.runId);
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
@@ -332,8 +337,7 @@ const endCancelled = async (options: WorkerOptions, claim: Claim, journal: Journ
     return;
   }
   if (control.leaseLost()) control.lost();
-  const inFlight = journal.state.inFlightModelRequest;
-  const keys = inFlight === undefined ? [] : [modelKey(run.id, inFlight.step, inFlight.attempt)];
+  const keys = inFlightKeysOf(claim, journal, control);
   const recovering = releaseWaitingOnCancel({ options, claim, run, session, journal, control }).then(() =>
     reconcileStartedCalls({ options, claim, run, session, journal, control }),
   );

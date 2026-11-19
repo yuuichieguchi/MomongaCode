@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+import { ClaimLeftFileError } from './platform/claim-left-file.ts';
 import { claimNewEntry, claimNewEntrySync, lockFormOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
 import { NAME_SUFFIX_BYTES } from './random.ts';
@@ -323,8 +324,10 @@ export function* atomicWriteSequence(mechanism: KernelLockMechanism, random: Ran
       yield* run({ run: 'remove', file: write.temporary });
       temporaryRemoved = true;
     }
+    const held = write.held;
     releaseAfterFailure(write);
-    if (!write.published && (!write.temporaryMade || temporaryRemoved)) options.onFailedUnchanged?.();
+    const lockLeft = error instanceof ClaimLeftFileError || held?.leftFile?.() === true;
+    if (!write.published && !lockLeft && (!write.temporaryMade || temporaryRemoved)) options.onFailedUnchanged?.();
     throw error;
   }
   yield* run({ run: 'syncDirectory', directory: path.dirname(file) });

@@ -20,7 +20,9 @@ export type HeldKernelLock = {
   release(): void;
   dispose(): void;
   readonly stillNamed?: () => boolean;
+  readonly leftFile?: () => boolean;
 };
+
 
 export const writeHolderOrRelease = (lock: HeldKernelLock, text: string): void => {
   try {

@@ -147,6 +147,7 @@ describe('a compact command over a short session', () => {
     expect(env.gateway.compacts).toHaveLength(1);
     expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
     expect(env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE)).toEqual([]);
+    expect(env.ofType(run.id, 'notice').map((event) => event.code)).toContain('recent_turns_shrunk');
   });
 
   it('compacts a session of two large turns', async () => {
@@ -188,6 +189,46 @@ describe('a compact command over a short session', () => {
     expect(notices.map((notice) => notice.message)).toEqual([NOTHING_TO_COMPACT_MESSAGE]);
     expect(notices[0]?.message).not.toMatch(/-\d/);
     expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
+  });
+});
+
+describe('the levels of a manual compaction', () => {
+  it('compacts a conversation whose only large turn lies inside the recent turns the first level keeps', async () => {
+    const env = await seededWith([
+      responded(1, [assistantMessage('m1', 'ok')]),
+      { type: 'user.message', text: 'question two' },
+      responded(2, [assistantMessage('m2', `answer two ${'y'.repeat(40_000)}`)]),
+      { type: 'user.message', text: 'question three' },
+      responded(3, [assistantMessage('m3', 'fine')]),
+    ]);
+    const run = await enqueueCompact(env);
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.compacts).toHaveLength(1);
+    expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
+    expect(env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE)).toEqual([]);
+    expect(env.ofType(run.id, 'notice').map((event) => event.code)).toContain('recent_turns_shrunk');
+  });
+
+  it('over a small conversation builds no plan at any level and calls no model', async () => {
+    const env = await seededWith([
+      responded(1, [assistantMessage('m1', 'ok')]),
+      { type: 'user.message', text: 'question two' },
+      responded(2, [assistantMessage('m2', 'fine')]),
+      { type: 'user.message', text: 'question three' },
+      responded(3, [assistantMessage('m3', 'good')]),
+    ]);
+    const streamsBefore = env.gateway.streams.length;
+    const run = await enqueueCompact(env);
+
+    await env.runOnce(env.worker());
+
+    expect(env.gateway.compacts).toEqual([]);
+    expect(env.gateway.streams).toHaveLength(streamsBefore);
+    expect(env.ofType(run.id, 'context.compacting')).toEqual([]);
+    expect(env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE).map((event) => event.message)).toEqual([NOTHING_TO_COMPACT_MESSAGE]);
   });
 });
 

@@ -51,6 +51,7 @@ describe('worker gateway cancel wiring', () => {
     expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([modelKey(run.id, 1, 1)]);
     expect(env.gateway.cancels[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(statuses).toEqual(['CANCELLING']);
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.message.includes('after an error'))).toEqual([]);
   });
 
   it('cancels the live compaction key upstream when the cancel lands while compacting', async () => {
@@ -87,6 +88,7 @@ describe('worker gateway cancel wiring', () => {
     expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([compactKey(run.id, env.gateway.compacts[0]?.request)]);
     expect(statuses).toEqual(['CANCELLING']);
     expect(env.gateway.streams).toEqual([]);
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.message.includes('after an error'))).toEqual([]);
   });
 
   it('cancels the folded in-flight model key on a CANCELLING claim', async () => {
@@ -103,6 +105,7 @@ describe('worker gateway cancel wiring', () => {
     expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([modelKey(run.id, 1, 1)]);
     expect(statuses).toEqual(['CANCELLING']);
     expect(env.gateway.streams).toEqual([]);
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.message.includes('after an error'))).toEqual([]);
   });
 
   it('does not cancel upstream on a CANCELLING claim with no in-flight model request', async () => {

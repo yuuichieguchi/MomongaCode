@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { ClaimLeftFileError } from './claim-left-file.ts';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './kernel-lock.ts';
 import { lstatIdentity, sameFile } from './file-identity.ts';
 import type { LockFileIdentity } from './file-identity.ts';
@@ -127,6 +128,7 @@ const beginExclusive = (database: DatabaseSync): 'acquired' | 'held' => {
 
 const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string, database: DatabaseSync): HeldKernelLock => {
   let open = true;
+  let left = false;
   const release = (): void => {
     if (!open) return;
     open = false;
@@ -137,6 +139,7 @@ const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string
       ops.remove(databasePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== FILE_IN_USE) throw error;
+      left = true;
     }
   };
   return {
@@ -152,19 +155,29 @@ const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string
       }
       if (!ops.removesOpenFiles) removeDatabaseAfterClose();
     },
+    leftFile: () => left,
   };
+};
+
+const openLeaving = (ops: SqliteLockOps, databasePath: string, createdHere: boolean): DatabaseSync => {
+  try {
+    return ops.open(databasePath);
+  } catch (error) {
+    throw createdHere ? new ClaimLeftFileError(databasePath, error) : error;
+  }
 };
 
 const claimDatabase = (ops: SqliteLockOps, lockPath: string): ClaimOutcome => {
   const databasePath = databasePathOf(lockPath);
   for (;;) {
     let identity = ops.lstat(databasePath);
+    const createdHere = identity === undefined;
     if (identity === undefined) {
       ops.createIfAbsent(databasePath);
       identity = ops.lstat(databasePath);
       if (identity === undefined) continue;
     }
-    const database = ops.open(databasePath);
+    const database = openLeaving(ops, databasePath, createdHere);
     try {
       if (beginExclusive(database) === 'held') {
         database.close();
@@ -173,7 +186,7 @@ const claimDatabase = (ops: SqliteLockOps, lockPath: string): ClaimOutcome => {
       if (sameFile(ops.lstat(databasePath), identity)) return { kind: 'claimed', lock: heldDatabase(ops, lockPath, databasePath, database) };
     } catch (error) {
       if (database.isOpen) database.close();
-      if (sameFile(ops.lstat(databasePath), identity)) throw error;
+      if (sameFile(ops.lstat(databasePath), identity)) throw createdHere ? new ClaimLeftFileError(databasePath, error) : error;
       continue;
     }
     database.close();
