@@ -1256,12 +1256,18 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const liveAccount = async (account: Account, signal: AbortSignal): Promise<Account> => {
-    if (account.resumedRename !== undefined) await account.resumedRename;
-    const to = renamingTargetOf((await keyText(account.key, sessionOf(account), signal)) ?? '');
+    await load(account, signal);
+    const to = recordOf(account)?.renamingTo;
     if (to === undefined) return account;
-    await completeRename({ profile: account.profile.id, account: account.label }, signal);
-    return accountOf(account.profile.id, to);
+    await account.resumedRename;
+    return accounts.get(account.key) === account ? account : accountOf(account.profile.id, to);
   };
+
+  const heldLive = async <T>(account: Account, signal: AbortSignal, operation: (account: Account) => Promise<T>): Promise<T> =>
+    held(account, async (loaded) => {
+      const live = await liveAccount(loaded, signal);
+      return live === loaded ? operation(loaded) : held(live, operation);
+    });
 
   function resumeRename(account: Account): void {
     const limit = operationLimit(closing.signal, HOST_READ_BOUND_MS, RENAME_LIMIT_LABEL, options.timing);
@@ -1352,12 +1358,12 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const healthView = (): AccountView => (servedLabel === undefined ? unpinnedView() : viewOfLabel(servedLabel));
     return {
       read: async (signal) =>
-        held(await liveAccount(resolved(), signal), async (account) => {
+        heldLive(resolved(), signal, async (account) => {
           await load(account, signal);
           return bearer(account, signal);
         }),
       rejected: async (generation, signal) =>
-        held(await liveAccount(served(), signal), async (account) => {
+        heldLive(served(), signal, async (account) => {
           const rejection = { ...identityOf(account), generation };
           try {
             const answer = await rejected(account, generation, signal);
