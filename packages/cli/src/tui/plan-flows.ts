@@ -24,6 +24,7 @@ import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError,
 import type { SignInShown } from '../plan/sign-in.ts';
 import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, accountInUseLine, accountNotSessionModelLine, cancelledText, catalogUnreadHint, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
+import { LOADING_HINTS } from './picker.tsx';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
 
@@ -95,6 +96,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       new Promise<MomongaModelEntry | undefined>((resolve) => {
         stop = followMeasurement({ read: () => backend.model(), timers: ports.timers }, retryAfterSeconds, resolve, () => resolve(undefined), () => undefined);
       }),
+      LOADING_HINTS.cancelOnly,
     );
     stop();
     return loaded.kind === 'read' ? loaded.value : undefined;
@@ -412,11 +414,11 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const login = async (args: string): Promise<void> => {
     if (args !== '') {
-      const read = await ports.loading(CONNECT_TITLE, () => backend.plan.accounts());
+      const read = await ports.loading(CONNECT_TITLE, () => backend.plan.accounts(), LOADING_HINTS.readingAndCancel);
       if (read.kind === 'read') await providerFlowOf(profileOf(read.value.profiles, args), read.value);
       return;
     }
-    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.dismissedNotices()]));
+    const read = await ports.loading(CONNECT_TITLE, () => Promise.all([backend.plan.accounts(), backend.models(), backend.dismissedNotices()]), LOADING_HINTS.readingAndCancel);
     if (read.kind === 'cancelled') return;
     const [listed, entries, dismissed] = read.value;
     const invited = invitedProfiles(listed, dismissed);
@@ -439,7 +441,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const logout = async (): Promise<void> => {
-    const read = await ports.loading('Sign out', () => backend.plan.accounts());
+    const read = await ports.loading('Sign out', () => backend.plan.accounts(), LOADING_HINTS.readingAndCancel);
     if (read.kind === 'cancelled') return;
     const listed = read.value;
     if (listed.accounts.length === 0) {
@@ -495,7 +497,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       );
       const remembered = ports.found.servers();
       return { listing: readListing, health: readHealth, listed: readListed, catalogs: readCatalogs, remembered, opened: remembered.length === 0 ? undefined : await openEdit(context) };
-    });
+    }, LOADING_HINTS.readingAndCancel);
     if (read.kind === 'cancelled') return;
     const { listing, health, listed, catalogs, remembered, opened } = read.value;
     const entries = listing.data;

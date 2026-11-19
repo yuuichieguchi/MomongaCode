@@ -52,6 +52,17 @@ describe('a key typed while a list is loading goes to the draft and is never app
     });
   }
 
+  it('the Models loading overlay shows its title and the reading hint', async () => {
+    const { app, release } = await loadingModels();
+    app.stdin.write(KEYS.enter);
+    const shown = await untilFrame(app, READING);
+    const rows = shown.split('\n').map((row) => row.trimEnd());
+    const start = rows.indexOf('Models');
+    expect(rows.slice(start, start + 2).join('\n')).toBe(['Models', 'reading… · esc cancels'].join('\n'));
+    release();
+    app.unmount();
+  });
+
   it('esc during loading still cancels the list and is not put in the draft', async () => {
     const { app, release } = await loadingModels();
     app.stdin.write(KEYS.enter);

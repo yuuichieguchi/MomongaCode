@@ -58,7 +58,11 @@ export type Overlay =
   | { readonly kind: 'capture'; readonly request: CaptureRequest; readonly problem?: string; readonly resolve: (outcome: CaptureOutcome | undefined) => void }
   | { readonly kind: 'text'; readonly request: TextRequest; readonly error?: string; readonly resolve: (text: string | undefined) => void }
   | WaitingOverlay
-  | { readonly kind: 'loading'; readonly title: string; cancel(): void };
+  | { readonly kind: 'loading'; readonly title: string; readonly hint: LoadingHint; cancel(): void };
+
+export const LOADING_HINTS = { readingAndCancel: 'readingAndCancel', cancelOnly: 'cancelOnly' } as const;
+
+export type LoadingHint = (typeof LOADING_HINTS)[keyof typeof LOADING_HINTS];
 
 export type Loaded<T> = { readonly kind: 'read'; readonly value: T } | { readonly kind: 'cancelled' };
 
@@ -70,7 +74,7 @@ export type OverlayPorts = {
   waiting(view: WaitingView, handlers: WaitingHandlers): void;
   closeWaiting(): void;
   delivered(): void;
-  loading<T>(title: string, read: () => Promise<T>): Promise<Loaded<T>>;
+  loading<T>(title: string, read: () => Promise<T>, hint: LoadingHint): Promise<Loaded<T>>;
 };
 
 const keyed = (key: string, text: (key: string) => string): string[] => (key === '' ? [] : [text(key)]);
@@ -94,7 +98,8 @@ export const structuredHint = (keys: KeyTable): string =>
 
 export const READING_TEXT = 'reading…';
 
-export const loadingHint = (keys: KeyTable): string => joinHint([READING_TEXT, ...keyed(keys.keyHint('select.escape'), (key) => `${key} cancels`)]);
+export const loadingHint = (keys: KeyTable, hint: LoadingHint): string =>
+  joinHint([...(hint === LOADING_HINTS.readingAndCancel ? [READING_TEXT] : []), ...keyed(keys.keyHint('select.escape'), (key) => `${key} cancels`)]);
 
 export type PanelOverlay = Exclude<Overlay, { kind: 'pick' }>;
 
@@ -162,7 +167,7 @@ export function OverlayView({ overlay, editor, keys, columns, rows }: { overlay:
       return (
         <Box flexDirection="column">
           <Text bold>{escapeTerminalLine(overlay.title)}</Text>
-          <Text dimColor>{loadingHint(keys)}</Text>
+          <Text dimColor>{loadingHint(keys, overlay.hint)}</Text>
         </Box>
       );
     case 'waiting':

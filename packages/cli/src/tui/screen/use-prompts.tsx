@@ -14,7 +14,7 @@ import type { ExternalEditorPort } from '../external-editor.ts';
 import { capturedOf } from '../keys/capture.ts';
 import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
 import { OverlayView, pickerSpec } from '../picker.tsx';
-import type { Loaded, Overlay, OverlayPorts, PickChoice, PickRequest, WaitingOverlay } from '../picker.tsx';
+import type { Loaded, LoadingHint, Overlay, OverlayPorts, PickChoice, PickRequest, WaitingOverlay } from '../picker.tsx';
 import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectHover, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel } from '../select.tsx';
 import type { SelectFrame, SelectLayout, SelectLine, SelectOutcome, SelectSpec, SelectState, SelectStep, TextRow } from '../select.tsx';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
@@ -285,7 +285,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     closeWaiting: () => {
       if (overlayRef.current?.kind === 'waiting') showOverlay(undefined);
     },
-    loading: <T,>(title: string, read: () => Promise<T>) =>
+    loading: <T,>(title: string, read: () => Promise<T>, hint: LoadingHint) =>
       new Promise<Loaded<T>>((resolve, reject) => {
         let reading = true;
         const close = (): void => {
@@ -295,6 +295,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
         const shown: Overlay = {
           kind: 'loading',
           title,
+          hint,
           cancel: () => {
             if (!reading) return;
             close();

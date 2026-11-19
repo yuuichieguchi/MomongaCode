@@ -240,7 +240,7 @@ describe('the effort step after a plan model that is not configured is chosen', 
     return started;
   };
 
-  const LOADING_BLOCK = ['loading', 'reading… · esc cancels'].join('\n');
+  const LOADING_BLOCK = ['loading', 'esc cancels'].join('\n');
 
   const loadingBlockOf = (frame: string): string => {
     const lines = frame.split('\n').map(lineOf);
@@ -251,8 +251,9 @@ describe('the effort step after a plan model that is not configured is chosen', 
   it('shows the loading row while the capabilities of the added model are not loaded, then opens the effort picker', async () => {
     const pending = Promise.withResolvers<void>();
     const { app } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
-    const waiting = await untilFrame(app, 'reading… · esc cancels');
+    const waiting = await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
     expect(loadingBlockOf(waiting)).toBe(LOADING_BLOCK);
+    expect(waiting).not.toContain('reading…');
     expect(waiting).not.toContain('Reasoning effort');
     pending.resolve();
     const picker = await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('tab: this session only'));
@@ -264,7 +265,7 @@ describe('the effort step after a plan model that is not configured is chosen', 
   it('opens nothing more when the loaded model has no reasoning control', async () => {
     const pending = Promise.withResolvers<void>();
     const { app } = await chosenWhileMeasured({ reasoning: {}, modelPending: pending.promise });
-    await untilFrame(app, 'reading… · esc cancels');
+    await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
     pending.resolve();
     const output = await untilOutput(app, 'model: gpt-6.2-sol · effort: not available; applies from the next run');
     expect(output).not.toContain('Reasoning effort');
@@ -285,7 +286,7 @@ describe('the effort step after a plan model that is not configured is chosen', 
   it('ends the wait on the cancel key: the model stays chosen and no picker opens', async () => {
     const pending = Promise.withResolvers<void>();
     const { app, backend } = await chosenWhileMeasured({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
-    await untilFrame(app, 'reading… · esc cancels');
+    await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
     app.stdin.write(KEYS.escape);
     await untilOutput(app, 'model: gpt-6.2-sol; applies from the next run');
     pending.resolve();
