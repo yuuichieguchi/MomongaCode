@@ -71,6 +71,7 @@ export const matchPathlessRule = (rule: PermissionRule, subject: Exclude<Permiss
   if (rule.specifier === undefined) return true;
   if (subject.kind === 'repo') return rule.effect === 'allow' ? repoAllowMatches(rule.specifier, subject) : repoRestrictMatches(rule.specifier, subject);
   if (subject.kind === 'forge') return rule.effect === 'allow' ? wildcardMatches(rule.specifier, forgeTarget(subject)) : restrictingMatch(rule.specifier, [forgeTarget(subject)]);
+  if (subject.kind === 'agent') return rule.effect === 'allow' ? wildcardMatches(rule.specifier, subject.agent) : restrictingMatch(rule.specifier, [subject.agent]);
   if (subject.kind === 'command') return matchesCommand(rule, subject.command);
   return false;
 };

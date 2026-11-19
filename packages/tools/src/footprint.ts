@@ -39,6 +39,7 @@ export const footprintOf = (subject: PermissionSubject, cwd: string): Footprint 
     case 'memory':
     case 'history':
     case 'governance':
+    case 'agent':
     case 'none':
       return EMPTY_FOOTPRINT;
   }

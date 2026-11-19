@@ -1,6 +1,7 @@
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
-import { ruleCoversToolName } from './match-rule.ts';
+import { matchPathlessRule, ruleCoversToolName } from './match-rule.ts';
+import type { PathlessSubject } from './match-rule.ts';
 import type { PolicyTool } from './types.ts';
 
 export type VisibleToolsOptions = { mode: PermissionMode; rules: PermissionRule[] };
@@ -15,3 +16,6 @@ export const modelVisibleTools = (tools: PolicyTool[], { mode, rules }: VisibleT
     return !blanketDenies.some((rule) => ruleCoversToolName(rule, tool.name));
   });
 };
+
+export const deniedByNamedRule = (rules: readonly PermissionRule[], subject: PathlessSubject): boolean =>
+  rules.some((rule) => rule.effect === 'deny' && rule.specifier !== undefined && matchPathlessRule(rule, subject));

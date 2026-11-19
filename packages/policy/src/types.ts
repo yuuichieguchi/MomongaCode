@@ -34,6 +34,7 @@ export type PermissionSubject =
     }
   | { kind: 'repo'; tool: string; operation: string; remote: string | null; refs: readonly string[]; destinations: readonly string[]; destinationsMatchFetch: boolean; approval: OperationApproval }
   | { kind: 'forge'; tool: string; operation: string; host: string; repo: string; pr?: number; headSha?: string; approval: OperationApproval }
+  | { kind: 'agent'; tool: string; agent: string }
   | { kind: 'none'; tool: string };
 
 export type DecisionKind = 'allow' | 'ask' | 'deny';

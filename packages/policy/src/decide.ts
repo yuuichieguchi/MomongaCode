@@ -205,6 +205,7 @@ const modeDefault = async (input: DecideInput, subject: PermissionSubject): Prom
   if (mode === 'bypassPermissions') return byMode('allow', 'bypassPermissions mode allows everything not explicitly denied');
   switch (subject.kind) {
     case 'none':
+    case 'agent':
       return byMode('allow', `${subject.tool} has no permission-relevant effect`);
     case 'mcp':
       return byMode('ask', `MCP tool mcp__${subject.server}__${subject.tool} requires approval`);

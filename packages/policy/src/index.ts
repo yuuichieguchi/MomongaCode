@@ -19,7 +19,7 @@ export type { Analysis, Segment } from './shell.ts';
 export { ASSIGNMENT } from './shell-lexemes.ts';
 export { computeFileRules, fileRuleSpecsOf } from './file-rules.ts';
 export type { DecisionKind, OperationApproval, PermissionSubject, PolicyTool } from './types.ts';
-export { modelVisibleTools } from './visible-tools.ts';
+export { deniedByNamedRule, modelVisibleTools } from './visible-tools.ts';
 export type { VisibleToolsOptions } from './visible-tools.ts';
 export { suggestAllowRule, suggestNetworkRule } from './suggest-allow-rule.ts';
 export { absoluteFrom } from './path-match.ts';
