@@ -405,6 +405,9 @@ export function App(props: AppProps) {
   const enterPhase = (next: Phase): void => {
     phaseRef.current = next.kind;
     setPhase(next);
+    const shown = store.byKey(BANNER_KEY)?.entry;
+    if (shown?.kind === 'banner' && shown.banner.model.kind === 'unread' && next.kind !== 'trust')
+      showBanner(bannerModelIn(next.kind, sessionModelRef.current, sessionEffortRef.current), shown.banner.notices, shown.banner.figure);
   };
 
   const renewHistory = (): void => {
@@ -502,6 +505,9 @@ export function App(props: AppProps) {
     setSessionEffort(session.effort);
     rereadModel();
   };
+
+  const bannerModelIn = (kind: Phase['kind'], model: string | undefined, effort: ReasoningEffort | undefined): BannerModel =>
+    kind === 'trust' ? { kind: 'unread' } : model === undefined ? { kind: 'not-connected', login: kind === 'unconnected' } : connectedModel(model, effort);
 
   const showBanner = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): void => {
     const banner = bannerOf(shownModel, shownNotices, figure);
@@ -1343,9 +1349,10 @@ export function App(props: AppProps) {
 
   const unconnected = phase.kind === 'unconnected';
   const beforeConversation = phase.kind === 'trust' || phase.kind === 'welcome';
+  const modelsUnread = phase.kind === 'trust';
   const syncBanner = useEffectEvent((): void => {
     if (sessionModel === undefined ? unconnected || beforeConversation : store.byKey(BANNER_KEY) !== undefined)
-      showBanner(sessionModel === undefined ? { kind: 'not-connected', login: unconnected } : connectedModel(sessionModel, sessionEffort), notices, figureFits);
+      showBanner(bannerModelIn(phase.kind, sessionModel, sessionEffort), notices, figureFits);
   });
 
   const measured = useEffectEvent((entry: MomongaModelEntry): void => showModel(entry));
@@ -1505,6 +1512,11 @@ export function App(props: AppProps) {
     setHint(exitHint(keys.hintFor(action)));
   };
 
+  const cancelAndArmExit = (action: ExitAction): void => {
+    if (armedExit.current?.action !== action) cancelNewest();
+    exitOnSecondPress(action);
+  };
+
   useEffect(
     () => () => {
       if (armedExit.current !== undefined) timers.clearTimeout(armedExit.current.timer);
@@ -1607,7 +1619,7 @@ export function App(props: AppProps) {
       else if (invitationShown) prompts.dismissInvitation();
     } else if (action === 'prompt.interrupt') {
       if (starting) finish({});
-      else if (working) cancelNewest();
+      else if (working) cancelAndArmExit(action);
       else if (current.text === '') exitOnSecondPress(action);
       else replaceEditor(emptyEditor(current.history));
     } else if (action === 'prompt.exit') {
@@ -1805,7 +1817,7 @@ export function App(props: AppProps) {
   const figureFits = followedStart === undefined ? conversationArea : panelRows !== undefined && bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
   useEffect(() => {
     syncBanner();
-  }, [sessionModel, sessionEffort, entriesVersion, notices, unconnected, beforeConversation, displays, figureFits]);
+  }, [sessionModel, sessionEffort, entriesVersion, notices, unconnected, beforeConversation, modelsUnread, displays, figureFits]);
   const tailPose = useTailWag(!a11y.reducedMotion && !a11y.screenReader && props.reopen === undefined && props.adoption === undefined && loading === undefined && onlyEntry?.kind === 'banner' && figureDrawn(onlyEntry.banner, transcriptWidth), timers);
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const view = useTranscriptView({

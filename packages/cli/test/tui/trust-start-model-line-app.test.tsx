@@ -14,7 +14,10 @@ const DEVSTRAL = 'ollama/devstral-small-2:latest';
 const QWEN = 'ollama/qwen3.8:27b';
 const WELCOME_TITLE = 'Connect a model to start';
 
-const modelLinesOf = (frame: string): string[] => frame.split('\n').map((row) => row.replace(/^[\s│]+/, '')).filter((row) => row.startsWith('model:'));
+const modelLinesOf = (frame: string): string[] => frame.split('\n').flatMap((row) => {
+  const at = row.indexOf('model:');
+  return at === -1 ? [] : [row.slice(at).replace(/[\s│]+$/, '')];
+});
 
 describe('the start figure while the trust question is on the screen says nothing about the model', () => {
   it('with a configured model, the trust frame has no model line, and after trusting the one start figure shows the configured model', async () => {
