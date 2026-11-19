@@ -166,7 +166,7 @@ describe('the words of a stop, a not-run reason, the budget, the shell quoting a
     const notice = messageOf('billingChangeRefused', 'tui', { model: 'm', from: 'a', to: 'b' });
     expect(notice).not.toContain('/models billing');
     expect(notice).not.toContain('models billing allow');
-    expect(withBillingRemedy(notice, 'tui', 'a', 'b')).toBe(`${notice} Run /models billing.`);
+    expect(withBillingRemedy(notice, 'tui', 'a', 'b')).toBe(`${notice} Allow it with /model, then Model settings…, then Billing changes.`);
     expect(withBillingRemedy(notice, 'cli', 'a', 'b')).toBe(`${notice} Run ${WORDS.command} models billing allow a b.`);
   });
 

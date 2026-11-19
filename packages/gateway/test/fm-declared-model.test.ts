@@ -44,6 +44,6 @@ describe('the model id a run sends to fm serve is the id of its entry', () => {
     const reply = await runThroughFakeFm({ models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'not-listed', toolCalling: 'native' } }) }, 'fm/not-listed');
     expect(reply.status).toBe(412);
     expect(reply.body.error).toMatchObject({ type: 'invalid_request', code: MODEL_ID_CHANGED_CODE, param: 'model' });
-    expect(reply.body.error.message).toBe('The server fm of the model fm/not-listed lists "system", not "not-listed". Run /models add to add the model it serves now.');
+    expect(reply.body.error.message).toBe('The server fm of the model fm/not-listed lists "system", not "not-listed". Run momonga models add to add the model it serves now.');
   });
 });

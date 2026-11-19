@@ -4,6 +4,7 @@ import type { ErrorType } from './open-responses.ts';
 import { CAPABILITIES_UNKNOWN_CODE, PLAN_STORE_STATES, SIGN_IN_REQUIRED_CODE } from './plan-api.ts';
 import { isMeasuring } from './measuring.ts';
 import type { Measuring } from './measuring.ts';
+import { MODEL_SETTINGS_ROW } from './model-settings.ts';
 import { SURFACES } from './vocabulary.ts';
 import type { Surface } from './vocabulary.ts';
 
@@ -299,13 +300,13 @@ const SHELL_UNAVAILABLE_REMEDY = 'Choose a model with momonga --model <model>, o
 
 const READINESS_REMEDIES: Readonly<Record<'no_tools' | 'unavailable', Readonly<Record<RemedySurface, string>>>> = {
   no_tools: {
-    tui: 'For coding work, choose another model with /model; /models add lists the local servers that are running.',
+    tui: `For coding work, choose another model with /model; its ${MODEL_SETTINGS_ROW} row adds a model of a local server that is running.`,
     cli: SHELL_NO_TOOLS_REMEDY,
     acp: SHELL_NO_TOOLS_REMEDY,
     gateway: SHELL_NO_TOOLS_REMEDY,
   },
   unavailable: {
-    tui: 'Choose a model with /model, or set one up with /models add.',
+    tui: `Choose a model with /model, or set one up through its ${MODEL_SETTINGS_ROW} row.`,
     cli: SHELL_UNAVAILABLE_REMEDY,
     acp: SHELL_UNAVAILABLE_REMEDY,
     gateway: SHELL_UNAVAILABLE_REMEDY,

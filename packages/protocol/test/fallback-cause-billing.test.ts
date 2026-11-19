@@ -11,7 +11,7 @@ describe('one renderer of a fallback cause covers billing records (P3, M9)', () 
   it('renders a refused billing change as the member that was not tried', () => {
     const refused = { target: 'metered', code: 'billing_change_refused', message: 'not tried', fromBilling: 'plan', toBilling: 'metered', reason: 'billing_change_refused' } as FallbackCause;
     expect(describeFallbackCause(refused)).toBe('Did not fall back to metered: billing from plan to metered is not allowed.');
-    expect(describeFallbackCauseOn(refused, 'tui')).toBe('Did not fall back to metered: billing from plan to metered is not allowed. Run /models billing.');
+    expect(describeFallbackCauseOn(refused, 'tui')).toBe('Did not fall back to metered: billing from plan to metered is not allowed. Allow it with /model, then Model settings…, then Billing changes.');
   });
 
   it('renders an allowed change as the failure of the member left, naming both billing kinds', () => {

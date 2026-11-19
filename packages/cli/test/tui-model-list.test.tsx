@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MODEL_SETTINGS_ROW } from '@momonga/protocol';
 import type { MomongaModelList } from '@momonga/protocol';
 import type { TestContext } from 'vitest';
 import { offeredServers } from '../src/commands/models.ts';
@@ -78,14 +79,14 @@ describe('the /model list (6.2)', () => {
   it('shows the found models that are not configured below a separator, only after a search the user started', async (context) => {
     const before = flowOf(context, threeModels(), []);
     await pickerOf(before).modelPicker(undefined);
-    expect(before.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local']);
+    expect(before.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', MODEL_SETTINGS_ROW]);
 
     const steps: Step[] = [{ pick: /^devstral-small-2/ }, { type: '32768' }, { pick: 'Yes' }];
     const after = flowOf(context, threeModels(), steps);
     after.context.found.remember(offeredServers([ollamaFound(OLLAMA_ADDRESS, ['qwen3.8:27b', 'devstral-small-2:latest'])]));
     const connected: string[] = [];
     await pickerOf(after, connected).modelPicker(undefined);
-    expect(after.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', 'Found on this computer', `devstral-small-2  ·  ${OLLAMA_ADDRESS}`]);
+    expect(after.picks()[0]?.rows).toEqual(['ollama/gemma-3-4b  ·  local', 'qwen3.8:27b  ·  local', 'lmstudio/gemma-3-4b  ·  local', 'Found on this computer', `devstral-small-2  ·  ${OLLAMA_ADDRESS}`, MODEL_SETTINGS_ROW]);
     expect(connected).toEqual(['ollama/devstral-small-2:latest']);
     expect((after.written() as { models: { connections: { models: { id: string }[] }[] } }).models.connections[0]?.models.map((model) => model.id)).toContain('devstral-small-2:latest');
   });

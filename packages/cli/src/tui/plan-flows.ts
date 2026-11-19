@@ -1,4 +1,4 @@
-import { isReasoningEffort, PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import { isReasoningEffort, MODEL_SETTINGS_ROW, PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type { ReasoningEffort, DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanModelsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
 import { displayMapOf } from '@momonga/protocol';
 import { GatewayAnswerError, listingViewsOf } from '../client/gateway-client.ts';
@@ -8,6 +8,7 @@ import { addBuiltIn, addFoundModel, addFromFound, addService, builtInRowOf, foun
 import type { Added } from './models/add.ts';
 import { openEdit } from './models/context.ts';
 import type { FoundServers, ModelsFlowContext } from './models/context.ts';
+import { runModelsHub } from './models/hub.ts';
 import { modelListRows } from './models/model-list.ts';
 import { writeStart } from './models/order.ts';
 import { effortAnswerText, writeModelEffort } from './commands/effort.ts';
@@ -462,9 +463,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       return;
     }
     const displays = displayMapOf(listingViewsOf(entries));
-    const allRows = [...rows, ...catalogChoices.map((entry) => entry.row)];
+    const allRows = [...rows, ...catalogChoices.map((entry) => entry.row), { label: MODEL_SETTINGS_ROW }];
     const choice = await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: allRows, alt: { label: ALSO_AT_START_LABEL }, ...(rows.some((row) => row.steps !== undefined) ? { stepsLabel: CHANGE_EFFORT_LABEL } : {}) });
     if (choice === undefined) return;
+    if (choice.index === allRows.length - 1) {
+      await runModelsHub(context);
+      await ports.refreshConnection();
+      await modelPicker(ports.model());
+      return;
+    }
     const row = listedRows[choice.index];
     if (row === undefined) {
       await catalogChoices[choice.index - listedRows.length]?.act();

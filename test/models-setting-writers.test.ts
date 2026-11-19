@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as config from '@momonga/config';
 import { SETTINGS_SCHEMA } from '@momonga/config';
 import { SOURCE_SCAN_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { HUB_ACTIONS, MODELS_TITLE } from '../packages/cli/src/tui/models/texts.ts';
 
 vi.setConfig({ testTimeout: SOURCE_SCAN_TEST_TIMEOUT_MS });
 
@@ -39,24 +40,24 @@ const PENDING: readonly Pending[] = [];
 
 const CONNECTION_PATH = 'models.connections[]';
 const ENTRY_PATH = `${CONNECTION_PATH}.models[]`;
-const REMOVAL_WRITER = { operations: ['removeConnection', 'removeModel'], inSession: ['/models'], shell: ['momonga models remove-server', 'momonga models remove'] } as const;
+const REMOVAL_WRITER = { operations: ['removeConnection', 'removeModel'], inSession: ['Models'], shell: ['momonga models remove-server', 'momonga models remove'] } as const;
 
 const FIXED_ROWS: readonly WriterRow[] = [
   { path: `${CONNECTION_PATH}.plan.profile`, operations: ['addModel'], inSession: ['/login'], shell: ['momonga auth login'] },
-  { path: CONNECTION_PATH, operations: ['removeConnection'], inSession: ['/models'], shell: ['momonga models remove-server'] },
-  { path: 'models.servers.*', operations: ['removeConnection', 'declareServer', 'setServerField', 'forgetServer'], inSession: ['/models'], shell: ['momonga models remove-server --forget-program', 'momonga models add-program', 'momonga models set-program', 'momonga models forget-program'] },
-  { path: `${CONNECTION_PATH}.provider`, operations: ['setProvider'], inSession: ['/models'], shell: ['momonga models name'] },
-  { path: `${ENTRY_PATH}.id`, operations: ['addModel', 'removeModel', 'setModelField'], inSession: ['/models'], shell: ['momonga models add', 'momonga models remove', 'momonga models set'] },
-  { path: 'models.start', operations: ['setStart', ...REMOVAL_WRITER.operations], inSession: ['/models start', '/model --start', ...REMOVAL_WRITER.inSession], shell: ['momonga models start', ...REMOVAL_WRITER.shell] },
-  { path: 'models.fallback[]', operations: ['setFallback', ...REMOVAL_WRITER.operations], inSession: ['/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models fallback', ...REMOVAL_WRITER.shell] },
-  { path: 'models.roles.*', operations: ['setRole', ...REMOVAL_WRITER.operations], inSession: ['/models role', ...REMOVAL_WRITER.inSession], shell: ['momonga models role', ...REMOVAL_WRITER.shell] },
-  { path: 'autoMode.classifier', operations: ['setClassifier', ...REMOVAL_WRITER.operations], inSession: ['/models role', '/auto-mode', ...REMOVAL_WRITER.inSession], shell: ['momonga models role set classifier', ...REMOVAL_WRITER.shell] },
-  { path: 'models.billingChanges[].from', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
-  { path: 'models.billingChanges[].to', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
-  { path: 'models.billingChanges[].model', operations: ['allowBillingChange', 'forbidBillingChange', ...REMOVAL_WRITER.operations], inSession: ['/models billing', '/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models billing', ...REMOVAL_WRITER.shell] },
+  { path: CONNECTION_PATH, operations: ['removeConnection'], inSession: ['Models'], shell: ['momonga models remove-server'] },
+  { path: 'models.servers.*', operations: ['removeConnection', 'declareServer', 'setServerField', 'forgetServer'], inSession: ['Models'], shell: ['momonga models remove-server --forget-program', 'momonga models add-program', 'momonga models set-program', 'momonga models forget-program'] },
+  { path: `${CONNECTION_PATH}.provider`, operations: ['setProvider'], inSession: ['Models'], shell: ['momonga models name'] },
+  { path: `${ENTRY_PATH}.id`, operations: ['addModel', 'removeModel', 'setModelField'], inSession: ['Models'], shell: ['momonga models add', 'momonga models remove', 'momonga models set'] },
+  { path: 'models.start', operations: ['setStart', ...REMOVAL_WRITER.operations], inSession: ['Models › Model for new sessions', '/model --start', ...REMOVAL_WRITER.inSession], shell: ['momonga models start', ...REMOVAL_WRITER.shell] },
+  { path: 'models.fallback[]', operations: ['setFallback', ...REMOVAL_WRITER.operations], inSession: ['Models › Fallback models', ...REMOVAL_WRITER.inSession], shell: ['momonga models fallback', ...REMOVAL_WRITER.shell] },
+  { path: 'models.roles.*', operations: ['setRole', ...REMOVAL_WRITER.operations], inSession: ['Models › Models for other roles', ...REMOVAL_WRITER.inSession], shell: ['momonga models role', ...REMOVAL_WRITER.shell] },
+  { path: 'autoMode.classifier', operations: ['setClassifier', ...REMOVAL_WRITER.operations], inSession: ['Models › Models for other roles', '/auto-mode', ...REMOVAL_WRITER.inSession], shell: ['momonga models role set classifier', ...REMOVAL_WRITER.shell] },
+  { path: 'models.billingChanges[].from', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['Models › Billing changes', 'Models › Fallback models'], shell: ['momonga models billing'] },
+  { path: 'models.billingChanges[].to', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['Models › Billing changes', 'Models › Fallback models'], shell: ['momonga models billing'] },
+  { path: 'models.billingChanges[].model', operations: ['allowBillingChange', 'forbidBillingChange', ...REMOVAL_WRITER.operations], inSession: ['Models › Billing changes', 'Models › Fallback models', ...REMOVAL_WRITER.inSession], shell: ['momonga models billing', ...REMOVAL_WRITER.shell] },
   { path: 'models.dialects.*', operations: ['setDialects'], inSession: ['/config'], shell: ['momonga models dialects set'] },
-  { path: 'models.headersTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
-  { path: 'models.idleTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
+  { path: 'models.headersTimeoutMs', operations: ['setTimeouts'], inSession: ['Models › Wait limits'], shell: ['momonga models timeouts'] },
+  { path: 'models.idleTimeoutMs', operations: ['setTimeouts'], inSession: ['Models › Wait limits'], shell: ['momonga models timeouts'] },
   { path: 'models.effort', operations: ['setEffort'], inSession: ['/config'], shell: ['momonga models effort'] },
 ];
 
@@ -80,10 +81,10 @@ const settable = (subject: 'model' | 'server', field: string): boolean => {
 
 const fieldRowOf = (leaf: string): WriterRow | undefined => {
   if (leaf.startsWith(`${ENTRY_PATH}.`)) {
-    return settable('model', fieldOfLeaf(leaf, ENTRY_PATH)) ? { path: leaf, operations: ['setModelField'], inSession: ['/models'], shell: ['momonga models set'] } : undefined;
+    return settable('model', fieldOfLeaf(leaf, ENTRY_PATH)) ? { path: leaf, operations: ['setModelField'], inSession: ['Models'], shell: ['momonga models set'] } : undefined;
   }
   if (leaf.startsWith(`${CONNECTION_PATH}.`)) {
-    return settable('server', fieldOfLeaf(leaf, CONNECTION_PATH)) ? { path: leaf, operations: ['setConnectionField', 'addModel'], inSession: ['/models'], shell: ['momonga models set-server', 'momonga models add'] } : undefined;
+    return settable('server', fieldOfLeaf(leaf, CONNECTION_PATH)) ? { path: leaf, operations: ['setConnectionField', 'addModel'], inSession: ['Models'], shell: ['momonga models set-server', 'momonga models add'] } : undefined;
   }
   return undefined;
 };
@@ -163,10 +164,15 @@ describe('every model setting can be changed from inside MomongaCode (I-N13)', (
     expect([...new Set(rows().flatMap((row) => row.operations))].sort()).toEqual([...OPERATIONS].sort());
   });
 
+  it('every in-session way a row names is a row of the Models screen, reached from /model and /config', () => {
+    const screenForms = [...new Set(rows().flatMap((row) => row.inSession).filter((form) => !form.startsWith('/')))].sort();
+    expect(screenForms.length).toBeGreaterThan(0);
+    expect(screenForms.filter((form) => { const [screen, row] = form.split(' › '); return screen !== MODELS_TITLE || (row !== undefined && !(HUB_ACTIONS as readonly string[]).includes(row)); })).toEqual([]);
+  });
+
   it('every in-session command a row names is in the slash registry, or is listed as pending until the screens are built', () => {
     const sources = slashSources();
-    const named = [...new Set(rows().flatMap((row) => row.inSession).map(slashFormOf))].sort();
-    expect(named.filter((form) => !form.startsWith('/'))).toEqual([]);
+    const named = [...new Set(rows().flatMap((row) => row.inSession).filter((form) => form.startsWith('/')).map(slashFormOf))].sort();
     expect(named.length).toBeGreaterThan(0);
     expect(named.filter((form) => !slashReached(form, sources))).toEqual(pendingOf('N3b'));
   });

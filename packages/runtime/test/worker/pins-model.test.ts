@@ -111,7 +111,7 @@ describe('what a run pins about its model (design-model-names 3.4, 3.10, 3.11, 1
     env.gateway.script.push(textStep('Child done.'));
     await drive(env, child.run.id);
     expect(env.run(child.run.id).status).toBe('FAILED');
-    expect(env.run(child.run.id).error).toEqual({ code: 'model_not_found', message: 'The model for summaries ("x") is not configured any more. Choose another with /models role.' });
+    expect(env.run(child.run.id).error).toEqual({ code: 'model_not_found', message: 'The model for summaries ("x") is not configured any more. Choose another with /model, then Model settings…, then Models for other roles.' });
     expect(env.gateway.streams).toEqual([]);
     expect(env.ofType(child.run.id, 'run.started')).toEqual([]);
   });

@@ -142,7 +142,7 @@ describe('the model id the managed fm target sends to fm serve', () => {
 
     await expect(target.upstreamModel(TARGET, new AbortController().signal)).rejects.toMatchObject({
       status: 412,
-      body: { type: 'invalid_request', code: MODEL_ID_CHANGED_CODE, param: 'model', message: `The server fm of the model fm/declared lists "${LISTED}", not "declared". Run /models add to add the model it serves now.` },
+      body: { type: 'invalid_request', code: MODEL_ID_CHANGED_CODE, param: 'model', message: `The server fm of the model fm/declared lists "${LISTED}", not "declared". Run momonga models add to add the model it serves now.` },
     });
   });
 

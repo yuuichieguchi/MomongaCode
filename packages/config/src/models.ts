@@ -382,8 +382,8 @@ const declaredCapabilitiesOf = (target: ResolvedModelTarget): { contextWindow?: 
 export const outputBoundFieldOf = (target: ResolvedModelTarget): string | undefined =>
   target.adapter === 'managed' ? target.outputBoundField : 'outputBoundField' in target.capabilities ? target.capabilities.outputBoundField : undefined;
 
-const NO_MODELS_TEXT = 'models must list at least one model; run /models add to add one';
-const MANAGED_NO_MODEL_TEXT = 'a managed server needs its model listed; run /models add to read it from the server';
+const NO_MODELS_TEXT = 'models must list at least one model; run momonga models add to add one';
+const MANAGED_NO_MODEL_TEXT = 'a managed server needs its model listed; run momonga models add to read it from the server';
 const MANAGED_ONE_MODEL_TEXT = 'a managed server serves one model; list one entry';
 
 const checkEntryCount = (connection: ModelConnection, where: string): void => {

@@ -5,8 +5,8 @@ import type { FallbackCause } from '@momonga/protocol';
 const refused: FallbackCause = { target: 'openai/gpt-5.5', name: 'gpt-5.5', code: 'billing_change_refused', message: 'not tried', fromBilling: 'plan', toBilling: 'metered', reason: 'billing_change_refused' };
 
 describe('the sentence of a fallback refused for its billing change', () => {
-  it('the terminal UI gives the design sentence with /models billing', () => {
-    expect(describeFallbackCauseOn(refused, 'tui')).toBe('Did not fall back to gpt-5.5: billing from plan to metered is not allowed. Run /models billing.');
+  it('the terminal UI gives the design sentence with the Billing changes row of Model settings', () => {
+    expect(describeFallbackCauseOn(refused, 'tui')).toBe('Did not fall back to gpt-5.5: billing from plan to metered is not allowed. Allow it with /model, then Model settings…, then Billing changes.');
   });
 
   it('the shell gives the design sentence with the shell command that allows the change', () => {

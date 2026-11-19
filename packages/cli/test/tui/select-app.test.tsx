@@ -301,7 +301,8 @@ describe('the slash menu is the same rows, inline above the input', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/mo', '> /mo');
     const shown = await untilFrame(app, '› /mode');
-    expect(shown).toMatch(/› \/mode .*\n {2}\/model \[model\] \[effort\] \[--start\] {2}.*\n {2}\/models \[add /);
+    expect(shown).toMatch(/› \/mode .*\n {2}\/model \[model\] \[effort\] \[--start\] {2}/);
+    expect(shown).not.toMatch(/\/models\b/);
     app.unmount();
   });
 

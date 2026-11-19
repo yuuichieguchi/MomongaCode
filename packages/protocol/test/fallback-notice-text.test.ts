@@ -24,7 +24,7 @@ describe('the fallback notice text', () => {
   });
 
   it('adds the billing remedy of the surface at display', () => {
-    expect(fallbackNoticeTextOn(refusedBilling, 'tui')).toBe(`${fallbackNoticeText(refusedBilling)} Run /models billing.`);
+    expect(fallbackNoticeTextOn(refusedBilling, 'tui')).toBe(`${fallbackNoticeText(refusedBilling)} Allow it with /model, then Model settings…, then Billing changes.`);
   });
 
   it('adds the sign-in remedy of the surface for a rejected plan credential', () => {

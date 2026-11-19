@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_DAEMON_START, APPLIES_NEXT_SESSION, APPLIES_NOW, COMMAND_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves } from '../../src/tui/settings-screen.tsx';
+import { MANDATE_ROW, OPEN_FILE_TITLE, ADD_ROW, APPLIES_NEXT_DAEMON_START, APPLIES_NEXT_SESSION, APPLIES_NOW, SETTINGS_LINKS, OPEN_SETTINGS_FILE_ROW, SAVE_TO_TITLE, SETTINGS_TITLE, SETTING_ROWS, STRUCTURED_LINES, settingLeaves, settingsLinkLabel } from '../../src/tui/settings-screen.tsx';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { ExternalEditorPort } from '../../src/tui/external-editor.ts';
 import { KEYS, TUI_TEST_TIMEOUT_MS, untilFrame, untilOutput } from '../ink-helpers.ts';
@@ -53,7 +53,7 @@ describe('/config, the settings screen', () => {
     expect(frame).toContain('Schema dialects  none  default');
     expect(frame).toContain('Reasoning effort of a model with none saved  medium  default');
     expect(frame).toContain('Sandbox  ');
-    for (const [name, link] of Object.entries(COMMAND_LINKS)) expect(frame).toContain(`${link.label}  /${name}`);
+    for (const link of Object.values(SETTINGS_LINKS)) expect(frame).toContain(settingsLinkLabel(link));
     expect(frame).toContain('up/down to move · enter to choose · type to filter · esc: go back');
     started.app.unmount();
   });

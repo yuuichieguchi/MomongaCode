@@ -1,4 +1,4 @@
-import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
+import { LOCAL_SERVER_CANDIDATES, MODEL_SETTINGS_ACTIONS, modelSettingsPath } from '@momonga/protocol';
 
 export const MODELS_TITLE = 'Models';
 export const ADD_TITLE = 'Add a model';
@@ -64,7 +64,7 @@ export const SERVER_ACTIONS = ['Edit server', 'Name this server', 'Remove server
 export const FORGET_PROGRAM_TOO_ROW = 'Also forget the server program';
 export const REMOVE_SERVER_ONLY_ROW = 'Remove the server';
 
-export const HUB_ACTIONS = ['Add a model', 'Model for new sessions', 'Fallback models', 'Billing changes', 'Models for other roles', 'Wait limits', 'Programs', 'Check the servers'] as const;
+export const HUB_ACTIONS = MODEL_SETTINGS_ACTIONS;
 
 export type HubAction = (typeof HUB_ACTIONS)[number];
 
@@ -132,7 +132,7 @@ export const startingModelSetText = (display: string): string => `Starting model
 
 export { sessionModelNotConfiguredText as notConfiguredAnyMoreText } from '@momonga/protocol';
 
-export const START_ONE_TEXT = 'Start one, or add it with /models add.';
+export const START_ONE_TEXT = `Start one, or add it with ${modelSettingsPath('Add a model')}.`;
 
 export const configuredSwitchText = (display: string): string => `${display} is configured; /model switches to it`;
 

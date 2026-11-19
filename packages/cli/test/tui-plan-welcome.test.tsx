@@ -226,7 +226,7 @@ describe('local servers from the welcome', () => {
   it('says that no server answered, with what to do next, when the search finds none', async () => {
     const { app } = await startPlan({ models: [], accounts: [], detected: [] });
     await choose(app, 'Use a local server');
-    await untilOutput(app, 'No model server answered on this computer. Start one, or add it with /models add.');
+    await untilOutput(app, 'No model server answered on this computer. Start one, or add it with /model, then Model settings…, then Add a model.');
     app.unmount();
   });
 });

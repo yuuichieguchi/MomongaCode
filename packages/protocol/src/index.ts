@@ -879,3 +879,5 @@ export {
 export { isMeasuring, measuringLineOf, measuringOfWire, measuringSkipOf, measuringStepOf, measuringWireOf } from './measuring.ts';
 export type { Measuring, MeasuringWire } from './measuring.ts';
 export { AGENT_FILE_SUFFIX, AGENT_FOLDER_PARTS, SKILL_FILE_NAME, SKILL_FOLDER_PARTS, SKILL_NAME_MAX_LENGTH, isValidSkillName } from './skill-agent-files.ts';
+export { MODEL_SETTINGS_ACTIONS, MODEL_SETTINGS_ROW, modelSettingsPath } from './model-settings.ts';
+export type { ModelSettingsAction } from './model-settings.ts';

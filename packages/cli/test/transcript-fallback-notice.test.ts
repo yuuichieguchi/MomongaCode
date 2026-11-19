@@ -23,7 +23,7 @@ describe('the fallback notice in the terminal transcript', () => {
       expect.objectContaining({
         kind: 'notice',
         level: 'warning',
-        text: `${refusedNotice.message} Run /models billing.`,
+        text: `${refusedNotice.message} Allow it with /model, then Model settings…, then Billing changes.`,
       }),
     ]);
   });

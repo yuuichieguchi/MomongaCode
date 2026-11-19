@@ -34,7 +34,7 @@ describe('a readiness state carries its message; the remedy belongs to the place
   });
 
   it('no tools, in the interactive screen', () => {
-    expect(readinessRemedy('no_tools', 'tui')).toBe('For coding work, choose another model with /model; /models add lists the local servers that are running.');
+    expect(readinessRemedy('no_tools', 'tui')).toBe('For coding work, choose another model with /model; its Model settings… row adds a model of a local server that is running.');
   });
 
   it('no tools, in the shell', () => {
@@ -42,7 +42,7 @@ describe('a readiness state carries its message; the remedy belongs to the place
   });
 
   it('unavailable, in the interactive screen', () => {
-    expect(readinessRemedy('unavailable', 'tui')).toBe('Choose a model with /model, or set one up with /models add.');
+    expect(readinessRemedy('unavailable', 'tui')).toBe('Choose a model with /model, or set one up through its Model settings… row.');
   });
 
   it('unavailable, in the shell', () => {

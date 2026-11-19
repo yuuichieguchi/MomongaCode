@@ -247,7 +247,7 @@ describe('the /models flows, one per row of 4.9.1', () => {
     expect(writtenOf(harness).models['fallback']).toEqual(['lmstudio/gemma-3-4b']);
   });
 
-  it('row 9: a billing change is asked inside the fallback flow and listed by /models billing', async (context) => {
+  it('row 9: a billing change is asked inside the fallback flow and listed by the Billing changes row', async (context) => {
     const { billingChanges: _allowed, fallback: _fallback, ...rest } = S3.models;
     const asked = flowOf(context, { models: rest }, [{ pick: 'Add a model' }, { pick: 'openai/gpt-5.5' }, YES, { pick: 'Only for openai/gpt-5.5' }, YES]);
     await runFallbackFlow(asked.context);

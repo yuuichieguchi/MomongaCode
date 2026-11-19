@@ -137,7 +137,7 @@ describe('rule M: a managed server that lists another id than its entry is never
       type: 'invalid_request',
       code: MODEL_ID_CHANGED_CODE,
       param: 'model',
-      message: 'The server apple of the model apple/system lists "renamed-by-the-server", not "system". Run /models add to add the model it serves now.',
+      message: 'The server apple of the model apple/system lists "renamed-by-the-server", not "system". Run momonga models add to add the model it serves now.',
     });
   });
 });

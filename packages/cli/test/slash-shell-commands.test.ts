@@ -26,7 +26,6 @@ const spies = vi.hoisted(() => ({
   contextImprove: vi.fn(async (...args: never[]) => (args.length >= 0 ? 0 : 1)),
   guidelineList: vi.fn(async (...args: never[]) => (args.length >= 0 ? 0 : 1)),
   policyVerify: vi.fn(async (...args: never[]) => (args.length >= 0 ? 0 : 1)),
-  listModels: vi.fn(async (...args: never[]) => (args.length >= 0 ? 0 : 1)),
   probeModel: vi.fn(async (...args: never[]) => (args.length >= 0 ? 0 : 1)),
 }));
 
@@ -39,7 +38,6 @@ vi.mock('../src/commands/memory.ts', async (original) => ({ ...(await original<o
 vi.mock('../src/commands/rule.ts', async (original) => ({ ...(await original<object>()), ruleAdd: spies.ruleAdd }));
 vi.mock('../src/commands/context.ts', async (original) => ({ ...(await original<object>()), contextImprove: spies.contextImprove, guidelineList: spies.guidelineList }));
 vi.mock('../src/commands/policy.ts', async (original) => ({ ...(await original<object>()), policyVerify: spies.policyVerify }));
-vi.mock('../src/commands/models.ts', async (original) => ({ ...(await original<object>()), listModels: spies.listModels }));
 vi.mock('../src/commands/gateway.ts', async (original) => ({ ...(await original<object>()), probeModel: spies.probeModel }));
 
 vi.mock('../src/paths.ts', () => ({ pathsOf: async () => ({}) }));
@@ -116,12 +114,11 @@ const CASES: readonly Case[] = [
   { line: '/context improve --dataset d.json --model a --token-cap 5 --outcome o.json', spy: 'contextImprove', args: [expect.objectContaining({ dataset: 'd.json', model: 'a', tokenCap: 5, outcome: 'o.json' })], background: true },
   { line: '/context guideline list', spy: 'guidelineList', args: [], background: true },
   { line: '/policy verify --json', spy: 'policyVerify', args: [expect.objectContaining({ json: true })], background: true },
-  { line: '/models --json', spy: 'listModels', from: 1, args: [{ json: true }], background: true },
   { line: '/gateway probe fm --samples 2', spy: 'probeModel', args: ['fm', expect.objectContaining({ samples: 2 })], background: true },
 ];
 
 describe('the shell commands that have a slash form', () => {
-  it.each([...new Set(['cost', 'status', 'jobs', 'trace', 'mcp', 'memory', 'rule', 'context', 'policy', 'models', 'gateway'])])('/%s is a default slash command with a description and a usage', (name) => {
+  it.each([...new Set(['cost', 'status', 'jobs', 'trace', 'mcp', 'memory', 'rule', 'context', 'policy', 'gateway'])])('/%s is a default slash command with a description and a usage', (name) => {
     const command = DEFAULT_SLASH_COMMANDS.find((entry) => entry.name === name);
     expect(command?.description).toBeTruthy();
     expect(createSlashRegistry(DEFAULT_SLASH_COMMANDS).find(name)).toBeDefined();
@@ -267,11 +264,11 @@ describe('the shell commands that have a slash form', () => {
   });
 
   it('reports a non-zero exit code', async () => {
-    spies.listModels.mockResolvedValueOnce(2);
+    spies.policyVerify.mockResolvedValueOnce(2);
     const { context, infos, backgrounds } = slashContext();
-    await run('/models --json', context);
+    await run('/policy verify --json', context);
     await Promise.all(backgrounds.map((entry) => entry.done));
-    expect(infos.at(-1)).toBe('/models exited with code 2');
+    expect(infos.at(-1)).toBe('/policy exited with code 2');
   });
 
   it('passes the signal of the background task to the command, so esc cancels it', async () => {

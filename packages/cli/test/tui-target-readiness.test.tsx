@@ -66,7 +66,7 @@ describe('the no-tools notice appears once to a TUI user', () => {
 
 const UNAVAILABLE_MESSAGE =
   'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
-const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up with /models add.';
+const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up through its Model settings… row.';
 const CHAT_ONLY = 'lmstudio/chat-only';
 
 describe('the TUI shows why a model the gateway lists as unavailable cannot be used (G1)', () => {

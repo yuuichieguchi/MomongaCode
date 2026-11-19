@@ -6,7 +6,8 @@ import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation'
 import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
 import { switchWordOf } from './screen/a11y.ts';
-import { settingsFileLine } from './models/texts.ts';
+import { runModelsHub } from './models/hub.ts';
+import { MODELS_TITLE, settingsFileLine } from './models/texts.ts';
 import type { SlashContext } from './slash.ts';
 
 export const SETTINGS_TITLE = 'Settings';
@@ -167,7 +168,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'mcp.closeGraceMs': { label: 'MCP server close grace (ms)', section: 'Shutdown' },
 };
 
-export const SETTINGS_REACHED_BY_COMMAND: Readonly<Record<string, string>> = {
+export const SETTINGS_REACHED_BY_LINK: Readonly<Record<string, string>> = {
   'permissions.defaultMode': 'permissions',
   'permissions.allow': 'permissions',
   'permissions.ask': 'permissions',
@@ -190,12 +191,16 @@ export const SETTINGS_REACHED_BY_COMMAND: Readonly<Record<string, string>> = {
   'models.idleTimeoutMs': 'models',
 };
 
-export const COMMAND_LINKS: Readonly<Record<string, { readonly section: SettingSection; readonly label: string }>> = {
-  permissions: { section: 'Permissions', label: 'Start mode, rules and directories' },
-  hooks: { section: 'Hooks', label: 'Hooks' },
-  mcp: { section: 'MCP', label: 'MCP servers' },
-  models: { section: 'Models', label: 'Models, connections, roles and timeouts' },
+export type SettingsLink = { readonly section: SettingSection; readonly label: string; readonly command?: string };
+
+export const SETTINGS_LINKS: Readonly<Record<string, SettingsLink>> = {
+  permissions: { section: 'Permissions', label: 'Start mode, rules and directories', command: 'permissions' },
+  hooks: { section: 'Hooks', label: 'Hooks', command: 'hooks' },
+  mcp: { section: 'MCP', label: 'MCP servers', command: 'mcp' },
+  models: { section: 'Models', label: MODELS_TITLE },
 };
+
+export const settingsLinkLabel = (link: SettingsLink): string => (link.command === undefined ? link.label : `${link.label}  /${link.command}`);
 
 export type EditorKind = 'toggle' | 'choice' | 'number' | 'text' | 'list' | 'choices' | 'map' | 'structured';
 
@@ -272,14 +277,14 @@ export const appliesLabelOf = (key: string, table: Readonly<Record<string, Setti
 
 export const settingRowValue = (value: unknown, source: SettingSource): string => [shownValue(value), source].join('  ');
 
-type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'mandate' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'command'; readonly command: string };
+type Listed = { readonly kind: 'heading' } | { readonly kind: 'open' } | { readonly kind: 'mandate' } | { readonly kind: 'setting'; readonly leaf: SettingLeaf; readonly presentation: SettingPresentation } | { readonly kind: 'link'; readonly link: SettingsLink };
 
 export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { readonly name: string }[], written: string | undefined, mandate?: ProjectMandateState): { rows: PickRow[]; listed: Listed[] } => {
   const leaves = settingLeaves();
   const rows: PickRow[] = [{ label: OPEN_SETTINGS_FILE_ROW }];
   const listed: Listed[] = [{ kind: 'open' }];
   for (const section of SETTING_SECTIONS) {
-    const links = Object.entries(COMMAND_LINKS).filter(([, link]) => link.section === section);
+    const links = Object.values(SETTINGS_LINKS).filter((link) => link.section === section);
     const settings = leaves.flatMap((leaf) => {
       const presentation = SETTING_ROWS[leaf.key];
       return presentation?.section === section ? [{ leaf, presentation }] : [];
@@ -287,10 +292,10 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
     if (links.length + settings.length === 0) continue;
     rows.push({ label: section, separator: true });
     listed.push({ kind: 'heading' });
-    for (const [command, link] of links) {
-      const known = commands.some((candidate) => candidate.name === command);
-      rows.push({ label: `${link.label}  /${command}`, ...(known ? {} : { disabled: true }) });
-      listed.push({ kind: 'command', command });
+    for (const link of links) {
+      const known = link.command === undefined || commands.some((candidate) => candidate.name === link.command);
+      rows.push({ label: settingsLinkLabel(link), ...(known ? {} : { disabled: true }) });
+      listed.push({ kind: 'link', link });
     }
     for (const { leaf, presentation } of settings) {
       const { value, source } = currentOf(snapshot, leaf.path);
@@ -819,6 +824,15 @@ const editSetting = async (context: SlashContext, snapshot: SettingsSnapshot, le
   return (await runCollection(context, collection)) ? { kind: 'written' } : LEFT;
 };
 
+const openLink = async (context: SlashContext, link: SettingsLink): Promise<void> => {
+  if (link.command === undefined) {
+    await runModelsHub(context);
+    await context.refreshConnection();
+    return;
+  }
+  await context.commands.find((command) => command.name === link.command)?.run('', context);
+};
+
 export const runSettingsScreen = async (context: SlashContext, live: readonly LiveSetting[]): Promise<void> => {
   let at = 0;
   let written: string | undefined;
@@ -841,8 +855,8 @@ export const runSettingsScreen = async (context: SlashContext, live: readonly Li
       sentence = outcome.kind === 'refused' ? outcome.sentence : undefined;
       continue;
     }
-    if (chosen.kind === 'command') {
-      await context.commands.find((command) => command.name === chosen.command)?.run('', context);
+    if (chosen.kind === 'link') {
+      await openLink(context, chosen.link);
       continue;
     }
     const outcome = await editSetting(context, snapshot, chosen.leaf, chosen.presentation, live);

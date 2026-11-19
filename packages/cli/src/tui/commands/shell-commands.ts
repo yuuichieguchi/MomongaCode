@@ -38,7 +38,6 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>] [--mandate <name>]', description: 'check the permission rules of this folder', subcommands: [
       { name: 'verify', description: 'prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect' },
     ] },
-  { name: 'models', usage: '[--json] | detect [url...] [--json]', description: 'list the configured models with the capabilities they declare, or find the local model servers that are running' },
   { name: 'gateway', usage: 'probe <model> [--samples <count>] [--step-timeout <seconds>] [--yes]', description: 'measure a model and record the result for the gateway', subcommands: [{ name: 'probe', description: 'measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record what it supports' }] },
 ];
 
@@ -90,7 +89,7 @@ const commandOf = (entry: ShellSlash): SlashCommand => ({
   run: (args, context) => runShellCommand(entry.name, args, context),
 });
 
-export const SCREEN_COMMAND_NAMES: readonly string[] = ['mcp', 'models'];
+export const SCREEN_COMMAND_NAMES: readonly string[] = ['mcp'];
 
 export const shellSlashCommands: readonly SlashCommand[] = SHELL_SLASH_COMMANDS.filter((entry) => !SCREEN_COMMAND_NAMES.includes(entry.name)).map(commandOf);
 

@@ -1,5 +1,6 @@
 import type { BudgetExhausted } from './budget.ts';
 import type { NotRunReason } from './completion.ts';
+import { modelSettingsPath } from './model-settings.ts';
 import type { StopReason } from './run-types.ts';
 
 export const SURFACES = ['cli', 'tui', 'acp', 'gateway'] as const;
@@ -238,9 +239,8 @@ const CONNECT_MODEL_REMEDY: Readonly<Record<Surface, string>> = {
   gateway: SHELL_CONNECT_MODEL_REMEDY,
 };
 
-const billingChangeRemedy = (surface: Surface, from: string, to: string): string => (surface === 'tui' ? '/models billing' : `${WORDS.command} models billing allow ${from} ${to}`);
-
-export const withBillingRemedy = (notice: string, surface: Surface, from: string, to: string): string => `${notice} Run ${billingChangeRemedy(surface, from, to)}.`;
+export const withBillingRemedy = (notice: string, surface: Surface, from: string, to: string): string =>
+  surface === 'tui' ? `${notice} Allow it with ${modelSettingsPath('Billing changes')}.` : `${notice} Run ${WORDS.command} models billing allow ${from} ${to}.`;
 
 const SIGN_IN_AGAIN_COMMAND: Readonly<Record<Surface, string>> = {
   cli: SIGN_IN_COMMAND,
@@ -389,7 +389,7 @@ const MESSAGES: { readonly [Key in MessageKey]: (surface: Surface, ...given: Mes
   aboutModel: (_surface, given) => `the ${WORDS.model} "${given.model}": ${given.text}`,
   modelNotReady: (_surface, given) => `the ${WORDS.model} "${given.model}" is not ready: ${given.reason}`,
   modelIdChanged: (_surface, given) =>
-    `The ${WORDS.server} ${given.server} of the ${WORDS.model} ${given.model} lists "${given.listed}", not "${given.entry}". Run /models add to add the ${WORDS.model} it serves now.`,
+    `The ${WORDS.server} ${given.server} of the ${WORDS.model} ${given.model} lists "${given.listed}", not "${given.entry}". Run ${WORDS.command} models add to add the ${WORDS.model} it serves now.`,
   serverSocketPathTooLong: (surface, given) =>
     MESSAGES.aboutModel(surface, {
       model: given.model,

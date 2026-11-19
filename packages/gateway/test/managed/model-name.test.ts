@@ -63,13 +63,13 @@ describe('the name of a managed model in a text is <server>/<model> (gateway-acc
     expect(await target.capabilities(ASKED)).toMatchObject(DECLARED_BOUNDS);
     await expect(target.upstreamModel(ASKED, new AbortController().signal)).rejects.toMatchObject({
       status: 412,
-      body: { code: MODEL_ID_CHANGED_CODE, param: 'model', message: 'The server apple of the model apple/declared lists "recorded", not "declared". Run /models add to add the model it serves now.' },
+      body: { code: MODEL_ID_CHANGED_CODE, param: 'model', message: 'The server apple of the model apple/declared lists "recorded", not "declared". Run momonga models add to add the model it serves now.' },
     });
   });
 
   it('builds the text of a changed model id from the server name and the model name', () => {
     expect(messageOf('modelIdChanged', 'gateway', { server: 'fm', model: 'fm/system', listed: 'renamed', entry: 'system' })).toBe(
-      'The server fm of the model fm/system lists "renamed", not "system". Run /models add to add the model it serves now.',
+      'The server fm of the model fm/system lists "renamed", not "system". Run momonga models add to add the model it serves now.',
     );
   });
 });

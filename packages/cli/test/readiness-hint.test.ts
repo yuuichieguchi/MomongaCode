@@ -107,6 +107,6 @@ describe('what a shell surface says when no model can answer', () => {
 
   it('the notice of the terminal UI ends with the remedy that names slash commands', () => {
     expect(readinessNoticeOf(agentReadiness({ toolCalling: 'none' }), 'tui')?.endsWith(readinessRemedy('no_tools', 'tui'))).toBe(true);
-    expect(readinessRemedy('no_tools', 'tui')).toBe('For coding work, choose another model with /model; /models add lists the local servers that are running.');
+    expect(readinessRemedy('no_tools', 'tui')).toBe('For coding work, choose another model with /model; its Model settings… row adds a model of a local server that is running.');
   });
 });

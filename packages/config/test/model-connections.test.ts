@@ -69,16 +69,16 @@ describe('a connection the loader refuses, each with its one sentence', () => {
   });
 
   it('a managed connection with no model entry gets the managed sentence and no other', async () => {
-    const sentence = 'models.connections[0]: a managed server needs its model listed; run /models add to read it from the server';
+    const sentence = 'models.connections[0]: a managed server needs its model listed; run momonga models add to read it from the server';
     expect(await sentenceOf({ models: { connections: [{ adapter: 'managed', server: 'fm' }] } })).toBe(sentence);
     expect(await sentenceOf({ models: { connections: [{ adapter: 'managed', server: 'fm', models: [] }] } })).toBe(sentence);
   });
 
   it('a connection of any other adapter with no models or an empty list', async () => {
-    const sentence = 'models.connections[0]: models must list at least one model; run /models add to add one';
+    const sentence = 'models.connections[0]: models must list at least one model; run momonga models add to add one';
     expect(await sentenceOf({ models: { connections: [{ adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434' }] } })).toBe(sentence);
     expect(await sentenceOf({ models: { connections: [{ adapter: 'chat-completions', baseUrl: 'http://127.0.0.1:8080/v1', models: [] }] } })).toBe(sentence);
-    expect(await sentenceOf({ models: { connections: [S3_PLAN, { adapter: 'open-responses', plan: { profile: 'chatgpt', account: 'chatgpt-2' } }] } })).toBe('models.connections[1]: models must list at least one model; run /models add to add one');
+    expect(await sentenceOf({ models: { connections: [S3_PLAN, { adapter: 'open-responses', plan: { profile: 'chatgpt', account: 'chatgpt-2' } }] } })).toBe('models.connections[1]: models must list at least one model; run momonga models add to add one');
   });
 
   it('an unknown key in a connection', async () => {

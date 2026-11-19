@@ -13,7 +13,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 type DumpRecord = { argv: string[]; pid: number };
 
 const OWN_NAME = 'not-listed';
-const CHANGED_ID_TEXT = `The server apple of the model apple/${OWN_NAME} lists "system", not "${OWN_NAME}". Run /models add to add the model it serves now.`;
+const CHANGED_ID_TEXT = `The server apple of the model apple/${OWN_NAME} lists "system", not "${OWN_NAME}". Run momonga models add to add the model it serves now.`;
 
 const serves = (file: string): DumpRecord[] =>
   fs.existsSync(file)
