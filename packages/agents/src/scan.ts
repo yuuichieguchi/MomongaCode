@@ -4,7 +4,8 @@ import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills
 import type { SkillFileSystem } from '@momonga/skills';
 import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
 import type { Mandate } from '@momonga/protocol';
-import type { AgentDefinition, AgentScope, ProjectAgentApproved, ProjectAgentFile } from './types.ts';
+import { BUILT_IN_AGENTS } from './builtin.ts';
+import type { AgentDefinition, AgentFileScope, FileAgentDefinition, ProjectAgentApproved, ProjectAgentFile } from './types.ts';
 
 export type AgentScanRequest = { home: string; projectRoot: string; trusted: boolean; projectAgentApproved: ProjectAgentApproved };
 
@@ -47,9 +48,9 @@ const mandateOf = (fields: Readonly<Record<string, unknown>>, location: string, 
   };
 };
 
-type ReadAgent = { agent: AgentDefinition; text: string };
+type ReadAgent = { agent: FileAgentDefinition; text: string };
 
-const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSystem, warnings: string[]): Promise<ReadAgent | undefined> => {
+const agentOf = async (file: string, scope: AgentFileScope, fileSystem: SkillFileSystem, warnings: string[]): Promise<ReadAgent | undefined> => {
   const reading = await attemptRead(() => fileSystem.readText(file));
   if (reading.kind === 'unreadable') {
     warnings.push(`Agent at ${file} was skipped: ${describeUnreadable(reading.error)}`);
@@ -95,7 +96,7 @@ const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSys
     if (!SUPPORTED_FIELDS.has(field)) warnings.push(`Agent ${JSON.stringify(trimmedName)} at ${file} uses the field ${JSON.stringify(field)}, which is not supported and was ignored`);
   }
   const trimmedModel = typeof model === 'string' ? model.trim() : undefined;
-  const agent: AgentDefinition = {
+  const agent: FileAgentDefinition = {
     name: trimmedName,
     description: description.trim(),
     prompt: parsed.body,
@@ -110,9 +111,9 @@ const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSys
 
 export const scanAgents = async ({ home, projectRoot, trusted, projectAgentApproved }: AgentScanRequest, fileSystem: SkillFileSystem): Promise<AgentScanResult> => {
   const warnings: string[] = [];
-  const chosen = new Map<string, AgentDefinition>();
+  const chosen = new Map<string, FileAgentDefinition>();
   const waiting = new Map<string, ProjectAgentFile>();
-  const locations: { scope: AgentScope; directory: string }[] = [
+  const locations: { scope: AgentFileScope; directory: string }[] = [
     { scope: 'project', directory: path.join(projectRoot, AGENT_DIRECTORY_SEGMENTS) },
     { scope: 'user', directory: homeLayout(home).agents },
   ];
@@ -146,5 +147,8 @@ export const scanAgents = async ({ home, projectRoot, trusted, projectAgentAppro
       chosen.set(agent.name, agent);
     }
   }
-  return { agents: [...chosen.values()].sort(byName), warnings, pendingApproval: [...waiting.values()].sort(byName) };
+  const builtIns: AgentDefinition[] = BUILT_IN_AGENTS.map((builtIn) => chosen.get(builtIn.name) ?? builtIn);
+  const builtInNames = new Set(BUILT_IN_AGENTS.map((builtIn) => builtIn.name));
+  const fromFiles = [...chosen.values()].filter((agent) => !builtInNames.has(agent.name)).sort(byName);
+  return { agents: [...builtIns, ...fromFiles], warnings, pendingApproval: [...waiting.values()].sort(byName) };
 };

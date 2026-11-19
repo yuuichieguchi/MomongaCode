@@ -331,7 +331,7 @@ describe('worker subagents', () => {
     expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ output: 'child text' }]);
   });
 
-  it('hides project agents in an untrusted folder', async () => {
+  it('hides project agents in an untrusted folder and offers only the built-in agent', async () => {
     const env = await makeEnv();
     env.settings.trustedValue = false;
     writeAgent(env, 'reviewer');
@@ -339,7 +339,8 @@ describe('worker subagents', () => {
     const parent = await env.enqueue('Review');
     env.gateway.script.push(textStep('ok'));
     await env.runOnce(worker);
-    expect(toolNames(env, 0)).not.toContain('Agent');
+    const agentTool = (env.gateway.streams[0]?.body.tools ?? []).find((tool) => tool.type === 'function' && tool.name === 'Agent');
+    expect(agentTool).toMatchObject({ parameters: { properties: { subagent_type: { enum: ['general-purpose'] } } } });
     expect(env.ofType(parent.id, 'notice').map((event) => event.message).join('\n')).toContain('not trusted');
   });
 });

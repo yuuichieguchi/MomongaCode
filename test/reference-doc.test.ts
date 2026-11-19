@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { GENERAL_PURPOSE_AGENT } from '../packages/agents/src/builtin.ts';
 import { referenceNames, renderReference } from '../scripts/reference.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -84,5 +85,14 @@ describe('the settings table of the reference', () => {
     expect(rowOf(reference, 'sandbox')).toContain('`"seatbelt"` on darwin');
     expect(rowOf(reference, 'hooks.<name>[].hooks[].timeout')).toMatch(/\| `600`; `UserPromptSubmit`: `30` \| seconds \|/);
     expect(rowOf(reference, 'limits.maxCostUsd')).toContain('| USD |');
+  });
+});
+
+describe('the built-in agents of the reference', () => {
+  it('lists every built-in agent with its description under the built-in tools', async () => {
+    const reference = await renderReference();
+    const section = reference.slice(reference.indexOf('### Built-in agents'));
+    expect(section).toContain(`| \`${GENERAL_PURPOSE_AGENT.name}\` | ${GENERAL_PURPOSE_AGENT.description} |`);
+    expect(reference.indexOf('### Built-in agents')).toBeGreaterThan(reference.indexOf('## Built-in tools'));
   });
 });

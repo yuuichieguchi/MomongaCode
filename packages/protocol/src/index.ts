@@ -439,7 +439,7 @@ export { EVENT_PAYLOAD_RENAMES, withCurrentNames } from './stored-names.ts';
 export type { StoredRenames } from './stored-names.ts';
 export { approvalEndingText, answerText, SURFACE_NAMES } from './approval-ending.ts';
 export type { ApprovalEndingFacts } from './approval-ending.ts';
-export { PERSON_CAPABILITY_HEADER, SURFACE_HEADER, COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, MAX_APPROVAL_TTL_MS, MAX_MANDATE_TIME_MS, MAX_RUN_TIMEOUT_MS, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, isOpaqueEvent, PATTERN_RULES, runApiSchemaName, toPublicRunEvent, MODEL_COST_SCHEMA } from './run-api.ts';
+export { BUILT_IN_AGENT_SCOPE, PERSON_CAPABILITY_HEADER, SURFACE_HEADER, COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, STREAM_FAILED_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, SESSION_SANDBOX_NETWORKS, MAX_APPROVAL_TTL_MS, MAX_MANDATE_TIME_MS, MAX_RUN_TIMEOUT_MS, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, isOpaqueEvent, PATTERN_RULES, runApiSchemaName, toPublicRunEvent, MODEL_COST_SCHEMA } from './run-api.ts';
 export type { DaemonCurrentFrame, StreamFailedFrame } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
 export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
@@ -478,6 +478,7 @@ export type {
   RunTraceView,
   SkillScope,
   SkillView,
+  AgentFileScope,
   AgentScope,
   AgentView,
   AgentsResponse,

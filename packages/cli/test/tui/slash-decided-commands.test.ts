@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
 import type { AgentView, SkillView } from '@momonga/protocol';
 import { readSettingsSnapshot } from '@momonga/config';
-import { AGENTS_TITLE } from '../../src/tui/commands/agents.ts';
+import { AGENTS_TITLE, BUILT_IN_LABEL, builtInAgentText } from '../../src/tui/commands/agents.ts';
 import { CREATE_FROM_TEMPLATE_ROW, OPEN_IN_EDITOR_ROW, SKILLS_TITLE } from '../../src/tui/commands/skills.ts';
 import { NOTHING_TO_COPY } from '../../src/tui/commands/copy.ts';
 import { OPEN_AGENTS_FILE_ROW } from '../../src/tui/commands/memory.ts';
@@ -104,6 +104,18 @@ describe('/skills and /agents (design-screens 12.1 row 41)', () => {
     const file = path.join(place.home, '.momonga', 'agents', 'helper.md');
     expect(recorded.opened).toEqual([file]);
     expect(fs.readFileSync(file, 'utf8')).toMatch(/^---\nname: helper\ndescription: /);
+  });
+
+  it('lists the built-in agent first, marked as built in, and opens no file for it', async () => {
+    const builtIn: AgentView = { name: 'general-purpose', description: 'A general subagent', scope: 'builtin' };
+    const { context, recorded } = contextOf({}, { agents: [builtIn, AGENT] }, { choices: [{ index: 0, alt: false }] });
+    await runSlash('agents', '', context);
+    expect(BUILT_IN_LABEL).toBe('built in');
+    expect(recorded.picks[0]?.rows.map((row) => row.label)).toEqual(['general-purpose  built in', `reviewer  user  ${AGENT.location}`, CREATE_FROM_TEMPLATE_ROW]);
+    expect(recorded.picks).toHaveLength(1);
+    expect(recorded.opened).toEqual([]);
+    expect(recorded.infos).toEqual([builtInAgentText(builtIn.name, builtIn.description)]);
+    expect(builtInAgentText('general-purpose', 'A general subagent.')).toBe('general-purpose is built in, so it has no file to open. A general subagent. An agent file with the name general-purpose replaces it.');
   });
 
   it('creates a skill from a template and refuses a name whose file exists', async () => {

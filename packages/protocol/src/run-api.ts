@@ -302,7 +302,8 @@ const runLimits = closed(
 const location = closed({ path: string, line: nonNegativeInteger }, ['path']);
 
 const SKILL_SCOPES = ['project', 'user'] as const;
-const AGENT_SCOPES = ['project', 'user'] as const;
+const AGENT_FILE_SCOPES = ['project', 'user'] as const;
+export const BUILT_IN_AGENT_SCOPE = 'builtin';
 
 const toolAwait: JsonSchema = {
   oneOf: [
@@ -333,10 +334,12 @@ const skillView = closed(
   ['name', 'description', 'scope', 'location'],
 );
 
-const agentView = closed(
-  { name: string, description: string, scope: enumOf(AGENT_SCOPES), location: string },
-  ['name', 'description', 'scope', 'location'],
-);
+const agentView: JsonSchema = {
+  oneOf: [
+    closed({ name: string, description: string, scope: constant(BUILT_IN_AGENT_SCOPE) }, ['name', 'description', 'scope']),
+    closed({ name: string, description: string, scope: enumOf(AGENT_FILE_SCOPES), location: string }, ['name', 'description', 'scope', 'location']),
+  ],
+};
 
 const summaryFidelity = closed(
   {
@@ -1262,9 +1265,11 @@ export type SkillView = { name: string; description: string; scope: SkillScope; 
 
 export type SkillsResponse = { skills: SkillView[]; warnings: string[] };
 
-export type AgentScope = (typeof AGENT_SCOPES)[number];
+export type AgentFileScope = (typeof AGENT_FILE_SCOPES)[number];
 
-export type AgentView = { name: string; description: string; scope: AgentScope; location: string };
+export type AgentScope = AgentFileScope | typeof BUILT_IN_AGENT_SCOPE;
+
+export type AgentView = { name: string; description: string; scope: typeof BUILT_IN_AGENT_SCOPE } | { name: string; description: string; scope: AgentFileScope; location: string };
 
 export type AgentsResponse = { agents: AgentView[]; warnings: string[] };
 

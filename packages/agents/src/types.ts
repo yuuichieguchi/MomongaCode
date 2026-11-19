@@ -1,18 +1,24 @@
 import type { Mandate, RunReport } from '@momonga/protocol';
 import type { AnyTool } from '@momonga/tools';
 
-export type AgentScope = 'project' | 'user';
+export type AgentFileScope = 'project' | 'user';
 
-export type AgentDefinition = {
+export type AgentScope = AgentFileScope | 'builtin';
+
+type AgentFields = {
   name: string;
   description: string;
   prompt: string;
   tools?: readonly string[];
   model?: string;
   mandate?: Mandate;
-  scope: AgentScope;
-  location: string;
 };
+
+export type BuiltInAgentDefinition = AgentFields & { scope: 'builtin' };
+
+export type FileAgentDefinition = AgentFields & { scope: AgentFileScope; location: string };
+
+export type AgentDefinition = BuiltInAgentDefinition | FileAgentDefinition;
 
 export type AgentPin = {
   name: string;
@@ -46,7 +52,7 @@ export type AgentSet = {
   agents: readonly AgentDefinition[];
   pendingApproval: readonly ProjectAgentFile[];
   warnings: readonly string[];
-  tool(runs: ChildRunSpawner): AnyTool | undefined;
+  tool(runs: ChildRunSpawner): AnyTool;
 };
 
 export type ProjectAgentFile = { name: string; text: string; source: string };

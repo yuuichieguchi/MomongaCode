@@ -147,7 +147,7 @@ describe('the runtime agent load path with crafted files', () => {
     write(path.join(agents, 'bomb.md'), `---\nname: bomb\ndescription: Bomb\n${ALIAS_BOMB}\n---\nWork.\n`);
     write(path.join(agents, 'good.md'), goodAgent('good'));
     const set = await agentPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
-    expect(set.agents.map((agent) => agent.name)).toEqual(['good']);
+    expect(set.agents.map((agent) => agent.name)).toEqual(['general-purpose', 'good']);
     expect(set.warnings.join('\n')).toMatch(/bomb\.md was skipped: the frontmatter is not valid YAML/);
   });
 
@@ -159,7 +159,7 @@ describe('the runtime agent load path with crafted files', () => {
     write(path.join(agents, 'locked.md'), goodAgent('locked'));
     lock(path.join(agents, 'locked.md'));
     const set = await agentPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
-    expect(set.agents.map((agent) => agent.name)).toEqual(['good']);
+    expect(set.agents.map((agent) => agent.name)).toEqual(['general-purpose', 'good']);
     expect(set.warnings.join('\n')).toContain('locked.md');
   });
 
@@ -169,7 +169,7 @@ describe('the runtime agent load path with crafted files', () => {
     fs.mkdirSync(agents, { recursive: true });
     lock(agents);
     const set = await agentPortFor(home).load(sessionAt(project), NEVER_CANCELLED);
-    expect(set.agents).toEqual([]);
+    expect(set.agents.map((agent) => agent.name)).toEqual(['general-purpose']);
     expect(set.warnings.join('\n')).toContain('EACCES');
   });
 });

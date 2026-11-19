@@ -71,9 +71,7 @@ export const toSkillView = (skill: Skill): SkillView => ({
   location: skill.location,
 });
 
-export const toAgentView = (agent: AgentDefinition): AgentView => ({
-  name: agent.name,
-  description: agent.description,
-  scope: agent.scope,
-  location: agent.location,
-});
+export const toAgentView = (agent: AgentDefinition): AgentView =>
+  agent.scope === 'builtin'
+    ? { name: agent.name, description: agent.description, scope: agent.scope }
+    : { name: agent.name, description: agent.description, scope: agent.scope, location: agent.location };

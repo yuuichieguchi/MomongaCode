@@ -127,7 +127,7 @@ Run `momonga` with no prompt to start an interactive session instead. The first 
 
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
 - **Models.** Connections to Ollama, chat-completions servers, Open Responses servers, Anthropic, and server programs that Momonga Code starts itself, such as Apple's `fm`. A model is called by the name its server gives it. `models.fallback` lists the models tried next when a model cannot answer. `momonga gateway probe <model>` measures a model's capabilities and records the result.
-- **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background work), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents), `LoadTools`, and `activate_skill`, and the operations tools for Git, pull requests and issues (`GitStage`, `GitCommit`, `GitPush` and the others): each states what it changes, and the approval names it. [docs/reference.md](docs/reference.md) lists every tool.
+- **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background work), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents: the general subagent `general-purpose` is built in and needs no setup), `LoadTools`, and `activate_skill`, and the operations tools for Git, pull requests and issues (`GitStage`, `GitCommit`, `GitPush` and the others): each states what it changes, and the approval names it. [docs/reference.md](docs/reference.md) lists every tool.
 - **Permission modes.** The mode decides what a call that no rule decides does:
   - `manual` asks before every call that changes something or reaches the network;
   - `acceptEdits` also allows, without asking, edits and file-system commands inside the workspace;
@@ -141,7 +141,7 @@ Run `momonga` with no prompt to start an interactive session instead. The first 
 - **Auto mode.** `momonga auto-mode` measures how well a model judges approvals for auto mode. Auto mode is honored only from user settings or the command line.
 - **Sandbox.** Bash runs under Seatbelt on macOS and bubblewrap on Linux. Windows has no sandbox in this release: Bash asks before every command.
 - **Memory and rules.** `momonga memory` and `momonga rule` (see section 2).
-- **Skills and agents.** Skills are `SKILL.md` files found in `.momonga/skills` and `.agents/skills` of the project and in `~/.momonga/skills` and `~/.agents/skills`. Custom agents are read from `.momonga/agents` directories. Project skills are loaded only for trusted folders.
+- **Skills and agents.** Skills are `SKILL.md` files found in `.momonga/skills` and `.agents/skills` of the project and in `~/.momonga/skills` and `~/.agents/skills`. A general subagent, `general-purpose`, is built in; custom agents are read from `.momonga/agents` directories, and a custom agent named `general-purpose` replaces the built-in one. Project skills are loaded only for trusted folders.
 - **MCP.** Servers over stdio or HTTP with OAuth. `momonga mcp list` and `momonga mcp login <server>`. Pending MCP input requests are handled with `momonga elicit`.
 - **Hooks.** Commands run on `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, and `SessionStart`. A hook that exits with code 2 blocks.
 - **Editor integration.** `momonga acp` speaks the Agent Client Protocol on standard input and output.

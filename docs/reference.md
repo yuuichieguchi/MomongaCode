@@ -922,6 +922,9 @@ The file `~/.momonga/keybindings.json` changes the keys of the interactive sessi
 | `menu.complete` | menu | `tab` | complete the highlighted command |
 | `menu.run` | menu | `enter` | run the highlighted command |
 | `menu.close` | menu | `escape`, `ctrl+c` | close the menu |
+| `agents.previous` | agents | `up` | the row above in the list of views; above main, back to the input |
+| `agents.next` | agents | `down` | the row below in the list of views |
+| `agents.open` | agents | `enter` | show the view of the chosen row: main or a running subagent |
 | `select.up` | select | `up`, `ctrl+p`, `k` | move up |
 | `select.down` | select | `down`, `ctrl+n`, `j` | move down |
 | `select.pageUp` | select | `pageup` | move up by a page |
@@ -1005,3 +1008,11 @@ The file `~/.momonga/keybindings.json` changes the keys of the interactive sessi
 | `PullRequestComments` | Reads the comments of a pull request: every review comment with its id, file and line (a comment whose line is no longer in the diff shows the file alone), and every conversation comment with its id, each followed by its text. The text is what people wrote on the forge. Nothing is changed. |
 | `IssueRead` | Reads an issue: its number, title, state, author and text, and every comment on it with its id and author, each followed by its text. The text is what people wrote on the forge. Nothing is changed. |
 | `IssueComment` | Posts a comment on an issue. The comment carries a hidden marker so that a call that was interrupted can be matched with the comment it posted. A posted comment cannot be taken back, so an interrupted call whose comment cannot be found is reported as unknown and not repeated. |
+
+### Built-in agents
+
+The `Agent` tool offers these subagents with no setup, before the agents of the files in `.momonga/agents`. An agent file with the same name replaces one; a file of a trusted folder replaces it only once you approve it.
+
+| Agent | Meaning |
+| --- | --- |
+| `general-purpose` | A general subagent for work that needs its own context: researching a question across many files, carrying out several steps, or searching when it is not known where the answer is. Use it to keep that material out of this session; it returns only its result. |

@@ -7,6 +7,7 @@ import type { EntryIo, EnvironmentVariableKind } from '@momonga/foundation';
 import type { SettingDefaultsBy } from '@momonga/config';
 import { TOOL_NAMES } from '@momonga/protocol';
 import { OPERATION_SPECS } from '@momonga/tools';
+import { AGENT_TOOL_NAME, BUILT_IN_AGENTS } from '@momonga/agents';
 import { buildProgram } from '../packages/cli/src/program.ts';
 import type { CliPorts } from '../packages/cli/src/ports.ts';
 import { INTERNAL_COMMANDS } from '../packages/cli/src/daemon/launcher.ts';
@@ -213,6 +214,14 @@ export const renderReference = async (): Promise<string> => {
     '| Tool | Meaning |',
     '| --- | --- |',
     ...OPERATION_SPECS.map((spec) => `| ${code(spec.name)} | ${cell(spec.description)} |`),
+    '',
+    '### Built-in agents',
+    '',
+    `The ${code(AGENT_TOOL_NAME)} tool offers these subagents with no setup, before the agents of the files in ${code('.momonga/agents')}. An agent file with the same name replaces one; a file of a trusted folder replaces it only once you approve it.`,
+    '',
+    '| Agent | Meaning |',
+    '| --- | --- |',
+    ...BUILT_IN_AGENTS.map((agent) => `| ${code(agent.name)} | ${cell(agent.description)} |`),
     '',
   ];
   return lines.join('\n');

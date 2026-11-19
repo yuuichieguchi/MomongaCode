@@ -29,7 +29,7 @@ describe('completion conditions in agent front matter', () => {
       [`${PROJECT}/.momonga/agents/fixer.md`]: agentFile('fixer', 'conditions:\n  - npm test\n  - npm run lint\nrequirements:\n  - the changelog mentions the fix\n'),
     });
     expect(set.warnings).toEqual([]);
-    const [agent] = set.agents;
+    const [, agent] = set.agents;
     expect((agent as unknown as MandateHolder).mandate?.completion).toMatchObject({
       conditions: [
         { command: 'npm test', when: 'always' },
@@ -42,18 +42,18 @@ describe('completion conditions in agent front matter', () => {
   it('reads inherit false from the front matter', async () => {
     const set = await load({ [`${PROJECT}/.momonga/agents/fixer.md`]: agentFile('fixer', 'conditions:\n  - npm test\ninherit: false\n') });
     expect(set.warnings).toEqual([]);
-    expect((set.agents[0] as unknown as MandateHolder).mandate?.completion?.inherit).toBe(false);
+    expect((set.agents[1] as unknown as MandateHolder).mandate?.completion?.inherit).toBe(false);
   });
 
   it('skips a definition whose conditions are not a list of non-empty strings', async () => {
     const set = await load({ [`${PROJECT}/.momonga/agents/fixer.md`]: agentFile('fixer', 'conditions: 3\n') });
-    expect(set.agents).toEqual([]);
+    expect(set.agents.map((agent) => agent.name)).toEqual(['general-purpose']);
     expect(set.warnings.join('\n')).toContain('conditions');
   });
 
   it('pins the mandate with the definition and reads it back', async () => {
     const set = await load({ [`${PROJECT}/.momonga/agents/fixer.md`]: agentFile('fixer', 'conditions:\n  - npm test\n') });
-    const [agent] = set.agents;
+    const [, agent] = set.agents;
     if (agent === undefined) throw new Error('the agent was not loaded');
     const pin = pinOf(agent);
     expect((pin as unknown as MandateHolder).mandate?.completion?.conditions).toMatchObject([{ command: 'npm test' }]);
@@ -63,10 +63,10 @@ describe('completion conditions in agent front matter', () => {
   it('gives the Agent tool no completion or mandate field, so the model cannot declare or weaken a condition', async () => {
     const set = await load({ [`${PROJECT}/.momonga/agents/fixer.md`]: agentFile('fixer', 'conditions:\n  - npm test\n') });
     const tool = set.tool({ spawn: async () => ({ state: 'running', runId: 'r', sessionId: 's' }) });
-    const schema = tool?.inputSchema as { properties: Record<string, unknown>; additionalProperties: boolean } | undefined;
-    expect(Object.keys(schema?.properties ?? {}).sort()).toEqual(['description', 'prompt', 'subagent_type']);
-    expect(schema?.additionalProperties).toBe(false);
-    expect((set.agents[0] as unknown as MandateHolder).mandate?.completion?.conditions).toHaveLength(1);
+    const schema = tool.inputSchema as { properties: Record<string, unknown>; additionalProperties: boolean };
+    expect(Object.keys(schema.properties).sort()).toEqual(['description', 'prompt', 'subagent_type']);
+    expect(schema.additionalProperties).toBe(false);
+    expect((set.agents[1] as unknown as MandateHolder).mandate?.completion?.conditions).toHaveLength(1);
   });
 });
 

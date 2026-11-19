@@ -69,17 +69,31 @@ const openFile = async (context: SlashContext, file: ListedFile): Promise<void> 
   await openInEditor(context, file.location);
 };
 
-export const listTemplateFiles = async (context: SlashContext, spec: { title: string; kind: TemplateKind; command: string; files: readonly ListedFile[]; warnings: readonly string[] }): Promise<void> => {
+export type ListedBuiltIn = { name: string; label: string; chosen: (context: SlashContext) => void };
+
+export const listTemplateFiles = async (
+  context: SlashContext,
+  spec: { title: string; kind: TemplateKind; command: string; builtIns: readonly ListedBuiltIn[]; files: readonly ListedFile[]; warnings: readonly string[] },
+): Promise<void> => {
   const choice = await context.overlays.choose({
     title: spec.title,
     lines: [...spec.warnings],
-    rows: [...spec.files.map((file) => ({ label: `${file.name}  ${file.scope}  ${file.location}` })), { label: CREATE_FROM_TEMPLATE_ROW }],
+    rows: [
+      ...spec.builtIns.map((builtIn) => ({ label: `${builtIn.name}  ${builtIn.label}` })),
+      ...spec.files.map((file) => ({ label: `${file.name}  ${file.scope}  ${file.location}` })),
+      { label: CREATE_FROM_TEMPLATE_ROW },
+    ],
     decideOn: 'enter',
     escape: 'back',
     filter: false,
   });
   if (choice === undefined) return;
-  const file = spec.files[choice.index];
+  const builtIn = spec.builtIns[choice.index];
+  if (builtIn !== undefined) {
+    builtIn.chosen(context);
+    return;
+  }
+  const file = spec.files[choice.index - spec.builtIns.length];
   if (file === undefined) await createFile(context, spec.kind, spec.command);
   else await openFile(context, file);
 };
@@ -89,6 +103,6 @@ export const skillsCommand: SlashCommand = {
   description: 'list the skill files, open one in $EDITOR, or create one from a template',
   run: async (_args, context) => {
     const { skills, warnings } = await context.backend.skills();
-    await listTemplateFiles(context, { title: SKILLS_TITLE, kind: 'skill', command: 'skills', files: skills, warnings });
+    await listTemplateFiles(context, { title: SKILLS_TITLE, kind: 'skill', command: 'skills', builtIns: [], files: skills, warnings });
   },
 };
