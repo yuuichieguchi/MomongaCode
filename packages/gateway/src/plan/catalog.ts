@@ -1,8 +1,9 @@
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { Clock, CredentialStore, EventPayload } from '@momonga/foundation';
-import { maxOutputTokensFor } from '@momonga/protocol';
-import type { PlanCatalogEntry, PlanModelsResponse } from '@momonga/protocol';
+import { isReasoningEffort, maxOutputTokensFor } from '@momonga/protocol';
+import type { PlanCatalogEntry, PlanModelsResponse, ReasoningCapability, ReasoningEffort } from '@momonga/protocol';
+import { OPEN_RESPONSES_REASONING_EFFORTS } from '../adapters/open-responses/request.ts';
 import { afterCredentialEffect, sendAuthorized } from '../adapters/shared/auth.ts';
 import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import { createUpstreamClassifier } from '../adapters/shared/classify.ts';
@@ -28,7 +29,31 @@ export const NO_REPORTED_WINDOW = 'the server reports no context window for this
 
 const CATALOG_LABEL = 'plan catalog';
 
-type RecordEntry = { contextWindow: number; maxOutputTokens: number; source: 'reported' } | { unreported: true; reason?: string };
+export type ReportedReasoning = { efforts: readonly ReasoningEffort[]; default?: ReasoningEffort };
+
+type RecordEntry = { contextWindow: number; maxOutputTokens: number; source: 'reported'; reasoning?: ReportedReasoning } | { unreported: true; reason?: string };
+
+export type CatalogCapabilities = { contextWindow: number; maxOutputTokens: number; reasoning?: ReasoningCapability };
+
+const SENDABLE_EFFORTS: readonly ReasoningEffort[] = OPEN_RESPONSES_REASONING_EFFORTS;
+
+const levelOf = (level: unknown): unknown => (isRecord(level) ? ownEntry(level, 'effort') : level);
+
+const reportedReasoningOf = (levels: unknown, preferred: unknown): ReportedReasoning | undefined => {
+  if (!Array.isArray(levels)) return undefined;
+  const named = levels.map(levelOf);
+  const efforts = SENDABLE_EFFORTS.filter((effort) => named.includes(effort));
+  if (efforts.length === 0) return undefined;
+  return isReasoningEffort(preferred) && efforts.includes(preferred) ? { efforts, default: preferred } : { efforts };
+};
+
+const reasoningEntryOf = (reasoning: ReportedReasoning | undefined): { reasoning?: ReportedReasoning } => (reasoning === undefined ? {} : { reasoning });
+
+const capabilityOf = (reasoning: ReportedReasoning): ReasoningCapability => {
+  const [lowest] = reasoning.efforts;
+  if (lowest === undefined) throw new Error('a reported reasoning control has no level');
+  return { control: 'reasoning_effort', lowest, efforts: reasoning.efforts, ...(reasoning.default === undefined ? {} : { default: reasoning.default }) };
+};
 
 export const unusableReasonOf = (entry: { unreported: true; reason?: string }): string => entry.reason ?? NO_REPORTED_WINDOW;
 
@@ -40,7 +65,7 @@ export type PlanCatalog = {
   read(request: CatalogRead): Promise<PlanModelsResponse>;
   record(profile: string, account: string, signal: AbortSignal): Promise<CatalogRecord | undefined>;
   load(profile: string, account: string, signal: AbortSignal): Promise<void>;
-  capabilitiesOf(profile: string, account: string, model: string): { contextWindow: number; maxOutputTokens: number } | undefined;
+  capabilitiesOf(profile: string, account: string, model: string): CatalogCapabilities | undefined;
 };
 
 export type PlanCatalogOptions = { store: CredentialStore; clock: Clock; outbound: PlanOutbound; sleep: PlanSleep; events?: PlanEvents };
@@ -66,7 +91,8 @@ const recordEntryOf = (entry: unknown): RecordEntry => {
   const contextWindow = isRecord(entry) ? ownEntry(entry, 'contextWindow') : undefined;
   const maxOutputTokens = isRecord(entry) ? ownEntry(entry, 'maxOutputTokens') : undefined;
   if (typeof contextWindow !== 'number' || typeof maxOutputTokens !== 'number') throw new Error('the plan catalog record has an unrecognised entry');
-  return { contextWindow, maxOutputTokens, source: 'reported' };
+  const stored = isRecord(entry) ? ownEntry(entry, 'reasoning') : undefined;
+  return { contextWindow, maxOutputTokens, source: 'reported', ...reasoningEntryOf(isRecord(stored) ? reportedReasoningOf(ownEntry(stored, 'efforts'), ownEntry(stored, 'default')) : undefined) };
 };
 
 const parseRecord = (text: string): CatalogRecord => {
@@ -79,13 +105,16 @@ const parseRecord = (text: string): CatalogRecord => {
   return { readAt, models };
 };
 
-type Listed = { models: PlanCatalogEntry[]; entryKeys: string[] };
+type Reasonings = ReadonlyMap<string, ReportedReasoning>;
+
+type Listed = { models: PlanCatalogEntry[]; entryKeys: string[]; reasonings: Reasonings };
 
 const listedOf = (profile: PlanProfile, body: unknown): Listed | undefined => {
   const { listKey, filter, unusableWhen, idKey, labelKey } = profile.catalog;
   const listed = isRecord(body) ? body[listKey] : undefined;
   if (!Array.isArray(listed)) return undefined;
   const entryKeys = new Set<string>();
+  const reasonings = new Map<string, ReportedReasoning>();
   const models = listed.flatMap((entry: unknown): PlanCatalogEntry[] => {
     if (!isRecord(entry) || entry[filter.field] !== filter.equals) return [];
     const slug = entry[idKey];
@@ -95,19 +124,22 @@ const listedOf = (profile: PlanProfile, body: unknown): Listed | undefined => {
     const displayName = typeof label === 'string' && label !== '' ? label : slug;
     if (entry[unusableWhen.field] === unusableWhen.equals) return [{ slug, displayName, usable: false, reason: unusableWhen.reason }];
     const contextWindow = reportedContextWindow(entry);
-    return [contextWindow === undefined ? { slug, displayName, usable: false, reason: NO_REPORTED_WINDOW } : { slug, displayName, usable: true, contextWindow, maxOutputTokens: maxOutputTokensFor(contextWindow) }];
+    if (contextWindow === undefined) return [{ slug, displayName, usable: false, reason: NO_REPORTED_WINDOW }];
+    const reasoning = reportedReasoningOf(entry['supported_reasoning_levels'], entry['default_reasoning_level']);
+    if (reasoning !== undefined) reasonings.set(slug, reasoning);
+    return [{ slug, displayName, usable: true, contextWindow, maxOutputTokens: maxOutputTokensFor(contextWindow) }];
   });
-  return { models, entryKeys: [...entryKeys].sort() };
+  return { models, entryKeys: [...entryKeys].sort(), reasonings };
 };
 
 const UNCLASSIFIED = 'unclassified';
 
 const requestIdHeaderNames = (headers: Record<string, string>): string[] => Object.keys(requestIdsOf(headers)).sort();
 
-const recordOf = (response: PlanModelsResponse): CatalogRecord => ({
+const recordOf = (response: PlanModelsResponse, reasonings: Reasonings): CatalogRecord => ({
   readAt: response.readAt,
   models: Object.fromEntries(
-    response.models.map((entry): [string, RecordEntry] => [entry.slug, entry.usable ? { contextWindow: entry.contextWindow, maxOutputTokens: entry.maxOutputTokens, source: 'reported' } : entry.reason === NO_REPORTED_WINDOW ? { unreported: true } : { unreported: true, reason: entry.reason }]),
+    response.models.map((entry): [string, RecordEntry] => [entry.slug, entry.usable ? { contextWindow: entry.contextWindow, maxOutputTokens: entry.maxOutputTokens, source: 'reported', ...reasoningEntryOf(reasonings.get(entry.slug)) } : entry.reason === NO_REPORTED_WINDOW ? { unreported: true } : { unreported: true, reason: entry.reason }]),
   ),
 });
 
@@ -161,7 +193,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
     }
   };
 
-  const readUpstream = async (fetch: PlanFetch, request: CatalogRead): Promise<PlanModelsResponse> => {
+  const readUpstream = async (fetch: PlanFetch, request: CatalogRead): Promise<{ response: PlanModelsResponse; reasonings: Reasonings }> => {
     const classify = createUpstreamClassifier(CATALOG_LABEL, request.profile.errorRules);
     let ended = false;
     const end = (fields: EventPayload): void => {
@@ -194,7 +226,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
         throw new Error(`the ${request.profile.messages.identityLabel} model list has no ${request.profile.catalog.listKey} array`);
       }
       end({ outcome: 'ok', listed: listed.models.length, usable: listed.models.filter((entry) => entry.usable).length, entryKeys: listed.entryKeys.map(eventScalar), requestIdHeaders });
-      return { readAt: new Date(options.clock.now()).toISOString(), models: listed.models };
+      return { response: { readAt: new Date(options.clock.now()).toISOString(), models: listed.models }, reasonings: listed.reasonings };
     } catch (error) {
       if (!ended) end({ outcome: PLAN_EVENT_INTERNAL, requestIdHeaders });
       throw error;
@@ -217,18 +249,19 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
       const saved = await readableRecord(request);
       if (saved !== undefined && answered.readAt === saved.readAt && isFresh(saved, options.clock.now())) return answered;
     }
-    const response = await options.outbound(request.signal, (fetch) => readUpstream(fetch, request));
-    const fresh = recordOf(response);
+    const { response, reasonings } = await options.outbound(request.signal, (fetch) => readUpstream(fetch, request));
+    const fresh = recordOf(response, reasonings);
     await recordAccess('write', listOf(request.profile.id, request.account), () => options.store.write(key, JSON.stringify(fresh), request.signal), request.signal);
     answers.set(key, response);
     records.set(key, fresh);
     return response;
   };
 
-  const capabilitiesOf = (profile: string, account: string, model: string): { contextWindow: number; maxOutputTokens: number } | undefined => {
+  const capabilitiesOf = (profile: string, account: string, model: string): CatalogCapabilities | undefined => {
     const record = records.get(catalogKey(profile, account));
     const entry = record === undefined ? undefined : ownEntry(record.models, model);
-    return entry === undefined || 'unreported' in entry ? undefined : { contextWindow: entry.contextWindow, maxOutputTokens: entry.maxOutputTokens };
+    if (entry === undefined || 'unreported' in entry) return undefined;
+    return { contextWindow: entry.contextWindow, maxOutputTokens: entry.maxOutputTokens, ...(entry.reasoning === undefined ? {} : { reasoning: capabilityOf(entry.reasoning) }) };
   };
 
   return { read, record, load, capabilitiesOf };

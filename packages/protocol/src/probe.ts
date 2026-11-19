@@ -1,4 +1,4 @@
-import type { HealthResult, ImageTokenModel, OutputBoundField, ReasoningCapability } from './capabilities.ts';
+import type { HealthResult, ImageTokenModel, OutputBoundField, ReasoningEffort } from './capabilities.ts';
 import type { ConstructSupport } from './dialect.ts';
 
 export const DEFAULT_PROBE_STEP_SECONDS = 120;
@@ -44,7 +44,7 @@ export type ProbeReport = {
   stopSequences: boolean;
   outputBoundField?: OutputBoundField | 'none';
   parallelToolCalls?: { accepted: boolean; multiCallRate: number };
-  reasoning?: Exclude<ReasoningCapability, { control: 'thinking' }>;
+  reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: ReasoningEffort };
   maxConcurrency?: { value: number; evidence: 'refused' };
   imageInputAccepted: boolean;
   imageTokens?: ImageTokenModel;

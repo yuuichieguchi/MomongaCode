@@ -89,7 +89,7 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     expect(listed.body.models).toEqual(realistic.map((entry) => ({ slug: entry.slug, displayName: entry.display_name, usable: true, contextWindow: 272000, maxOutputTokens: 68000 })));
     const record = await readRecord(gateway);
     expect(Object.keys(record).sort()).toEqual(['models', 'readAt']);
-    for (const entry of realistic) expect(record.models[entry.slug]).toEqual({ contextWindow: 272000, maxOutputTokens: 68000, source: 'reported' });
+    for (const entry of realistic) expect(record.models[entry.slug]).toEqual({ contextWindow: 272000, maxOutputTokens: 68000, source: 'reported', reasoning: { efforts: ['low'] } });
     const file = fs.readFileSync(credentialFileFor(catalogDirectory(gateway), RECORD_KEY), 'utf8');
     expect(file).not.toContain('coding agent');
     expect(Buffer.byteLength(file)).toBeLessThan(4096);
