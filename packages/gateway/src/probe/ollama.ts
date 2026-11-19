@@ -30,7 +30,7 @@ import { JSON_MODE_PROBE_REQUEST, measureJsonMode } from './json-mode.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
 import { jsonReplyPlanOf } from '../adapters/shared/json-reply.ts';
 import { OLLAMA_VOCABULARY } from '../adapters/ollama/vocabulary.ts';
-import { recordProbe } from './auto-probe.ts';
+import { recordProbe, targetNotReadyError } from './auto-probe.ts';
 import { measuringAskOf, readReportedFields } from './sources.ts';
 import type { ReportedFields } from './sources.ts';
 import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
@@ -41,7 +41,7 @@ import type { KernelLockMechanism } from '@momonga/foundation';
 import { meteredPrecondition, requireMeasurementConsent } from './consent.ts';
 import type { MeasurementBound, MeteredMeasurement } from './consent.ts';
 import { meteredGateOf } from './probe-endpoint.ts';
-import { DeclaredWindowAboveReportedError } from './declared-window.ts';
+import { DeclaredWindowAboveReportedError, ReportedWindowMissingError } from './declared-window.ts';
 
 export type ProbeOllamaTargetOptions = {
   ports: ProbePorts;
@@ -51,7 +51,7 @@ export type ProbeOllamaTargetOptions = {
   upstream: UpstreamEndpoint;
   key: EndpointKey;
   model: string;
-  contextWindow: number;
+  contextWindow?: number;
   samples?: number;
   userDialects?: UserDialects;
   declaredDialect?: DialectId;
@@ -150,7 +150,7 @@ const promptEvalCountOf = (body: unknown): number | undefined => {
   return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : undefined;
 };
 
-const imageCostProbeOf = (client: ProbeClient, model: string, contextWindow: number): ImageCostProbe => {
+const imageCostProbeOf = (client: ProbeClient, model: string, statedWindow: number | undefined): ImageCostProbe => {
   const send = (imageUrl: string | undefined): Promise<HttpResult> => {
     const request = buildOllamaChatBody(
       {
@@ -163,7 +163,8 @@ const imageCostProbeOf = (client: ProbeClient, model: string, contextWindow: num
           },
         ],
       },
-      { contextWindow, maxOutputTokens: CACHE_PROBE_OUTPUT_TOKENS },
+      { maxOutputTokens: CACHE_PROBE_OUTPUT_TOKENS },
+      statedWindow,
       false,
       NO_REASONING_IS_OWN,
     );
@@ -184,10 +185,11 @@ const imageCostProbeOf = (client: ProbeClient, model: string, contextWindow: num
   };
 };
 
-const measurePromptCache = async (client: ProbeClient, model: string, contextWindow: number): Promise<OllamaProbeReport['promptCache']> => {
+const measurePromptCache = async (client: ProbeClient, model: string, statedWindow: number | undefined): Promise<OllamaProbeReport['promptCache']> => {
   const request = buildOllamaChatBody(
     { model, input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: Array.from({ length: CACHE_PROBE_WORDS }, () => 'word').join(' ') }] }] },
-    { contextWindow, maxOutputTokens: CACHE_PROBE_OUTPUT_TOKENS },
+    { maxOutputTokens: CACHE_PROBE_OUTPUT_TOKENS },
+    statedWindow,
     false,
     NO_REASONING_IS_OWN,
   );
@@ -198,9 +200,11 @@ const measurePromptCache = async (client: ProbeClient, model: string, contextWin
   return { kind: cached > 0 ? 'automatic' : 'none' };
 };
 
-const askJsonOnly = async (client: ProbeClient, model: string, contextWindow: number): Promise<JsonModeAnswer> => {
+type ProbeWindow = { stated: number | undefined; counted: number };
+
+const askJsonOnly = async (client: ProbeClient, model: string, window: ProbeWindow): Promise<JsonModeAnswer> => {
   const request = { ...JSON_MODE_PROBE_REQUEST, model };
-  const body = buildOllamaChatBody(request, { contextWindow, maxOutputTokens: maxOutputTokensFor(contextWindow) }, false, NO_REASONING_IS_OWN, {
+  const body = buildOllamaChatBody(request, { maxOutputTokens: maxOutputTokensFor(window.counted) }, window.stated, false, NO_REASONING_IS_OWN, {
     jsonReply: jsonReplyPlanOf(request, { structuredOutput: 'none', jsonMode: 'json_object' }),
   });
   const result = await client.request('POST', CHAT_PATH, body);
@@ -214,7 +218,7 @@ const askJsonOnly = async (client: ProbeClient, model: string, contextWindow: nu
 
 const ABSENT_STATUSES: readonly number[] = [404, 501];
 
-const ollamaTransport = (client: ProbeClient, model: string, contextWindow: number): SelectionTransport => ({
+const ollamaTransport = (client: ProbeClient, model: string, window: ProbeWindow): SelectionTransport => ({
   legs: { responseFormat: true, tools: false },
   request: async (request) => {
     if (request.kind === 'tools' || request.kind === 'construct-tools') throw new Error('the Ollama dialect step has no tools leg');
@@ -223,7 +227,7 @@ const ollamaTransport = (client: ProbeClient, model: string, contextWindow: numb
       messages: messagesOf(request),
       stream: false,
       truncate: false,
-      options: { num_ctx: contextWindow, num_predict: maxOutputTokensFor(contextWindow) },
+      options: { ...(window.stated === undefined ? {} : { num_ctx: window.stated }), num_predict: maxOutputTokensFor(window.counted) },
       format: request.schema,
     });
     if (ABSENT_STATUSES.includes(result.status)) return { kind: 'absent' };
@@ -257,18 +261,19 @@ export const measureOllama =
     const serverVersion = versionOf(version);
     if (serverVersion === undefined) throw new Error(`the server at ${key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
     const { trained, capabilities } = show;
-    if (options.contextWindow > trained) throw new DeclaredWindowAboveReportedError(model, options.contextWindow, trained, key.endpoint);
+    if (options.contextWindow !== undefined && options.contextWindow > trained) throw new DeclaredWindowAboveReportedError(model, options.contextWindow, trained, key.endpoint);
+    const window: ProbeWindow = { stated: options.contextWindow, counted: options.contextWindow ?? trained };
     const identity = digestIn(tags, model);
     if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
     const imageInputAccepted = capabilities.includes('vision');
     step('image tokens');
     const imageTokens = imageInputAccepted
-      ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), measured)
+      ? await withClient(upstream, options.ports, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, window.stated)), measured)
       : undefined;
     step('prompt cache');
-    const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, options.contextWindow), measured);
+    const promptCache = await withClient(upstream, options.ports, signal, (client) => measurePromptCache(client, model, window.stated), measured);
     step('JSON mode');
-    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, options.contextWindow), measured));
+    const jsonMode = await measureJsonMode(() => withClient(upstream, options.ports, signal, (client) => askJsonOnly(client, model, window), measured));
     const userDialects = options.userDialects ?? NO_USER_DIALECTS;
     step('schema dialect');
     const selection = await withClient(
@@ -277,7 +282,7 @@ export const measureOllama =
       signal,
       (client) =>
         selectDialect({
-          transport: ollamaTransport(client, model, options.contextWindow),
+          transport: ollamaTransport(client, model, window),
           samples: options.samples ?? DEFAULT_SAMPLES,
           userDialects,
           declaredDialect: options.declaredDialect,
@@ -309,6 +314,11 @@ export const ollamaPrecondition = (upstream: UpstreamEndpoint, ports: ProbeHostP
     return { kind: 'refused', message: `the Ollama server does not list the model "${model}"`, detail: `GET ${TAGS_PATH} has no entry for it`, remedy: `ollama pull ${model}` };
   },
 });
+
+export const unknownWindowRefusal = async (listed: ProbePrecondition, display: string, target: string): Promise<Error> => {
+  const verdict = await listed.check(new AbortController().signal);
+  return verdict.kind === 'refused' ? targetNotReadyError(target, verdict) : new ReportedWindowMissingError(display);
+};
 
 export type OllamaProbeSubjectOptions = {
   target: string;

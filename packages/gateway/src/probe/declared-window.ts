@@ -1,6 +1,7 @@
 import { SERVER_KINDS } from '@momonga/protocol';
 import type { DetectedModel, ProviderAdapter } from '@momonga/protocol';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
+import { NO_REPORTED_WINDOW } from '../reported-window.ts';
 import { describeModel, detectLocalServers } from '../detect-local-servers.ts';
 import type { DetectFetch } from '../detect-local-servers.ts';
 import type { ExecFn } from '../managed/preconditions.ts';
@@ -38,6 +39,13 @@ export class DeclaredWindowAboveReportedError extends PreconditionFailedError {
       `declare capabilities.contextWindow ${reported}, or load the model with a context length of at least ${declared}`,
     );
     this.name = 'DeclaredWindowAboveReportedError';
+  }
+}
+
+export class ReportedWindowMissingError extends PreconditionFailedError {
+  constructor(display: string) {
+    super(aboutModel(display, NO_REPORTED_WINDOW), undefined, 'declare capabilities.contextWindow');
+    this.name = 'ReportedWindowMissingError';
   }
 }
 

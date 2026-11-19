@@ -51,6 +51,8 @@ export type FakeOllamaOptions = {
   chat?: OllamaChatReply[];
   version?: { status: number; body: unknown };
   show?: unknown;
+  showStatus?: () => number;
+  hangs?: readonly string[];
   tags?: () => unknown;
   completions?: readonly string[];
   cacheProbe?: 'automatic' | 'none' | 'unreported' | 'malformed';
@@ -116,13 +118,18 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
     const body = parsedBody(await readBody(req));
     const url = new URL(req.url ?? '/', 'http://fake');
     requests.push({ method: req.method ?? '', path: url.pathname, headers: req.headers, body });
+    if (options.hangs?.includes(url.pathname) === true) {
+      await new Promise<void>((resolve) => res.once('close', () => resolve()));
+      return;
+    }
     if (url.pathname === '/api/version' && req.method === 'GET') {
       const version = options.version ?? { status: 200, body: fixtureJson('version.json') };
       sendJson(res, version.status, version.body);
       return;
     }
     if (url.pathname === '/api/show' && req.method === 'POST') {
-      sendJson(res, 200, options.show ?? fixtureJson('api-show.json'));
+      const status = options.showStatus?.() ?? 200;
+      sendJson(res, status, status === 200 ? (options.show ?? fixtureJson('api-show.json')) : { error: 'the fake Ollama answers this read with an error' });
       return;
     }
     if (url.pathname === '/api/tags' && req.method === 'GET') {
@@ -215,6 +222,7 @@ export const makeOllamaAdapter = (fake: FakeOllama, overrides: Partial<OllamaAda
   const adapter = createOllamaAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }),
     capabilities: async () => OLLAMA_CAPABILITIES,
+    statedWindow: OLLAMA_CAPABILITIES.contextWindow,
     clock: createFakeClock(START_MS),
     ...overrides,
   });

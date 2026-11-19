@@ -13,9 +13,11 @@ const readFileTool = {
   parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false },
 };
 
-const sentBody = async (request: AdapterRequest, contextWindow = OLLAMA_CAPABILITIES.contextWindow): Promise<any> => {
+const STATED = { statedWindow: OLLAMA_CAPABILITIES.contextWindow, contextWindow: OLLAMA_CAPABILITIES.contextWindow };
+
+const sentBody = async (request: AdapterRequest, { statedWindow, contextWindow }: { statedWindow: number | undefined; contextWindow: number } = STATED): Promise<any> => {
   const fake = await startFakeOllama({ chat: [textReply()] });
-  const adapter = makeOllamaAdapter(fake, { capabilities: async () => ({ ...OLLAMA_CAPABILITIES, contextWindow }) });
+  const adapter = makeOllamaAdapter(fake, { capabilities: async () => ({ ...OLLAMA_CAPABILITIES, contextWindow }), statedWindow });
   const { error } = await collectOllama(adapter, request);
   expect(error).toBeUndefined();
   const bodies = fake.chatBodies();
@@ -30,7 +32,7 @@ const rejection = async (request: AdapterRequest): Promise<{ error: any; chatReq
 };
 
 describe('ollama request: the native chat endpoint and the context size (I1)', () => {
-  it('posts to /api/chat with num_ctx equal to the resolved contextWindow and num_predict equal to the output limit', async () => {
+  it('posts to /api/chat with num_ctx equal to the stated contextWindow and num_predict equal to the output limit', async () => {
     const body = await sentBody({ model: 'devstral-small-2', instructions: 'be brief', input: [userText('hi')], max_output_tokens: 300 });
     expect(body.model).toBe('devstral-small-2');
     expect(body.messages).toEqual([
@@ -41,11 +43,23 @@ describe('ollama request: the native chat endpoint and the context size (I1)', (
     expect(body.truncate).toBe(false);
   });
 
-  it('follows the resolved contextWindow, not a constant', async () => {
-    const small = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 }, 6144);
-    const large = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 }, 32768);
+  it('follows the stated contextWindow, not a constant', async () => {
+    const small = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 }, { statedWindow: 6144, contextWindow: 6144 });
+    const large = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 }, { statedWindow: 32768, contextWindow: 32768 });
     expect(small.options.num_ctx).toBe(6144);
     expect(large.options.num_ctx).toBe(32768);
+  });
+
+  it('sends no num_ctx when no window is stated, whatever window the target counts with, and num_predict equal to the output limit', async () => {
+    const body = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 }, { statedWindow: undefined, contextWindow: 393216 });
+    expect(body.options).not.toHaveProperty('num_ctx');
+    expect(body.options).toMatchObject({ num_predict: 300 });
+    expect(body.truncate).toBe(false);
+  });
+
+  it('sends the target output limit as num_predict and no num_ctx when no window is stated and the request names no limit', async () => {
+    const body = await sentBody({ model: 'devstral-small-2', input: [userText('hi')] }, { statedWindow: undefined, contextWindow: 393216 });
+    expect(body.options).toEqual({ num_predict: 2048 });
   });
 
   it('sends the target output limit as num_predict when the request names none', async () => {

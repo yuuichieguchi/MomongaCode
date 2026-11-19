@@ -30,6 +30,7 @@ const SEARCH = 'Search this computer for model servers';
 const TYPE_ADDRESS = 'Type the address of a model server';
 const SERVICE = 'Use a service with an API key';
 const PROGRAM = 'Run a program as a model server';
+const LMSTUDIO_ADDRESS = 'http://127.0.0.1:1234/v1';
 const OLLAMA_ROW = 'ollama  ·  http://127.0.0.1:11434  ·  2 models';
 const APIS = ['Ollama API', 'OpenAI-compatible API', 'Anthropic API', 'OpenAI Responses API'];
 const KEY_VALUE = 'sk-the-key-value-0123456789';
@@ -52,35 +53,44 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
   });
 
   it('row 1: a model of a server the search finds is added after the confirm row, and Esc cancels the search', async (context) => {
-    const steps: Step[] = [{ pick: SEARCH }, { pick: OLLAMA_ROW }, { pick: 'ollama/devstral-small-2' }, { type: 'many' }, { type: '32768' }];
+    const steps: Step[] = [{ pick: SEARCH }, { pick: OLLAMA_ROW }, { pick: 'ollama/devstral-small-2' }];
     const declined = flowOf(context, undefined, [...steps, NO], { found: twoOnOllama });
     await runAddFlow(declined.context);
     expect(declined.phases).toEqual([SEARCHING, READING]);
     expect(declined.detections.map((request) => request.typed)).toEqual([[]]);
     expect(declined.picks().map((pick) => pick.rows)[1]).toEqual([OLLAMA_ROW]);
     expect(declined.picks()[2]?.rows).toEqual(['ollama/devstral-small-2', 'ollama/qwen3.8:27b']);
-    expect(declined.prompts()).toEqual([{ kind: 'text', title: 'Context window for ollama/devstral-small-2:', hidden: false, problems: ['Enter a whole number of at least 1.'] }]);
+    expect(declined.prompts()).toEqual([]);
     expect(declined.picks().at(-1)?.title).toBe('Add ollama/devstral-small-2 to your settings?');
     expect(declined.bytes()).toBeUndefined();
 
     const accepted = flowOf(context, undefined, [...steps, YES], { found: twoOnOllama });
     await runAddFlow(accepted.context);
-    expect(writtenOf(accepted).models.connections).toMatchObject([{ adapter: 'ollama', baseUrl: OLLAMA_ADDRESS, models: [{ id: 'devstral-small-2:latest', capabilities: { contextWindow: 32768 } }] }]);
+    expect(writtenOf(accepted).models.connections).toMatchObject([{ adapter: 'ollama', baseUrl: OLLAMA_ADDRESS }]);
+    expect(writtenOf(accepted).models.connections[0]?.models).toEqual([{ id: 'devstral-small-2:latest' }]);
     expect(accepted.infos).toEqual(['Added ollama/devstral-small-2. It is used from the next request.']);
 
-    const ceiling = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'ollama/small' }, { type: '9000' }], {
-      found: () => [{ kind: 'ollama', provider: 'ollama', address: OLLAMA_ADDRESS, models: [{ id: 'small:latest', tools: 'unknown', ceiling: 8192 }] }],
+    const ceiling = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^lmstudio/ }, { pick: 'lmstudio/small' }, { type: '9000' }], {
+      found: () => [{ kind: 'lmstudio', provider: 'lmstudio', address: LMSTUDIO_ADDRESS, models: [{ id: 'small', tools: 'unknown', ceiling: 8192 }] }],
     });
     await runAddFlow(ceiling.context);
-    expect(ceiling.prompts()).toEqual([{ kind: 'text', title: 'Context window for ollama/small (at most 8192):', hidden: false, problems: ['Enter a whole number from 1 to 8192.'] }]);
+    expect(ceiling.prompts()).toEqual([{ kind: 'text', title: 'Context window for lmstudio/small (at most 8192):', hidden: false, problems: ['Enter a whole number from 1 to 8192.'] }]);
 
-    const described = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'ollama/small' }, YES], {
-      found: () => [{ kind: 'ollama', provider: 'ollama', address: OLLAMA_ADDRESS, models: [{ id: 'small:latest', tools: 'unknown', ceiling: 8192 }] }],
+    const described = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^lmstudio/ }, { pick: 'lmstudio/small' }, YES], {
+      found: () => [{ kind: 'lmstudio', provider: 'lmstudio', address: LMSTUDIO_ADDRESS, models: [{ id: 'small', tools: 'unknown', ceiling: 8192 }] }],
       describe: async (_server, model) => ({ ...model, contextWindow: 4096 }),
     });
     await runAddFlow(described.context);
     expect(described.prompts()).toEqual([]);
-    expect(writtenOf(described).models.connections).toMatchObject([{ models: [{ id: 'small:latest', capabilities: { contextWindow: 4096 } }] }]);
+    expect(writtenOf(described).models.connections).toMatchObject([{ models: [{ id: 'small', capabilities: { contextWindow: 4096 } }] }]);
+
+    const maximum = flowOf(context, undefined, [{ pick: SEARCH }, { pick: /^ollama/ }, { pick: 'ollama/small' }, YES], {
+      found: () => [{ kind: 'ollama', provider: 'ollama', address: OLLAMA_ADDRESS, models: [{ id: 'small:latest', tools: 'unknown', ceiling: 8192 }] }],
+      describe: async (_server, model) => ({ ...model, contextWindow: 4096 }),
+    });
+    await runAddFlow(maximum.context);
+    expect(maximum.prompts()).toEqual([]);
+    expect(writtenOf(maximum).models.connections[0]?.models).toEqual([{ id: 'small:latest' }]);
 
     const nothing = flowOf(context, undefined, [{ pick: SEARCH }, { pick: 'Back' }]);
     await runAddFlow(nothing.context);
@@ -104,9 +114,16 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     expect(harness.picks().at(-1)?.title).toBe('Add srv-127.0.0.1-8080/my-model to your settings?');
     expect(writtenOf(harness).models.connections).toMatchObject([{ adapter: 'chat-completions', baseUrl: address, models: [{ id: 'my-model', capabilities: { contextWindow: 4096 } }] }]);
 
-    const answering = flowOf(context, undefined, [{ pick: TYPE_ADDRESS }, { type: OLLAMA_ADDRESS }, { pick: 'ollama/qwen3.8:27b' }, { type: '8192' }, YES], { found: twoOnOllama });
+    const answering = flowOf(context, undefined, [{ pick: TYPE_ADDRESS }, { type: OLLAMA_ADDRESS }, { pick: 'ollama/qwen3.8:27b' }, YES], { found: twoOnOllama });
     await runAddFlow(answering.context);
-    expect(writtenOf(answering).models.connections).toMatchObject([{ adapter: 'ollama', models: [{ id: 'qwen3.8:27b' }] }]);
+    expect(answering.prompts().map((prompt) => prompt.title)).toEqual(['Address (for example http://127.0.0.1:11434):']);
+    expect(writtenOf(answering).models.connections[0]?.models).toEqual([{ id: 'qwen3.8:27b' }]);
+
+    const unansweredOllama = flowOf(context, undefined, [{ pick: TYPE_ADDRESS }, { type: address }, { pick: 'Ollama API' }, { type: 'my-model' }, YES]);
+    await runAddFlow(unansweredOllama.context);
+    expect(unansweredOllama.prompts().map((prompt) => prompt.title)).toEqual(['Address (for example http://127.0.0.1:11434):', 'Model name as the server calls it:']);
+    expect(writtenOf(unansweredOllama).models.connections).toMatchObject([{ adapter: 'ollama', baseUrl: address }]);
+    expect(writtenOf(unansweredOllama).models.connections[0]?.models).toEqual([{ id: 'my-model:latest' }]);
   });
 
   it('row 3: a service with a key is added with a reference to the key, never its value', async (context) => {

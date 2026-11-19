@@ -8,6 +8,7 @@ export type ServerKindRead = {
   list: { path: string; array: string; id: string; filter?: { field: string; equals: string } };
   window?: string;
   ceiling?: string;
+  lengthIsMaximum?: true;
   tools?: 'unknown';
   details?: { method: 'POST'; path: string; body: { model: '$id' }; tools: string; ceilingTemplate: string };
 };
@@ -56,6 +57,7 @@ export const SERVER_KINDS: ServerKinds = [
     },
     read: {
       list: { path: '/api/tags', array: 'models', id: 'name' },
+      lengthIsMaximum: true,
       details: { method: 'POST', path: '/api/show', body: { model: '$id' }, tools: 'capabilities', ceilingTemplate: 'model_info.<general.architecture>.context_length' },
     },
   },

@@ -4,7 +4,7 @@ import { LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS, PROVIDER_NAME_PATTERN, canonO
 import type { ManagedServerDescription, DetectedLocalServer, DetectedModel, LocalServerDetection, ModelView } from '@momonga/protocol';
 import { describeFailure } from '../../failure.ts';
 import { wholeNumberWithin } from '../../models-check.ts';
-import { addProposalOf, entryOf, foundProposalOf, foundRowOf, kindOf, nameInputOf, offeredServers, proposeForm } from '../../commands/models.ts';
+import { addProposalOf, entryOf, foundProposalOf, foundRowOf, kindOf, nameInputOf, offeredServers, proposeForm, serverChoosesWindow } from '../../commands/models.ts';
 import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
 import { NO_SERVER_ANSWERED_TEXT, noServerAnsweredAtText } from '../../models-texts.ts';
 import { MEASURING_TEXT } from '../screen/waiting-row.tsx';
@@ -96,9 +96,10 @@ export const foundNotConfigured = (edit: ModelsEdit, servers: readonly DetectedL
 
 export const addFoundModel = async (context: ModelsFlowContext, opened: Opened, server: DetectedLocalServer, found: DetectedModel, display: string): Promise<Added | undefined> => {
   const model = await context.wait('reading this model', (signal) => hostOf(context, signal).describe(server, found, signal));
-  const window = model.contextWindow ?? (await askWindow(context, display, model.ceiling));
-  if (window === undefined) return NOT_ADDED;
-  const proposal = await refusedSentence(context, async () => foundProposalOf(opened.edit, { args: [], options: { window: String(window) } }, server, model));
+  const serverChooses = serverChoosesWindow(kindOf(server));
+  const window = serverChooses ? undefined : (model.contextWindow ?? (await askWindow(context, display, model.ceiling)));
+  if (window === undefined && !serverChooses) return NOT_ADDED;
+  const proposal = await refusedSentence(context, async () => foundProposalOf(opened.edit, { args: [], options: window === undefined ? {} : { window: String(window) } }, server, model));
   if (proposal === undefined) return NOT_ADDED;
   const written = await confirmAndWrite(opened, context, proposal.value);
   return written === undefined ? NOT_ADDED : { model: written.model };
@@ -141,8 +142,9 @@ const addTyped = async (context: ModelsFlowContext, opened: Opened, connection: 
   const id = name.trim();
   const provider = providerNameOf(nameInputOf(connection), opened.edit.ports.kinds);
   const view = viewOf(connection, provider, id, undefined);
-  const window = await askWindow(context, displaysWith(opened.edit, [view]).get(view.canon) ?? id, undefined);
-  if (window === undefined) return NOT_ADDED;
+  const serverChooses = serverChoosesWindow(opened.edit.ports.kinds.find((kind) => kind.impliedByAdapter === connection['adapter']));
+  const window = serverChooses ? undefined : await askWindow(context, displaysWith(opened.edit, [view]).get(view.canon) ?? id, undefined);
+  if (window === undefined && !serverChooses) return NOT_ADDED;
   const written = await confirmAndWrite(opened, context, addProposalOf(opened.edit, connection, entryOf(id, window)), before);
   return written === undefined ? NOT_ADDED : { model: written.model };
 };

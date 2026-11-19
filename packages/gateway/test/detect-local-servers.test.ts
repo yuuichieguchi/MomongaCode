@@ -104,6 +104,17 @@ describe('detecting a local model server is a measurement that writes nothing', 
     ]);
   });
 
+  it('lists the context length of an Ollama model in /api/tags as its maximum, never as the window in force', async () => {
+    const baseUrl = await serve({
+      ...ollamaShaped(),
+      'GET /api/tags': () => ({ status: 200, json: { models: [{ name: 'coder:7b', details: { context_length: 393216 } }] } }),
+    });
+
+    const found = await run([baseUrl]);
+
+    expect(found).toEqual([{ kind: 'ollama', provider: `ollama-127.0.0.1-${new URL(baseUrl).port}`, address: baseUrl, models: [{ id: 'coder:7b', tools: 'unknown', ceiling: 393216 }] }]);
+  });
+
   it('lists an endpoint that answers in the OpenAI shape and reports tools unknown, because it reports no tool field', async () => {
     const baseUrl = await serve(openAiShaped());
 

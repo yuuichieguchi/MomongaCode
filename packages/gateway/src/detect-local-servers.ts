@@ -115,8 +115,9 @@ const listedModelsOf = async (read: NonNullable<ServerKind['read']>, ask: Ask): 
     const id = entry[read.list.id];
     if (typeof id !== 'string' || id === '') return [];
     if (filter !== undefined && entry[filter.field] !== filter.equals) return [];
-    const contextWindow = read.window === undefined ? reportedContextWindow(entry) : countOf(entry[read.window]);
-    const ceiling = read.ceiling === undefined ? reportedContextCeiling(entry) : countOf(entry[read.ceiling]);
+    const listedLength = read.window === undefined ? reportedContextWindow(entry) : countOf(entry[read.window]);
+    const contextWindow = read.lengthIsMaximum === true ? undefined : listedLength;
+    const ceiling = read.lengthIsMaximum === true ? listedLength : read.ceiling === undefined ? reportedContextCeiling(entry) : countOf(entry[read.ceiling]);
     return [{ id, tools: read.tools ?? 'unknown', ...(contextWindow === undefined ? {} : { contextWindow }), ...(ceiling === undefined ? {} : { ceiling }) }];
   });
 };

@@ -83,7 +83,7 @@ export type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './adapte
 export { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 export type { OllamaAdapter, OllamaAdapterOptions } from './adapters/ollama/types.ts';
 export { OLLAMA_VOCABULARY } from './adapters/ollama/vocabulary.ts';
-export { probeOllamaTarget } from './probe/ollama.ts';
+export { ollamaPrecondition, probeOllamaTarget, readOllamaReported, unknownWindowRefusal } from './probe/ollama.ts';
 export type { ProbeOllamaTargetOptions, ProbeOllamaTargetResult } from './probe/ollama.ts';
 export { DETECTION_BODY_MAX_BYTES, describeModel, detectLocalServers } from './detect-local-servers.ts';
 export type { DescribeModelOptions, DetectFetch, DetectLocalServersOptions } from './detect-local-servers.ts';

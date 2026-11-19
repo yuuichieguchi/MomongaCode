@@ -169,9 +169,27 @@ describe('addModel: the one way a model enters the settings', () => {
     expect(documentOf(plan)).toEqual({ models: { connections: [S3_PLAN] } });
   });
 
-  it('an Ollama model without a window is refused and nothing is written', async () => {
+  it('an Ollama model without a window is written without one, so the server chooses its window', async () => {
     const home = homeWith();
-    const refused = await refusalOfEdit(editModels(home, [addModel(OLLAMA, { id: 'llama3.2:latest' })]));
+    expect((await editModels(home, [addModel(OLLAMA, { id: 'llama3.2:latest' })])).model).toBe('ollama/llama3.2:latest');
+    expect(documentOf(home)).toEqual({ models: { connections: [{ ...OLLAMA, models: [{ id: 'llama3.2:latest' }] }] } });
+    expect(await loads(home)).toEqual(['ollama/llama3.2:latest']);
+  });
+
+  it('the window of an Ollama model can be removed, and the model then loads without one', async () => {
+    const home = homeWith({ models: { connections: [{ ...OLLAMA, models: [DEVSTRAL] }] } });
+    await editModels(home, [
+      op('setModelField', { model: DEVSTRAL_MODEL, path: ['capabilities', 'contextWindow'], value: undefined }),
+      op('setModelField', { model: DEVSTRAL_MODEL, path: ['capabilities', 'maxOutputTokens'], value: undefined }),
+    ]);
+    expect(await loads(home)).toEqual([DEVSTRAL_MODEL]);
+    const { settings } = await loadUserSettings({ env: process.env, home: home.tree.home, signal: new AbortController().signal });
+    expect(settings.models.models.get(DEVSTRAL_MODEL)?.capabilities?.contextWindow).toBeUndefined();
+  });
+
+  it('a model of an OpenAI-compatible server without a window is refused and nothing is written', async () => {
+    const home = homeWith();
+    const refused = await refusalOfEdit(editModels(home, [addModel(LMSTUDIO, { id: 'gemma-3-4b' })]));
     expect(refused.code).toBe('invalid_value');
     expect(fs.existsSync(home.file)).toBe(false);
   });
@@ -605,13 +623,13 @@ describe('a settings file that does not load can be edited, and only a result th
   });
 
   it('a model entry the loader refuses is repaired by setting the fields it lacks', async () => {
-    const home = homeWith({ models: { connections: [{ ...OLLAMA, models: [{ id: 'llama3.2:latest' }] }] } });
+    const home = homeWith({ models: { connections: [{ ...LMSTUDIO, models: [{ id: 'gemma-3-4b' }] }] } });
     await expect(loadUserSettings({ env: process.env, home: home.tree.home, signal: new AbortController().signal })).rejects.toThrow();
     await editModels(home, [
-      op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'contextWindow'], value: 8192 }),
-      op('setModelField', { model: 'ollama/llama3.2:latest', path: ['capabilities', 'maxOutputTokens'], value: 2048 }),
+      op('setModelField', { model: 'lmstudio/gemma-3-4b', path: ['capabilities', 'contextWindow'], value: 8192 }),
+      op('setModelField', { model: 'lmstudio/gemma-3-4b', path: ['capabilities', 'maxOutputTokens'], value: 2048 }),
     ]);
-    expect(await loads(home)).toEqual(['ollama/llama3.2:latest']);
+    expect(await loads(home)).toEqual(['lmstudio/gemma-3-4b']);
   });
 
   it('a value outside the models section that does not load is named when a models edit leaves it', async () => {

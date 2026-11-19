@@ -6,6 +6,7 @@ import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.t
 export type OllamaAdapterOptions = {
   resolveEndpoint: (target: AdapterTarget, signal: AbortSignal) => Promise<UpstreamEndpoint>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
+  statedWindow: number | undefined;
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;
   liveness: UpstreamLiveness;

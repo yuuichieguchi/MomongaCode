@@ -46,7 +46,7 @@ describe('settings and MCP config errors keep a specific message', () => {
 
   it('names the property a model entry of a tagged connection is missing', () => {
     const { capabilities: _capabilities, ...withoutCapabilities } = OLLAMA_ENTRY;
-    const message = thrown(() => assertSettings({ models: { connections: [{ ...OLLAMA_CONNECTION, models: [withoutCapabilities] }] } }, 'settings.json')).message;
+    const message = thrown(() => assertSettings({ models: { connections: [{ ...OLLAMA_CONNECTION, adapter: 'chat-completions', models: [withoutCapabilities] }] } }, 'settings.json')).message;
     expect(message).toMatch(/^settings\.json: invalid settings at \/models\/connections\/0\/models\/0/);
     expect(message).toContain("must have required property 'capabilities'");
     expect(message).not.toMatch(FLATTENED_VARIANTS);
