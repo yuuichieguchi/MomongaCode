@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlanProfile } from '@momonga/config';
+import { SESSION_ID_HEADER } from '@momonga/protocol';
 import { FIRST_GENERATION, createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import type { FakeUpstreamReply, RecordedUpstreamRequest } from '@momonga/testkit';
 import {
@@ -96,14 +97,19 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
 
     writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: PROFILE_ID, account: 'work' } } }) });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, clock } as never);
-    const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'gpt/m', input: userInput('hi') }));
-    const responses = [await ask(), await ask()];
+    const ask = async (headers: Record<string, string> = {}) => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'gpt/m', input: userInput('hi') }, headers));
+    const responses = [await ask(), await ask({ [SESSION_ID_HEADER]: 'session-of-the-run' })];
 
     const answered = upstream.requests.filter((request) => request.method === 'POST' && !installed.has(bearerOf(request)));
     expect(answered).toHaveLength(2);
     const refreshed = bearerOf(answered[0] as RecordedUpstreamRequest);
     expect(refreshed).not.toBe('');
     expect(answered.map(bearerOf)).toEqual([refreshed, refreshed]);
+    expect(answered.map((request) => request.headers['content-encoding'])).toEqual(['zstd', 'zstd']);
+    expect(answered.map((request) => [request.headers['session-id'], request.headers['thread-id'], request.headers['x-client-request-id']])).toEqual([
+      [undefined, undefined, undefined],
+      ['session-of-the-run', 'session-of-the-run', 'session-of-the-run'],
+    ]);
     for (const response of responses) {
       expect(response.status).toBe(400);
       expect(JSON.stringify(response.body)).toContain('echo');

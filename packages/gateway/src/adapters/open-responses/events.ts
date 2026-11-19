@@ -58,11 +58,13 @@ const itemRefOf = (event: Record<string, unknown>, itemId: string | undefined): 
   return { ...(outputIndex === undefined ? {} : { outputIndex }), ...(itemId === undefined ? {} : { itemId }) };
 };
 
-const deltaRefOf = (event: Record<string, unknown>): ItemRef => itemRefOf(event, optionalString(event, 'item_id', 'event'));
+const usableId = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
+
+const deltaRefOf = (event: Record<string, unknown>): ItemRef => itemRefOf(event, usableId(event['item_id']));
 
 const itemEventRefOf = (event: Record<string, unknown>): ItemRef => {
   const item = event['item'];
-  return itemRefOf(event, isRecord(item) ? optionalString(item, 'id', 'item') : undefined);
+  return itemRefOf(event, isRecord(item) ? usableId(item['id']) : undefined);
 };
 
 const partIndexOf = (event: Record<string, unknown>, key: string): number => {

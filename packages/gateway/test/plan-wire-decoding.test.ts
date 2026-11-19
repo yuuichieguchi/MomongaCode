@@ -72,6 +72,12 @@ describe('an event without output_index is correlated by its item id', () => {
   it('refuses an event that names its item neither way, and a present output_index that is not a non-negative integer', () => {
     expect(() => parseOpenResponsesEvent(JSON.stringify({ type: 'response.output_text.delta', delta: 'x' }))).toThrow(/neither output_index nor an item id/);
     expect(() => parseOpenResponsesEvent(JSON.stringify({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: -1, delta: 'x' }))).toThrow(/output_index must be a non-negative integer/);
+    expect(() => parseOpenResponsesEvent(JSON.stringify({ type: 'response.output_text.delta', item_id: 7, delta: 'x' }))).toThrow(/neither output_index nor an item id/);
+  });
+
+  it('never refuses an event for an item id of another shape when output_index names the item', () => {
+    expect(parseOpenResponsesEvent(JSON.stringify({ type: 'response.output_text.delta', item_id: 7, output_index: 0, delta: 'x' }))).toEqual({ type: 'text_delta', at: { outputIndex: 0 }, delta: 'x' });
+    expect(parseOpenResponsesEvent(JSON.stringify({ type: 'response.output_item.added', output_index: 1, item: { type: 'message', id: null, content: [] } }))).toMatchObject({ type: 'item_added', at: { outputIndex: 1 } });
   });
 
   it('streams a text reply whose events carry no output_index', async () => {
