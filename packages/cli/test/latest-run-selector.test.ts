@@ -53,14 +53,27 @@ describe('the latest run of a folder is the run made last, whichever session it 
     expect(await activeRunIdOf(runtime.client, runtime.service.layout.project)).toBe(runOfOlder.id);
   });
 
-  it('report without an id shows that run, and jobs without an id lists the session of that run', async () => {
-    const { runtime, older, runOfOlder } = await olderSessionWithNewerRun();
+  it('report without an id shows that run', async () => {
+    const { runtime, runOfOlder } = await olderSessionWithNewerRun();
 
     expect(await showReport(runtime.ports, runtime.paths, undefined, true)).toBe(0);
     expect(JSON.parse(runtime.stdout.join(''))).toMatchObject({ runId: runOfOlder.id });
-    runtime.stdout.length = 0;
+  });
+
+  it('jobs without an id lists the newest session of the folder, as its help says, not the session whose run is newest', async () => {
+    const { runtime, newer } = await olderSessionWithNewerRun();
+
     expect(await listJobs(runtime.ports, runtime.paths, undefined, false)).toBe(0);
-    expect(runtime.stdout.join('')).toBe(`session ${older.id} has no background jobs\n`);
+    expect(runtime.stdout.join('')).toBe(`session ${newer.id} has no background jobs\n`);
+  });
+
+  it('jobs without an id lists the newest session of the folder also before its first run', async () => {
+    const { runtime } = await olderSessionWithNewerRun();
+    runtime.service.clock.advance(1000);
+    const newest = await runtime.service.createSession();
+
+    expect(await listJobs(runtime.ports, runtime.paths, undefined, false)).toBe(0);
+    expect(runtime.stdout.join('')).toBe(`session ${newest.id} has no background jobs\n`);
   });
 
   it('--continue reopens the session worked in last', async () => {

@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
+import { App } from '../../src/tui/app.tsx';
+import type { ShellPort } from '../../src/tui/slash.ts';
+import { fakeBackend, runView } from '../fake-backend.ts';
+import type { FakeBackendOptions, FakeConversation } from '../fake-backend.ts';
+import { KEYS, renderObservable, untilFrame } from '../ink-helpers.ts';
+import { runStarted, type } from '../tui-harness.tsx';
+import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
+
+const OWN_SESSION = 'bbbbbbbb22222222';
+const OTHER_SESSION = 'cccccccc33333333';
+const IDLE = /^(?![\s\S]*esc to cancel)[\s\S]*mode: manual \(shift\+tab\)/;
+
+const recordingShell = () => {
+  const argvs: string[][] = [];
+  const shell: ShellPort = {
+    run: async (argv) => {
+      argvs.push([...argv]);
+      return 0;
+    },
+  };
+  return { shell, argvs };
+};
+
+const conversation = (id: string, createdAt: number, runId: string): FakeConversation => ({ session: { id, createdAt }, firstPrompt: `work of ${id}`, runs: [{ id: runId, frames: [] }] });
+
+const open = async (options: FakeBackendOptions, reopen?: { kind: 'id'; id: string }) => {
+  const backend = fakeBackend(options);
+  const { shell, argvs } = recordingShell();
+  const app = renderObservable(
+    <App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={systemTiming} initialMode={undefined} shell={shell} {...(reopen === undefined ? {} : { reopen })} onExit={() => undefined} />,
+  );
+  await untilFrame(app, 'mode: manual');
+  return { backend, app, argvs };
+};
+
+const typedJobs = async (app: Awaited<ReturnType<typeof open>>['app'], argvs: string[][]): Promise<void> => {
+  await type(app, '/jobs', '> /jobs');
+  app.stdin.write(KEYS.enter);
+  for (let tries = 0; tries < 200 && argvs.length === 0; tries += 1) await new Promise((resolve) => setImmediate(resolve));
+};
+
+describe('/jobs typed in the terminal UI lists the jobs of the session it is typed in', () => {
+  it('passes its own session after a run of its own, not the session of the folder whose run is newest', async () => {
+    const { backend, app, argvs } = await open({ session: { id: OWN_SESSION, createdAt: 1 }, conversations: [conversation(OTHER_SESSION, 50, 'run-of-other')] });
+    await runStarted(backend, app, 'sleep in the background');
+    backend.finish(runView({ id: 'run-1', sessionId: OWN_SESSION, status: 'COMPLETED' }));
+    await untilFrame(app, IDLE);
+
+    await typedJobs(app, argvs);
+
+    expect(argvs).toEqual([['jobs', OWN_SESSION]]);
+    app.unmount();
+  });
+
+  it('passes the session it was reopened in before any run is made in it here', async () => {
+    const { app, argvs } = await open({ conversations: [conversation(OWN_SESSION, 1, 'run-of-own'), conversation(OTHER_SESSION, 50, 'run-of-other')] }, { kind: 'id', id: OWN_SESSION });
+
+    await typedJobs(app, argvs);
+
+    expect(argvs).toEqual([['jobs', OWN_SESSION]]);
+    app.unmount();
+  });
+});

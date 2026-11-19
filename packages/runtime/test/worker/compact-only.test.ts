@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { NOTHING_TO_COMPACT_CODE } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { compactInputOf, compactPinOf } from '../../src/worker/compact-pin.ts';
-import { COMPACTION_WAY_FORWARD } from '../../src/worker/context-step.ts';
 import { capabilitiesFor, createdRun, makeEnv } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
@@ -165,17 +164,30 @@ describe('a compact command over a short session', () => {
     expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
   });
 
-  it('ends with the reason and what to do when a summary would free nothing', async () => {
-    const env = await seededWith([responded(1, [assistantMessage('m1', 'ok')])]);
+  it.each([
+    ['one short turn', [responded(1, [assistantMessage('m1', 'ok')])]],
+    [
+      'two short turns',
+      [
+        responded(1, [assistantMessage('m1', 'ok')]),
+        { type: 'user.message', text: 'question two' },
+        responded(2, [assistantMessage('m2', 'fine')]),
+      ],
+    ],
+  ] as const)('over %s writes the one row that there is nothing to compact, with no figure and no model call', async (_name, turns) => {
+    const env = await seededWith(turns);
+    const streamsBefore = env.gateway.streams.length;
     const run = await enqueueCompact(env);
 
     await env.runOnce(env.worker());
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.gateway.compacts).toEqual([]);
-    const [notice] = env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE);
-    expect(notice?.message).toMatch(/^No compaction: the latest compactable region of \d+ tokens would free -?\d+ after a summary of \d+, but 1 are needed\. /);
-    expect(notice?.message).toContain(COMPACTION_WAY_FORWARD.deficit_not_closed);
+    expect(env.gateway.streams).toHaveLength(streamsBefore);
+    const notices = env.ofType(run.id, 'notice').filter((event) => event.code === NOTHING_TO_COMPACT_CODE);
+    expect(notices.map((notice) => notice.message)).toEqual(['Nothing to compact: the conversation is already small.']);
+    expect(notices[0]?.message).not.toMatch(/-\d/);
+    expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
   });
 });
 
