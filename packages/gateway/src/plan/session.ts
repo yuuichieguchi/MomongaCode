@@ -306,6 +306,14 @@ const renamingLabelOf = (value: string | undefined): string | undefined => {
   return value;
 };
 
+const renamingTargetOf = (text: string): string | undefined => {
+  try {
+    return parseRecord(text).renamingTo;
+  } catch {
+    return undefined;
+  }
+};
+
 const withoutRenaming = (record: PlanRecord): PlanRecord => {
   const { renamingTo: _renamingTo, ...kept } = record;
   return kept;
@@ -466,7 +474,9 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     );
 
   const writeRecord = async (account: Account, entry: CredentialEntry, record: PlanRecord, signal: AbortSignal): Promise<void> => {
-    const text = serialize(record);
+    const stored = await entry.read().catch(() => undefined);
+    const pending = stored === undefined ? undefined : renamingTargetOf(stored);
+    const text = serialize(pending === undefined ? record : { ...record, renamingTo: pending });
     await recordAccess('write', sessionOf(account), () => entry.write(text), signal);
     account.stored = { text };
   };
@@ -1245,6 +1255,14 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     accountOf(from.profile, to);
   };
 
+  const liveAccount = async (account: Account, signal: AbortSignal): Promise<Account> => {
+    if (account.resumedRename !== undefined) await account.resumedRename;
+    const to = renamingTargetOf((await keyText(account.key, sessionOf(account), signal)) ?? '');
+    if (to === undefined) return account;
+    await completeRename({ profile: account.profile.id, account: account.label }, signal);
+    return accountOf(account.profile.id, to);
+  };
+
   function resumeRename(account: Account): void {
     const limit = operationLimit(closing.signal, HOST_READ_BOUND_MS, RENAME_LIMIT_LABEL, options.timing);
     const from = { profile: account.profile.id, account: account.label };
@@ -1334,12 +1352,12 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const healthView = (): AccountView => (servedLabel === undefined ? unpinnedView() : viewOfLabel(servedLabel));
     return {
       read: async (signal) =>
-        held(resolved(), async (account) => {
+        held(await liveAccount(resolved(), signal), async (account) => {
           await load(account, signal);
           return bearer(account, signal);
         }),
       rejected: async (generation, signal) =>
-        held(served(), async (account) => {
+        held(await liveAccount(served(), signal), async (account) => {
           const rejection = { ...identityOf(account), generation };
           try {
             const answer = await rejected(account, generation, signal);
