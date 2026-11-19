@@ -49,8 +49,9 @@ export const retryAfterHint = (response: { headers: Record<string, string> }, cl
 };
 
 export const nestedErrorDetail: ErrorDetailReader = (parsed) => {
-  const detail = isRecord(parsed) ? parsed['error'] : undefined;
-  if (!isRecord(detail)) return {};
+  if (!isRecord(parsed)) return {};
+  const detail = parsed['error'];
+  if (!isRecord(detail)) return typeof parsed['detail'] === 'string' ? { message: parsed['detail'] } : {};
   return {
     ...(typeof detail['message'] === 'string' ? { message: detail['message'] } : {}),
     ...(typeof detail['code'] === 'string' ? { code: detail['code'] } : {}),

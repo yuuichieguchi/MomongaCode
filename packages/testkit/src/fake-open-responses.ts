@@ -148,7 +148,7 @@ export const functionCallEvents = (
 export type TerminalSpec =
   | { kind: 'completed'; usage?: Usage | null }
   | { kind: 'incomplete'; reason: string; usage?: Usage | null }
-  | { kind: 'failed'; code: string; message: string; errorType?: string };
+  | { kind: 'failed'; code: string; message?: string; errorType?: string };
 
 const resourceWithOptionalUsage = (input: Omit<ResponseResourceInput, 'usage'>, usage: Usage | null | undefined): Record<string, unknown> => {
   const resource: Record<string, unknown> = { ...responseResource({ ...input, ...(usage === undefined ? {} : { usage }) }) };
@@ -174,7 +174,7 @@ export const terminalEvent = (spec: TerminalSpec, output: readonly unknown[]): E
     type: 'response.failed',
     response: {
       ...responseResource({ ...base, status: 'failed', completedAt: 1_800_000_001 }),
-      error: { code: spec.code, message: spec.message, ...(spec.errorType === undefined ? {} : { type: spec.errorType }) },
+      error: { code: spec.code, ...(spec.message === undefined ? {} : { message: spec.message }), ...(spec.errorType === undefined ? {} : { type: spec.errorType }) },
     },
   };
 };

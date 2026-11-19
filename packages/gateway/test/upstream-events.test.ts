@@ -57,7 +57,7 @@ describe('parseOpenResponsesEvent', () => {
     '{"type":"response.output_item.added","item":{"type":"message"}}',
     '{"type":"response.output_text.delta","output_index":0}',
     '{"type":"response.completed","response":{"usage":{"input_tokens":-1,"output_tokens":1}}}',
-    '{"type":"response.failed","response":{}}',
+    '{"type":"response.failed","response":{"error":"text"}}',
   ])('rejects the malformed payload %s', (payload) => {
     expect(() => parseOpenResponsesEvent(payload)).toThrow(UpstreamProtocolError);
   });
@@ -87,7 +87,7 @@ describe('parseOpenResponsesEvent', () => {
   it('maps response.reasoning_summary_text.delta to a reasoning summary delta', () => {
     expect(parseOpenResponsesEvent('{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"delta":"User asks"}')).toEqual({
       type: 'reasoning_summary_delta',
-      outputIndex: 0,
+      at: { outputIndex: 0, itemId: 'rs_1' },
       summaryIndex: 0,
       delta: 'User asks',
     });
@@ -100,6 +100,6 @@ describe('parseOpenResponsesEvent', () => {
 
   it('keeps the upstream error type only when it is an Open Responses error type', () => {
     expect(parseOpenResponsesEvent('{"type":"error","error":{"type":"too_many_requests","code":"x","message":"m"}}')).toMatchObject({ errorType: 'too_many_requests' });
-    expect(parseOpenResponsesEvent('{"type":"error","error":{"type":"strange","message":"m"}}')).toMatchObject({ errorType: 'server_error', code: 'upstream_error' });
+    expect(parseOpenResponsesEvent('{"type":"error","error":{"type":"strange","message":"m"}}')).toEqual({ type: 'error', errorType: 'server_error', code: undefined, message: 'm' });
   });
 });

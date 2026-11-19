@@ -5,6 +5,8 @@ export { StreamFailure };
 export const CONTEXT_WINDOW_EXCEEDED = 'context_window_exceeded';
 export const GUARDRAIL_VIOLATION = 'guardrail_violation';
 export const UNSUPPORTED_REQUEST = 'unsupported_request';
+export const UNNAMED_UPSTREAM_FAILURE = 'upstream_error';
+export const UNSTATED_FAILURE_MESSAGE = 'The upstream response failed without a stated reason';
 
 export class UpstreamStall extends StreamFailure {
   constructor(code: string, message: string) {

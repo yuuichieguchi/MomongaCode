@@ -1,5 +1,5 @@
 import type http from 'node:http';
-import { openingEvents, openResponsesStream, terminalEvent } from './fake-open-responses.ts';
+import { messageEvents, openingEvents, openResponsesStream, terminalEvent } from './fake-open-responses.ts';
 import { serveFakeUpstreamReply } from './fake-sse-upstream.ts';
 import type { FakeUpstreamReply, RecordedUpstreamRequest } from './fake-sse-upstream.ts';
 import { readBody, startLoopbackServer } from './loopback-http.ts';
@@ -89,9 +89,63 @@ export const planErrorHttpReply = (code: string, options: ErrorReplyOptions): Fa
   };
 };
 
-export const planErrorStreamReply = (code: string, options: { message?: string }): FakeUpstreamReply => {
+export const planErrorStreamReply = (code: string, options: { message?: string } = {}): FakeUpstreamReply => {
   entryOf(code);
-  return openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code, message: options.message ?? `the fake plan route answers ${code}` }, [])]);
+  return openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code, ...(options.message === undefined ? {} : { message: options.message }) }, [])]);
+};
+
+export const planFailedWithoutErrorReply = (error: null | 'absent' = 'absent'): FakeUpstreamReply => {
+  const failed = terminalEvent({ kind: 'failed', code: 'unused' }, []);
+  const { error: _error, ...response } = failed['response'] as Record<string, unknown>;
+  return openResponsesStream([...openingEvents(), { type: 'response.failed', response: error === null ? { ...response, error: null } : response }]);
+};
+
+export type PlanErrorEventShape = 'nested' | 'top_level';
+
+export const planErrorEventReply = (code: string | null, options: { shape?: PlanErrorEventShape; message?: string } = {}): FakeUpstreamReply => {
+  const members = { code, ...(options.message === undefined ? {} : { message: options.message }), param: null };
+  const event = options.shape === 'top_level' ? { type: 'error', ...members } : { type: 'error', error: { type: 'invalid_request_error', ...members } };
+  return openResponsesStream([...openingEvents(), event], { done: false });
+};
+
+export const withoutOutputIndex = (reply: FakeUpstreamReply): FakeUpstreamReply => {
+  if (reply.kind !== 'stream') return reply;
+  return {
+    ...reply,
+    frames: reply.frames.map((frame) => {
+      if (!isRecord(frame.data) || !('output_index' in frame.data)) return frame;
+      const { output_index: _index, ...data } = frame.data;
+      return { ...frame, data };
+    }),
+  };
+};
+
+const REASONING_ITEM_ID = 'rs_plan_1';
+
+export const planReasoningReply = (parts: { summary: readonly string[]; content: readonly string[]; text: readonly string[] }): FakeUpstreamReply => {
+  const summaryText = parts.summary.join('');
+  const contentText = parts.content.join('');
+  const reasoning = {
+    type: 'reasoning',
+    id: REASONING_ITEM_ID,
+    summary: summaryText === '' ? [] : [{ type: 'summary_text', text: summaryText }],
+    content: contentText === '' ? [] : [{ type: 'reasoning_text', text: contentText }],
+    encrypted_content: 'opaque-plan-reasoning',
+  };
+  const message = messageEvents(parts.text);
+  const shifted = message.events.map((event) => ('output_index' in event ? { ...event, output_index: 1 } : event));
+  return openResponsesStream([
+    ...openingEvents(),
+    { type: 'response.output_item.added', output_index: 0, item: { type: 'reasoning', id: REASONING_ITEM_ID, summary: [] } },
+    ...(parts.summary.length === 0 ? [] : [{ type: 'response.reasoning_summary_part.added', item_id: REASONING_ITEM_ID, output_index: 0, summary_index: 0, part: { type: 'summary_text', text: '' } }]),
+    ...parts.summary.map((delta) => ({ type: 'response.reasoning_summary_text.delta', item_id: REASONING_ITEM_ID, output_index: 0, summary_index: 0, delta })),
+    ...(parts.summary.length === 0 ? [] : [{ type: 'response.reasoning_summary_text.done', item_id: REASONING_ITEM_ID, output_index: 0, summary_index: 0, text: summaryText }, { type: 'response.reasoning_summary_part.done', item_id: REASONING_ITEM_ID, output_index: 0, summary_index: 0, part: { type: 'summary_text', text: summaryText } }]),
+    ...parts.content.map((delta) => ({ type: 'response.reasoning_text.delta', item_id: REASONING_ITEM_ID, output_index: 0, content_index: 0, delta })),
+    ...(parts.content.length === 0 ? [] : [{ type: 'response.reasoning_text.done', item_id: REASONING_ITEM_ID, output_index: 0, content_index: 0, text: contentText }]),
+    { type: 'response.output_item.done', output_index: 0, item: reasoning },
+    ...shifted,
+    terminalEvent({ kind: 'completed' }, [reasoning, message.item]),
+  ]);
 };
 
 export const planAdmissionReply = (status: number, detail: string): FakeUpstreamReply => {

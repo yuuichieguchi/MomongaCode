@@ -10,22 +10,24 @@ export type UpstreamItem =
   | { kind: 'reasoning'; content: string[]; summary: string[]; encryptedContent: string | undefined }
   | { kind: 'other' };
 
+export type ItemRef = { outputIndex?: number; itemId?: string };
+
 export type UpstreamTerminal =
   | { status: 'completed'; usage: Usage | undefined }
   | { status: 'incomplete'; reason: string | undefined; usage: Usage | undefined }
-  | { status: 'failed'; code: string; message: string; errorType: ErrorType };
+  | { status: 'failed'; code: string | undefined; message: string | undefined; errorType: ErrorType };
 
 export type OpenResponsesStreamEvent =
   | { type: 'opening' }
-  | { type: 'item_added'; outputIndex: number; item: UpstreamItem }
-  | { type: 'item_done'; outputIndex: number; item: UpstreamItem }
-  | { type: 'text_delta'; outputIndex: number; delta: string }
-  | { type: 'refusal_delta'; outputIndex: number; delta: string }
-  | { type: 'arguments_delta'; outputIndex: number; delta: string }
-  | { type: 'reasoning_delta'; outputIndex: number; contentIndex: number; delta: string }
-  | { type: 'reasoning_summary_delta'; outputIndex: number; summaryIndex: number; delta: string }
+  | { type: 'item_added'; at: ItemRef; item: UpstreamItem }
+  | { type: 'item_done'; at: ItemRef; item: UpstreamItem }
+  | { type: 'text_delta'; at: ItemRef; delta: string }
+  | { type: 'refusal_delta'; at: ItemRef; delta: string }
+  | { type: 'arguments_delta'; at: ItemRef; delta: string }
+  | { type: 'reasoning_delta'; at: ItemRef; contentIndex: number; delta: string }
+  | { type: 'reasoning_summary_delta'; at: ItemRef; summaryIndex: number; delta: string }
   | { type: 'terminal'; terminal: UpstreamTerminal }
-  | { type: 'error'; code: string; message: string; errorType: ErrorType }
+  | { type: 'error'; code: string | undefined; message: string | undefined; errorType: ErrorType }
   | { type: 'ignored' };
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed event: ${what}`);
@@ -43,10 +45,24 @@ const optionalString = (container: Record<string, unknown>, key: string, what: s
   return value;
 };
 
-const outputIndexOf = (event: Record<string, unknown>): number => {
+const outputIndexOf = (event: Record<string, unknown>): number | undefined => {
   const { output_index: index } = event;
+  if (index === undefined || index === null) return undefined;
   if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) throw invalid('output_index must be a non-negative integer');
   return index;
+};
+
+const itemRefOf = (event: Record<string, unknown>, itemId: string | undefined): ItemRef => {
+  const outputIndex = outputIndexOf(event);
+  if (outputIndex === undefined && itemId === undefined) throw invalid(`${String(event['type'])} names its output item by neither output_index nor an item id`);
+  return { ...(outputIndex === undefined ? {} : { outputIndex }), ...(itemId === undefined ? {} : { itemId }) };
+};
+
+const deltaRefOf = (event: Record<string, unknown>): ItemRef => itemRefOf(event, optionalString(event, 'item_id', 'event'));
+
+const itemEventRefOf = (event: Record<string, unknown>): ItemRef => {
+  const item = event['item'];
+  return itemRefOf(event, isRecord(item) ? optionalString(item, 'id', 'item') : undefined);
 };
 
 const partIndexOf = (event: Record<string, unknown>, key: string): number => {
@@ -140,12 +156,26 @@ const terminalOf = (type: string, response: unknown): UpstreamTerminal => {
     return { status: 'incomplete', reason, usage: usageOf(response['usage']) };
   }
   const error = response['error'];
-  if (!isRecord(error)) throw invalid('response.failed carries no error object');
+  if (error !== undefined && error !== null && !isRecord(error)) throw invalid('response.error must be an object');
+  const stated = error ?? {};
   return {
     status: 'failed',
-    code: requiredString(error, 'code', 'response.error'),
-    message: requiredString(error, 'message', 'response.error'),
-    errorType: errorTypeOf(error['type']),
+    code: optionalString(stated, 'code', 'response.error'),
+    message: optionalString(stated, 'message', 'response.error'),
+    errorType: errorTypeOf(stated['type']),
+  };
+};
+
+const streamErrorOf = (event: Record<string, unknown>): OpenResponsesStreamEvent => {
+  const nested = event['error'];
+  if (nested !== undefined && nested !== null && !isRecord(nested)) throw invalid('error.error must be an object');
+  const stated = nested ?? event;
+  const what = nested === undefined || nested === null ? 'error' : 'error.error';
+  return {
+    type: 'error',
+    code: optionalString(stated, 'code', what),
+    message: optionalString(stated, 'message', what),
+    errorType: errorTypeOf(stated === event ? undefined : stated['type']),
   };
 };
 
@@ -159,43 +189,36 @@ export const parseOpenResponsesEvent = (data: string): OpenResponsesStreamEvent 
     case 'response.in_progress':
       return { type: 'opening' };
     case 'response.output_item.added':
-      return { type: 'item_added', outputIndex: outputIndexOf(parsed), item: itemOf(parsed['item']) };
+      return { type: 'item_added', at: itemEventRefOf(parsed), item: itemOf(parsed['item']) };
     case 'response.output_item.done':
-      return { type: 'item_done', outputIndex: outputIndexOf(parsed), item: itemOf(parsed['item']) };
+      return { type: 'item_done', at: itemEventRefOf(parsed), item: itemOf(parsed['item']) };
     case 'response.output_text.delta':
-      return { type: 'text_delta', outputIndex: outputIndexOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
+      return { type: 'text_delta', at: deltaRefOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
     case 'response.refusal.delta':
-      return { type: 'refusal_delta', outputIndex: outputIndexOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
+      return { type: 'refusal_delta', at: deltaRefOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
     case 'response.reasoning.delta':
+    case 'response.reasoning_text.delta':
       return {
         type: 'reasoning_delta',
-        outputIndex: outputIndexOf(parsed),
+        at: deltaRefOf(parsed),
         contentIndex: partIndexOf(parsed, 'content_index'),
         delta: requiredString(parsed, 'delta', 'event'),
       };
     case 'response.reasoning_summary_text.delta':
       return {
         type: 'reasoning_summary_delta',
-        outputIndex: outputIndexOf(parsed),
+        at: deltaRefOf(parsed),
         summaryIndex: partIndexOf(parsed, 'summary_index'),
         delta: requiredString(parsed, 'delta', 'event'),
       };
     case 'response.function_call_arguments.delta':
-      return { type: 'arguments_delta', outputIndex: outputIndexOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
+      return { type: 'arguments_delta', at: deltaRefOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
     case 'response.completed':
     case 'response.incomplete':
     case 'response.failed':
       return { type: 'terminal', terminal: terminalOf(type, parsed['response']) };
-    case 'error': {
-      const error = parsed['error'];
-      if (!isRecord(error)) throw invalid('error.error must be an object');
-      return {
-        type: 'error',
-        code: optionalString(error, 'code', 'error.error') ?? 'upstream_error',
-        message: requiredString(error, 'message', 'error.error'),
-        errorType: errorTypeOf(error['type']),
-      };
-    }
+    case 'error':
+      return streamErrorOf(parsed);
     default:
       return { type: 'ignored' };
   }

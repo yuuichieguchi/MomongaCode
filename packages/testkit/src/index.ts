@@ -252,9 +252,13 @@ export {
   planAdmissionReply,
   planErrorHttpReply,
   planErrorStreamReply,
+  planErrorEventReply,
+  planFailedWithoutErrorReply,
+  planReasoningReply,
   startFakePlanResponses,
+  withoutOutputIndex,
 } from './fake-plan-responses.ts';
-export type { BearerVerdict, FakePlanResponses, PlanResponsesOptions } from './fake-plan-responses.ts';
+export type { BearerVerdict, FakePlanResponses, PlanErrorEventShape, PlanResponsesOptions } from './fake-plan-responses.ts';
 export { FAKE_KEYCHAIN_PATH, READY_CONTROL, createFakeSecretFiles, createFakeSecretStore, createFakeSecurityPort, fakeReadinessAnswer } from './fake-secrets.ts';
 export type { FakePrograms, OpenerCall } from './fake-programs.ts';
 export type { FakeCallMode, FakeControl, FakeReadiness, FakeSecretStore, FakeSecretStoreOptions, FakeSecurityPort, FakeSecurityPortOptions } from './fake-secrets.ts';
