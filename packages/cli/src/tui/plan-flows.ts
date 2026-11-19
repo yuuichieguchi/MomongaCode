@@ -65,7 +65,7 @@ type Acted = typeof AGAIN | undefined;
 type Choice = { row: PickRow; act(): Promise<Acted | void> };
 
 const USE_API_KEY = 'Use an API key';
-const LOADING_PHASE = 'loading';
+const LOADING_PHASE = 'Loading models…';
 const CONNECT_TITLE = 'Connect a model';
 
 const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
@@ -96,7 +96,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       new Promise<MomongaModelEntry | undefined>((resolve) => {
         stop = followMeasurement({ read: () => backend.model(), timers: ports.timers }, retryAfterSeconds, resolve, () => resolve(undefined), () => undefined);
       }),
-      LOADING_HINTS.cancelOnly,
+      LOADING_HINTS.none,
     );
     stop();
     return loaded.kind === 'read' ? loaded.value : undefined;

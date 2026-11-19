@@ -60,7 +60,7 @@ export type Overlay =
   | WaitingOverlay
   | { readonly kind: 'loading'; readonly title: string; readonly hint: LoadingHint; cancel(): void };
 
-export const LOADING_HINTS = { readingAndCancel: 'readingAndCancel', cancelOnly: 'cancelOnly' } as const;
+export const LOADING_HINTS = { readingAndCancel: 'readingAndCancel', none: 'none' } as const;
 
 export type LoadingHint = (typeof LOADING_HINTS)[keyof typeof LOADING_HINTS];
 
@@ -98,8 +98,7 @@ export const structuredHint = (keys: KeyTable): string =>
 
 export const READING_TEXT = 'reading…';
 
-export const loadingHint = (keys: KeyTable, hint: LoadingHint): string =>
-  joinHint([...(hint === LOADING_HINTS.readingAndCancel ? [READING_TEXT] : []), ...keyed(keys.keyHint('select.escape'), (key) => `${key} cancels`)]);
+export const loadingHint = (keys: KeyTable): string => joinHint([READING_TEXT, ...keyed(keys.keyHint('select.escape'), (key) => `${key} cancels`)]);
 
 export type PanelOverlay = Exclude<Overlay, { kind: 'pick' }>;
 
@@ -167,7 +166,7 @@ export function OverlayView({ overlay, editor, keys, columns, rows }: { overlay:
       return (
         <Box flexDirection="column">
           <Text bold>{escapeTerminalLine(overlay.title)}</Text>
-          <Text dimColor>{loadingHint(keys, overlay.hint)}</Text>
+          {overlay.hint === LOADING_HINTS.none ? null : <Text dimColor>{loadingHint(keys)}</Text>}
         </Box>
       );
     case 'waiting':

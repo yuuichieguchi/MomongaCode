@@ -240,12 +240,12 @@ describe('the effort step after a plan model that is not configured is chosen', 
     return started;
   };
 
-  const LOADING_BLOCK = ['loading', 'esc cancels'].join('\n');
+  const LOADING_BLOCK = 'Loading models…';
 
   const loadingBlockOf = (frame: string): string => {
     const lines = frame.split('\n').map(lineOf);
-    const start = lines.indexOf('loading');
-    return lines.slice(start, start + 2).join('\n');
+    const start = lines.indexOf(LOADING_BLOCK);
+    return start === -1 ? '' : lines.slice(start, start + 2).join('\n').trimEnd();
   };
 
   it('shows the loading row while the capabilities of the added model are not loaded, then opens the effort picker', async () => {
@@ -254,6 +254,8 @@ describe('the effort step after a plan model that is not configured is chosen', 
     const waiting = await untilFrame(app, (frame) => loadingBlockOf(frame) === LOADING_BLOCK);
     expect(loadingBlockOf(waiting)).toBe(LOADING_BLOCK);
     expect(waiting).not.toContain('reading…');
+    expect(waiting).not.toContain('esc cancels');
+    expect(waiting.split('\n').map(lineOf).filter((line) => line !== '')).toEqual([LOADING_BLOCK]);
     expect(waiting).not.toContain('Reasoning effort');
     pending.resolve();
     const picker = await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('tab: this session only'));
