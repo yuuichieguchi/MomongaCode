@@ -39,7 +39,7 @@ const FOOTER_START: Readonly<Record<number, string>> = {
   120: 'mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/think-c (effort: medium)    ctrl+j: new line',
 };
 const FOOTER_PLAIN: Readonly<Record<number, string>> = {
-  80: 'mode: manual (shift+tab) · tokens: 0 · context: 0%',
+  80: 'mode: manual (shift+tab) · tokens: 0 · context: 0%              ctrl+j: new line',
   120: 'mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/plain-b                     ctrl+j: new line',
 };
 const LINE_PLAIN: Readonly<Record<number, readonly string[]>> = {
@@ -121,7 +121,7 @@ describe('real-length server model names at real widths', () => {
 
   const FOOTERS: Readonly<Record<number, readonly [string, string, string]>> = {
     120: ['mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/think-c (effort: medium)    ctrl+j: new line', 'mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/plain-b                     ctrl+j: new line', 'mode: manual (shift+tab) · tokens: 0 · context: unknown · ollama-127.0.0.1-18477/think-c                ctrl+j: new line'],
-    80: ['mode: manual (shift+tab) · tokens: 0 · context: 0% · effort: medium', 'mode: manual (shift+tab) · tokens: 0 · context: 0%', 'mode: manual (shift+tab) · tokens: 0 · context: unknown'],
+    80: ['mode: manual (shift+tab) · tokens: 0 · context: 0% · effort: medium', 'mode: manual (shift+tab) · tokens: 0 · context: 0%              ctrl+j: new line', 'mode: manual (shift+tab) · tokens: 0 · context: unknown         ctrl+j: new line'],
     60: ['mode: manual (shift+tab) · tokens: 0 · context: 0%', 'mode: manual (shift+tab) · tokens: 0 · context: 0%', 'mode: manual (shift+tab) · tokens: 0 · context: unknown'],
   };
 

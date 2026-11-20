@@ -30,19 +30,16 @@ const drawnOf = (shown: readonly string[], sides: readonly RowSegment['side'][],
 };
 
 export const fit = (segments: readonly RowSegment[], width: number): string => {
-  const [first, ...rest] = segments;
+  const [first] = segments;
   if (first === undefined) return '';
-  const kept = [first, ...rest];
-  const form = kept.map(() => 0);
-  for (;;) {
-    const drawn = drawnOf(kept.map((segment, index) => segment.forms[form[index] ?? 0] ?? ''), kept.map((segment) => segment.side), width);
-    if (drawn !== undefined) return drawn;
-    const last = kept.length - 1;
-    const shorter = (form[last] ?? 0) + 1;
-    if (shorter < (kept[last]?.forms.length ?? 0)) form[last] = shorter;
-    else if (last > 0) kept.pop();
-    else return first.forms.at(-1) ?? '';
+  const kept: { side: RowSegment['side']; form: string }[] = [];
+  const fits = (side: RowSegment['side'], candidate: string): boolean => drawnOf([...kept.map((taken) => taken.form), candidate], [...kept.map((taken) => taken.side), side], width) !== undefined;
+  for (const segment of segments) {
+    const form = segment.forms.find((candidate) => fits(segment.side, candidate));
+    if (form === undefined && segment === first) return first.forms.at(-1) ?? '';
+    if (form !== undefined) kept.push({ side: segment.side, form });
   }
+  return drawnOf(kept.map((taken) => taken.form), kept.map((taken) => taken.side), width) ?? '';
 };
 
 const modeForms = (mode: string, cycle: string): string[] => [...(cycle === '' ? [] : [`mode: ${mode} (${cycle})`]), `mode: ${mode}`, mode];
