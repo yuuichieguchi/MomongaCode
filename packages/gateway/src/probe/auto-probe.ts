@@ -125,20 +125,18 @@ export const targetProbingError = (probing: Probing): GatewayError =>
     measuring: measuringWireOf(probing.measuring),
   });
 
-export type ProbeFailure = { cause: string; model: string; declaration: string };
+export type ProbeFailure = { cause: string };
 
-export const probeFailureOf = (error: unknown, ask: MeasuringAsk, redactor: Pick<Redactor, 'text'>): ProbeFailure => ({
+export const probeFailureOf = (error: unknown, redactor: Pick<Redactor, 'text'>): ProbeFailure => ({
   cause: redactedText(redactor, cleanFailureMessage(measurementCauseOf(error))),
-  model: ask.model,
-  declaration: ask.declaration,
 });
 
-export const targetProbeFailedError = (failure: ProbeFailure): GatewayError =>
+export const targetProbeFailedError = (failure: ProbeFailure, ask: MeasuringAsk): GatewayError =>
   new GatewayError({
     status: SERVICE_UNAVAILABLE_STATUS,
     type: 'server_error',
     code: TARGET_PROBE_FAILED,
-    message: measurementFailedText(failure.model, failure.cause, failure.declaration),
+    message: measurementFailedText(ask.model, failure.cause, ask.declaration),
   });
 
 export const isTargetProbingError = (error: unknown): error is GatewayError => error instanceof GatewayError && isTargetProbing({ status: error.status, code: error.body.code });
@@ -231,7 +229,7 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
           options.onEvent({ kind: 'stopped', target: subject.target, error: errorOf(error) });
           return;
         }
-        failures.set(name, probeFailureOf(error, subject.unknown, options.redactor));
+        failures.set(name, probeFailureOf(error, options.redactor));
         options.onEvent({ kind: 'failed', target: subject.target, error: errorOf(error) });
       },
     );
@@ -254,7 +252,7 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
       if (!admitsFlight(name)) return probingFor(name, subject.unknown);
       if (verdict !== NO_VERDICT && verdict.kind === 'refused') throw targetNotReadyError(subject.unknown.model, verdict);
       const failure = failures.get(name);
-      if (failure !== undefined) throw targetProbeFailedError(failure);
+      if (failure !== undefined) throw targetProbeFailedError(failure, subject.unknown);
       const already = starting.get(name);
       if (already !== undefined) {
         await already;

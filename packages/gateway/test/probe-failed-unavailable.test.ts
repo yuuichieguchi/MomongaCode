@@ -105,6 +105,16 @@ describe('the automatic probe reports a failed measurement as its cause (design-
     });
   });
 
+  it('names the model as it is named when the answer is given, so each subject sharing the record gets its own name and a command that names it', async () => {
+    const context = setupAuto();
+    await failFirstFlight(context, new Error(CAUSE));
+    const renamed = 'ollama-127.0.0.1-18477/think-c:latest';
+    const renamedDeclaration = `declare toolCalling for the model "${renamed}" in its settings`;
+    const now = { ...context.subject, unknown: { fields: ['toolCalling'], declaration: renamedDeclaration, model: renamed } };
+    expect(await thrownBy(() => context.autoProbe.ensure(now, KEY))).toMatchObject({ body: { message: `measuring the model "${renamed}" failed: ${CAUSE}. It is not measured again until you ask: ${renamedDeclaration}, or run \`momonga gateway probe ${renamed}\`.` } });
+    expect(await thrownBy(() => context.autoProbe.ensure(context.subject, KEY))).toMatchObject({ body: { message: FAILED_MESSAGE } });
+  });
+
   it('cleans the cause and keeps it at most 300 characters', async () => {
     const context = setupAuto();
     await failFirstFlight(context, new Error(`\u001b[31mwick\u0007 ${'x'.repeat(2000)}`));
