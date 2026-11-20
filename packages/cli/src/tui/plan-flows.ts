@@ -35,7 +35,7 @@ export type PlanFlowPorts = OverlayPorts & {
   failed(text: string): void;
   warn(text: string): void;
   toast(text: string): void;
-  connected(model: string, effort?: ReasoningEffort): Promise<void>;
+  connected(model: string): Promise<void>;
   switchedThen(model: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void>;
   readonly effort: () => ReasoningEffort | undefined;
   setEffort(effort: ReasoningEffort | null): Promise<void>;

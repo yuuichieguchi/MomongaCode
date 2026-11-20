@@ -668,13 +668,12 @@ export function App(props: AppProps) {
     setProfiles(listed.profiles);
   };
 
-  const connectModel = async (chosen: string, effort?: ReasoningEffort): Promise<void> => {
+  const connectModel = async (chosen: string): Promise<void> => {
     if (sessionModelRef.current === undefined) {
       await openSession(chosen);
-      if (effort !== undefined) await applyEffort(effort);
       return;
     }
-    await applyModel(chosen, effort);
+    await applyModel(chosen);
   };
 
   const openedWith = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {

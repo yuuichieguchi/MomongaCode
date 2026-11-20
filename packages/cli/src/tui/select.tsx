@@ -8,7 +8,6 @@ import { styleOf as styleOfTokens } from './screen/theme.ts';
 import type { StyleToken } from './screen/theme.ts';
 import { displayWidth, segmentsOf, withoutTabs, wrapLine } from './screen/wrap.ts';
 
-
 export type SelectRow = { readonly label: string; readonly value?: string; readonly kept?: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean; readonly description?: string; readonly searchTexts?: readonly string[] };
 
 export type SelectLine = string | { readonly text: string; readonly token?: StyleToken; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
