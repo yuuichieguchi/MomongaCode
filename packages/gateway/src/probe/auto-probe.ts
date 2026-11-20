@@ -92,10 +92,10 @@ type Recording = { dir: string; lock: KernelLockMechanism; timing: LockWaitTimin
 
 const measureAndRecord = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, recording: Recording, key: Key, signal: AbortSignal, progress: MeasurementProgress): Promise<Report> => {
   const report = await settledOrAborted(subject.measure({ key, signal, progress }), signal);
-  const lock = await holdProbeLock(recording.dir, key, subject.target, recording.lock, recording.timing, signal, recording.lockWaitMs);
+  const lock = await holdProbeLock(recording.dir, key, subject.unknown.model, recording.lock, recording.timing, signal, recording.lockWaitMs);
   try {
     const after = await subject.readKey();
-    if (!sameKey(key, after)) throw new ProbeKeyChangedError(subject.target, key, after);
+    if (!sameKey(key, after)) throw new ProbeKeyChangedError(subject.unknown.model, key, after);
     await subject.save(key, report);
     return report;
   } finally {

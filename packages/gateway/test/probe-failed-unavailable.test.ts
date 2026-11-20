@@ -2,7 +2,7 @@ import { createRedactor } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { TARGET_PROBE_FAILED, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Capabilities, ProviderAdapter } from '@momonga/protocol';
-import { createAutoProbe, createInstanceProbe } from '@momonga/gateway';
+import { acquireProbeLock, createAutoProbe, createInstanceProbe } from '@momonga/gateway';
 import type { ProbeSubject } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, testKernelLock } from '@momonga/testkit';
 import { targetProbingError } from '../src/probe/auto-probe.ts';
@@ -44,8 +44,10 @@ const lantern = () => {
 const setupAuto = () => {
   const clock = createFakeClock(START_MS);
   const events: string[] = [];
-  const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir: makeDir(), clock, timers: createFakeTimers(clock), retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
-  return { clock, events, autoProbe, ...lantern() };
+  const dir = makeDir();
+  const timers = createFakeTimers(clock);
+  const autoProbe = createAutoProbe({ redactor: createRedactor({ credentials: [] }), lock: testKernelLock(), dir, clock, timers, retryAfterMs: RETRY_AFTER_MS, onEvent: (event) => events.push(event.kind) });
+  return { clock, timers, events, dir, autoProbe, ...lantern() };
 };
 
 const failFirstFlight = async (context: ReturnType<typeof setupAuto>, error: Error): Promise<void> => {
@@ -86,6 +88,21 @@ describe('the automatic probe reports a failed measurement as its cause (design-
     const context = setupAuto();
     const refused = { ...context.subject, precondition: { boundMs: 50, check: async () => ({ kind: 'refused', message: `the Ollama server does not list the model "think-c"`, detail: 'GET /api/tags has no entry for it', remedy: 'ollama pull think-c' }) as const } };
     expect(await thrownBy(() => context.autoProbe.ensure(refused, KEY))).toMatchObject({ body: { message: `the model "${SHOWN}" is not ready: the Ollama server does not list the model "think-c" (GET /api/tags has no entry for it); remedy: ollama pull think-c` } });
+  });
+
+  it('names the model as the person sees it when another process holds the measurement longer than the wait', async () => {
+    const context = setupAuto();
+    const held = await acquireProbeLock(context.dir, KEY, 'another process', testKernelLock());
+    await context.autoProbe.ensure(context.subject, KEY);
+    context.state.pending[0]?.resolve({ brightness: 1 });
+    await until(async () => {
+      if (context.timers.pending().length > 0) await context.timers.advanceAsync(RETRY_AFTER_MS);
+      return context.events.includes('failed');
+    }, 'the wait for the lock ends');
+    held.release();
+    expect(await thrownBy(() => context.autoProbe.ensure(context.subject, KEY))).toMatchObject({
+      body: { message: `measuring the model "${SHOWN}" failed: the model "${SHOWN}" is already being measured (once per probe key); run the command again when it finishes. It is not measured again until you ask: ${DECLARATION}, or run \`momonga gateway probe ${SHOWN}\`.` },
+    });
   });
 
   it('cleans the cause and keeps it at most 300 characters', async () => {
