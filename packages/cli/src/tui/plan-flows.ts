@@ -96,24 +96,29 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const chosenRead = async (model: string): Promise<ChosenRead> => {
-    const entries = await backend.models();
-    const entry = entries.find((candidate) => candidate.id === model);
-    const readiness = entry === undefined ? undefined : agentReadiness(entry.capabilities);
-    if (readiness?.state !== 'probing') return { kind: 'read', entries, entry };
+    let ended = false;
     let stop = (): void => undefined;
-    const measured = await ports.loading(
+    const measuredEntry = (retryAfterSeconds: number): Promise<Measured> =>
+      new Promise<Measured>((resolve) => {
+        stop = followMeasurement({ read: () => backend.modelOf(model), timers: ports.timers }, retryAfterSeconds, (read) => resolve({ kind: 'read', entry: read }), (error) => resolve({ kind: 'failed', error }), () => undefined);
+      });
+    const loaded = await ports.loading(
       LOADING_PHASE,
-      () =>
-        new Promise<Measured>((resolve) => {
-          stop = followMeasurement({ read: () => backend.modelOf(model), timers: ports.timers }, readiness.retryAfterSeconds, (read) => resolve({ kind: 'read', entry: read }), (error) => resolve({ kind: 'failed', error }), () => undefined);
-        }),
+      async (): Promise<Exclude<ChosenRead, { kind: 'cancelled' }>> => {
+        const entries = await backend.models();
+        const entry = entries.find((candidate) => candidate.id === model);
+        const readiness = entry === undefined ? undefined : agentReadiness(entry.capabilities);
+        if (ended || readiness?.state !== 'probing') return { kind: 'read', entries, entry };
+        const measured = await measuredEntry(readiness.retryAfterSeconds);
+        if (measured.kind === 'failed') return measured;
+        const read = measured.entry;
+        return { kind: 'read', entries: [...entries.filter((other) => other.id !== read.id), read], entry: read };
+      },
       LOADING_HINTS.none,
     );
+    ended = true;
     stop();
-    if (measured.kind === 'cancelled') return measured;
-    if (measured.value.kind === 'failed') return measured.value;
-    const read = measured.value.entry;
-    return { kind: 'read', entries: [...entries.filter((other) => other.id !== read.id), read], entry: read };
+    return loaded.kind === 'cancelled' ? loaded : loaded.value;
   };
 
   const chosenWithEffort = async (model: string, atSwitch: () => Promise<void>): Promise<ModelChosen> => {

@@ -632,7 +632,7 @@ export function App(props: AppProps) {
     );
   };
 
-  const openSession = async (chosen: string | undefined): Promise<void> => enterFirstSession(await backend.openSession(chosen));
+  const openSession = async (chosen: string | undefined, effort?: ReasoningEffort): Promise<void> => enterFirstSession(await backend.openSession(chosen, undefined, effort));
 
   const runFlow = (work: () => Promise<void>): void => {
     prompts.flow(work).catch(reportError);
@@ -678,19 +678,25 @@ export function App(props: AppProps) {
   };
 
   const openedWith = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {
-    await openSession(chosen);
-    if (effort !== undefined) await applyEffort(effort);
+    await openSession(chosen, effort);
     return chosen;
   };
 
   const switchModelThen = async (chosen: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void> => {
     const previous = sessionModelRef.current;
     const model = previous === undefined ? await openedWith(chosen, effort) : await switchModel(chosen, effort);
-    try {
-      await then();
-    } finally {
+    const failure = await then().then(
+      () => undefined,
+      (error: unknown) => ({ error }),
+    );
+    if (failure === undefined) {
       await noteModelSwitch(model, previous);
+      return;
     }
+    await noteModelSwitch(model, previous).then(
+      () => Promise.reject(failure.error),
+      () => Promise.reject(failure.error),
+    );
   };
 
   const refreshConnection = async (): Promise<void> => {

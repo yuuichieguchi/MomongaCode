@@ -10,7 +10,7 @@ import type { SelectRow, SelectSpec } from './select.tsx';
 
 export type PickRow = SelectRow;
 
-export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm' | 'alt' | 'stepsLabel'> & Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly onHighlight?: (index: number) => void };
+export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm' | 'alt'> & Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly onHighlight?: (index: number) => void };
 
 const FILTER_FROM_ROWS = 10;
 const TEXT_ROWS_AROUND = 2;
@@ -47,7 +47,7 @@ export type WaitingOverlay = {
   readonly status?: string;
 };
 
-export type PickChoice = { readonly index: number; readonly alt: boolean; readonly step?: number };
+export type PickChoice = { readonly index: number; readonly alt: boolean };
 
 export type CaptureRequest = { readonly title: string; problemOf(spec: KeySpec): string | undefined };
 

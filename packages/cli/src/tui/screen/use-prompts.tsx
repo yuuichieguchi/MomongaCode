@@ -596,7 +596,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     on: (outcome) => {
       if (outcome.kind === 'alt' && current.request.alt === undefined) return;
       closeOverlay();
-      current.resolve(outcome.kind === 'decide' || outcome.kind === 'alt' ? { index: outcome.index, alt: outcome.kind === 'alt', ...(outcome.step === undefined ? {} : { step: outcome.step }) } : undefined);
+      current.resolve(outcome.kind === 'decide' || outcome.kind === 'alt' ? { index: outcome.index, alt: outcome.kind === 'alt' } : undefined);
     },
   });
 

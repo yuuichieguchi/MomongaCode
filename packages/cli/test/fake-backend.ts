@@ -73,7 +73,7 @@ export type FakeConversationRun = { id: string; status?: RunStatus; frames: read
 export type FakeConversation = { session: Partial<SessionView> & { id: string }; firstPrompt: string; runs: readonly FakeConversationRun[] };
 
 export type FakeBackend = TuiBackend & {
-  readonly opened: { model: string | undefined; permissionMode: PermissionMode | undefined }[];
+  readonly opened: { model: string | undefined; permissionMode: PermissionMode | undefined; effort?: ReasoningEffort }[];
   readonly detections: DetectRequest[];
   readonly secrets: Map<string, string>;
   readonly listings: number[];
@@ -126,6 +126,8 @@ export type FakeBackendOptions = {
   modelOfFailures?: Readonly<Record<string, Error>>;
   setModelFailure?: Error;
   modelsLockFailure?: Error;
+  openSessionFailure?: Error;
+  sessionModelFailures?: Readonly<Record<string, Error>>;
   models?: readonly string[];
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
@@ -409,11 +411,12 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     answerCheck: async (answer) => {
       record(`check:${JSON.stringify(answer)}`);
     },
-    openSession: async (model, permissionMode) => {
+    openSession: async (model, permissionMode, effort) => {
       record('openSession');
-      opened.push({ model, permissionMode });
-      if (opened.length === 1) return model === undefined ? session : adopt({ ...session, model });
-      return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, latestRunAt: null, activeRunId: null, activeRunAt: null, ...(model === undefined ? {} : { model }), ...(permissionMode === undefined ? {} : { permissionMode }) });
+      opened.push({ model, permissionMode, ...(effort === undefined ? {} : { effort }) });
+      if (options.openSessionFailure !== undefined) throw options.openSessionFailure;
+      if (opened.length === 1) return model === undefined ? session : adopt({ ...session, model, ...(effort === undefined ? {} : { effort }) });
+      return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, latestRunAt: null, activeRunId: null, activeRunAt: null, ...(model === undefined ? {} : { model }), ...(permissionMode === undefined ? {} : { permissionMode }), ...(effort === undefined ? {} : { effort }) });
     },
     resumeSession: async (id) => {
       record(`resume:${id}`);
@@ -650,6 +653,8 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
       if (options.modelFailure !== undefined) throw options.modelFailure;
+      const sessionFailure = options.sessionModelFailures?.[session.model];
+      if (sessionFailure !== undefined) throw sessionFailure;
       const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model), ...reasoningOf(session.model) };
       return { ...listedEntryOf(session.model, capabilities, options.chain ?? [session.model]), ...savedEffortOf(session.model) };
     },

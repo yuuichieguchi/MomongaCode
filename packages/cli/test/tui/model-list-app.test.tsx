@@ -270,6 +270,8 @@ const notesOf = (output: string): string[] =>
     .map((line) => line.trim())
     .filter((line, index, all) => all.indexOf(line) === index);
 
+const settled = (): Promise<void> => new Promise((resolve) => systemTiming.setTimeout(resolve, 300));
+
 const chooseLuna = async (options: FakePlanOptions, key: string = KEYS.enter) => {
   const started = await startPlan({ ...APPROVED, ...options });
   await openList(started.app);
@@ -407,13 +409,145 @@ describe('choosing a model in the /model list switches nothing until its effort 
     expect(backend.calls.filter((call) => call === 'openSession' || call.startsWith('model:') || call.startsWith('effort:'))).toEqual([]);
     app.stdin.write(KEYS.tab);
     await untilFrame(app, (frame) => frame.includes('mode: manual') && !pickerShown(frame));
-    await backend.called('effort:medium');
-    expect(backend.calls.filter((call) => call === 'openSession' || call.startsWith('model:') || call.startsWith('effort:'))).toEqual(['openSession', 'effort:medium']);
-    expect(backend.opened.at(-1)?.model).toBe(SOL);
     const line = 'model: gpt-6.2-sol (effort: medium); applies from the next run';
     await untilOutput(app, line);
+    expect(backend.calls.filter((call) => call === 'openSession' || call.startsWith('model:') || call.startsWith('effort:'))).toEqual(['openSession']);
+    expect(backend.opened).toEqual([{ model: SOL, permissionMode: undefined, effort: 'medium' }]);
     expect(notesOf(app.frames.join('\n'))).toEqual([line]);
     expect(app.lastFrame()).toContain('context: 0% · gpt-6.2-sol (effort: medium)');
+    app.unmount();
+  });
+
+  it('with no session open, a failed open leaves no session open and shows only the error row', async () => {
+    const { app, backend } = await startPlan({ models: [], accounts: [account()], catalogs: catalogOf([usable('gpt-6.2-sol')]), reasoning: { [SOL]: REASONING }, openSessionFailure: new Error('POST /v1/sessions answered 500: the daemon refused') });
+    await untilFrame(app, 'Choose a model of chatgpt');
+    app.stdin.write(KEYS.escape);
+    await untilFrame(app, (frame) => frame.includes('no model connected · /login') && !frame.includes('Choose a model of chatgpt'));
+    await submitLine(app, '/model');
+    await untilFrame(app, listShown);
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.tab);
+    const output = await untilOutput(app, 'POST /v1/sessions answered 500: the daemon refused');
+    expect(backend.opened).toEqual([{ model: SOL, permissionMode: undefined, effort: 'medium' }]);
+    expect(notesOf(output)).toEqual([]);
+    expect(backend.calls.filter((call) => call.startsWith('effort:') || call.startsWith('model:'))).toEqual([]);
+    expect(app.lastFrame()).toContain('no model connected · /login');
+    app.unmount();
+  });
+
+  it('a failed effort write is the error shown even when the model line cannot be read', async () => {
+    const { app, backend } = await chooseLuna({ modelsLockFailure: new Error('the settings could not be locked') });
+    await untilFrame(app, pickerShown);
+    const models = backend.models;
+    let reads = 0;
+    backend.models = async () => {
+      reads += 1;
+      if (reads === 1) return models();
+      throw new Error('the listing could not be read');
+    };
+    app.stdin.write(KEYS.enter);
+    const output = await untilOutput(app, 'the settings could not be locked');
+    expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
+    expect(output).not.toContain('the listing could not be read');
+    app.unmount();
+  });
+
+  it('a switch whose model line cannot be read shows the error of that read', async () => {
+    const { app, backend } = await chooseLuna({});
+    await untilFrame(app, pickerShown);
+    const models = backend.models;
+    let reads = 0;
+    backend.models = async () => {
+      reads += 1;
+      if (reads === 1) return models();
+      throw new Error('the listing could not be read');
+    };
+    app.stdin.write(KEYS.tab);
+    const output = await untilOutput(app, 'the listing could not be read');
+    expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
+    expect(notesOf(output)).toEqual([]);
+    app.unmount();
+  });
+
+  it('esc right after enter, while the listing is still read, shows the list again with that row highlighted and leaves the working run alone', async () => {
+    const { app, backend } = await startPlan(APPROVED);
+    await ready(app);
+    await submitLine(app, 'long task');
+    await pollUntil(() => backend.started.length === 1, { description: 'the run is started', boundMs: 5000 });
+    await submitLine(app, '/model');
+    await untilFrame(app, listShown);
+    const held = Promise.withResolvers<void>();
+    const models = backend.models;
+    backend.models = async () => {
+      await held.promise;
+      return models();
+    };
+    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+    await untilFrame(app, loadingShown);
+    app.stdin.write(KEYS.escape);
+    const again = await untilFrame(app, (frame) => listShown(frame) && !loadingShown(frame));
+    held.resolve();
+    expect(listBlock(again)).toBe(LUNA_HIGHLIGHTED);
+    expect(switches(backend)).toEqual([]);
+    expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual([]);
+    app.unmount();
+  });
+
+  it('a second enter while the listing is still read does not switch the model', async () => {
+    const { app, backend } = await startPlan(APPROVED);
+    await openList(app);
+    const held = Promise.withResolvers<void>();
+    const models = backend.models;
+    backend.models = async () => {
+      await held.promise;
+      return models();
+    };
+    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+    await untilFrame(app, loadingShown);
+    app.stdin.write(KEYS.enter);
+    held.resolve();
+    const picker = await untilFrame(app, pickerShown);
+    expect(listBlock(picker, 'Reasoning effort')).toBe(EFFORT_BLOCK);
+    expect(switches(backend)).toEqual([]);
+    app.unmount();
+  });
+
+  it('a model without a reasoning control chosen while the session has an effort shows only the model line', async () => {
+    const { app, backend } = await chooseLuna({ session: { model: QWEN, effort: 'high' }, reasoning: { [QWEN]: REASONING } });
+    const line = 'model: gpt-6-luna (effort: not available); applies from the next run';
+    await untilOutput(app, line);
+    await untilFrame(app, 'gpt-6-luna');
+    await settled();
+    expect(switches(backend)).toEqual([`model:${LUNA}`]);
+    expect(notesOf(app.frames.join('\n'))).toEqual([line]);
+    expect(app.frames.join('\n')).not.toContain('was chosen');
+    app.unmount();
+  });
+
+  it('a model whose reasoning was not known when it was chosen shows only the model line after the switch', async () => {
+    const pending = Promise.withResolvers<void>();
+    const { app } = await chooseSol({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
+    await untilFrame(app, loadingShown);
+    pending.resolve();
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.tab);
+    const line = 'model: gpt-6.2-sol (effort: medium); applies from the next run';
+    await untilOutput(app, line);
+    await settled();
+    expect(notesOf(app.frames.join('\n'))).toEqual([line]);
+    expect(app.frames.join('\n')).not.toContain('was chosen');
+    app.unmount();
+  });
+
+  it('a model information read failing right after a successful switch', async () => {
+    const { app } = await chooseLuna({ sessionModelFailures: { [LUNA]: new Error('the gateway is gone') } });
+    await untilFrame(app, pickerShown);
+    app.stdin.write(KEYS.tab);
+    const line = 'model: gpt-6-luna (effort: medium); applies from the next run';
+    await untilOutput(app, line);
+    await settled();
+    expect(notesOf(app.frames.join('\n'))).toEqual(['model information unavailable: the gateway is gone', line]);
     app.unmount();
   });
 

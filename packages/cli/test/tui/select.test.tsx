@@ -345,23 +345,3 @@ describe('a row keeps its key, its value and its kept text readable at every wid
     expect(line?.slice(2, line.indexOf('  /'))).toMatch(/^77\..*….*\(ms\)$/);
   });
 });
-
-describe('a row that carries a value the arrows change', () => {
-  const stepped = spec({ rows: [{ label: 'a', steps: { name: 'effort', values: ['low', 'medium', 'high'], at: 1 } }, { label: 'b' }], decideOn: 'enter', stepsLabel: 'change the effort' });
-
-  it('moves the value of the highlighted row within its values, shows it marked, and gives it with the choice', () => {
-    const right = press(stepped, selectStart(stepped), '', { rightArrow: true });
-    const further = press(stepped, right.state, '', { rightArrow: true });
-    expect(further.state.steps).toEqual({ 0: 2 });
-    const chosen = press(stepped, further.state, '\r', { return: true });
-    expect(chosen.outcome).toEqual({ kind: 'decide', index: 0, step: 2 });
-    const left = press(stepped, selectStart(stepped), '', { leftArrow: true });
-    expect(press(stepped, left.state, '\r', { return: true }).outcome).toEqual({ kind: 'decide', index: 0, step: 0 });
-  });
-
-  it('leaves a row without values unchanged and names the keys in the hint', () => {
-    const onB = press(stepped, selectStart(stepped), '', { downArrow: true });
-    expect(press(stepped, onB.state, '', { rightArrow: true }).state.steps).toEqual({});
-    expect(selectHint(stepped, DEFAULT_KEY_TABLE)).toContain('left/right: change the effort');
-  });
-});
