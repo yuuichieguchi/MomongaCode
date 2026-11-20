@@ -2,6 +2,8 @@
 
 MomongaCode is a coding agent for the terminal. It works with local and hosted models, keeps its own memory of your projects, and runs tool calls under a permission system and an operating-system sandbox. The command is `momonga`.
 
+![MomongaCode demo](docs/assets/momongacode-demo.gif)
+
 ## 1. Installation
 
 macOS and Linux:
