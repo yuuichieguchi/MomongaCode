@@ -2,6 +2,7 @@ import { clipboardWriter, wireCopyButtons } from './copy.ts';
 import { indexLoader } from './index-loader.ts';
 import { searchRecords } from './search.ts';
 import type { SearchRecord } from './search.ts';
+import { wireStage } from './stage.ts';
 import { readStored, writeStored } from './storage.ts';
 import { wireAll } from './wiring.ts';
 import type { Commit } from './wiring.ts';
@@ -68,6 +69,31 @@ const prepareTheme = (): Commit => {
   };
 };
 
+let celebrateStage: (() => void) | undefined;
+
+const prepareStage = (): Commit => {
+  const stage = document.querySelector<HTMLElement>('[data-stage]');
+  if (stage === null) return () => {};
+  const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return () => {
+    celebrateStage = wireStage(
+      {
+        setWag: (kind) => {
+          if (kind === undefined) delete stage.dataset['wag'];
+          else stage.dataset['wag'] = kind;
+        },
+        reflow: () => {
+          void stage.offsetWidth;
+        },
+        onClick: (listener) => {
+          stage.addEventListener('click', listener);
+        },
+      },
+      reducedMotion,
+    );
+  };
+};
+
 const prepareCopy = (): Commit => {
   const buttons = [...document.querySelectorAll<HTMLButtonElement>('button[data-copy]')];
   const copied = buttons.length === 0 ? '' : templateText('copied');
@@ -94,7 +120,7 @@ const prepareCopy = (): Commit => {
   });
   const write = clipboardWriter(navigator.clipboard);
   return () => {
-    wireCopyButtons(targets, write, copied, reportError);
+    wireCopyButtons(targets, write, copied, reportError, undefined, () => celebrateStage?.());
   };
 };
 
@@ -191,5 +217,5 @@ const markWired = (): void => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  wireAll([prepareTheme, prepareCopy, prepareTabs, prepareMenu, prepareSearch], markWired);
+  wireAll([prepareTheme, prepareStage, prepareCopy, prepareTabs, prepareMenu, prepareSearch], markWired);
 });
