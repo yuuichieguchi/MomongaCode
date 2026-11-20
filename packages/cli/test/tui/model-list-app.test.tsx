@@ -846,3 +846,32 @@ describe('the /model flow with the timing of the real program', () => {
   }
 });
 
+
+const SERVER = 'ollama-127.0.0.1-18477';
+const THINK = `${SERVER}/think-c:latest`;
+const PLAIN = `${SERVER}/plain-b:latest`;
+const SERVER_REASONING: ReasoningCapability = { control: 'reasoning_effort', lowest: 'none' };
+
+const serverPlace = (): Place => {
+  const place = freshPlace();
+  writeSettings(place.userFile, { models: { connections: [{ adapter: 'ollama', provider: SERVER, baseUrl: 'http://127.0.0.1:18477', models: [{ id: 'think-c:latest' }, { id: 'plain-b:latest' }] }] } });
+  return place;
+};
+
+describe('a server model whose reasoning control comes from the listing and whose settings entry holds only its id', () => {
+  it('enter on the level marked in use switches, shows the model line, and the saved write is refused', async () => {
+    const place = serverPlace();
+    const { app, backend } = await startPlan({ session: { model: QWEN }, models: [QWEN, THINK, PLAIN], billing: { [QWEN]: 'local', [THINK]: 'local', [PLAIN]: 'local' }, reasoning: { [THINK]: SERVER_REASONING }, settingsPlace: { home: place.home, projectDir: place.project } });
+    await openList(app);
+    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+    const picker = await untilFrame(app, pickerShown);
+    expect(listBlock(picker, 'Reasoning effort')).toBe(['Reasoning effort', '  1. none', '  2. minimal', '  3. low', '› 4. medium  in use', '  5. high', '  6. xhigh', EFFORT_HINT].join('\n'));
+    app.stdin.write(KEYS.enter);
+    await settled();
+    await settled();
+    await untilOutput(app, 'Not saved: models.connections[0].models[0]: effort medium is set, but the model declares no capabilities.reasoning, so no effort can be sent to it');
+    expect(switches(backend)).toEqual([`model:${THINK} effort:medium`]);
+    expect(notesOf(app.frames.join('\n'))).toEqual(['model: ollama-127.0.0.1-18477/think-c (effort: medium); applies from the next run']);
+    app.unmount();
+  });
+});

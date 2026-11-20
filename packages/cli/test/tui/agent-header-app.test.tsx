@@ -17,11 +17,13 @@ const rowOf = (lines: string[], text: string): number => lines.findIndex((line) 
 const isHeader = (line: string): boolean => line.startsWith('Subagent ') || line.startsWith('running · ') || line.includes('… · running');
 const headerOf = (lines: string[]): string => (lines.find(isHeader) ?? '').trimEnd();
 
-const REASONING = { [OTHER]: { control: 'reasoning_effort', lowest: 'low' } } as const;
+const THINK = 'ollama-127.0.0.1-18477/think-c:latest';
+const PLAIN = 'ollama-127.0.0.1-18477/plain-b:latest';
+const REASONING = { [OTHER]: { control: 'reasoning_effort', lowest: 'low' }, [THINK]: { control: 'reasoning_effort', lowest: 'none' } } as const;
 
 const openChild = async (size: { columns: number; rows: number }, childModel: string, childEffort?: ReasoningEffort): Promise<TerminalApp> => {
   const place = freshPlace();
-  const app = await startOnTerminal(size, { settingsPlace: { home: place.home, projectDir: place.project }, models: [SCRIPTED_MODEL, OTHER, BACKUP], reasoning: REASONING });
+  const app = await startOnTerminal(size, { settingsPlace: { home: place.home, projectDir: place.project }, models: [SCRIPTED_MODEL, OTHER, BACKUP, THINK, PLAIN], reasoning: REASONING });
   await app.type('go', (lines) => lines.some((line) => line.includes('go')), 'the prompt is typed');
   await app.type(KEYS.enter, () => true, 'the prompt is sent');
   await app.backend.called('openSession');
@@ -80,4 +82,21 @@ describe('the header of a subagent view names the model the child run runs on', 
     expect(headerOf(app.screen())).toBe('running · scripted-model (not available)');
     app.close();
   });
+
+  const SERVER_HEADERS: Readonly<Record<number, readonly string[]>> = {
+    120: ['Subagent general-purpose · running · model: ollama-127.0.0.1-18477/think-c (effort: medium)', 'Subagent general-purpose · running · model: ollama-127.0.0.1-18477/plain-b (effort: not available)'],
+    80: ['general-purp… · running · model: ollama-127.0.0.1-18477/think-c (effort: medium)', 'gener… · running · model: ollama-127.0.0.1-18477/plain-b (effort: not available)'],
+    60: ['running · ollama-127.0.0.1-18477/think-c (medium)', 'running · ollama-127.0.0.1-18477/plain-b (not available)'],
+    40: ['running · ollama-127.0.0.1-18477/think-…', 'running · ollama-127.0.0.1-18477/plain-…'],
+  };
+
+  for (const columns of [120, 80, 60, 40]) {
+    it(`names a server model with its effort at ${columns} columns`, async () => {
+      const think = await openChild({ columns, rows: 30 }, THINK);
+      const plain = await openChild({ columns, rows: 30 }, PLAIN);
+      expect([headerOf(think.screen()), headerOf(plain.screen())]).toEqual(SERVER_HEADERS[columns]);
+      think.close();
+      plain.close();
+    });
+  }
 });

@@ -215,6 +215,18 @@ describe('the screen-reader display', () => {
     started.app.unmount();
   });
 
+  it('names a server model with its effort in the Status group of /help', async () => {
+    const think = 'ollama-127.0.0.1-18477/think-c:latest';
+    const started = await startWith({ ...READER, backend: { session: { model: think }, models: [think], reasoning: { [think]: { control: 'reasoning_effort', lowest: 'none' } } } });
+    await untilOutput(started.app, 'mode: manual · tokens: 0 · context:');
+    await command(started, '/help');
+    const help = await untilOutput(started.app, '  model: ollama-127.0.0.1-18477/think-c (effort: medium)');
+    const lines = help.split('\n').map((line) => line.trimEnd());
+    const at = lines.lastIndexOf('Status');
+    expect(lines.slice(at, at + 5)).toEqual(['Status', '  mode: manual', '  tokens: 0', '  context: 0%', '  model: ollama-127.0.0.1-18477/think-c (effort: medium)']);
+    started.app.unmount();
+  });
+
   it('prints a hint of the footer as a line', async () => {
     const started = await startWith(READER);
     await untilOutput(started.app, 'mode: manual · tokens: 0');
