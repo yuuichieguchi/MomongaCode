@@ -7,7 +7,8 @@ import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import { account, fakePlanBackend, startPlan, submitLine } from '../fake-plan-gateway.tsx';
 import type { FakePlanOptions, PlanTiming } from '../fake-plan-gateway.tsx';
 import { KEY_SETTLE_MS } from '../../src/tui/terminal/constants.ts';
-import { KEYS, TEST_KEY_SETTLE_MS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { FRAME_BOUND_MS, KEYS, TEST_KEY_SETTLE_MS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { manualClock } from './screen-clock.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { systemTiming } from '@momonga/foundation';
 import { pollUntil } from '@momonga/testkit';
@@ -691,40 +692,61 @@ describe('the effort step after a plan model that is not configured is chosen', 
 });
 
 describe('the /model flow with the timing of the real program', () => {
-  const REAL: PlanTiming = { now: Date.now, timers: systemTiming, keySettleMs: KEY_SETTLE_MS };
+  const STEP_MS = 5;
   const LISTING_MS = 30;
-  const pause = (ms: number): Promise<void> => new Promise((resolve) => systemTiming.setTimeout(resolve, ms));
+  const yieldTurn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
   const listOpenAtRealTiming = async () => {
-    const started = await startPlan(APPROVED, {}, {}, REAL);
-    await ready(started.app);
-    await submitLine(started.app, '/model');
-    await untilFrame(started.app, listShown);
+    const clock = manualClock(1_000_000);
+    const started = await startPlan({ ...APPROVED, answerTimers: clock.timers }, {}, {}, { now: clock.now, timers: clock.timers, keySettleMs: KEY_SETTLE_MS });
+    const pause = async (ms: number): Promise<void> => {
+      for (let passed = 0; passed < ms; passed += STEP_MS) {
+        clock.advance(Math.min(STEP_MS, ms - passed));
+        await yieldTurn();
+      }
+    };
+    const until = async (holds: (frame: string) => boolean, description: string): Promise<string> => {
+      await pollUntil(
+        async () => {
+          await pause(STEP_MS);
+          return holds(started.app.lastFrame() ?? '');
+        },
+        { description, boundMs: FRAME_BOUND_MS },
+      );
+      return started.app.lastFrame() ?? '';
+    };
+    const untilShown = (holds: string | ((frame: string) => boolean)): Promise<string> => until(typeof holds === 'string' ? (frame) => frame.includes(holds) : holds, String(holds));
+    const untilWritten = (text: string): Promise<string> => until(() => started.app.frames.join('\n').includes(text), text);
+    await untilShown('mode: manual');
+    started.app.stdin.write('/model');
+    await untilShown('/model');
+    started.app.stdin.write(KEYS.enter);
+    await untilShown(listShown);
     await pause(KEY_SETTLE_MS * 2);
     const models = started.backend.models;
     started.backend.models = async () => {
-      await pause(LISTING_MS);
+      await new Promise((resolve) => clock.timers.setTimeout(() => resolve(undefined), LISTING_MS));
       return models();
     };
-    return started;
+    return { ...started, pause, untilShown, untilWritten };
   };
 
   it('enter on the level marked in use switches the model with that level', async () => {
-    const { app, backend } = await listOpenAtRealTiming();
+    const { app, backend, pause, untilShown, untilWritten } = await listOpenAtRealTiming();
     app.stdin.write(`${KEYS.down}${KEYS.enter}`);
-    await untilFrame(app, pickerShown);
+    await untilShown(pickerShown);
     await pause(KEY_SETTLE_MS * 4);
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: gpt-6-luna (effort: medium); applies from the next run');
+    await untilWritten('model: gpt-6-luna (effort: medium); applies from the next run');
     expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
     app.unmount();
   });
 
   for (const wait of [0, 50, 100, 300]) {
     it(`enter ${wait} ms after the effort picker appears on the level marked in use switches the model`, async () => {
-      const { app, backend } = await listOpenAtRealTiming();
+      const { app, backend, pause, untilShown, untilWritten } = await listOpenAtRealTiming();
       app.stdin.write(`${KEYS.down}${KEYS.enter}`);
-      await untilFrame(app, pickerShown);
+      await untilShown(pickerShown);
       if (wait > 0) await pause(wait);
       app.stdin.write(KEYS.enter);
       await pause(1500);
@@ -735,7 +757,7 @@ describe('the /model flow with the timing of the real program', () => {
 
   for (const gap of [0, 20, 60]) {
     it(`esc ${gap} ms after enter shows the model list again with the chosen row highlighted`, async () => {
-      const { app, backend } = await listOpenAtRealTiming();
+      const { app, backend, pause, untilShown, untilWritten } = await listOpenAtRealTiming();
       app.stdin.write(`${KEYS.down}${KEYS.enter}`);
       if (gap > 0) await pause(gap);
       app.stdin.write(KEYS.escape);
@@ -745,43 +767,47 @@ describe('the /model flow with the timing of the real program', () => {
       expect(listBlock(frame)).toBe(LUNA_HIGHLIGHTED);
       expect(switches(backend)).toEqual([]);
       app.stdin.write(KEYS.enter);
-      await untilFrame(app, pickerShown);
+      await untilShown(pickerShown);
       await pause(KEY_SETTLE_MS * 2);
       app.stdin.write(KEYS.enter);
-      await untilOutput(app, 'model: gpt-6-luna (effort: medium); applies from the next run');
+      await untilWritten('model: gpt-6-luna (effort: medium); applies from the next run');
       expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
       app.unmount();
     });
   }
 
   it('esc on the effort picker shown right after a quick enter returns to the list', async () => {
-    const { app, backend } = await listOpenAtRealTiming();
+    const { app, backend, pause, untilShown, untilWritten } = await listOpenAtRealTiming();
     app.stdin.write(`${KEYS.down}${KEYS.enter}`);
-    await untilFrame(app, pickerShown);
+    await untilShown(pickerShown);
     await pause(1500);
     app.stdin.write(KEYS.escape);
-    const again = await untilFrame(app, (frame) => listShown(frame) && !pickerShown(frame));
+    const again = await untilShown((frame) => listShown(frame) && !pickerShown(frame));
     expect(listBlock(again)).toBe(LUNA_HIGHLIGHTED);
     expect(switches(backend)).toEqual([]);
     app.unmount();
   });
 
-  const burst = async (app: Instance, keys: readonly (readonly [string, number])[]): Promise<void> => {
+  const burst = async (started: Awaited<ReturnType<typeof listOpenAtRealTiming>>, keys: readonly (readonly [string, number])[]): Promise<void> => {
     for (const [key, gap] of keys) {
-      if (gap > 0) await pause(gap);
-      app.stdin.write(key);
+      if (gap > 0) await started.pause(gap);
+      started.app.stdin.write(key);
     }
   };
 
   const withRun = async (started: Awaited<ReturnType<typeof listOpenAtRealTiming>>, working: boolean): Promise<void> => {
     if (!working) return;
     started.app.stdin.write(KEYS.escape);
-    await untilFrame(started.app, (frame) => !listShown(frame));
-    await submitLine(started.app, 'long task');
-    await pollUntil(() => started.backend.started.length === 1, { description: 'the run is started', boundMs: 5000 });
-    await submitLine(started.app, '/model');
-    await untilFrame(started.app, listShown);
-    await pause(KEY_SETTLE_MS * 2);
+    await started.untilShown((frame) => !listShown(frame));
+    started.app.stdin.write('long task');
+    await started.untilShown('long task');
+    started.app.stdin.write(KEYS.enter);
+    await started.untilShown(() => started.backend.started.length === 1);
+    started.app.stdin.write('/model');
+    await started.untilShown('/model');
+    started.app.stdin.write(KEYS.enter);
+    await started.untilShown(listShown);
+    await started.pause(KEY_SETTLE_MS * 2);
   };
 
   const cancels = (backend: { calls: readonly string[] }): string[] => backend.calls.filter((call) => call.startsWith('cancel:'));
@@ -793,9 +819,9 @@ describe('the /model flow with the timing of the real program', () => {
       it(`enter then esc ${gap} ms later${run} shows the list again with the chosen row highlighted`, async () => {
         const started = await listOpenAtRealTiming();
         await withRun(started, working);
-        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.escape, gap]]);
-        await pause(1500);
-        expect(listBlock(started.app.lastFrame() ?? '')).toBe(LUNA_HIGHLIGHTED);
+        await burst(started, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.escape, gap]]);
+        await started.pause(1500);
+        expect(listBlock(await started.untilShown(listShown))).toBe(LUNA_HIGHLIGHTED);
         expect(switches(started.backend)).toEqual([]);
         expect(cancels(started.backend)).toEqual([]);
         started.app.unmount();
@@ -804,13 +830,13 @@ describe('the /model flow with the timing of the real program', () => {
       it(`enter then enter ${gap} ms later${run} switches at most once and leaves nothing stuck`, async () => {
         const started = await listOpenAtRealTiming();
         await withRun(started, working);
-        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.enter, gap]]);
-        await pause(1500);
+        await burst(started, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.enter, gap]]);
+        await started.pause(1500);
         const frame = started.app.lastFrame() ?? '';
         if (switches(started.backend).length === 0) {
           expect(pickerShown(frame)).toBe(true);
           started.app.stdin.write(KEYS.escape);
-          expect(listBlock(await untilFrame(started.app, (now) => listShown(now) && !pickerShown(now)))).toBe(LUNA_HIGHLIGHTED);
+          expect(listBlock(await started.untilShown((now) => listShown(now) && !pickerShown(now)))).toBe(LUNA_HIGHLIGHTED);
         } else expect(switches(started.backend)).toEqual([`model:${LUNA} effort:medium`]);
         expect(cancels(started.backend)).toEqual([]);
         started.app.unmount();
@@ -819,10 +845,10 @@ describe('the /model flow with the timing of the real program', () => {
       it(`esc on the effort picker then esc ${gap} ms later${run} closes the list and switches nothing`, async () => {
         const started = await listOpenAtRealTiming();
         await withRun(started, working);
-        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0]]);
-        await untilFrame(started.app, pickerShown);
-        await burst(started.app, [[KEYS.escape, 0], [KEYS.escape, gap]]);
-        await pause(1500);
+        await burst(started, [[KEYS.down, 0], [KEYS.enter, 0]]);
+        await started.untilShown(pickerShown);
+        await burst(started, [[KEYS.escape, 0], [KEYS.escape, gap]]);
+        await started.pause(1500);
         const frame = started.app.lastFrame() ?? '';
         expect(pickerShown(frame)).toBe(false);
         expect(listShown(frame)).toBe(false);
@@ -834,8 +860,8 @@ describe('the /model flow with the timing of the real program', () => {
       it(`enter then tab ${gap} ms later${run} switches at most once, for this session only`, async () => {
         const started = await listOpenAtRealTiming();
         await withRun(started, working);
-        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.tab, gap]]);
-        await pause(1500);
+        await burst(started, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.tab, gap]]);
+        await started.pause(1500);
         const frame = started.app.lastFrame() ?? '';
         if (switches(started.backend).length === 0) expect(pickerShown(frame)).toBe(true);
         else expect(switches(started.backend)).toEqual([`model:${LUNA} effort:medium`]);

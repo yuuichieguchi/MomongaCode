@@ -74,7 +74,6 @@ export type FakeConversation = { session: Partial<SessionView> & { id: string };
 
 export const FAKE_ANSWER_MS = 5;
 
-const answerLater = (): Promise<void> => new Promise((resolve) => systemTiming.setTimeout(resolve, FAKE_ANSWER_MS));
 
 export type FakeBackend = TuiBackend & {
   readonly opened: { model: string | undefined; permissionMode: PermissionMode | undefined; effort?: ReasoningEffort }[];
@@ -101,6 +100,7 @@ export type FakeBackend = TuiBackend & {
 };
 
 export type FakeBackendOptions = {
+  answerTimers?: { setTimeout(run: () => void, ms: number): unknown };
   storedResults?: Readonly<Record<string, string>>;
   agents?: readonly AgentView[];
   network?: NetworkView;
@@ -259,6 +259,7 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
 };
 
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
+  const answerLater = (): Promise<void> => new Promise((resolve) => (options.answerTimers ?? systemTiming).setTimeout(resolve, FAKE_ANSWER_MS));
   const settingsPlace = (): { home: string; projectDir: string } => {
     if (options.settingsPlace === undefined) throw new Error('the fake backend was given no settings place');
     return options.settingsPlace;
