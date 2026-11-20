@@ -3,9 +3,11 @@ import type { DocPage, SourceSet } from './pages.ts';
 import { escapeHtml } from './text.ts';
 import type { TocEntry } from './markdown.ts';
 
-export type Assets = { css: string; js: string; searchIndex: string };
+export type Assets = { css: string; js: string; searchIndex: string; ogImage: string };
 
-export type Chrome = { assets: Assets; repo: string; sources: readonly SourceSet[]; footer: readonly { label: string; url: string }[] };
+export type PageMeta = { canonical: string; ogTitle: string; description: string; type: 'website' | 'article' };
+
+export type Chrome = { origin: string; siteName: string; assets: Assets; repo: string; sources: readonly SourceSet[]; footer: readonly { label: string; url: string }[] };
 
 const ui = (tag: string, text: string, attributes = ''): string => `<${tag}${attributes} data-ui>${escapeHtml(text)}</${tag}>`;
 
@@ -49,7 +51,30 @@ const footer = (chrome: Chrome): string =>
 
 const TEMPLATES = [ui('template', 'Copied', ' data-copied'), ui('template', 'No results', ' data-no-results')].join('\n');
 
-export const page = (chrome: Chrome, options: { title: string; body: string; menu: boolean; className: string }): string =>
+const metaTags = (chrome: Chrome, meta: PageMeta | undefined): string[] => {
+  if (meta === undefined) return ['<meta name="robots" content="noindex">'];
+  const ogImage = `${chrome.origin}${chrome.assets.ogImage}`;
+  return [
+    `<meta name="description" content="${escapeHtml(meta.description)}">`,
+    `<link rel="canonical" href="${escapeHtml(meta.canonical)}">`,
+    `<meta property="og:site_name" content="${escapeHtml(chrome.siteName)}">`,
+    `<meta property="og:type" content="${meta.type}">`,
+    `<meta property="og:title" content="${escapeHtml(meta.ogTitle)}">`,
+    `<meta property="og:description" content="${escapeHtml(meta.description)}">`,
+    `<meta property="og:url" content="${escapeHtml(meta.canonical)}">`,
+    `<meta property="og:image" content="${escapeHtml(ogImage)}">`,
+    '<meta property="og:image:type" content="image/png">',
+    '<meta property="og:image:width" content="1200">',
+    '<meta property="og:image:height" content="630">',
+    `<meta property="og:image:alt" content="${escapeHtml(chrome.siteName)}">`,
+    '<meta name="twitter:card" content="summary_large_image">',
+    `<meta name="twitter:title" content="${escapeHtml(meta.ogTitle)}">`,
+    `<meta name="twitter:description" content="${escapeHtml(meta.description)}">`,
+    `<meta name="twitter:image" content="${escapeHtml(ogImage)}">`,
+  ];
+};
+
+export const page = (chrome: Chrome, options: { title: string; body: string; menu: boolean; className: string; meta?: PageMeta }): string =>
   [
     '<!doctype html>',
     '<html lang="en">',
@@ -57,6 +82,7 @@ export const page = (chrome: Chrome, options: { title: string; body: string; men
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${escapeHtml(options.title)}</title>`,
+    ...metaTags(chrome, options.meta),
     '<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
     `<link rel="stylesheet" href="${escapeHtml(chrome.assets.css)}">`,
     `<script src="${escapeHtml(chrome.assets.js)}"></script>`,

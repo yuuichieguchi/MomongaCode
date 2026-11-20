@@ -133,6 +133,11 @@ const heroStage = (): string =>
     '</div>',
   ].join('\n');
 
+const pageDescription = (doc: DocPage, fallback: string): string => {
+  const paragraph = doc.blocks.find((block) => block.token.type === 'paragraph')?.token;
+  return paragraph?.type === 'paragraph' ? squash(plainText(doc.spec.file, paragraph.tokens)) : fallback;
+};
+
 const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFacts, link: ReturnType<typeof linkResolver>): string => {
   const { title, lead } = front;
   const installation = sectionOf(guide, 1);
@@ -161,7 +166,13 @@ const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFact
       .join('')}</div></section>`,
     '</main>',
   ].join('\n');
-  return page(chrome, { title: front.name, body, menu: false, className: 'page-landing' });
+  return page(chrome, {
+    title: front.name,
+    body,
+    menu: false,
+    className: 'page-landing',
+    meta: { canonical: `${SITE_ORIGIN}/`, ogTitle: front.name, description: front.description, type: 'website' },
+  });
 };
 
 const indexHeading = (heading: string): string => `<h1 data-ui>${escapeHtml(heading)}</h1>`;
@@ -215,19 +226,50 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
     return { label, url: (found[0] as DocPage).url };
   });
 
+  const front = frontOf(guide);
   const rendered = new Map(docPages.map((each) => [each, renderBlocks(each.document, each.blocks, link, each.spec.splitDepth, each.url)]));
   const css = hashed('site', 'css', `${themeCss()}\n${fs.readFileSync(path.join(root, 'site/styles/site.css'), 'utf8')}`);
   const js = hashed('site', 'js', await bundleClient(root));
   const index = hashed('search-index', 'json', JSON.stringify([...rendered.values()].flatMap((each) => each.records)));
-  const assets: Assets = { css: `/${css.key}`, js: `/${js.key}`, searchIndex: `/${index.key}` };
-  const chrome: Chrome = { assets, repo: facts.repo, sources, footer };
+  const ogBytes = fs.readFileSync(path.join(root, 'site/assets/og.png'));
+  const og = { key: `assets/og.${contentHash(ogBytes)}.png`, bytes: ogBytes };
+  const assets: Assets = { css: `/${css.key}`, js: `/${js.key}`, searchIndex: `/${index.key}`, ogImage: `/${og.key}` };
+  const chrome: Chrome = { origin: SITE_ORIGIN, siteName: front.name, assets, repo: facts.repo, sources, footer };
 
   const pages = new Map<string, string>();
-  const front = frontOf(guide);
   pages.set('index.html', landing(chrome, guide, front, facts, link));
-  pages.set('docs/index.html', page(chrome, { title: 'Docs', body: docsLayout(chrome, '/docs/', [indexHeading('Docs'), ...sources.map((source) => (hasGroupList(source) ? `${groupHeading(source)}\n${titleList(source.pages)}` : groupHeading(source)))].join('\n'), []), menu: true, className: 'page-docs' }));
-  pages.set(reference.spec.home, page(chrome, { title: reference.spec.group, body: docsLayout(chrome, urlOfKey(reference.spec.home), `${indexHeading(reference.spec.group)}\n${titleList(reference.pages)}`, []), menu: true, className: 'page-docs' }));
-  for (const [each, result] of rendered) pages.set(each.key, page(chrome, { title: each.title, body: docsLayout(chrome, each.url, sourceText(result.html), result.toc), menu: true, className: 'page-docs' }));
+  pages.set(
+    'docs/index.html',
+    page(chrome, {
+      title: 'Docs',
+      body: docsLayout(chrome, '/docs/', [indexHeading('Docs'), ...sources.map((source) => (hasGroupList(source) ? `${groupHeading(source)}\n${titleList(source.pages)}` : groupHeading(source)))].join('\n'), []),
+      menu: true,
+      className: 'page-docs',
+      meta: { canonical: `${SITE_ORIGIN}/docs/`, ogTitle: `Docs — ${front.name}`, description: front.description, type: 'website' },
+    }),
+  );
+  const referenceUrl = urlOfKey(reference.spec.home);
+  pages.set(
+    reference.spec.home,
+    page(chrome, {
+      title: reference.spec.group,
+      body: docsLayout(chrome, referenceUrl, `${indexHeading(reference.spec.group)}\n${titleList(reference.pages)}`, []),
+      menu: true,
+      className: 'page-docs',
+      meta: { canonical: `${SITE_ORIGIN}${referenceUrl}`, ogTitle: `${reference.spec.group} — ${front.name}`, description: front.description, type: 'website' },
+    }),
+  );
+  for (const [each, result] of rendered)
+    pages.set(
+      each.key,
+      page(chrome, {
+        title: each.title,
+        body: docsLayout(chrome, each.url, sourceText(result.html), result.toc),
+        menu: true,
+        className: 'page-docs',
+        meta: { canonical: `${SITE_ORIGIN}${each.url}`, ogTitle: `${each.title} — ${front.name}`, description: pageDescription(each, front.description), type: 'article' },
+      }),
+    );
   pages.set('404.html', page(chrome, { title: 'Page not found', body: '<main id="content" class="not-found"><h1 data-ui>Page not found</h1><p><a href="/docs/" data-ui>Docs</a> <a href="/" data-ui>MomongaCode</a></p></main>', menu: false, className: 'page-not-found' }));
   for (const [key, html] of pages) assertUniqueIds(key, html);
 
@@ -243,6 +285,7 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   text(css.key, css.content);
   text(js.key, js.content);
   text(index.key, index.content);
+  files.set(og.key, og.bytes);
   text('_headers', HEADERS(INSTALLERS.map((installer) => installer.file)));
   text('sitemap.xml', sitemap(listed));
   text('llms.txt', llms(front.name, front.description, sources));
