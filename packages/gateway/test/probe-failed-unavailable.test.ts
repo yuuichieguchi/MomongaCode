@@ -12,11 +12,14 @@ import { until } from './gateway-process-helpers.ts';
 type LanternKey = { target: string; lamp: string };
 type LanternReport = { brightness: number };
 
-const KEY: LanternKey = { target: 'lantern', lamp: 'brass-7' };
+const KEY: LanternKey = { target: 'endpoint-558c9de05f1b6c0ca10901925527c27e', lamp: 'brass-7' };
+const SHOWN = 'ollama-127.0.0.1-18477/think-c';
+const DECLARATION = `declare toolCalling for the model "${SHOWN}" in its settings`;
+const ASK = { fields: ['toolCalling'], declaration: DECLARATION, model: SHOWN };
 const RETRY_AFTER_MS = 120_000;
 const CAUSE = 'the lantern went out';
-const FAILED_MESSAGE = `measuring the model "lantern" failed: ${CAUSE}. It is not measured again until you ask: declare toolCalling, or run \`momonga gateway probe lantern\`.`;
-const PROBING = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: expect.objectContaining({ fields: ['toolCalling'], declaration: 'declare toolCalling' }) };
+const FAILED_MESSAGE = `measuring the model "${SHOWN}" failed: ${CAUSE}. It is not measured again until you ask: ${DECLARATION}, or run \`momonga gateway probe ${SHOWN}\`.`;
+const PROBING = { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120, measuring: expect.objectContaining({ fields: ['toolCalling'], declaration: DECLARATION }) };
 
 type Pending = { resolve: (report: LanternReport) => void; reject: (error: Error) => void };
 
@@ -24,7 +27,7 @@ const lantern = () => {
   const state = { measures: 0, saved: [] as LanternReport[], pending: [] as Pending[] };
   const subject: ProbeSubject<LanternKey, LanternReport> = {
     target: KEY.target,
-    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
+    unknown: ASK,
     readKey: async () => KEY,
     precondition: { boundMs: 50, check: async () => ({ kind: 'met' }) },
     measure: () => {
@@ -79,12 +82,18 @@ describe('the automatic probe reports a failed measurement as its cause (design-
     expect(context.state.measures).toBe(1);
   });
 
+  it('names the model as the person sees it when the server is not ready, not the key of its record', async () => {
+    const context = setupAuto();
+    const refused = { ...context.subject, precondition: { boundMs: 50, check: async () => ({ kind: 'refused', message: `the Ollama server does not list the model "think-c"`, detail: 'GET /api/tags has no entry for it', remedy: 'ollama pull think-c' }) as const } };
+    expect(await thrownBy(() => context.autoProbe.ensure(refused, KEY))).toMatchObject({ body: { message: `the model "${SHOWN}" is not ready: the Ollama server does not list the model "think-c" (GET /api/tags has no entry for it); remedy: ollama pull think-c` } });
+  });
+
   it('cleans the cause and keeps it at most 300 characters', async () => {
     const context = setupAuto();
     await failFirstFlight(context, new Error(`\u001b[31mwick\u0007 ${'x'.repeat(2000)}`));
 
     const failure = (await thrownBy(() => context.autoProbe.ensure(context.subject, KEY))) as { body: { message: string } };
-    const prefix = 'measuring the model "lantern" failed: ';
+    const prefix = `measuring the model "${SHOWN}" failed: `;
     expect(failure.body.message.startsWith(`${prefix}wick x`)).toBe(true);
     expect(failure.body.message.slice(prefix.length, failure.body.message.indexOf('. It is not measured again')).length).toBeLessThanOrEqual(300);
   });
@@ -95,9 +104,9 @@ const setupInstance = () => {
   const pending: Pending[] = [];
   const failures: unknown[] = [];
   const probe = createInstanceProbe<LanternReport>({ redactor: createRedactor({ credentials: [] }),
-    target: 'lantern',
+    target: KEY.target,
     unknown: { component: 'hostOsBuild', reason: 'sw_vers is not on PATH' },
-    ask: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
+    ask: ASK,
     dir: makeDir(),
     measure: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
     retryAfterMs: RETRY_AFTER_MS,

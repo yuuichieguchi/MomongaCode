@@ -42,7 +42,7 @@ export const unknownFieldsOf = (declared: { toolCalling: ToolCallingDeclaration 
 
 export const declarationOf = (targetName: string, fields: readonly SourceField[]): string => `declare ${fields.join(' and ')} for the ${WORDS.model} "${targetName}" in its settings`;
 
-export const measuringAskOf = (targetName: string, fields: readonly SourceField[]): MeasuringAsk => ({ fields, declaration: declarationOf(targetName, fields) });
+export const measuringAskOf = (targetName: string, fields: readonly SourceField[]): MeasuringAsk => ({ fields, declaration: declarationOf(targetName, fields), model: targetName });
 
 export const sourcedCapabilities = (defaults: DeclaredCapabilities, written: WrittenCapabilities, toolCalling: ToolCallingDeclaration, reported: ReportedFields): Capabilities | undefined => {
   if (unknownFieldsOf({ toolCalling }, reported).length > 0) return undefined;

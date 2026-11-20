@@ -68,7 +68,7 @@ export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report
       },
       (error: unknown) => {
         if (stop.signal.aborted) return;
-        if (flightInstance === instance) failure = probeFailureOf(error, options.target, options.ask, options.redactor);
+        if (flightInstance === instance) failure = probeFailureOf(error, options.ask, options.redactor);
         options.onFailure?.(error);
       },
     );

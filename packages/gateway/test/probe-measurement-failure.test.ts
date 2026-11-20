@@ -23,7 +23,7 @@ const setup = () => {
   const state: { measures: number; verdict: PreconditionVerdict } = { measures: 0, verdict: { kind: 'met' } };
   const subject: ProbeSubject<GlassKey, { clear: boolean }> = {
     target: KEY.target,
-    unknown: { fields: ['toolCalling'], declaration: DECLARATION },
+    unknown: { fields: ['toolCalling'], declaration: DECLARATION, model: 'glass' },
     readKey: async () => KEY,
     precondition: { boundMs: 50, check: async () => state.verdict },
     measure: async () => {

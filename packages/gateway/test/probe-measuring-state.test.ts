@@ -12,7 +12,7 @@ type GlassReport = { clear: boolean };
 
 const KEY: GlassKey = { target: 'glass', pane: 'north' };
 const CAP_MS = 120_000;
-const UNKNOWN = { fields: ['toolCalling'], declaration: 'declare toolCalling for the model "glass" in its settings' } as const;
+const UNKNOWN = { fields: ['toolCalling'], declaration: 'declare toolCalling for the model "glass" in its settings', model: 'glass' } as const;
 
 const setup = () => {
   const dir = makeDir();

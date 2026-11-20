@@ -16,6 +16,15 @@ describe('momonga gateway probe <model>', () => {
     expect(() => probeSubjectOf(resolved, 'gemma-3-4b')).toThrow('The model "gemma-3-4b" is served by two servers: ollama/gemma-3-4b, lmstudio/gemma-3-4b. Write one of them.');
   });
 
+  it('resolves the name a failed measurement prints in its command to the model it measured, for a server model whose entry holds only its id', async (context) => {
+    const server = 'ollama-127.0.0.1-18477';
+    const settings = { models: { connections: [{ adapter: 'ollama', provider: server, baseUrl: 'http://127.0.0.1:18477', models: [{ id: 'think-c:latest' }, { id: 'plain-b:latest' }] }] } };
+    const { resolved } = await loadUserModels({ home: homeWith(context, settings).home, signal: new AbortController().signal });
+    const byCanon = probeSubjectOf(resolved, `${server}/think-c:latest`);
+    const printed = probeSubjectOf(resolved, byCanon.display);
+    expect([byCanon.display, printed.canon, printed.model === byCanon.model]).toEqual([`${server}/think-c`, `${server}/think-c:latest`, true]);
+  });
+
   it('refuses a model that cannot be probed with the sentence that names it and the configured models', async (context) => {
     const at = homeWith(context, S3);
     const ports = { home: at.home } as unknown as CliPorts;
