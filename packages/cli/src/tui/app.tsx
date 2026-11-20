@@ -461,7 +461,7 @@ export function App(props: AppProps) {
   const waitFor = <T,>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     const waiting: WaitingPhase = { text: phase, startedAt: now() };
     setCommands((running) => [...running, waiting]);
-    prompts.releaseHeldKeys();
+    prompts.leaveLists();
     return tasks.run(work).finally(() => setCommands((running) => running.filter((other) => other !== waiting)));
   };
 
@@ -1178,6 +1178,7 @@ export function App(props: AppProps) {
   };
 
   const runStarted = async (prepare: () => { start: () => Promise<RunView>; resubmit: Resubmit | undefined }): Promise<void> => {
+    prompts.leaveLists();
     setBusyState(true);
     disarmExit();
     attention.runEnded(undefined);

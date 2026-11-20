@@ -91,7 +91,7 @@ export type Prompts = {
   flow<T>(work: () => Promise<T>): Promise<T>;
   betweenLists(): boolean;
   holdKey(event: KeyEvent, keys: KeyTable): boolean;
-  releaseHeldKeys(): void;
+  leaveLists(): void;
   keyConsumed(): void;
   overlayKind(): Overlay['kind'] | undefined;
   promptStage(): 'decision' | 'fields' | undefined;
@@ -787,16 +787,18 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     if (held.length > 0) host.replayKeys(held);
   };
 
+  const leaveLists = (): void => {
+    escapedBetween.current = false;
+    releaseHeldKeys();
+  };
+
   const flow = async <T,>(work: () => Promise<T>): Promise<T> => {
     flows.current += 1;
     try {
       return await work();
     } finally {
       flows.current -= 1;
-      if (flows.current === 0) {
-        escapedBetween.current = false;
-        releaseHeldKeys();
-      }
+      if (flows.current === 0) leaveLists();
     }
   };
 
@@ -809,7 +811,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     flow,
     betweenLists: () => heldKeys.current !== undefined && overlayRef.current === undefined,
     holdKey,
-    releaseHeldKeys,
+    leaveLists,
     keyConsumed: () => gate.keyConsumed(),
     overlayKind: () => overlayRef.current?.kind,
     promptStage: () => {
