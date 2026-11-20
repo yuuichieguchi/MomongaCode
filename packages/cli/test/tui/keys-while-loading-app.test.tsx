@@ -35,17 +35,17 @@ const typedWhileLoading = async (app: Instance, release: () => void, typed: stri
   const list = await untilFrame(app, (shown) => shown.includes(LIST) && !shown.includes(READING));
   expect(list).toContain('› 1.');
   app.stdin.write(KEYS.escape);
-  const closed = await untilFrame(app, (shown) => !shown.includes(LIST) && shown.includes(`> ${typed}`));
-  expect(inputLineOf(closed)?.trimEnd()).toBe(`> ${typed}`);
+  const closed = await untilFrame(app, (shown) => !shown.includes(LIST) && shown.includes('mode: manual'));
+  expect(inputLineOf(closed)?.trimEnd()).toBe('>');
 };
 
-describe('a key typed while a list is loading goes to the draft and is never applied to the list', () => {
+describe('a key typed while a list is loading is dropped: it never reaches the draft and is never applied to the list', () => {
   for (const [name, typed] of [
     ['a digit', '2'],
     ['a letter', 'x'],
     ['several characters', 'abc'],
   ] as const) {
-    it(`${name} typed in the same write as the enter of /model is kept in the draft`, async () => {
+    it(`${name} typed in the same write as the enter of /model is dropped`, async () => {
       const { app, release } = await loadingModels();
       await typedWhileLoading(app, release, typed);
       app.unmount();

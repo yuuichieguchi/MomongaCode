@@ -827,17 +827,15 @@ describe('the /model flow with the timing of the real program', () => {
         started.app.unmount();
       });
 
-      it(`enter then enter ${gap} ms later${run} switches at most once and leaves nothing stuck`, async () => {
+      it(`enter then enter ${gap} ms later${run}: the second enter does nothing, the effort list shows and nothing is switched`, async () => {
         const started = await listOpenAtRealTiming();
         await withRun(started, working);
         await burst(started, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.enter, gap]]);
         await started.pause(1500);
-        const frame = started.app.lastFrame() ?? '';
-        if (switches(started.backend).length === 0) {
-          expect(pickerShown(frame)).toBe(true);
-          started.app.stdin.write(KEYS.escape);
-          expect(listBlock(await started.untilShown((now) => listShown(now) && !pickerShown(now)))).toBe(LUNA_HIGHLIGHTED);
-        } else expect(switches(started.backend)).toEqual([`model:${LUNA} effort:medium`]);
+        expect(pickerShown(started.app.lastFrame() ?? '')).toBe(true);
+        expect(switches(started.backend)).toEqual([]);
+        started.app.stdin.write(KEYS.escape);
+        expect(listBlock(await started.untilShown((now) => listShown(now) && !pickerShown(now)))).toBe(LUNA_HIGHLIGHTED);
         expect(cancels(started.backend)).toEqual([]);
         started.app.unmount();
       });

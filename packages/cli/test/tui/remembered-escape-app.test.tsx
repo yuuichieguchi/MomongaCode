@@ -6,9 +6,9 @@ vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
 const API_ROW = 'OpenAI-compatible API';
 
-describe('an esc pressed between two overlays of a flow', () => {
-  it('is forgotten when the next overlay is a text field the person answers, so the flow goes on with the value', async () => {
-    const { app } = await startPlan({ accounts: [] });
+describe('an esc pressed right after enter on a list row is not remembered for a later screen', () => {
+  it('acts on the screen showing: the list of APIs shows again, no address field is left open and nothing is saved', async () => {
+    const { app, backend } = await startPlan({ accounts: [] });
     await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login');
     const listed = await untilFrame(app, 'Add an API key');
@@ -16,11 +16,9 @@ describe('an esc pressed between two overlays of a flow', () => {
     const apis = await untilFrame(app, API_ROW);
     app.stdin.write(`${KEYS.down.repeat(rowNumberOf(apis, API_ROW) - 1)}${KEYS.enter}`);
     app.stdin.write(KEYS.escape);
-    await untilFrame(app, 'Address:');
-    app.stdin.write('http://127.0.0.1:9/v1');
-    await untilFrame(app, 'http://127.0.0.1:9/v1');
-    app.stdin.write(KEYS.enter);
-    await untilFrame(app, 'Read the key from an environment variable');
+    const back = await untilFrame(app, (shown) => shown.includes(API_ROW) && !shown.includes('Address:'));
+    expect(back).toContain(API_ROW);
+    expect(backend.calls.filter((call) => call.startsWith('secret:'))).toEqual([]);
     app.unmount();
   });
 });

@@ -170,7 +170,7 @@ describe('the loading overlay has a key that leaves it and is closed by the flow
 });
 
 describe('a key typed between two lists of one flow never acts on the list that opens', () => {
-  it('holds the key while the flow works, applies none to the next list, and keeps typed text for the input', async () => {
+  it('drops the key while the flow works: none acts on the next list and no typed text reaches the input', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
     await untilFrame(app, 'mode: manual');
@@ -189,12 +189,13 @@ describe('a key typed between two lists of one flow never acts on the list that 
     expect(app.lastFrame()).toContain('› 2. Cancel');
     expect(app.lastFrame()).not.toContain('> x');
     app.stdin.write(KEYS.escape);
-    await untilFrame(app, (shown) => !shown.includes('The sandbox is off') && shown.includes('> x'));
+    const closed = await untilFrame(app, (shown) => !shown.includes('The sandbox is off') && shown.includes('mode: manual'));
+    expect(closed).not.toContain('> x');
     expect(signInSteps(backend)).toEqual([]);
     app.unmount();
   });
 
-  it('gives the held keys to the input, in order, when the flow ends without another list', async () => {
+  it('drops the keys typed while the last step of the flow is saved, so the input stays empty when the flow ends', async () => {
     const { app, backend } = await startPlan({ accounts: [account()], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
     await untilFrame(app, 'mode: manual');
@@ -213,7 +214,11 @@ describe('a key typed between two lists of one flow never acts on the list that 
     app.stdin.write('a');
     app.stdin.write('b');
     held.resolve();
-    await untilFrame(app, '> ab');
+    await untilFrame(app, 'Signed out chatgpt');
+    app.stdin.write('c');
+    const typed = await untilFrame(app, /> (ab)?c/);
+    expect(typed).not.toContain('> abc');
+    expect(typed).toContain('> c');
     app.unmount();
   });
 });
