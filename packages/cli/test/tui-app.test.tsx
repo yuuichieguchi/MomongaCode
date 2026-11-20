@@ -77,7 +77,7 @@ describe('App run rendering', () => {
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
     backend.finish(runView());
     await untilFrame(app, IDLE);
-    expect(app.lastFrame()).toMatch(/mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20% +ctrl\+j: new line$/m);
+    expect(app.lastFrame()).toMatch(/mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20% · scripted-model +ctrl\+j: new line$/m);
     app.unmount();
   });
 

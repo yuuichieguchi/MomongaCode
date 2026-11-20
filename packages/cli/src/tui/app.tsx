@@ -2019,12 +2019,13 @@ export function App(props: AppProps) {
   const footerModel = (): FooterModel | undefined => {
     if (sessionModel === undefined) return undefined;
     const shown = shownEffort(entriesRef.current, sessionModel, sessionEffort);
-    return shown?.kind === 'sent' ? { name: shownModel(sessionModel), effort: effortLine(shown, 'short') } : undefined;
+    const name = shownModel(sessionModel);
+    return shown?.kind === 'sent' ? { name, effort: effortLine(shown, 'short') } : { name };
   };
   const statusFacts = (): StatusFacts => {
     const percent = contextPercentOf(transcript.contextTokens, capabilities?.contextWindow);
     const model = footerModel();
-    return { mode, tokens: formatTokens(sessionTokens(transcript)), context: percent === undefined ? 'unknown' : `${percent}%`, ...(model === undefined ? {} : { model: modelWithEffort(model.name, model.effort) }) };
+    return { mode, tokens: formatTokens(sessionTokens(transcript)), context: percent === undefined ? 'unknown' : `${percent}%`, ...(model?.effort === undefined ? {} : { model: modelWithEffort(model.name, model.effort) }) };
   };
   const say = useEffectEvent((text: string | undefined): void => {
     if (a11y.screenReader && text !== undefined) note(text);

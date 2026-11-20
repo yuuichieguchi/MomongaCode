@@ -5,11 +5,11 @@ import type { KeyTable } from '../keys/table.ts';
 import { displayWidth } from './wrap.ts';
 import { modelWithEffort } from '../effort.ts';
 
-export type FooterModel = { readonly name: string; readonly effort: string };
+export type FooterModel = { readonly name: string; readonly effort?: string };
 
 export type FooterFacts = { mode: string; tokens: number; contextPercent: number | undefined; imageInput: boolean; answer: string | undefined; newline: string | undefined; model?: FooterModel };
 
-const modelForms = ({ name, effort }: FooterModel): string[] => [modelWithEffort(name, effort), effort];
+const modelForms = ({ name, effort }: FooterModel): string[] => (effort === undefined ? [name] : [modelWithEffort(name, effort), effort]);
 
 export const contextPercentOf = (contextTokens: number, contextWindow: number | undefined): number | undefined => (contextWindow === undefined ? undefined : Number((200n * BigInt(contextTokens) + BigInt(contextWindow)) / (2n * BigInt(contextWindow))));
 

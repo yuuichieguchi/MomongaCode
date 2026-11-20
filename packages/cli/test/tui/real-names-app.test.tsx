@@ -39,8 +39,8 @@ const FOOTER_START: Readonly<Record<number, string>> = {
   120: 'mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/think-c (effort: medium)    ctrl+j: new line',
 };
 const FOOTER_PLAIN: Readonly<Record<number, string>> = {
-  80: 'mode: manual (shift+tab) · tokens: 0 · context: 0%              ctrl+j: new line',
-  120: 'mode: manual (shift+tab) · tokens: 0 · context: 0%                                                      ctrl+j: new line',
+  80: 'mode: manual (shift+tab) · tokens: 0 · context: 0%',
+  120: 'mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/plain-b                     ctrl+j: new line',
 };
 const LINE_PLAIN: Readonly<Record<number, readonly string[]>> = {
   80: ['model: ollama-127.0.0.1-18477/plain-b (effort: not available); applies from', 'the next run'],
@@ -60,8 +60,8 @@ const blockOf = (frame: string, title: string, end: string): string => {
   return lines.slice(start, last + 1).join('\n');
 };
 
-const started = async (columns: number, options: { session?: string; reasoning?: boolean } = {}) => {
-  const run = await startPlan({ session: { model: options.session ?? THINK }, models: MODELS, billing: Object.fromEntries(MODELS.map((model) => [model, 'local' as const])), reasoning: options.reasoning === false ? {} : { [THINK]: REASONING } }, {}, { columns, rows: 40 });
+const started = async (columns: number, options: { session?: string; reasoning?: boolean; modelPending?: Promise<void> } = {}) => {
+  const run = await startPlan({ session: { model: options.session ?? THINK }, models: MODELS, billing: Object.fromEntries(MODELS.map((model) => [model, 'local' as const])), reasoning: options.reasoning === false ? {} : { [THINK]: REASONING }, ...(options.modelPending === undefined ? {} : { listedProbing: true, modelPending: options.modelPending }) }, {}, { columns, rows: 40 });
   await untilFrame(run.app, 'context: 0%');
   return run;
 };
@@ -116,6 +116,32 @@ describe('real-length server model names at real widths', () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect([picker, lineOf(frame, columns), footerOf(app.lastFrame() ?? '')]).toEqual([PICKER, LINE_THINK[columns], FOOTER_START[columns]]);
       app.unmount();
+    });
+  }
+
+  const FOOTERS: Readonly<Record<number, readonly [string, string, string]>> = {
+    120: ['mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/think-c (effort: medium)    ctrl+j: new line', 'mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/plain-b                     ctrl+j: new line', 'mode: manual (shift+tab) · tokens: 0 · context: unknown · ollama-127.0.0.1-18477/think-c                ctrl+j: new line'],
+    80: ['mode: manual (shift+tab) · tokens: 0 · context: 0% · effort: medium', 'mode: manual (shift+tab) · tokens: 0 · context: 0%', 'mode: manual (shift+tab) · tokens: 0 · context: unknown'],
+    60: ['mode: manual (shift+tab) · tokens: 0 · context: 0%', 'mode: manual (shift+tab) · tokens: 0 · context: 0%', 'mode: manual (shift+tab) · tokens: 0 · context: unknown'],
+  };
+
+  for (const columns of [120, 80, 60]) {
+    it(`the footer names the session model with its effort, alone without a reasoning control, and alone while its capabilities are not read, ${columns} columns`, async () => {
+      const shown: string[] = [];
+      for (const session of [THINK, PLAIN]) {
+        const { app } = await started(columns, { session });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        shown.push(footerOf(app.lastFrame() ?? ''));
+        app.unmount();
+      }
+      const pending = Promise.withResolvers<void>();
+      const { app } = await startPlan({ session: { model: THINK }, models: MODELS, billing: Object.fromEntries(MODELS.map((model) => [model, 'local' as const])), reasoning: { [THINK]: REASONING }, listedProbing: true, modelPending: pending.promise }, {}, { columns, rows: 40 });
+      await untilFrame(app, 'mode: manual');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      shown.push(footerOf(app.lastFrame() ?? ''));
+      pending.resolve();
+      app.unmount();
+      expect(shown).toEqual(FOOTERS[columns]);
     });
   }
 

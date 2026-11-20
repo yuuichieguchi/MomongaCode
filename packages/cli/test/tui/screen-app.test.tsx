@@ -47,7 +47,7 @@ describe('the layout of the full screen', () => {
     expect(lines[8]).toMatch(/^╭─+╮$/);
     expect(lines[9]).toMatch(/^│ > +│$/);
     expect(lines[10]).toMatch(/^╰─+╯$/);
-    expect(lines[11]).toBe(`mode: manual (shift+tab) · tokens: 0 · context: 0%${' '.repeat(80 - 50 - 16)}ctrl+j: new line`);
+    expect(lines[11]).toBe('mode: manual (shift+tab) · tokens: 0 · context: 0% · scripted-model');
     app.unmount();
   });
 
@@ -267,7 +267,7 @@ describe('selection and copy on the screen', () => {
     const copied = await untilFrame(app, 'Copied 16 characters');
     expect(linesOf(copied)[11]).toMatch(/^mode: manual \(shift\+tab\) · tokens: 0 · context: 0% +Copied 16 characters$/);
     expect(terminal.emit(named('escape'))).toBe(true);
-    await untilFrame(app, 'ctrl+j: new line');
+    await untilFrame(app, (frame) => !frame.includes('Copied 16 characters') && frame.includes('context: 0% · scripted-model'));
     terminal.emit(named('escape'));
     expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual([]);
     app.unmount();
