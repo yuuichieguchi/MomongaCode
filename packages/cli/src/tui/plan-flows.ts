@@ -105,7 +105,12 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const loaded = await ports.loading(
       LOADING_PHASE,
       async (): Promise<Exclude<ChosenRead, { kind: 'cancelled' }>> => {
-        const entries = await backend.models();
+        const listed = await backend.models().then(
+          (entries): { readonly kind: 'listed'; readonly entries: readonly MomongaModelEntry[] } => ({ kind: 'listed', entries }),
+          (error: unknown): { readonly kind: 'failed'; readonly error: unknown } => ({ kind: 'failed', error }),
+        );
+        if (listed.kind === 'failed') return listed;
+        const { entries } = listed;
         const entry = entries.find((candidate) => candidate.id === model);
         const readiness = entry === undefined ? undefined : agentReadiness(entry.capabilities);
         if (ended || readiness?.state !== 'probing') return { kind: 'read', entries, entry };

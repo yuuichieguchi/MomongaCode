@@ -494,6 +494,26 @@ describe('choosing a model in the /model list switches nothing until its effort 
     app.unmount();
   });
 
+  it('a listing read that fails while Loading models… is shown is not switched to: the warning is shown once and the list is closed', async () => {
+    const { app, backend } = await startPlan(APPROVED);
+    await openList(app);
+    const held = Promise.withResolvers<void>();
+    backend.models = async () => {
+      await held.promise;
+      throw new Error('the listing could not be read');
+    };
+    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+    await untilFrame(app, loadingShown);
+    held.resolve();
+    const output = await untilOutput(app, 'model information unavailable: the listing could not be read');
+    await untilFrame(app, (frame) => !loadingShown(frame) && !listShown(frame) && frame.includes('mode: manual'));
+    await settled();
+    expect(notesOf(app.frames.join('\n'))).toEqual(['model information unavailable: the listing could not be read']);
+    expect(output.split('model information unavailable').length - 1).toBe(1);
+    expect(switches(backend)).toEqual([]);
+    app.unmount();
+  });
+
   it('a second enter while the listing is still read does not switch the model', async () => {
     const { app, backend } = await startPlan(APPROVED);
     await openList(app);
