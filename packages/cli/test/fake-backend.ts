@@ -13,7 +13,7 @@ import type { ReasoningCapability, ReasoningEffort, UserShellRecord } from '@mom
 import { editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
-import { hostPaths, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import { hostPaths, momongaLayout, nodeFileSystem, systemTiming } from '@momonga/foundation';
 import { fileLinkRootsOf, openFileLink, resolveFileLinks } from '../src/tui/screen/file-links.ts';
 import type { FileLinkPorts } from '../src/tui/screen/file-links.ts';
 import type { DetectRequest } from '../src/commands/models.ts';
@@ -71,6 +71,10 @@ export const runView = (overrides: Partial<RunView> = {}): RunView => ({
 export type FakeConversationRun = { id: string; status?: RunStatus; frames: readonly RunEventFrame[] };
 
 export type FakeConversation = { session: Partial<SessionView> & { id: string }; firstPrompt: string; runs: readonly FakeConversationRun[] };
+
+export const FAKE_ANSWER_MS = 5;
+
+const answerLater = (): Promise<void> => new Promise((resolve) => systemTiming.setTimeout(resolve, FAKE_ANSWER_MS));
 
 export type FakeBackend = TuiBackend & {
   readonly opened: { model: string | undefined; permissionMode: PermissionMode | undefined; effort?: ReasoningEffort }[];
@@ -414,6 +418,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     openSession: async (model, permissionMode, effort) => {
       record('openSession');
       opened.push({ model, permissionMode, ...(effort === undefined ? {} : { effort }) });
+      await answerLater();
       if (options.openSessionFailure !== undefined) throw options.openSessionFailure;
       if (opened.length === 1) return model === undefined ? session : adopt({ ...session, model, ...(effort === undefined ? {} : { effort }) });
       return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, latestRunAt: null, activeRunId: null, activeRunAt: null, ...(model === undefined ? {} : { model }), ...(permissionMode === undefined ? {} : { permissionMode }), ...(effort === undefined ? {} : { effort }) });
@@ -438,8 +443,12 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return { text, offset, next: null, totalBytes: new TextEncoder().encode(text).length };
     },
     autoModeAvailable: async () => options.autoModeAvailable ?? false,
-    models: listedModels,
+    models: async () => {
+      await answerLater();
+      return listedModels();
+    },
     modelList: async () => {
+      await answerLater();
       listings.push(listings.length);
       return { object: 'list', data: await listedModels(), start: null, roles: {} };
     },
@@ -472,12 +481,14 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     setEffort: async (effort: ReasoningEffort | null) => {
       record(`effort:${effort ?? 'none chosen'}`);
+      await answerLater();
       const { effort: _dropped, ...rest } = session;
       session = effort === null ? rest : { ...rest, effort };
       return session;
     },
     setModel: async (model: string, effort?: ReasoningEffort) => {
       record(effort === undefined ? `model:${model}` : `model:${model} effort:${effort}`);
+      await answerLater();
       if (options.setModelFailure !== undefined) throw options.setModelFailure;
       const { effort: _dropped, ...rest } = session;
       session = model === session.model && effort === undefined ? { ...session } : { ...rest, model, ...(effort === undefined ? {} : { effort }) };
@@ -651,6 +662,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
+      await answerLater();
       if (options.modelPending !== undefined) await options.modelPending;
       if (options.modelFailure !== undefined) throw options.modelFailure;
       const sessionFailure = options.sessionModelFailures?.[session.model];
@@ -659,6 +671,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return { ...listedEntryOf(session.model, capabilities, options.chain ?? [session.model]), ...savedEffortOf(session.model) };
     },
     modelOf: async (model: string) => {
+      await answerLater();
       if (options.modelPending !== undefined) await options.modelPending;
       const failure = options.modelOfFailures?.[model];
       if (failure !== undefined) throw failure;

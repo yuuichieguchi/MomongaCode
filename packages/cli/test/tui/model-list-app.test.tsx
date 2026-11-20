@@ -765,4 +765,84 @@ describe('the /model flow with the timing of the real program', () => {
     expect(switches(backend)).toEqual([]);
     app.unmount();
   });
+
+  const burst = async (app: Instance, keys: readonly (readonly [string, number])[]): Promise<void> => {
+    for (const [key, gap] of keys) {
+      if (gap > 0) await pause(gap);
+      app.stdin.write(key);
+    }
+  };
+
+  const withRun = async (started: Awaited<ReturnType<typeof listOpenAtRealTiming>>, working: boolean): Promise<void> => {
+    if (!working) return;
+    started.app.stdin.write(KEYS.escape);
+    await untilFrame(started.app, (frame) => !listShown(frame));
+    await submitLine(started.app, 'long task');
+    await pollUntil(() => started.backend.started.length === 1, { description: 'the run is started', boundMs: 5000 });
+    await submitLine(started.app, '/model');
+    await untilFrame(started.app, listShown);
+    await pause(KEY_SETTLE_MS * 2);
+  };
+
+  const cancels = (backend: { calls: readonly string[] }): string[] => backend.calls.filter((call) => call.startsWith('cancel:'));
+
+  for (const working of [false, true]) {
+    for (const gap of [0, 20, 60, 150]) {
+      const run = working ? ' while a run is working' : '';
+
+      it(`enter then esc ${gap} ms later${run} shows the list again with the chosen row highlighted`, async () => {
+        const started = await listOpenAtRealTiming();
+        await withRun(started, working);
+        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.escape, gap]]);
+        await pause(1500);
+        expect(listBlock(started.app.lastFrame() ?? '')).toBe(LUNA_HIGHLIGHTED);
+        expect(switches(started.backend)).toEqual([]);
+        expect(cancels(started.backend)).toEqual([]);
+        started.app.unmount();
+      });
+
+      it(`enter then enter ${gap} ms later${run} switches at most once and leaves nothing stuck`, async () => {
+        const started = await listOpenAtRealTiming();
+        await withRun(started, working);
+        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.enter, gap]]);
+        await pause(1500);
+        const frame = started.app.lastFrame() ?? '';
+        if (switches(started.backend).length === 0) {
+          expect(pickerShown(frame)).toBe(true);
+          started.app.stdin.write(KEYS.escape);
+          expect(listBlock(await untilFrame(started.app, (now) => listShown(now) && !pickerShown(now)))).toBe(LUNA_HIGHLIGHTED);
+        } else expect(switches(started.backend)).toEqual([`model:${LUNA} effort:medium`]);
+        expect(cancels(started.backend)).toEqual([]);
+        started.app.unmount();
+      });
+
+      it(`esc on the effort picker then esc ${gap} ms later${run} closes the list and switches nothing`, async () => {
+        const started = await listOpenAtRealTiming();
+        await withRun(started, working);
+        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0]]);
+        await untilFrame(started.app, pickerShown);
+        await burst(started.app, [[KEYS.escape, 0], [KEYS.escape, gap]]);
+        await pause(1500);
+        const frame = started.app.lastFrame() ?? '';
+        expect(pickerShown(frame)).toBe(false);
+        expect(listShown(frame)).toBe(false);
+        expect(switches(started.backend)).toEqual([]);
+        expect(cancels(started.backend)).toEqual([]);
+        started.app.unmount();
+      });
+
+      it(`enter then tab ${gap} ms later${run} switches at most once, for this session only`, async () => {
+        const started = await listOpenAtRealTiming();
+        await withRun(started, working);
+        await burst(started.app, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.tab, gap]]);
+        await pause(1500);
+        const frame = started.app.lastFrame() ?? '';
+        if (switches(started.backend).length === 0) expect(pickerShown(frame)).toBe(true);
+        else expect(switches(started.backend)).toEqual([`model:${LUNA} effort:medium`]);
+        expect(cancels(started.backend)).toEqual([]);
+        started.app.unmount();
+      });
+    }
+  }
 });
+

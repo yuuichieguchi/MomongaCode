@@ -330,7 +330,7 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
 
     const fresh = await adopt({ conversations: [LONG] }, recordOf(snapshot), {}, SMALL);
     await fresh.attached;
-    expect(await untilFrame(fresh.app, IDLE)).toBe(frameBefore);
+    expect(await untilFrame(fresh.app, (frame) => IDLE.test(frame) && frame === frameBefore)).toBe(frameBefore);
     expect(fresh.move.surface().snapshot()?.view).toEqual(snapshot?.view);
     fresh.app.unmount();
 
@@ -349,7 +349,7 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
     expect(snapshot?.view?.following).toBe(true);
     const fresh = await adopt({ conversations: [LONG] }, recordOf(snapshot), {}, SMALL);
     await fresh.attached;
-    expect(await untilFrame(fresh.app, IDLE)).toBe(frameBefore);
+    expect(await untilFrame(fresh.app, (frame) => IDLE.test(frame) && frame === frameBefore)).toBe(frameBefore);
     fresh.app.unmount();
   });
 

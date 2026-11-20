@@ -42,7 +42,7 @@ const startWith = async (size: { columns: number; rows: number; screen?: 'fullsc
 describe('the layout of the full screen', () => {
   it('fills the terminal exactly: the transcript from the top, the input box above the one footer row', async () => {
     const { app } = await start({}, {}, { columns: 80, rows: 12 });
-    const lines = linesOf(await untilFrame(app, 'mode: manual'));
+    const lines = linesOf(await untilFrame(app, 'context: 0%'));
     expect(lines).toHaveLength(12);
     expect(lines[8]).toMatch(/^╭─+╮$/);
     expect(lines[9]).toMatch(/^│ > +│$/);

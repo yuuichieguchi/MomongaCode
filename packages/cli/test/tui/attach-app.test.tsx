@@ -40,7 +40,7 @@ const storedSettings = (initial: Partial<ResolvedTuiSettings> = {}) => {
 const ready = async (options: FakeBackendOptions = {}, initial: Partial<ResolvedTuiSettings> = {}) => {
   const settings = storedSettings(initial);
   const started = await start({ files: FILES, ...options }, { tuiSettings: settings.port }, WIDE);
-  await untilFrame(started.app, READY);
+  await untilFrame(started.app, (frame) => frame.includes(READY) && /context: \d+%/.test(frame));
   return { ...started, saved: settings.saved };
 };
 
