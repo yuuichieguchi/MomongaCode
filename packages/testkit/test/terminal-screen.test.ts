@@ -12,6 +12,13 @@ describe('the terminal screen of the tests', () => {
     screen.dispose();
   });
 
+  it('starts the line after a line feed at the first column, as the terminal device turns a written line feed into a return and a line feed', async () => {
+    const screen = createTerminalScreen({ columns: 20, rows: 3 });
+    await screen.write('long first\nnext\n\u001b[3G\u001b[Kthird');
+    expect(screen.text()).toEqual(['long first', 'next', '  third']);
+    screen.dispose();
+  });
+
   it('answers a device attributes query as a terminal does', async () => {
     const screen = createTerminalScreen({ columns: 20, rows: 3 });
     const answers: string[] = [];
