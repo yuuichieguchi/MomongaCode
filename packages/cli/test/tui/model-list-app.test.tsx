@@ -5,7 +5,8 @@ import { App } from '../../src/tui/app.tsx';
 import type { TuiBackend } from '../../src/tui/backend.ts';
 import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import { account, fakePlanBackend, startPlan, submitLine } from '../fake-plan-gateway.tsx';
-import type { FakePlanOptions } from '../fake-plan-gateway.tsx';
+import type { FakePlanOptions, PlanTiming } from '../fake-plan-gateway.tsx';
+import { KEY_SETTLE_MS } from '../../src/tui/terminal/constants.ts';
 import { KEYS, TEST_KEY_SETTLE_MS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { systemTiming } from '@momonga/foundation';
@@ -145,7 +146,7 @@ describe('the rows of the /model list', () => {
     await openList(app);
     app.stdin.write('sol');
     const filtered = listBlock(await untilFrame(app, 'filter: sol'));
-    expect(filtered).toBe(['Models', 'a change applies from the next run', 'filter: sol', '› 1. gpt-6.2-sol                   plan', HINT].join('\n'));
+    expect(filtered).toBe(['Models', 'a change applies from the next run', 'filter: sol', '›  1. gpt-6.2-sol                   plan', HINT].join('\n'));
     app.unmount();
   });
 
@@ -159,15 +160,15 @@ describe('the rows of the /model list', () => {
         'Models',
         'a change applies from the next run',
         'filter: openai',
-        '› 1. gpt-6.2-sol                   plan',
-        '  2. gpt-6.2-astra                 plan',
-        '  3. gpt-6.2-nova                  plan',
-        '  4. gpt-6.2-terra                 plan',
-        '  5. gpt-6.2-luma                  plan',
-        '  6. gpt-6.2-vela                  plan',
-        '  7. gpt-6.2-orion                 plan',
-        '  8. gpt-6.2-lyra                  plan',
-        '  9. gpt-6.2-mira                  plan',
+        '›  1. gpt-6.2-sol                   plan',
+        '   2. gpt-6.2-astra                 plan',
+        '   3. gpt-6.2-nova                  plan',
+        '   4. gpt-6.2-terra                 plan',
+        '   5. gpt-6.2-luma                  plan',
+        '   6. gpt-6.2-vela                  plan',
+        '   7. gpt-6.2-orion                 plan',
+        '   8. gpt-6.2-lyra                  plan',
+        '   9. gpt-6.2-mira                  plan',
         HINT,
       ].join('\n'),
     );
@@ -179,7 +180,7 @@ describe('the rows of the /model list', () => {
     await openList(app);
     app.stdin.write('prime');
     const filtered = listBlock(await untilFrame(app, 'filter: prime'));
-    expect(filtered).toBe(['Models', 'a change applies from the next run', 'filter: prime', '› 1. gpt-6.2-sol                   plan', HINT].join('\n'));
+    expect(filtered).toBe(['Models', 'a change applies from the next run', 'filter: prime', '›  1. gpt-6.2-sol                   plan', HINT].join('\n'));
     app.unmount();
   });
 
@@ -200,7 +201,7 @@ describe('the rows of the /model list', () => {
     expect(before).toContain('   3. gpt-6.2-sol                   plan   -');
     app.stdin.write('sol');
     const filtered = listBlock(await untilFrame(app, 'filter: sol'));
-    expect(filtered).toBe(['Models', 'a change applies from the next run', 'filter: sol', '› 1. gpt-6.2-sol                   plan   -', HINT].join('\n'));
+    expect(filtered).toBe(['Models', 'a change applies from the next run', 'filter: sol', '›  1. gpt-6.2-sol                   plan   -', HINT].join('\n'));
     app.unmount();
   });
 
@@ -685,6 +686,83 @@ describe('the effort step after a plan model that is not configured is chosen', 
     expect(output.split('model information unavailable').length - 1).toBe(1);
     expect(switches(backend)).toEqual([]);
     expect(app.lastFrame()).not.toContain('Reasoning effort');
+    app.unmount();
+  });
+});
+
+describe('the /model flow with the timing of the real program', () => {
+  const REAL: PlanTiming = { now: Date.now, timers: systemTiming, keySettleMs: KEY_SETTLE_MS };
+  const LISTING_MS = 30;
+  const pause = (ms: number): Promise<void> => new Promise((resolve) => systemTiming.setTimeout(resolve, ms));
+
+  const listOpenAtRealTiming = async () => {
+    const started = await startPlan(APPROVED, {}, {}, REAL);
+    await ready(started.app);
+    await submitLine(started.app, '/model');
+    await untilFrame(started.app, listShown);
+    await pause(KEY_SETTLE_MS * 2);
+    const models = started.backend.models;
+    started.backend.models = async () => {
+      await pause(LISTING_MS);
+      return models();
+    };
+    return started;
+  };
+
+  it('enter on the level marked in use switches the model with that level', async () => {
+    const { app, backend } = await listOpenAtRealTiming();
+    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+    await untilFrame(app, pickerShown);
+    await pause(KEY_SETTLE_MS * 4);
+    app.stdin.write(KEYS.enter);
+    await untilOutput(app, 'model: gpt-6-luna (effort: medium); applies from the next run');
+    expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
+    app.unmount();
+  });
+
+  for (const wait of [0, 50, 100, 300]) {
+    it(`enter ${wait} ms after the effort picker appears on the level marked in use switches the model`, async () => {
+      const { app, backend } = await listOpenAtRealTiming();
+      app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+      await untilFrame(app, pickerShown);
+      if (wait > 0) await pause(wait);
+      app.stdin.write(KEYS.enter);
+      await pause(1500);
+      expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
+      app.unmount();
+    });
+  }
+
+  for (const gap of [0, 20, 60]) {
+    it(`esc ${gap} ms after enter shows the model list again with the chosen row highlighted`, async () => {
+      const { app, backend } = await listOpenAtRealTiming();
+      app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+      if (gap > 0) await pause(gap);
+      app.stdin.write(KEYS.escape);
+      await pause(1500);
+      const frame = app.lastFrame() ?? '';
+      expect(pickerShown(frame)).toBe(false);
+      expect(listBlock(frame)).toBe(LUNA_HIGHLIGHTED);
+      expect(switches(backend)).toEqual([]);
+      app.stdin.write(KEYS.enter);
+      await untilFrame(app, pickerShown);
+      await pause(KEY_SETTLE_MS * 2);
+      app.stdin.write(KEYS.enter);
+      await untilOutput(app, 'model: gpt-6-luna (effort: medium); applies from the next run');
+      expect(switches(backend)).toEqual([`model:${LUNA} effort:medium`]);
+      app.unmount();
+    });
+  }
+
+  it('esc on the effort picker shown right after a quick enter returns to the list', async () => {
+    const { app, backend } = await listOpenAtRealTiming();
+    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+    await untilFrame(app, pickerShown);
+    await pause(1500);
+    app.stdin.write(KEYS.escape);
+    const again = await untilFrame(app, (frame) => listShown(frame) && !pickerShown(frame));
+    expect(listBlock(again)).toBe(LUNA_HIGHLIGHTED);
+    expect(switches(backend)).toEqual([]);
     app.unmount();
   });
 });

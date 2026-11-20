@@ -248,7 +248,7 @@ export type RowPlace = { readonly numberWidth: number };
 
 const NO_PLACE: RowPlace = { numberWidth: 0 };
 
-const placeOf = (stops: readonly number[]): RowPlace => ({ numberWidth: String(stops.length).length });
+const placeOf = (spec: SelectSpec): RowPlace => ({ numberWidth: String(stopsOf(spec, '').length).length });
 
 const choiceText = (label: string, number: number | undefined, disabled: boolean | undefined, place: RowPlace): string =>
   `${number === undefined ? '' : `${String(number).padStart(place.numberWidth)}. `}${escapeTerminalLine(label)}${disabled === true ? ' (unavailable)' : ''}`;
@@ -322,7 +322,7 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
   const border = frame.border ? BORDER_ROWS : 0;
   const filterRows = spec.filter ? 1 : 0;
   const rowWidth = innerWidth(frame);
-  const tallRowsOf = (described: boolean): number => listed.reduce((sum, index) => sum + linesOfRow(spec.rows[index], stops.indexOf(index) + 1, placeOf(stops), rowWidth, screenReader, index === state.index, described) - 1, 0);
+  const tallRowsOf = (described: boolean): number => listed.reduce((sum, index) => sum + linesOfRow(spec.rows[index], stops.indexOf(index) + 1, placeOf(spec), rowWidth, screenReader, index === state.index, described) - 1, 0);
   const chrome = border + filterRows + (state.confirming === undefined ? 0 : 1) + extraRows + 1;
   const described = chrome + tallRowsOf(true) + listed.length + Math.min(text.length, TEXT_KEPT_ROWS) <= frame.rows;
   const tallRows = tallRowsOf(described);
@@ -347,7 +347,7 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
     more,
     moreRow,
     items,
-    itemLines: items.map((index) => linesOfRow(spec.rows[index], stops.indexOf(index) + 1, placeOf(stops), rowWidth, screenReader, index === state.index, described)),
+    itemLines: items.map((index) => linesOfRow(spec.rows[index], stops.indexOf(index) + 1, placeOf(spec), rowWidth, screenReader, index === state.index, described)),
     described,
     rowWidth,
     above: onlyHighlighted ? 0 : span.start,
@@ -450,7 +450,7 @@ export function SelectView({ spec, state, layout, border, sending, settling, key
         const row = spec.rows[index];
         if (row === undefined) return null;
         if (row.separator === true) return <Text key={index} dimColor wrap="truncate">{`${screenReader ? '' : '  '}${escapeTerminalLine(row.label)}`}</Text>;
-        return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} place={placeOf(stops)} label={row.label} width={layout.rowWidth} {...(row.value === undefined ? {} : { value: row.value })} {...(row.kept === undefined ? {} : { kept: row.kept })} {...(row.disabled === true ? { disabled: true } : {})} {...(!layout.described || row.description === undefined ? {} : { description: row.description })} />;
+        return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} place={placeOf(spec)} label={row.label} width={layout.rowWidth} {...(row.value === undefined ? {} : { value: row.value })} {...(row.kept === undefined ? {} : { kept: row.kept })} {...(row.disabled === true ? { disabled: true } : {})} {...(!layout.described || row.description === undefined ? {} : { description: row.description })} />;
       })}
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
       {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}

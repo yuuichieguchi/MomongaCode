@@ -211,6 +211,13 @@ export const usePrompts = (host: PromptsHost): Prompts => {
 
   const flows = useRef(0);
   const heldKeys = useRef<KeyEvent[] | undefined>(undefined);
+  const escapedBetween = useRef(false);
+
+  const takeEscape = (): boolean => {
+    const escaped = escapedBetween.current;
+    escapedBetween.current = false;
+    return escaped;
+  };
 
   const takeHeldKeys = (): KeyEvent[] => {
     const held = heldKeys.current ?? [];
@@ -243,6 +250,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const openPick = (request: PickRequest, resolve: (choice: PickChoice | undefined) => void): void => {
+    if (takeEscape() && pickerSpec(request).escape === 'back') {
+      resolve(undefined);
+      return;
+    }
     request.onHighlight?.(pickerSpec(request).initial);
     opened({ kind: 'pick', request, resolve });
   };
@@ -287,10 +298,14 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     },
     loading: <T,>(title: string, read: () => Promise<T>, hint: LoadingHint) =>
       new Promise<Loaded<T>>((resolve, reject) => {
+        if (takeEscape()) {
+          resolve({ kind: 'cancelled' });
+          return;
+        }
         let reading = true;
         const close = (): void => {
           reading = false;
-          if (overlayRef.current === shown) showOverlay(undefined);
+          if (overlayRef.current === shown) closeOverlay();
         };
         const shown: Overlay = {
           kind: 'loading',
@@ -369,6 +384,11 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const selectInput = (active: Active, event: KeyEvent, keys: KeyTable): void => {
     if (active.spec.interrupt === 'cancel-run' && keys.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.interrupt') {
       active.on({ kind: 'interrupt', action: active.spec.interrupt });
+      return;
+    }
+    if (active.spec.escape === 'back' && keys.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.escape' && !(active.spec.filter && stateOf(active).filter !== '')) {
+      gate.keyConsumed();
+      active.on({ kind: 'back' });
       return;
     }
     if (!gate.view(active.settle).drawn) {
@@ -749,7 +769,12 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const held = heldKeys.current;
     if (held === undefined) return false;
     const action = selectActionOf(event, keys);
-    if (action === 'select.escape' || action === 'select.interrupt') {
+    if (action === 'select.escape') {
+      gate.keyConsumed();
+      escapedBetween.current = true;
+      return true;
+    }
+    if (action === 'select.interrupt') {
       heldKeys.current = undefined;
       return false;
     }
@@ -768,7 +793,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       return await work();
     } finally {
       flows.current -= 1;
-      if (flows.current === 0) releaseHeldKeys();
+      if (flows.current === 0) {
+        escapedBetween.current = false;
+        releaseHeldKeys();
+      }
     }
   };
 
