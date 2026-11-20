@@ -11,7 +11,7 @@ const DEVSTRAL = 'ollama/devstral-small-2:latest';
 const QWEN = 'ollama/qwen3.8:27b';
 const LIST = 'a change applies from the next run';
 
-const inputLineOf = (frame: string): string | undefined => frame.split('\n').map((row) => row.replace(/^│ /, '').replace(/\s*│$/, '')).find((row) => row.startsWith('> '));
+const inputLineOf = (frame: string): string | undefined => frame.split('\n').map((row) => row.replace(/^│ /, '').replace(/\s*│$/, '')).find((row) => row.startsWith('> ') || row === '>');
 
 const loadingModels = async () => {
   const started = await startPlan({ models: [DEVSTRAL, QWEN], accounts: [], dismissed: { 'invite:chatgpt': 'x' } });

@@ -5,8 +5,9 @@ import { planServesAccount } from './plan-account.ts';
 import { SEPARATOR, addressesOf, configuredWindowsOf, isLocalServer, modelRowText, modelsDocumentOf, notListedOf } from '../../commands/models.ts';
 import type { ListedModel, ModelsDocument, ModelsEdit } from '../../commands/models.ts';
 import { runAddFlow } from './add.ts';
-import { cancellable, chosenOf, hostOf, openEdit, proposeAndWrite, proposeWrite, writeConfirmed } from './context.ts';
+import { cancellable, chosenThen, hostOf, openEdit, proposeAndWrite, proposeWrite, writeConfirmed } from './context.ts';
 import type { ModelsFlowContext, Opened } from './context.ts';
+import { untilAborted } from '../flow-step.ts';
 import { runModelFields, runServerFields } from './fields.ts';
 import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from './order.ts';
 import {
@@ -110,14 +111,6 @@ const serverStateOf = async (
   return answered ? READY_STATE : NOT_RUNNING_STATE;
 };
 
-const untilAborted = <T>(signal: AbortSignal, work: Promise<T>): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const stop = (): void => reject(signal.reason);
-    if (signal.aborted) return stop();
-    signal.addEventListener('abort', stop, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', stop));
-  });
-
 const serverStatesOf = async (context: ModelsFlowContext, signal: AbortSignal, opened: Opened, document: ModelsDocument, health: GatewayHealth): Promise<ReadonlyMap<string, string>> => {
   const declared = declaredOf(opened.edit);
   const providers = [...new Set(document.models.map((model) => model.provider))];
@@ -142,9 +135,9 @@ const removeServer = async (context: ModelsFlowContext, opened: Opened, provider
     await write(opened, context, 'remove-server', { args: [provider], options: {} });
     return;
   }
-  const way = await chosenOf(context, { title: provider, rows: [{ label: REMOVE_SERVER_ONLY_ROW }, { label: FORGET_PROGRAM_TOO_ROW }] });
-  if (way === undefined) return;
-  await write(opened, context, 'remove-server', { args: [provider], options: way === 1 ? { forgetProgram: true } : {} });
+  await chosenThen(context, { title: provider, rows: [{ label: REMOVE_SERVER_ONLY_ROW }, { label: FORGET_PROGRAM_TOO_ROW }] }, async (way) => {
+    await write(opened, context, 'remove-server', { args: [provider], options: way === 1 ? { forgetProgram: true } : {} });
+  });
 };
 
 const nameServer = async (context: ModelsFlowContext, opened: Opened, provider: string): Promise<void> => {
@@ -164,11 +157,12 @@ const nameServer = async (context: ModelsFlowContext, opened: Opened, provider: 
 };
 
 const serverMenu = async (context: ModelsFlowContext, opened: Opened, provider: string): Promise<void> => {
-  const index = await chosenOf(context, { title: provider, rows: SERVER_ACTIONS.map((label) => ({ label })) });
-  const action = index === undefined ? undefined : SERVER_ACTIONS[index];
-  if (action === 'Edit server') await runServerFields(context, provider);
-  if (action === 'Name this server') await nameServer(context, opened, provider);
-  if (action === 'Remove server') await removeServer(context, opened, provider);
+  await chosenThen(context, { title: provider, rows: SERVER_ACTIONS.map((label) => ({ label })) }, async (index) => {
+    const action = SERVER_ACTIONS[index];
+    if (action === 'Edit server') await runServerFields(context, provider);
+    if (action === 'Name this server') await nameServer(context, opened, provider);
+    if (action === 'Remove server') await removeServer(context, opened, provider);
+  });
 };
 
 export const runRemoveServingConnection = async (context: ModelsFlowContext, provider: string): Promise<void> => removeServer(context, await openEdit(context), provider, proposeWrite);
@@ -191,10 +185,11 @@ export const accountConnectionOf = async (context: ModelsFlowContext, account: P
 export const runServerActions = async (context: ModelsFlowContext, provider: string): Promise<void> => serverMenu(context, await openEdit(context), provider);
 
 const modelMenu = async (context: ModelsFlowContext, opened: Opened, model: string, label: string): Promise<void> => {
-  const index = await chosenOf(context, { title: label.trim(), rows: MODEL_ACTIONS.map((action) => ({ label: action })) });
-  const action = index === undefined ? undefined : MODEL_ACTIONS[index];
-  if (action === 'Edit') await runModelFields(context, model);
-  if (action === 'Remove') await removeModel(context, opened, model);
+  await chosenThen(context, { title: label.trim(), rows: MODEL_ACTIONS.map((action) => ({ label: action })) }, async (index) => {
+    const action = MODEL_ACTIONS[index];
+    if (action === 'Edit') await runModelFields(context, model);
+    if (action === 'Remove') await removeModel(context, opened, model);
+  });
 };
 
 const declaredOf = (edit: ModelsEdit): Readonly<Record<string, unknown>> => {
@@ -227,16 +222,17 @@ const programMenu = async (context: ModelsFlowContext, id: string): Promise<void
     if (typeof program !== 'object' || program === null) return;
     const shown = program as Record<string, unknown>;
     const rows = [...PROGRAM_FIELD_ROWS.map((row) => ({ label: `${row.label}  ${programShownValue(shown[row.field])}` })), { label: FORGET_PROGRAM_ROW }];
-    const index = await chosenOf(context, { title: id, rows });
-    if (index === undefined) return;
-    const row = PROGRAM_FIELD_ROWS[index];
-    if (row === undefined) {
-      await proposeAndWrite(opened, context, 'forget-program', { args: [id], options: {} });
-      continue;
-    }
-    const value = await programValue(context, row.field);
-    if (value === undefined) continue;
-    await proposeAndWrite(opened, context, 'set-program', { args: [id, row.field, row.field === 'args' ? value : value.trim()], options: {} });
+    const acted = await chosenThen(context, { title: id, rows }, async (index) => {
+      const row = PROGRAM_FIELD_ROWS[index];
+      if (row === undefined) {
+        await proposeAndWrite(opened, context, 'forget-program', { args: [id], options: {} });
+        return;
+      }
+      const value = await programValue(context, row.field);
+      if (value === undefined) return;
+      await proposeAndWrite(opened, context, 'set-program', { args: [id, row.field, row.field === 'args' ? value : value.trim()], options: {} });
+    });
+    if (acted === undefined) return;
   }
 };
 
@@ -248,10 +244,11 @@ export const runProgramsFlow = async (context: ModelsFlowContext): Promise<void>
       context.info(NO_PROGRAMS);
       return;
     }
-    const index = await chosenOf(context, { title: PROGRAMS_TITLE, rows: ids.map((label) => ({ label })) });
-    const id = index === undefined ? undefined : ids[index];
-    if (id === undefined) return;
-    await programMenu(context, id);
+    const acted = await chosenThen(context, { title: PROGRAMS_TITLE, rows: ids.map((label) => ({ label })) }, async (index) => {
+      const id = ids[index];
+      if (id !== undefined) await programMenu(context, id);
+    });
+    if (acted === undefined) return;
   }
 };
 
@@ -273,19 +270,28 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
     if (read === undefined) return;
     const { health, accounts, document, serverStates } = read.value;
     const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit, accounts), serverStates });
-    const index = await chosenOf(context, {
-      title: MODELS_TITLE,
-      lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
-      rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
-      initial: firstChoosableFrom(rows, Math.min(at, rows.length - 1)),
-      filter: false,
-    });
-    const row = index === undefined ? undefined : rows[index];
-    if (index === undefined || row === undefined) return;
-    at = index;
+    const acted = await chosenThen(
+      context,
+      {
+        title: MODELS_TITLE,
+        lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
+        rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
+        initial: firstChoosableFrom(rows, Math.min(at, rows.length - 1)),
+      },
+      async (index) => {
+        at = index;
+        const row = rows[index];
+        if (row !== undefined) notListed = (await hubRowAct(context, opened, row)) ?? notListed;
+      },
+    );
+    if (acted === undefined) return;
+  }
+};
+
+const hubRowAct = async (context: ModelsFlowContext, opened: Opened, row: HubRow): Promise<ReadonlySet<string> | undefined> => {
     if (row.kind === 'server') await serverMenu(context, opened, row.provider);
     if (row.kind === 'model') await modelMenu(context, opened, row.model, row.label);
-    if (row.kind !== 'action') continue;
+    if (row.kind !== 'action') return undefined;
     switch (row.action) {
       case 'Add a model':
         await runAddFlow(context);
@@ -308,11 +314,8 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
       case 'Programs':
         await runProgramsFlow(context);
         break;
-      case 'Check the servers': {
-        const checked = await checkServers(context, opened.edit);
-        if (checked !== undefined) notListed = checked;
-        break;
-      }
+      case 'Check the servers':
+        return checkServers(context, opened.edit);
     }
-  }
+    return undefined;
 };

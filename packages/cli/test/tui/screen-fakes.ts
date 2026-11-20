@@ -4,7 +4,10 @@ import type { ScreenTerminal } from '../../src/tui/screen/input.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import type { TranscriptState, TranscriptStore } from '../../src/tui/screen/store.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
+import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ScreenRequest, TerminalState } from '../../src/tui/terminal/layer.ts';
+import type { ScreenTimers } from '../../src/tui/screen/timers.ts';
+import { EventEmitter } from 'node:events';
 import type { ScreenMode } from '../../src/tui/terminal/modes.ts';
 import type { NegotiationState } from '../../src/tui/terminal/negotiation.ts';
 import { foldChildEvent, foldEvent } from '../../src/tui/transcript.ts';
@@ -68,6 +71,9 @@ export const foldChild = (events: readonly PublicRunEvent[], agent: string, stor
 
 export type FakeScreenTerminal = ScreenTerminal & {
   emit(event: TerminalEvent): boolean;
+  push(events: readonly TerminalEvent[]): void;
+  arrived(): void;
+  arrivalWatchers(): number;
   framed(): void;
   resize(columns: number, rows: number): void;
   request(request: ScreenRequest): void;
@@ -88,6 +94,7 @@ export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal =>
   const claims = createClaimTable();
   const observers = new Set<(event: TerminalEvent) => void>();
   const frameListeners = new Set<() => void>();
+  const arrivalListeners = new Set<() => void>();
   const screens: ScreenMode[] = [];
   const titles: string[] = [];
   const bells: string[] = [];
@@ -145,6 +152,12 @@ export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal =>
         };
       },
       claim: claims.claim,
+      observeArrivals: (listener) => {
+        arrivalListeners.add(listener);
+        return () => {
+          arrivalListeners.delete(listener);
+        };
+      },
       observeFrames: (listener) => {
         frameListeners.add(listener);
         return () => {
@@ -155,9 +168,18 @@ export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal =>
     framed: () => {
       for (const listener of [...frameListeners]) listener();
     },
+    arrived: () => {
+      for (const listener of [...arrivalListeners]) listener();
+    },
+    arrivalWatchers: () => arrivalListeners.size,
     emit: (event) => {
+      for (const listener of [...arrivalListeners]) listener();
       for (const observer of [...observers]) observer(event);
       return claims.offer(event);
+    },
+    push: (events) => {
+      for (const event of events) for (const observer of [...observers]) observer(event);
+      for (const event of events) claims.offer(event);
     },
     resize: (columns, rows) => publish({ ...state, size: { columns, rows } }),
     shrink: (tooSmall) => publish({ ...state, tooSmall }),
@@ -203,3 +225,25 @@ export const manualSchedule = (): ManualSchedule => {
 };
 
 export const ROW_SCHEDULE = manualSchedule().schedule;
+
+export type ArrivingTerminal = Pick<FakeScreenTerminal, 'push' | 'arrived'>;
+
+export const throughTheLayer = (terminal: ArrivingTerminal, timers: ScreenTimers): ((text: string) => void) => {
+  const stdin = new EventEmitter();
+  const layer = createTerminalLayer({
+    timers,
+    input: { setRawMode: () => undefined, resume: () => undefined, pause: () => undefined, on: (event, listener) => stdin.on(event, listener), off: (event, listener) => stdin.off(event, listener) },
+    output: { writeSync: () => undefined, size: () => ({ columns: 160, rows: 100 }), onResize: () => () => undefined },
+    process: { on: () => undefined, off: () => undefined, kill: () => undefined, deliverable: () => true },
+    screen: 'fullscreen',
+    screenSetByUser: false,
+    mouse: false,
+    onFailure: (error) => {
+      throw error;
+    },
+    onEvents: (events) => terminal.push(events),
+    onArrival: () => terminal.arrived(),
+  });
+  layer.start();
+  return (text) => void stdin.emit('data', Buffer.from(text, 'utf8'));
+};

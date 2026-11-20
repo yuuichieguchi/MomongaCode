@@ -26,9 +26,10 @@ export const writeModelEffort = async (context: { readonly backend: Pick<TuiBack
   await context.wait(SAVING_EFFORT, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setModelField', model, path: ['effort'], value: level }], { lock: host.lock(), signal }));
 };
 
-export type EffortContext = Pick<SlashContext, 'effort' | 'shownModel' | 'setEffort' | 'info' | 'wait'> & { readonly backend: Pick<TuiBackend, 'models' | 'modelsHost'>; readonly overlays: Pick<OverlayPorts, 'choose'> };
+export type EffortContext = Pick<SlashContext, 'effort' | 'shownModel' | 'setEffort' | 'info' | 'wait'> & { readonly backend: Pick<TuiBackend, 'models' | 'modelsHost'>; readonly overlays: Pick<OverlayPorts, 'choose'> & Partial<Pick<OverlayPorts, 'closeScreen'>> };
 
 export const applyEffort = async (context: EffortContext, model: string, level: ReasoningEffort, scope: EffortScope): Promise<void> => {
+  context.overlays.closeScreen?.();
   if (scope === 'saved') await writeModelEffort(context, model, level);
   await context.setEffort(level);
   context.info(effortAnswerText(level, context.shownModel(model), scope));

@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { escapeTerminalBlock } from '@momonga/protocol';
 import type { KeyTable } from '../keys/table.ts';
 import { joinHint, SELECT_CONTEXTS } from '../select.tsx';
@@ -15,7 +15,7 @@ export const EDITOR_UNSET_LINE = 'Set $VISUAL or $EDITOR to open the settings fi
 
 export type RepairScreenProps = {
   broken: Extract<TuiStart, { kind: 'broken' }>;
-  input: Pick<ScreenInput, 'claim'>;
+  input: Pick<ScreenInput, 'claim'> & Partial<Pick<ScreenInput, 'observeFrames'>>;
   keys: KeyTable;
   onOpen(): void;
   onQuit(): void;
@@ -27,7 +27,32 @@ const repairHint = (keys: KeyTable, canOpen: boolean): string =>
 
 export function RepairScreen({ broken, input, keys, onOpen, onQuit, note }: RepairScreenProps) {
   const canOpen = broken.file !== undefined;
+  const drawn = useRef(input.observeFrames === undefined);
+  const frameWatch = useRef<{ readonly input: RepairScreenProps['input']; readonly stop: () => void } | undefined>(undefined);
+  if (frameWatch.current?.input !== input) {
+    frameWatch.current?.stop();
+    if (input.observeFrames === undefined) {
+      drawn.current = true;
+      frameWatch.current = undefined;
+    } else {
+      drawn.current = false;
+      frameWatch.current = {
+        input,
+        stop: input.observeFrames(() => {
+          drawn.current = true;
+        }),
+      };
+    }
+  }
+  useEffect(
+    () => () => {
+      frameWatch.current?.stop();
+      frameWatch.current = undefined;
+    },
+    [],
+  );
   const onKey = useEffectEvent((action: string | undefined): boolean => {
+    if (!drawn.current) return true;
     if (action === 'select.decide' && canOpen) onOpen();
     else if (action === 'select.escape' || action === 'select.interrupt') onQuit();
     return true;
@@ -49,7 +74,7 @@ export type RepairOutcome = { readonly kind: 'loaded'; readonly start: Extract<T
 
 export type RepairFlowProps = {
   first: Extract<TuiStart, { kind: 'broken' }>;
-  input: Pick<ScreenInput, 'claim'>;
+  input: Pick<ScreenInput, 'claim'> & Partial<Pick<ScreenInput, 'observeFrames'>>;
   keys: KeyTable;
   open(file: string): Promise<ExternalOpen>;
   reread(): Promise<TuiStart>;

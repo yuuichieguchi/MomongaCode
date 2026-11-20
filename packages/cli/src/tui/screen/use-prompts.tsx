@@ -13,9 +13,9 @@ import { editorUnsetHint } from '../external-editor.ts';
 import type { ExternalEditorPort } from '../external-editor.ts';
 import { capturedOf } from '../keys/capture.ts';
 import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
-import { OverlayView, pickerSpec } from '../picker.tsx';
-import type { Loaded, LoadingHint, Overlay, OverlayPorts, PickChoice, PickRequest, WaitingOverlay } from '../picker.tsx';
-import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectHover, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel } from '../select.tsx';
+import { LOADING_HINTS, OverlayView, pickerSpec } from '../picker.tsx';
+import type { KeptScreen, Loaded, LoadingHint, Overlay, OverlayPorts, PickChoice, PickRequest, PickUpdate, WaitingOverlay } from '../picker.tsx';
+import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectHover, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel, selectWithFilter } from '../select.tsx';
 import type { SelectFrame, SelectLayout, SelectLine, SelectOutcome, SelectSpec, SelectState, SelectStep, TextRow } from '../select.tsx';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
 import { promptTakesFocus, toolOf, withElicitationFlow } from '../transcript.ts';
@@ -28,10 +28,9 @@ import type { RowAllocation } from './layout.ts';
 import type { Invitation } from './menu.tsx';
 import { approvalSpec, approvalWording, decisionChoices, ElicitationFields, elicitationSpec, TRUST_CHOICES, trustSpec } from './prompt-panel.tsx';
 import type { TrustDecision } from './prompt-panel.tsx';
-import { createPromptGate, UNDER_HANDS_LINE, UNDER_HANDS_PAUSE_LINE } from './prompt-settle.ts';
-import type { PromptIntent, PromptSource } from './prompt-settle.ts';
 import type { TranscriptState, TranscriptStore } from './store.ts';
-import type { ScreenTimers } from './timers.ts';
+import { Abandoned, currentScope, currentStep, inScope, untilAbandoned } from '../flow-step.ts';
+import type { FlowScope, FlowStep } from '../flow-step.ts';
 
 const WAITING_INPUT_BYTES = PASTED_CALLBACK_MAX_BYTES + 1;
 
@@ -57,26 +56,38 @@ const selectActionOf = (event: KeyEvent, keys: KeyTable): ActionId | undefined =
 
 const TEXT_CONTEXTS: readonly KeyContext[] = [...SELECT_CONTEXTS, 'chat'];
 
+const titleOf = (screen: KeptScreen): string => {
+  switch (screen.kind) {
+    case 'pick':
+      return screen.request.title ?? '';
+    case 'text':
+    case 'capture':
+      return screen.request.title;
+    case 'waiting':
+      return screen.view.title;
+    case 'loading':
+      return screen.title;
+  }
+};
+
 type TextOverlay = Extract<Overlay, { kind: 'text' }>;
 
 export type PromptsHost = {
   backend: TuiBackend;
   store: TranscriptStore;
   terminal: ScreenTerminal;
-  timers: ScreenTimers;
-  keySettleMs: number;
   keepTyped(text: string): void;
   columns: number;
   panelRows: number;
   keys: KeyTable;
   screenReader: boolean;
   interruptRun(): void;
+  stopActive(): void;
   reportError(error: unknown): void;
   fail(error: unknown): void;
   exit(): void;
   append(entry: Entry): void;
   decideTrust(decision: TrustDecision): void;
-  replayKeys(events: readonly KeyEvent[]): void;
   externalEditor: ExternalEditorPort;
 };
 
@@ -89,10 +100,12 @@ export type Prompts = {
   invite(invitation: Invitation): void;
   dismissInvitation(): void;
   flow<T>(work: () => Promise<T>): Promise<T>;
-  betweenLists(): boolean;
-  holdKey(event: KeyEvent, keys: KeyTable): boolean;
-  leaveLists(): void;
-  keyConsumed(): void;
+  raise(kind: string, work: () => Promise<void>): Promise<void>;
+  waitWords(phase: string): (() => void) | undefined;
+  screenId(trust: boolean): string;
+  isProductPanel(trust: boolean): boolean;
+  undrawnKey(event: KeyEvent, keys: KeyTable): void;
+  undrawnPaste(text: string): void;
   overlayKind(): Overlay['kind'] | undefined;
   promptStage(): 'decision' | 'fields' | undefined;
   detailShown(facts: PanelFacts): boolean;
@@ -106,15 +119,13 @@ export type Prompts = {
   wheel(facts: PanelFacts, rows: number): void;
 };
 
-type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; settle: string; on(outcome: SelectOutcome): void; highlighted?: (index: number) => void };
+type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; on(outcome: SelectOutcome): void; highlighted?: (index: number) => void };
 
 const TRUST_OWNER = 'trust';
 
 const DIGIT = /^[1-9]$/;
 
 const approvalOwner = (approval: PendingApproval): string => `approval:${approval.approvalId}`;
-
-const elicitationSettle = (pending: PendingElicitation): string => `input:${pending.inputId}`;
 
 const waitingCount = (state: TranscriptState): number =>
   (state.approval === undefined ? 0 : 1) + state.queuedApprovals.length + (state.elicitation === undefined ? 0 : 1) + state.queuedElicitations.length;
@@ -147,198 +158,273 @@ export const usePromptPointer = (host: PromptPointerHost): void => {
   useEffect(() => terminal.input.claim('prompt-pointer', (event) => onEvent(event)), [terminal]);
 };
 
+type Layer = { readonly scope: FlowScope; readonly screen: number; readonly overlay: Overlay; readonly openedIn: FlowStep | undefined; readonly leave: (() => void) | undefined };
+
+type PickOverlay = Extract<Overlay, { kind: 'pick' }>;
+
+const keptOf = (overlay: Overlay): Extract<Overlay, { kind: 'kept' }> => (overlay.kind === 'kept' ? overlay : { kind: 'kept', shown: overlay });
+
+const lateStep = (): FlowStep | undefined => {
+  const step = currentStep();
+  return step?.signal.aborted === true ? step : undefined;
+};
+
 export const usePrompts = (host: PromptsHost): Prompts => {
-  const { backend, store } = host;
+  const { backend, store, terminal } = host;
   const [, redraw] = useReducer((count: number) => count + 1, 0);
-  const selection = useRef<{ owner: string; state: SelectState } | undefined>(undefined);
+  const selections = useRef(new Map<string, SelectState>());
+  const panelSelection = useRef<{ owner: string; state: SelectState } | undefined>(undefined);
   const sent = useRef<string | undefined>(undefined);
   const failed = useRef<{ owner: string; text: string } | undefined>(undefined);
   const detail = useRef<{ owner: string; top: number } | undefined>(undefined);
   const texts = useRef<{ owner: string; width: number; title: string | undefined; lines: number; rows: TextRow[] } | undefined>(undefined);
   const approvalText = useRef<{ approvalId: string; title: string; lines: SelectLine[] } | undefined>(undefined);
-  const pickId = useRef(0);
   const flowGeneration = useRef(0);
-  const [elicitEditor, setElicitEditor] = useState<EditorState>(emptyEditor());
-  const elicitEditorRef = useRef<EditorState>(elicitEditor);
+  const elicitEditorRef = useRef<EditorState>(emptyEditor());
   const flowRef = useRef<{ inputId: string; flow: ElicitationFlow } | undefined>(undefined);
-  const [overlay, setOverlayState] = useState<Overlay | undefined>(undefined);
-  const overlayRef = useRef<Overlay | undefined>(undefined);
-  const [overlayEditor, setOverlayEditor] = useState<EditorState>(emptyEditor());
-  const overlayEditorRef = useRef<EditorState>(overlayEditor);
+  const layers = useRef<Layer[]>([]);
+  const editors = useRef(new Map<number, EditorState>());
+  const watching = useRef(new Map<number, () => void>());
+  const screens = useRef(0);
+  const scopeCount = useRef(0);
+  const loose = useRef<FlowScope>({ id: 0, raised: undefined, steps: [] });
+  const liveScopes = useRef(new Set<FlowScope>());
+  const raising = useRef(new Set<string>());
   const [invitation, setInvitation] = useState<Invitation | undefined>(undefined);
 
-  const [gate] = useState(() => createPromptGate({ timers: host.timers, settleMs: host.keySettleMs, onChange: redraw }));
-  const { terminal } = host;
-  useEffect(
-    () =>
-      terminal.input.observe((event) => {
-        if (event.type === 'key') gate.keyPressed();
-        else if (event.type === 'release') gate.keyReleased();
-      }),
-    [terminal, gate],
-  );
-  useEffect(() => gate.stop, [gate]);
-  useEffect(() => terminal.input.observeFrames(() => gate.framed()), [terminal, gate]);
+  const topLayer = (): Layer | undefined => layers.current.at(-1);
 
-  const shownAs = (settle: string, spec: SelectSpec): SelectSpec => {
-    gate.show(settle);
-    if (!gate.view(settle).underHands) return spec;
-    if (spec.filter || spec.rows.some((row) => row.opensBrowser === true)) return { ...spec, lines: [...(spec.lines ?? []), UNDER_HANDS_PAUSE_LINE] };
-    return { ...spec, decideOn: 'immediate', enterOff: true, lines: [...(spec.lines ?? []), UNDER_HANDS_LINE] };
+  const scopeNow = (): FlowScope => currentScope() ?? loose.current;
+
+  const layerOf = (scope: FlowScope): Layer | undefined => layers.current.find((layer) => layer.scope === scope);
+
+  const stopWatching = (screen: number): void => {
+    watching.current.get(screen)?.();
+    watching.current.delete(screen);
   };
 
-  const takes = (active: Active, intent: PromptIntent, source: PromptSource): boolean => gate.takes(active.settle, intent, source);
-
-  const settlingOf = (active: Active): boolean => gate.view(active.settle).settling;
-
-  const keepAside = (event: KeyEvent, keys: KeyTable): void => {
-    const typed = keys.typedOf(event);
-    if (typed !== undefined) host.keepTyped(typed);
+  const forget = (layer: Layer): void => {
+    selections.current.delete(`pick:${layer.screen}`);
+    editors.current.delete(layer.screen);
+    stopWatching(layer.screen);
   };
 
-  const typedAside = (active: Active, event: KeyEvent, keys: KeyTable): string | undefined => {
-    const typed = keys.typedOf(event);
-    if (typed === undefined || active.spec.filter || DIGIT.test(typed)) return undefined;
-    return keys.actionOf(SELECT_CONTEXTS, event, 'plain') === undefined ? typed : undefined;
+  const place = (scope: FlowScope, next: Layer | undefined): void => {
+    const list = layers.current;
+    const at = list.findIndex((layer) => layer.scope === scope);
+    const before = list[at];
+    if (before !== undefined && before.screen !== next?.screen) forget(before);
+    if (next === undefined) {
+      if (at !== -1) list.splice(at, 1);
+    } else if (at !== -1) list[at] = next;
+    else if (scope.raised !== undefined) list.push(next);
+    else {
+      const raised = list.findIndex((layer) => layer.scope.raised !== undefined);
+      list.splice(raised === -1 ? list.length : raised, 0, next);
+    }
+    redraw();
   };
 
-  const intentOf = (active: Active, event: KeyEvent, keys: KeyTable): PromptIntent => {
-    const typed = keys.typedOf(event);
-    const action = active.spec.filter && typed !== undefined ? undefined : keys.actionOf(SELECT_CONTEXTS, event, 'plain');
-    if (action === 'select.decide') return active.spec.enterOff === true ? 'enter' : 'choice';
-    return action === undefined && typed !== undefined && DIGIT.test(typed) ? 'choice' : 'other';
+  const isShown = (layer: Layer): Layer | undefined => {
+    const current = layerOf(layer.scope);
+    return current?.screen === layer.screen ? current : undefined;
   };
 
-  const flows = useRef(0);
-  const heldKeys = useRef<KeyEvent[] | undefined>(undefined);
-  const escapedBetween = useRef(false);
-
-  const takeEscape = (): boolean => {
-    const escaped = escapedBetween.current;
-    escapedBetween.current = false;
-    return escaped;
+  const open = (overlay: Overlay, leave?: () => void): Layer => {
+    const scope = scopeNow();
+    screens.current += 1;
+    const layer: Layer = { scope, screen: screens.current, overlay, openedIn: currentStep(), leave };
+    place(scope, layer);
+    return layer;
   };
 
-  const takeHeldKeys = (): KeyEvent[] => {
-    const held = heldKeys.current ?? [];
-    heldKeys.current = undefined;
-    return held;
+  const change = (layer: Layer, overlay: Overlay): void => {
+    const current = isShown(layer);
+    if (current !== undefined) place(current.scope, { ...current, overlay });
   };
 
-  const showOverlay = (next: Overlay | undefined): void => {
-    overlayRef.current = next;
-    setOverlayState(next);
-    if (next === undefined || next.kind === 'loading') return;
-    for (const event of takeHeldKeys()) keepAside(event, host.keys);
+  const close = (layer: Layer): void => {
+    if (isShown(layer) !== undefined) place(layer.scope, undefined);
   };
 
-  const opened = (next: Overlay): void => {
-    escapedBetween.current = false;
-    pickId.current += 1;
-    showOverlay(next);
+  const answered = (layer: Layer): void => {
+    stopWatching(layer.screen);
+    const current = isShown(layer);
+    if (current === undefined) return;
+    if (!liveScopes.current.has(current.scope)) {
+      place(current.scope, undefined);
+      return;
+    }
+    place(current.scope, { ...current, overlay: keptOf(current.overlay) });
   };
 
-  const overlaySettle = (): string => `overlay:${pickId.current}`;
+  const left = (layer: Layer, outside: () => void): void => {
+    const step = layer.openedIn;
+    if (step === undefined || layer.leave === undefined) {
+      close(layer);
+      outside();
+      return;
+    }
+    answered(layer);
+    step.abandon();
+    layer.leave();
+  };
 
-  const replaceOverlayEditor = (next: EditorState): void => {
-    overlayEditorRef.current = next;
-    setOverlayEditor(next);
+  const editorOf = (layer: Layer): EditorState => editors.current.get(layer.screen) ?? emptyEditor();
+
+  const replaceEditor = (layer: Layer, next: EditorState): void => {
+    editors.current.set(layer.screen, next);
+    redraw();
   };
 
   const replaceElicitEditor = (next: EditorState): void => {
     elicitEditorRef.current = next;
-    setElicitEditor(next);
+    redraw();
   };
 
-  const openPick = (request: PickRequest, resolve: (choice: PickChoice | undefined) => void): void => {
-    if (takeEscape() && pickerSpec(request).escape === 'back') {
-      resolve(undefined);
+  const updatePick = (layer: Layer, update: PickUpdate): void => {
+    const current = isShown(layer);
+    if (current?.overlay.kind !== 'pick') return;
+    const { alt: _previousAlt, ...base } = current.overlay.request;
+    const alt = 'alt' in update ? update.alt : current.overlay.request.alt;
+    const request: PickRequest = { ...base, rows: update.rows, ...(update.lines === undefined ? {} : { lines: update.lines }), ...(alt === undefined ? {} : { alt }) };
+    const filter = selections.current.get(`pick:${current.screen}`)?.filter ?? '';
+    selections.current.set(`pick:${current.screen}`, selectWithFilter({ ...pickerSpec(request), initial: update.highlight }, filter));
+    change(current, { ...current.overlay, request });
+  };
+
+  const openPick = (request: PickRequest, resolve: (choice: PickChoice | undefined) => void, reject: (error: unknown) => void): void => {
+    const late = lateStep();
+    if (late !== undefined) {
+      reject(late.signal.reason);
       return;
     }
     request.onHighlight?.(pickerSpec(request).initial);
-    opened({ kind: 'pick', request, resolve });
+    const layer = open({ kind: 'pick', request, resolve }, () => reject(new Abandoned()));
+    if (request.watch !== undefined) watching.current.set(layer.screen, request.watch((update) => updatePick(layer, update)));
   };
 
   const overlayPorts: OverlayPorts = {
     pick: (request) =>
-      new Promise((resolve) => {
-        openPick(request, (choice) => resolve(choice?.index));
+      new Promise((resolve, reject) => {
+        openPick(request, (choice) => resolve(choice?.index), reject);
       }),
     choose: (request) =>
-      new Promise((resolve) => {
-        openPick(request, resolve);
+      new Promise((resolve, reject) => {
+        openPick(request, resolve, reject);
       }),
     captureKey: (request) =>
-      new Promise((resolve) => {
-        opened({ kind: 'capture', request, resolve });
+      new Promise((resolve, reject) => {
+        const late = lateStep();
+        if (late !== undefined) {
+          reject(late.signal.reason);
+          return;
+        }
+        open({ kind: 'capture', request, resolve }, () => reject(new Abandoned()));
       }),
     promptText: (request) =>
-      new Promise((resolve) => {
+      new Promise((resolve, reject) => {
+        const late = lateStep();
+        if (late !== undefined) {
+          reject(late.signal.reason);
+          return;
+        }
         const initial = request.initial ?? '';
-        replaceOverlayEditor({ ...emptyEditor(), text: initial, cursor: initial.length });
-        opened({ kind: 'text', request, resolve });
+        const layer = open({ kind: 'text', request, resolve }, () => reject(new Abandoned()));
+        editors.current.set(layer.screen, { ...emptyEditor(), text: initial, cursor: initial.length });
       }),
     waiting: (view, handlers) => {
-      const current = overlayRef.current;
-      if (current?.kind === 'waiting') {
-        showOverlay({ ...current, view, handlers });
+      if (lateStep() !== undefined) {
+        handlers.cancel();
         return;
       }
-      replaceOverlayEditor(emptyEditor());
-      opened({ kind: 'waiting', view, handlers, delivered: false });
+      const current = layerOf(scopeNow());
+      if (current?.overlay.kind === 'waiting') {
+        change(current, { ...current.overlay, view, handlers });
+        return;
+      }
+      open({ kind: 'waiting', view, handlers, delivered: false });
     },
     delivered: () => {
-      const current = overlayRef.current;
-      if (current?.kind !== 'waiting' || current.delivered) return;
-      replaceOverlayEditor(emptyEditor());
-      const { problem: _problem, status: _status, ...rest } = current;
-      showOverlay({ ...rest, delivered: true });
+      const current = layerOf(scopeNow());
+      if (current?.overlay.kind !== 'waiting' || current.overlay.delivered) return;
+      editors.current.delete(current.screen);
+      const { problem: _problem, status: _status, ...rest } = current.overlay;
+      change(current, { ...rest, delivered: true });
     },
     closeWaiting: () => {
-      if (overlayRef.current?.kind === 'waiting') showOverlay(undefined);
+      const current = layerOf(scopeNow());
+      if (current?.overlay.kind !== 'waiting') return;
+      if (current.overlay.delivered) answered(current);
+      else close(current);
     },
     loading: <T,>(title: string, read: () => Promise<T>, hint: LoadingHint) =>
       new Promise<Loaded<T>>((resolve, reject) => {
-        if (takeEscape()) {
-          resolve({ kind: 'cancelled' });
+        const late = lateStep();
+        if (late !== undefined) {
+          reject(late.signal.reason);
           return;
         }
         let reading = true;
-        const close = (): void => {
-          reading = false;
-          if (overlayRef.current === shown) closeOverlay();
-        };
-        const shown: Overlay = {
-          kind: 'loading',
-          title,
-          hint,
-          cancel: () => {
-            if (!reading) return;
-            close();
-            resolve({ kind: 'cancelled' });
+        const layer: Layer = open(
+          {
+            kind: 'loading',
+            title,
+            hint,
+            cancel: () => {
+              if (!reading) return;
+              reading = false;
+              left(layer, () => resolve({ kind: 'cancelled' }));
+            },
           },
-        };
-        showOverlay(shown);
-        const answered = async (): Promise<T> => read();
-        answered().then(
+          () => reject(new Abandoned()),
+        );
+        const answeredRead = async (): Promise<T> => read();
+        answeredRead().then(
           (value) => {
             if (!reading) return;
-            close();
+            reading = false;
+            answered(layer);
             resolve({ kind: 'read', value });
           },
           (error: unknown) => {
-            if (!reading) {
-              host.reportError(error);
-              return;
-            }
-            close();
+            if (!reading) return;
+            reading = false;
+            answered(layer);
             reject(errorOf(error));
           },
         );
       }),
+    read: async <T,>(read: () => Promise<T>): Promise<Loaded<T>> => {
+      const late = lateStep();
+      if (late !== undefined) throw late.signal.reason;
+      const answeredRead = async (): Promise<T> => read();
+      return { kind: 'read', value: await untilAbandoned(currentStep(), answeredRead()) };
+    },
+    closeScreen: () => {
+      if (lateStep() !== undefined) return;
+      const current = layerOf(scopeNow());
+      if (current?.overlay.kind === 'kept') close(current);
+    },
   };
 
-  const stateOf = (active: Active): SelectState => (selection.current?.owner === active.owner ? selection.current.state : selectStart(active.spec));
+  const waitWords = (phase: string): (() => void) | undefined => {
+    const scope = currentScope();
+    const current = scope === undefined ? undefined : layerOf(scope);
+    if (current?.overlay.kind !== 'kept' || lateStep() !== undefined) return undefined;
+    change(current, { ...current.overlay, phase });
+    return () => {
+      const now = isShown(current);
+      if (now?.overlay.kind === 'kept') change(now, { kind: 'kept', shown: now.overlay.shown });
+    };
+  };
+
+  const ownSelection = (owner: string): boolean => owner.startsWith('pick:');
+
+  const stateOf = (active: Active): SelectState => {
+    if (ownSelection(active.owner)) return selections.current.get(active.owner) ?? selectStart(active.spec);
+    return panelSelection.current?.owner === active.owner ? panelSelection.current.state : selectStart(active.spec);
+  };
 
   const frameOf = (active: Active): SelectFrame => ({ width: host.columns, rows: host.panelRows, border: active.border && !host.screenReader });
 
@@ -359,7 +445,8 @@ export const usePrompts = (host: PromptsHost): Prompts => {
 
   const apply = (active: Active, step: SelectStep): void => {
     const before = stateOf(active).index;
-    selection.current = { owner: active.owner, state: step.state };
+    if (ownSelection(active.owner)) selections.current.set(active.owner, step.state);
+    else panelSelection.current = { owner: active.owner, state: step.state };
     redraw();
     if (step.state.index !== before) active.highlighted?.(step.state.index);
     if (step.outcome !== undefined) active.on(step.outcome);
@@ -382,33 +469,24 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     else if (action === 'viewer.pageDown') scrollDetail(active, shown.top + page);
   };
 
+  const typedAside = (active: Active, event: KeyEvent, keys: KeyTable): string | undefined => {
+    const typed = keys.typedOf(event);
+    if (typed === undefined || active.spec.filter || DIGIT.test(typed)) return undefined;
+    return keys.actionOf(SELECT_CONTEXTS, event, 'plain') === undefined ? typed : undefined;
+  };
+
   const selectInput = (active: Active, event: KeyEvent, keys: KeyTable): void => {
-    if (active.spec.interrupt === 'cancel-run' && keys.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.interrupt') {
-      active.on({ kind: 'interrupt', action: active.spec.interrupt });
-      return;
-    }
-    if (active.spec.escape === 'back' && keys.actionOf(SELECT_CONTEXTS, event, 'plain') === 'select.escape' && !(active.spec.filter && stateOf(active).filter !== '')) {
-      gate.keyConsumed();
-      active.on({ kind: 'back' });
-      return;
-    }
-    if (!gate.view(active.settle).drawn) {
-      keepAside(event, keys);
-      return;
-    }
-    const aside = typedAside(active, event, keys);
-    if (aside !== undefined) {
-      host.keepTyped(aside);
-      gate.typedAside(active.settle);
-      return;
-    }
-    if (!takes(active, intentOf(active, event, keys), 'key')) return;
     const action = active.spec.filter && keys.typedOf(event) !== undefined ? undefined : keys.actionOf(SELECT_CONTEXTS, event, 'plain');
     if (action === 'select.interrupt') {
       active.on({ kind: 'interrupt', action: active.spec.interrupt });
       return;
     }
     if (active.sending) return;
+    const aside = typedAside(active, event, keys);
+    if (aside !== undefined) {
+      host.keepTyped(aside);
+      return;
+    }
     const shown = detailOf(active);
     if (shown !== undefined) {
       detailKey(active, shown, event, keys);
@@ -419,13 +497,11 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       if (layout.more > 0) scrollDetail(active, 0);
       return;
     }
-    const step = selectKey(active.spec, stateOf(active), event, keys, layout.capacity);
-    if (step.outcome !== undefined) gate.keyConsumed();
-    apply(active, step);
+    apply(active, selectKey(active.spec, stateOf(active), event, keys, layout.capacity));
   };
 
   const selectPress = (active: Active, row: number): void => {
-    if (active.sending || detailOf(active) !== undefined || !takes(active, 'choice', 'pointer')) return;
+    if (active.sending || detailOf(active) !== undefined) return;
     const index = selectRowAt(layoutOf(active), row);
     if (index !== undefined) apply(active, selectClick(active.spec, stateOf(active), index));
   };
@@ -454,7 +530,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const shown = detailOf(active);
     if (shown !== undefined) return <DetailView text={textOf(active)} frame={frameOf(active)} top={shown.top} keys={host.keys} />;
     const error = errorFor(active);
-    return <SelectView spec={active.spec} state={stateOf(active)} layout={layoutOf(active)} border={frameOf(active).border} sending={active.sending} settling={settlingOf(active)} keys={host.keys} {...(error === undefined ? {} : { error })} />;
+    return <SelectView spec={active.spec} state={stateOf(active)} layout={layoutOf(active)} border={frameOf(active).border} sending={active.sending} keys={host.keys} {...(error === undefined ? {} : { error })} />;
   };
 
   const markSent = (owner: string): void => {
@@ -476,8 +552,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const { title, lines } = approvalTextOf(approval);
     return {
       owner,
-      settle: owner,
-      spec: shownAs(owner, approvalSpec(approval, title, lines, waitingCount(store.state()))),
+      spec: approvalSpec(approval, title, lines, waitingCount(store.state())),
       border: true,
       sending: sent.current === owner,
       on: (outcome) => {
@@ -541,8 +616,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     const flow = flowOf(pending);
     return {
       owner: `input:${pending.inputId}:${flowGeneration.current}`,
-      settle: elicitationSettle(pending),
-      spec: shownAs(elicitationSettle(pending), elicitationSpec({ ...pending, flow }, toolOf(store, pending.callId)?.title ?? pending.callId, waitingCount(store.state()))),
+      spec: elicitationSpec({ ...pending, flow }, toolOf(store, pending.callId)?.title ?? pending.callId, waitingCount(store.state())),
       border: true,
       sending: pending.submitted,
       on: (outcome) => {
@@ -559,17 +633,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       return;
     }
     const action = selectActionOf(event, keys);
-    const settle = elicitationSettle(pending);
-    gate.show(settle);
     if (action === 'select.interrupt') {
       host.interruptRun();
       return;
     }
-    if (!gate.view(settle).drawn) {
-      keepAside(event, keys);
-      return;
-    }
-    if (!gate.takes(settle, action === 'select.escape' ? 'other' : 'text', 'key')) return;
     if (pending.submitted) return;
     if (action === 'select.escape') {
       applyFlow(pending, leaveFields(flow));
@@ -586,8 +653,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
 
   const trustActive = (path: string): Active => ({
     owner: TRUST_OWNER,
-    settle: TRUST_OWNER,
-    spec: shownAs(TRUST_OWNER, trustSpec(path)),
+    spec: trustSpec(path),
     border: true,
     sending: sent.current === TRUST_OWNER,
     on: (outcome) => {
@@ -602,219 +668,295 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     },
   });
 
-  const closeOverlay = (): void => {
-    showOverlay(undefined);
-    if (flows.current > 0) heldKeys.current ??= [];
-  };
-
-  const pickActive = (current: Extract<Overlay, { kind: 'pick' }>): Active => ({
-    owner: `pick:${pickId.current}`,
-    settle: `pick:${pickId.current}`,
-    spec: shownAs(`pick:${pickId.current}`, pickerSpec(current.request)),
+  const pickActive = (layer: Layer, current: PickOverlay): Active => ({
+    owner: `pick:${layer.screen}`,
+    spec: pickerSpec(current.request),
     border: true,
     sending: false,
     ...(current.request.onHighlight === undefined ? {} : { highlighted: current.request.onHighlight }),
     on: (outcome) => {
       if (outcome.kind === 'alt' && current.request.alt === undefined) return;
-      closeOverlay();
-      current.resolve(outcome.kind === 'decide' || outcome.kind === 'alt' ? { index: outcome.index, alt: outcome.kind === 'alt' } : undefined);
+      if (outcome.kind === 'decide' || outcome.kind === 'alt') {
+        answered(layer);
+        current.resolve({ index: outcome.index, alt: outcome.kind === 'alt' });
+        return;
+      }
+      answered(layer);
+      current.resolve(undefined);
     },
   });
 
   const panelActive = ({ trustPath, ready }: PanelFacts): Active | undefined => {
     if (trustPath !== undefined) return trustActive(trustPath);
-    const current = overlayRef.current;
-    if (current !== undefined) return current.kind === 'pick' ? pickActive(current) : undefined;
+    const top = topLayer();
+    if (top !== undefined) return top.overlay.kind === 'pick' ? pickActive(top, top.overlay) : undefined;
     if (!ready) return undefined;
     const state = store.state();
     if (state.elicitation !== undefined) return flowOf(state.elicitation).stage === 'decision' ? elicitationActive(state.elicitation) : undefined;
     return state.approval === undefined || !promptTakesFocus(state) ? undefined : approvalActive(state.approval);
   };
 
-  const fieldsShown = (facts: PanelFacts): PendingElicitation | undefined => (facts.ready && facts.trustPath === undefined && overlayRef.current === undefined ? store.state().elicitation : undefined);
+  const fieldsShown = (facts: PanelFacts): PendingElicitation | undefined => (facts.ready && facts.trustPath === undefined && topLayer() === undefined ? store.state().elicitation : undefined);
 
-  const typeIntoWaiting = (current: WaitingOverlay, after: EditorState): void => {
-    const before = overlayEditorRef.current;
-    replaceOverlayEditor(after);
+  const typeIntoWaiting = (layer: Layer, current: WaitingOverlay, after: EditorState): void => {
+    const before = editorOf(layer);
+    replaceEditor(layer, after);
     if (after.text === before.text) return;
     if (current.problem !== undefined) {
       const { problem: _problem, ...rest } = current;
-      showOverlay(rest);
+      change(layer, rest);
     }
   };
 
   const roomOf = (editor: EditorState): number => WAITING_INPUT_BYTES - Buffer.byteLength(editor.text, 'utf8');
 
-  const pasteIntoWaiting = (current: WaitingOverlay, text: string): void => {
-    const before = overlayEditorRef.current;
-    typeIntoWaiting(current, insertText(before, prefixWithin(text, roomOf(before))));
+  const pasteIntoWaiting = (layer: Layer, current: WaitingOverlay, text: string): void => {
+    const before = editorOf(layer);
+    typeIntoWaiting(layer, current, insertText(before, prefixWithin(text, roomOf(before))));
   };
 
-  const editWaiting = (current: WaitingOverlay, event: KeyEvent, keys: KeyTable): void => {
+  const editWaiting = (layer: Layer, current: WaitingOverlay, event: KeyEvent, keys: KeyTable): void => {
     const typed = keys.typedOf(event);
-    if (typed !== undefined) pasteIntoWaiting(current, typed);
-    else typeIntoWaiting(current, applyKeyEvent(overlayEditorRef.current, event, keys).state);
+    if (typed !== undefined) pasteIntoWaiting(layer, current, typed);
+    else typeIntoWaiting(layer, current, applyKeyEvent(editorOf(layer), event, keys).state);
   };
 
-  const submitWaiting = (current: WaitingOverlay): void => {
-    const text = overlayEditorRef.current.text;
+  const submitWaiting = (layer: Layer, current: WaitingOverlay): void => {
+    const text = editorOf(layer).text;
     if (text.trim() === '') return;
     const problem = pastedCallbackProblem(text, current.view.state);
-    replaceOverlayEditor(emptyEditor());
+    replaceEditor(layer, emptyEditor());
     if (problem !== undefined) {
-      showOverlay({ ...current, problem });
+      change(layer, { ...current, problem });
       return;
     }
-    gate.keyConsumed();
     current.handlers.deliver(text);
   };
 
-  const waitingKey = (current: WaitingOverlay, event: KeyEvent, keys: KeyTable): void => {
-    if (current.delivered) return;
+  const waitingKey = (layer: Layer, current: WaitingOverlay, event: KeyEvent, keys: KeyTable): void => {
     const action = selectActionOf(event, keys);
     if (action === 'select.escape' || action === 'select.interrupt') {
-      gate.keyConsumed();
       current.handlers.cancel();
-    } else if (action === 'select.copy') {
+      if (layer.openedIn === undefined) {
+        if (current.delivered) close(layer);
+        return;
+      }
+      answered(layer);
+      layer.openedIn.abandon();
+    } else if (current.delivered) return;
+    else if (action === 'select.copy') {
       backend.copyToClipboard(current.view.url.href).catch(host.reportError);
-      showOverlay({ ...current, status: CLIPBOARD_ASKED });
-    } else if (action === 'select.decide') submitWaiting(current);
-    else editWaiting(current, event, keys);
+      change(layer, { ...current, status: CLIPBOARD_ASKED });
+    } else if (action === 'select.decide') submitWaiting(layer, current);
+    else editWaiting(layer, current, event, keys);
   };
 
-  const captureKey = (current: Extract<Overlay, { kind: 'capture' }>, event: KeyEvent): void => {
+  const captureKey = (layer: Layer, current: Extract<Overlay, { kind: 'capture' }>, event: KeyEvent): void => {
     const captured = capturedOf(event);
     const problem = captured.kind === 'refused' ? captured.reason : captured.kind === 'key' ? current.request.problemOf(captured.spec) : undefined;
     if (problem !== undefined) {
-      showOverlay({ ...current, problem });
+      change(layer, { ...current, problem });
       return;
     }
-    gate.keyConsumed();
-    closeOverlay();
-    current.resolve(captured.kind === 'key' || captured.kind === 'remove' ? captured : undefined);
+    if (captured.kind === 'key' || captured.kind === 'remove') {
+      answered(layer);
+      current.resolve(captured);
+      return;
+    }
+    left(layer, () => current.resolve(undefined));
   };
 
-  const overlayKeyOf = (current: Overlay, event: KeyEvent, keys: KeyTable): void => {
-    if (current.kind !== 'loading' && current.kind !== 'pick' && !gate.view(overlaySettle()).drawn) {
-      keepAside(event, keys);
-      return;
-    }
-    if (current.kind === 'waiting') {
-      waitingKey(current, event, keys);
-      return;
-    }
-    if (current.kind === 'loading') {
-      const action = selectActionOf(event, keys);
-      if (action === 'select.escape' || action === 'select.interrupt') {
-        gate.keyConsumed();
-        current.cancel();
-      } else keepAside(event, keys);
-      return;
-    }
-    if (current.kind === 'capture') {
-      captureKey(current, event);
-      return;
-    }
-    if (current.kind === 'pick') {
-      selectInput(pickActive(current), event, keys);
-      return;
-    }
-    textKey(current, event, keys);
+  const keptKey = (layer: Layer, event: KeyEvent, keys: KeyTable): void => {
+    const action = selectActionOf(event, keys);
+    if (action === 'select.escape' || action === 'select.interrupt') layer.scope.steps.at(-1)?.abandon();
   };
 
-  const submitText = (current: TextOverlay): void => {
-    const text = overlayEditorRef.current.text;
+  const submitText = (layer: Layer, current: TextOverlay): void => {
+    const text = editorOf(layer).text;
     const error = current.request.validate(text);
     if (error !== undefined) {
-      showOverlay({ ...current, error });
+      change(layer, { ...current, error });
       return;
     }
-    gate.keyConsumed();
-    closeOverlay();
+    answered(layer);
     current.resolve(text);
   };
 
-  const editValueExternally = async (current: TextOverlay): Promise<void> => {
-    const outcome = await host.externalEditor.edit(overlayEditorRef.current.text, 'json');
-    if (overlayRef.current !== current) return;
-    if (outcome.kind === 'unset') showOverlay({ ...current, error: editorUnsetHint(host.keys) });
-    else replaceOverlayEditor(placeText(overlayEditorRef.current, outcome.text));
+  const editValueExternally = async (layer: Layer, current: TextOverlay): Promise<void> => {
+    const outcome = await host.externalEditor.edit(editorOf(layer).text, 'json');
+    const shown = isShown(layer);
+    if (shown?.overlay !== current) return;
+    if (outcome.kind === 'unset') change(layer, { ...current, error: editorUnsetHint(host.keys) });
+    else replaceEditor(layer, placeText(editorOf(layer), outcome.text));
   };
 
-  const structuredKey = (current: TextOverlay, event: KeyEvent, keys: KeyTable): boolean => {
+  const structuredKey = (layer: Layer, current: TextOverlay, event: KeyEvent, keys: KeyTable): boolean => {
     const action = keys.actionOf(TEXT_CONTEXTS, event);
-    if (action === 'editor.submitValue') submitText(current);
-    else if (action === 'editor.external') editValueExternally(current).catch(host.reportError);
-    else if (action === 'select.decide') replaceOverlayEditor(applyAction(overlayEditorRef.current, 'prompt.newline'));
+    if (action === 'editor.submitValue') submitText(layer, current);
+    else if (action === 'editor.external') editValueExternally(layer, current).catch(host.reportError);
+    else if (action === 'select.decide') replaceEditor(layer, applyAction(editorOf(layer), 'prompt.newline'));
     else return false;
     return true;
   };
 
-  const textKey = (current: TextOverlay, event: KeyEvent, keys: KeyTable): void => {
+  const textKey = (layer: Layer, current: TextOverlay, event: KeyEvent, keys: KeyTable): void => {
     const action = selectActionOf(event, keys);
     if (action === 'select.escape') {
-      gate.keyConsumed();
-      closeOverlay();
-      current.resolve(undefined);
+      left(layer, () => current.resolve(undefined));
       return;
     }
-    if (current.request.structured === true && structuredKey(current, event, keys)) return;
+    if (current.request.structured === true && structuredKey(layer, current, event, keys)) return;
     if (action === 'select.decide') {
-      submitText(current);
+      submitText(layer, current);
       return;
     }
-    replaceOverlayEditor(applyKeyEvent(overlayEditorRef.current, event, keys).state);
+    replaceEditor(layer, applyKeyEvent(editorOf(layer), event, keys).state);
   };
 
-  const holdKey = (event: KeyEvent, keys: KeyTable): boolean => {
-    const held = heldKeys.current;
-    if (held === undefined) return false;
-    const action = selectActionOf(event, keys);
-    if (action === 'select.escape') {
-      gate.keyConsumed();
-      escapedBetween.current = true;
-      return true;
+  const overlayKeyOf = (layer: Layer, event: KeyEvent, keys: KeyTable): void => {
+    const current = layer.overlay;
+    switch (current.kind) {
+      case 'kept':
+        keptKey(layer, event, keys);
+        return;
+      case 'waiting':
+        waitingKey(layer, current, event, keys);
+        return;
+      case 'loading': {
+        const action = selectActionOf(event, keys);
+        if (action === 'select.escape' || action === 'select.interrupt') current.cancel();
+        return;
+      }
+      case 'capture':
+        captureKey(layer, current, event);
+        return;
+      case 'pick': {
+        const active = pickActive(layer, current);
+        if (typeof current.request.escape === 'number' && detailOf(active) === undefined && layer.openedIn !== undefined && selectActionOf(event, keys) === 'select.escape') {
+          left(layer, () => current.resolve(undefined));
+          return;
+        }
+        selectInput(active, event, keys);
+        return;
+      }
+      case 'text':
+        textKey(layer, current, event, keys);
     }
-    if (action === 'select.interrupt') {
-      heldKeys.current = undefined;
-      return false;
-    }
-    held.push(event);
-    return true;
   };
 
-  const releaseHeldKeys = (): void => {
-    const held = takeHeldKeys();
-    if (held.length > 0) host.replayKeys(held);
+  const keptView = (layer: Layer, kept: Extract<Overlay, { kind: 'kept' }>): ReactNode => {
+    const { shown } = kept;
+    if (kept.phase !== undefined) return <OverlayView overlay={{ kind: 'loading', title: titleOf(shown), line: kept.phase, hint: LOADING_HINTS.none, cancel: () => undefined }} editor={emptyEditor()} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
+    if (shown.kind === 'pick') return selectView(pickActive(layer, shown));
+    return <OverlayView overlay={shown} editor={editorOf(layer)} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
   };
 
-  const leaveLists = (): void => {
-    escapedBetween.current = false;
-    releaseHeldKeys();
-  };
-
-  const flow = async <T,>(work: () => Promise<T>): Promise<T> => {
-    flows.current += 1;
+  const runScope = async <T,>(raised: string | undefined, work: () => Promise<T>): Promise<T> => {
+    scopeCount.current += 1;
+    const scope: FlowScope = { id: scopeCount.current, raised, steps: [] };
+    liveScopes.current.add(scope);
     try {
-      return await work();
+      return await inScope(scope, work);
     } finally {
-      flows.current -= 1;
-      if (flows.current === 0) leaveLists();
+      liveScopes.current.delete(scope);
+      const current = layerOf(scope);
+      if (current !== undefined) place(scope, undefined);
     }
+  };
+
+  const flow = async <T,>(work: () => Promise<T>): Promise<T> => (currentScope() === undefined ? runScope(undefined, work) : work());
+
+  const raise = async (kind: string, work: () => Promise<void>): Promise<void> => {
+    if (raising.current.has(kind)) return;
+    raising.current.add(kind);
+    try {
+      await runScope(kind, work);
+    } finally {
+      raising.current.delete(kind);
+    }
+  };
+
+  const runPrompt = (): { approval: PendingApproval | undefined; elicitation: PendingElicitation | undefined } => {
+    const state = store.state();
+    return { elicitation: state.elicitation, approval: state.approval !== undefined && promptTakesFocus(state) ? state.approval : undefined };
+  };
+
+  const screenId = (trust: boolean): string => {
+    if (trust) return TRUST_OWNER;
+    const top = topLayer();
+    if (top !== undefined) return `screen:${top.screen}`;
+    const { elicitation, approval } = runPrompt();
+    if (elicitation !== undefined) {
+      const flow = flowOf(elicitation);
+      return `input:${elicitation.inputId}:${flow.index}:${flow.stage}:${flow.fieldIndex}`;
+    }
+    return approval === undefined ? 'prompt' : approvalOwner(approval);
+  };
+
+  const isProductPanel = (trust: boolean): boolean => {
+    if (trust) return true;
+    const top = topLayer();
+    if (top !== undefined) return top.scope.raised !== undefined;
+    const { elicitation, approval } = runPrompt();
+    return elicitation !== undefined || approval !== undefined;
+  };
+
+  const undrawnKey = (event: KeyEvent, keys: KeyTable): void => {
+    const top = topLayer();
+    const action = selectActionOf(event, keys);
+    if (top !== undefined) {
+      if (top.scope.raised !== undefined) {
+        if (layers.current.slice(0, -1).some((layer) => layer.scope.raised !== undefined)) return;
+        const underneath = layers.current.findLast((layer) => layer.scope.raised === undefined);
+        if (underneath !== undefined) {
+          if (action === 'select.escape' || action === 'select.interrupt') overlayKeyOf(underneath, event, keys);
+          return;
+        }
+        const typed = keys.typedOf(event);
+        if (typed !== undefined) {
+          host.keepTyped(typed);
+          return;
+        }
+        if (action === 'select.interrupt') host.interruptRun();
+        else if (action === 'select.escape') host.stopActive();
+      }
+      return;
+    }
+    const { elicitation, approval } = runPrompt();
+    if (elicitation === undefined && approval === undefined) return;
+    const typed = keys.typedOf(event);
+    if (typed !== undefined) {
+      host.keepTyped(typed);
+      return;
+    }
+    if (action === 'select.interrupt') host.interruptRun();
+    else if (action === 'select.escape') host.stopActive();
+  };
+
+  const undrawnPaste = (text: string): void => {
+    const top = topLayer();
+    if (top !== undefined) {
+      if (top.scope.raised !== undefined && layers.current.length === 1) host.keepTyped(text);
+      return;
+    }
+    const { elicitation, approval } = runPrompt();
+    if (elicitation !== undefined || approval !== undefined) host.keepTyped(text);
   };
 
   return {
     overlayPorts,
-    overlay,
+    overlay: topLayer()?.overlay,
     invitation,
     invite: (next) => setInvitation(next),
     dismissInvitation: () => setInvitation(undefined),
     flow,
-    betweenLists: () => heldKeys.current !== undefined && overlayRef.current === undefined,
-    holdKey,
-    leaveLists,
-    keyConsumed: () => gate.keyConsumed(),
-    overlayKind: () => overlayRef.current?.kind,
+    raise,
+    waitWords,
+    screenId,
+    isProductPanel,
+    undrawnKey,
+    undrawnPaste,
+    overlayKind: () => topLayer()?.overlay.kind,
     promptStage: () => {
       const state = store.state();
       if (state.elicitation !== undefined) return flowOf(state.elicitation).stage === 'decision' ? 'decision' : 'fields';
@@ -826,9 +968,9 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     },
     trustKey: (path, event, keys) => selectInput(trustActive(path), event, keys),
     overlayKey: (event, keys) => {
-      const current = overlayRef.current;
-      if (current === undefined) return false;
-      overlayKeyOf(current, event, keys);
+      const top = topLayer();
+      if (top === undefined) return false;
+      overlayKeyOf(top, event, keys);
       return true;
     },
     runPromptKey: (event, keys) => {
@@ -844,40 +986,38 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       return false;
     },
     paste: (text) => {
-      const pastedInto = overlayRef.current;
-      if (pastedInto?.kind === 'waiting') {
-        if (!pastedInto.delivered) pasteIntoWaiting(pastedInto, text);
+      const top = topLayer();
+      if (top?.overlay.kind === 'kept') return true;
+      if (top?.overlay.kind === 'waiting') {
+        if (!top.overlay.delivered) pasteIntoWaiting(top, top.overlay, text);
         return true;
       }
-      if (pastedInto?.kind === 'text') {
-        replaceOverlayEditor(insertText(overlayEditorRef.current, text));
+      if (top?.overlay.kind === 'text') {
+        replaceEditor(top, insertText(editorOf(top), text));
         return true;
       }
       const state = store.state();
       if (state.elicitation !== undefined) {
-        if (state.elicitation.flow.stage === 'fields' && gate.takes(elicitationSettle(state.elicitation), 'text', 'pointer')) replaceElicitEditor(insertText(elicitEditorRef.current, text));
+        if (state.elicitation.flow.stage === 'fields') replaceElicitEditor(insertText(elicitEditorRef.current, text));
         return true;
       }
       return false;
     },
     panel: (facts) => {
       const active = panelActive(facts);
-      const pending = active === undefined ? fieldsShown(facts) : undefined;
-      const unanswered = active === undefined && pending === undefined && overlay !== undefined && overlay.kind !== 'pick' && overlay.kind !== 'loading' ? overlaySettle() : undefined;
-      const settle = active?.settle ?? (pending === undefined ? unanswered : elicitationSettle(pending));
-      if (active === undefined) gate.show(settle);
-      gate.rendered(settle);
       if (active !== undefined) return selectView(active);
-      if (overlay !== undefined && overlay.kind !== 'pick') return <OverlayView overlay={overlay} editor={overlayEditor} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
+      const top = topLayer();
+      if (top?.overlay.kind === 'kept') return keptView(top, top.overlay);
+      if (top !== undefined && top.overlay.kind !== 'pick') return <OverlayView overlay={top.overlay} editor={editorOf(top)} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
+      const pending = fieldsShown(facts);
       if (pending === undefined) return undefined;
       return (
         <ElicitationFields
           elicitation={{ ...pending, flow: flowOf(pending) }}
           title={toolOf(store, pending.callId)?.title ?? pending.callId}
-          editor={elicitEditor}
+          editor={elicitEditorRef.current}
           columns={host.columns}
           waiting={waitingCount(store.state())}
-          settling={gate.view(elicitationSettle(pending)).settling}
           keys={host.keys}
         />
       );

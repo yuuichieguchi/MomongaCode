@@ -2,6 +2,7 @@ import type { SessionSummary, TuiBackend } from '../backend.ts';
 import type { PickRequest } from '../picker.tsx';
 import { displayWidth, segmentsOf } from '../screen/wrap.ts';
 import type { SlashCommand } from '../slash.ts';
+import { pickThen } from '../flow-step.ts';
 
 export const RESUME_PICKER_TITLE = 'Resume a conversation';
 
@@ -56,9 +57,14 @@ export const pickConversation = async (ports: ResumePorts): Promise<void> => {
   }
   const now = ports.now();
   const columns = ports.columns();
-  const index = await ports.pick({ title: RESUME_PICKER_TITLE, rows: listed.map((session) => ({ label: conversationRow(session, now, columns) })), decideOn: 'enter', escape: 'back', filter: true });
-  const chosen = index === undefined ? undefined : listed[index];
-  if (chosen !== undefined) await ports.resume(chosen.id);
+  await pickThen(
+    ports.pick,
+    () => ({ title: RESUME_PICKER_TITLE, rows: listed.map((session) => ({ label: conversationRow(session, now, columns) })), decideOn: 'enter', escape: 'back', filter: true }),
+    async (index) => {
+      const chosen = listed[index];
+      if (chosen !== undefined) await ports.resume(chosen.id);
+    },
+  );
 };
 
 export const resumeCommand: SlashCommand = {

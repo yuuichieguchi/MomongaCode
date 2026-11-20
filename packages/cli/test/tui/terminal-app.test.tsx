@@ -64,7 +64,7 @@ const startOnLayer = (options: FakeBackendOptions = {}) => {
     <TerminalFrame layer={layer}>
       <App backend={fakeBackend(options)} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} now={Date.now} timers={systemTiming} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
     </TerminalFrame>,
-    { stdin: inkStdin.stream, stdout: stdout as unknown as NodeJS.WriteStream, exitOnCtrlC: false, patchConsole: false },
+    { stdin: inkStdin.stream, stdout: stdout as unknown as NodeJS.WriteStream, exitOnCtrlC: false, patchConsole: false, onRender: () => input.framed() },
   );
   closers.push(() => {
     instance.unmount();
@@ -85,7 +85,7 @@ const startOnLayer = (options: FakeBackendOptions = {}) => {
 describe('the existing screen on top of the terminal layer', () => {
   it('echoes typed text, takes Shift+Enter in the kitty form as a new line, and exits on Ctrl+C with the terminal restored', async () => {
     const app = startOnLayer();
-    await app.shows('>');
+    await app.shows('mode: manual');
     app.feed('hi');
     await app.shows('> hi');
     await app.shows(`${ESC}[?25h`);
@@ -123,7 +123,7 @@ describe('a signal ends the screen through the one exit path, picker or waiting 
 
   it('restores the terminal and ends the process with SIGTERM while a run is waiting', async () => {
     const app = startOnLayer();
-    await app.shows('>');
+    await app.shows('mode: manual');
     app.feed('go');
     await app.shows('> go');
     app.feed('\r');

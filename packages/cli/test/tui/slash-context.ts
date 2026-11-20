@@ -65,6 +65,7 @@ export const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions:
         recorded.prompts.push(request.title);
         return texts.shift();
       },
+      closeScreen: () => undefined,
     },
     externalEditor: {
       open: async (file) => {

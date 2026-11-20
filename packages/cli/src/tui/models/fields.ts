@@ -7,7 +7,7 @@ import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
 import { providerNameOf } from '@momonga/config';
 import { accountsOf } from '../../plan/accounts.ts';
 import { askKey, secretNameOf, storeKey } from './add.ts';
-import { chosenOf, confirmAndWrite, openEdit } from './context.ts';
+import { chosenOf, chosenThen, confirmAndWrite, openEdit } from './context.ts';
 import type { ModelsFlowContext, Opened } from './context.ts';
 import { CLEAR_ROW, NOT_A_FULL_PATH, TOGGLE_ROWS, windowPrompt } from './texts.ts';
 
@@ -380,13 +380,15 @@ const runFields = async (context: ModelsFlowContext, subject: Subject): Promise<
     const known = subject.kind === 'model' ? edit.resolved.views.some((view) => view.canon === subject.canon) : edit.resolved.connections.some((connection) => connection.provider === subject.provider);
     if (!known) return;
     const { connection, holder, rows } = placeOf(edit, subject);
-    const index = await chosenOf(context, { title: nameOf(edit, subject), rows: rows.map((row) => ({ label: fieldRowText(row, connection, holder) })), initial: at });
-    const row = index === undefined ? undefined : rows[index];
-    if (index === undefined || row === undefined) return;
-    at = index;
-    const asked = await askField(context, opened, subject, row, connection, valueAt(holder, row.path));
-    if (asked === undefined) continue;
-    await confirmAndWrite(opened, context, fieldProposal(edit, subject, asked.row, asked.value), asked.before);
+    const acted = await chosenThen(context, { title: nameOf(edit, subject), rows: rows.map((row) => ({ label: fieldRowText(row, connection, holder) })), initial: at }, async (index) => {
+      const row = rows[index];
+      if (row === undefined) return;
+      at = index;
+      const asked = await askField(context, opened, subject, row, connection, valueAt(holder, row.path));
+      if (asked === undefined) return;
+      await confirmAndWrite(opened, context, fieldProposal(edit, subject, asked.row, asked.value), asked.before);
+    });
+    if (acted === undefined) return;
   }
 };
 

@@ -10,7 +10,7 @@ import type { ScreenTimers } from '../../src/tui/screen/timers.ts';
 import { SPINNER_FRAMES, SPINNER_MS } from '../../src/tui/screen/waiting-row.tsx';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
+import { KEYS, renderObservable, untilFrame, untilOutput, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 import { freshPlace } from './settings-harness.tsx';
@@ -21,7 +21,18 @@ const BOX = /[│─╭╮╰╯]/;
 type Saved = { name: string; value: unknown };
 
 const startWith = async (given: { settings?: Partial<ResolvedTuiSettings>; asked?: AskedA11y; backend?: FakeBackendOptions; screen?: Parameters<typeof fakeScreenTerminal>[0]; extra?: Partial<AppProps> } = {}) => {
-  const backend = fakeBackend(given.backend ?? {});
+  const base = fakeBackend(given.backend ?? {});
+  const modelRead = Promise.withResolvers<void>();
+  const backend = {
+    ...base,
+    model: async () => {
+      try {
+        return await base.model();
+      } finally {
+        modelRead.resolve();
+      }
+    },
+  };
   const terminal = fakeScreenTerminal(given.screen ?? { screen: 'scrollback', columns: 80, rows: 30 });
   const saved: Saved[] = [];
   const tuiSettings: TuiSettingsPort = {
@@ -38,8 +49,8 @@ const startWith = async (given: { settings?: Partial<ResolvedTuiSettings>; asked
     },
     clearTimeout: (handle) => systemTiming.clearTimeout(handle),
   };
-  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(timers)} keySettleMs={TEST_KEY_SETTLE_MS} tuiSettings={tuiSettings} {...(given.asked === undefined ? {} : { a11y: given.asked })} {...given.extra} onExit={() => undefined} />);
-  return { backend, terminal, app, saved, delays };
+  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(timers)} tuiSettings={tuiSettings} {...(given.asked === undefined ? {} : { a11y: given.asked })} {...given.extra} onExit={() => undefined} />);
+  return { backend, terminal, app, saved, delays, modelRead: modelRead.promise };
 };
 
 type Started = Awaited<ReturnType<typeof startWith>>;
@@ -158,6 +169,7 @@ describe('the screen-reader display', () => {
   it('shows the rows of a grouped list flat, never with tree lines', async () => {
     const place = freshPlace();
     const started = await startWith({ ...READER, backend: { models: ['ollama/qwen3.8:27b', 'ollama/gemma-3-4b'], settingsPlace: { home: place.home, projectDir: place.project } }, screen: { screen: 'scrollback', columns: 100, rows: 40 } });
+    await untilOutput(started.app, 'mode: manual · tokens: 0');
     started.app.stdin.write('/model');
     await untilFrame(started.app, 'choose the model from a list');
     started.app.stdin.write(KEYS.enter);
@@ -207,6 +219,7 @@ describe('the screen-reader display', () => {
   it('names the model with its effort in parentheses in the Status group of /help', async () => {
     const started = await startWith({ ...READER, backend: { reasoning: { [SCRIPTED_MODEL]: { control: 'reasoning_effort', lowest: 'low' } } } });
     await untilOutput(started.app, 'mode: manual · tokens: 0 · context:');
+    await started.modelRead;
     await command(started, '/help');
     const help = await untilOutput(started.app, '  model: scripted-model (effort: medium)');
     const lines = help.split('\n').map((line) => line.trimEnd());
@@ -219,6 +232,7 @@ describe('the screen-reader display', () => {
     const think = 'ollama-127.0.0.1-18477/think-c:latest';
     const started = await startWith({ ...READER, backend: { session: { model: think }, models: [think], reasoning: { [think]: { control: 'reasoning_effort', lowest: 'none' } } } });
     await untilOutput(started.app, 'mode: manual · tokens: 0 · context:');
+    await started.modelRead;
     await command(started, '/help');
     const help = await untilOutput(started.app, '  model: ollama-127.0.0.1-18477/think-c (effort: medium)');
     const lines = help.split('\n').map((line) => line.trimEnd());

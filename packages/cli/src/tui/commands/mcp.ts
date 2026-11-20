@@ -2,6 +2,7 @@ import { mcpServerNameProblem } from '@momonga/config';
 import type { McpServerView } from '@momonga/protocol';
 import { APPLIES_NEXT_SESSION, SAVE_TO_TITLE, confirmed, savedOrRefused, writeSetting } from '../settings-screen.tsx';
 import type { Refusal } from '../settings-screen.tsx';
+import { chooseThen } from '../flow-step.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 import { shellFormOf } from './shell-commands.ts';
 import { askTrustItems } from '../project-items.ts';
@@ -138,19 +139,25 @@ export const mcpCommand: SlashCommand = {
     let line: string | undefined;
     for (;;) {
       const servers = context.model === undefined ? await context.backend.folderMcpServers() : await context.backend.mcpServers();
-      const choice = await context.overlays.choose({
-        title: MCP_TITLE,
-        lines: line === undefined ? [] : [line],
-        rows: [...servers.map((server) => ({ label: mcpServerLine(server) })), { label: ADD_STDIO_ROW }, { label: ADD_HTTP_ROW }],
-        initial: Math.min(at, servers.length + 1),
-        decideOn: 'enter',
-        escape: 'back',
-        filter: false,
-      });
-      if (choice === undefined) return;
-      at = choice.index;
-      const server = servers[choice.index];
-      const result = server !== undefined ? await actOnServer(context, server) : choice.index === servers.length ? await addStdio(context) : await addHttp(context);
+      const acted = await chooseThen(
+        context.overlays.choose,
+        () => ({
+          title: MCP_TITLE,
+          lines: line === undefined ? [] : [line],
+          rows: [...servers.map((server) => ({ label: mcpServerLine(server) })), { label: ADD_STDIO_ROW }, { label: ADD_HTTP_ROW }],
+          initial: Math.min(at, servers.length + 1),
+          decideOn: 'enter',
+          escape: 'back',
+          filter: false,
+        }),
+        async (choice) => {
+          at = choice.index;
+          const server = servers[choice.index];
+          return server !== undefined ? actOnServer(context, server) : choice.index === servers.length ? addStdio(context) : addHttp(context);
+        },
+      );
+      if (acted === undefined) return;
+      const result = acted.value;
       line = result === 'left' ? undefined : result === undefined ? APPLIES_NEXT_SESSION : result.refused;
     }
   },

@@ -116,7 +116,7 @@ describe('the account picker renames and removes every account', () => {
   it('remove signs the account out after one confirm and removes the connection that it serves', async () => {
     const { app, place } = await openAccounts();
     await choose(app, 'Remove account work');
-    await untilFrame(app, '1-9 or enter to choose');
+    await untilFrame(app, (shown) => shown.includes('› 1. Remove account work') && !shown.includes('Rename account work'));
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'again to sign out work');
     app.stdin.write(KEYS.enter);
@@ -149,7 +149,7 @@ describe('a connection pinned only to its profile belongs to the active account 
     const picker = await untilRow(app, 'Remove account work');
     expect(picker).toContain('Rename account work');
     await choose(app, 'Remove account work');
-    await untilFrame(app, '1-9 or enter to choose');
+    await untilFrame(app, (shown) => shown.includes('› 1. Remove account work') && !shown.includes('Rename account work'));
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'again to sign out work');
     app.stdin.write(KEYS.enter);

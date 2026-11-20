@@ -358,7 +358,10 @@ describe('/mcp', () => {
     await press(started, KEYS.enter, ADD_HTTP_ROW);
     expect(stored(place.userFile)).toEqual({ mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL], disabledMcpjsonServers: ['tracker'] });
     await press(started, '3', '› 3. scratch');
-    await press(started, KEYS.enter, (frame) => frame.includes(sessionServerNote('scratch')) && frame.includes(ADD_HTTP_ROW));
+    const listed = started.backend.calls.filter((call) => call === 'mcpServers').length;
+    started.app.stdin.write(KEYS.enter);
+    await vi.waitFor(() => expect(started.backend.calls.filter((call) => call === 'mcpServers').length).toBeGreaterThan(listed));
+    await untilFrame(started.app, (frame) => frame.includes(sessionServerNote('scratch')) && frame.includes(ADD_HTTP_ROW));
     await press(started, '1', '› 1. files');
     await press(started, KEYS.enter, 'Remove files?');
     await press(started, '2', '› 2. Yes');

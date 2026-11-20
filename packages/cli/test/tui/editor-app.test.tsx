@@ -44,8 +44,11 @@ describe('the editor while the daemon is starting', () => {
     return { backend, app, ready: gate.resolve, exited: exited.promise };
   };
 
+  const drawn = (app: ReturnType<typeof renderObservable>): Promise<string> => untilFrame(app, (now) => now.split('\n').some((row) => /^│ >( |$)/.test(row)));
+
   it('edits the draft, keeps it at Enter with the hint, and has it when the session is ready', async () => {
     const { backend, app, ready } = starting();
+    await drawn(app);
     await type(app, 'early', '> early');
     app.stdin.write(KEYS.enter);
     const shown = await untilFrame(app, 'Still starting. Your text is kept.');
@@ -65,6 +68,7 @@ describe('the editor while the daemon is starting', () => {
 
   it('takes the newline keys and leaves Tab, Esc and ctrl+d without effect', async () => {
     const { app, backend } = starting();
+    await drawn(app);
     await type(app, 'a', '> a');
     app.stdin.write(KEYS.ctrlJ);
     await type(app, 'b', '  b');
@@ -77,6 +81,7 @@ describe('the editor while the daemon is starting', () => {
 
   it('exits at ctrl+c', async () => {
     const { app, exited } = starting();
+    await drawn(app);
     await type(app, 'a', '> a');
     app.stdin.write(KEYS.ctrlC);
     expect(await exited).toEqual({});

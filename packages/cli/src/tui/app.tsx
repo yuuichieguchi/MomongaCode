@@ -30,6 +30,7 @@ import { bannerRows, figureDrawn } from './startup.tsx';
 import { TailPoseContext, useTailWag } from './screen/tail-wag.ts';
 import type { BannerModel, StartupBanner, StartupConfig } from './startup.tsx';
 import { pickConversation } from './commands/resume.ts';
+import { Abandoned, currentStep, isAbandoned, untilAborted } from './flow-step.ts';
 import { skillCommands } from './commands/skills.ts';
 import { createReplayQueue } from './replay.ts';
 import type { ReplayQueue } from './replay.ts';
@@ -88,7 +89,6 @@ import { COPY_MAX_BYTES } from './screen/constants.ts';
 import { clipboardReadMessage } from './screen/clipboard.ts';
 
 const READING_CLIPBOARD = 'reading the clipboard';
-import { KEY_SETTLE_MS } from './terminal/constants.ts';
 import type { KeyEvent, MouseEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 import { NEWLINE_HINT } from './terminal/negotiation.ts';
@@ -172,6 +172,12 @@ export const taskRunningHint = (keys: KeyTable): string => {
 export const EXIT_ARM_MS = 3000;
 export const HISTORY_SEARCH_TITLE = 'History';
 
+const isPlainKey = (event: KeyEvent, name: 'enter' | 'escape'): boolean => 'name' in event && event.name === name && !event.ctrl && !event.alt && !event.shift;
+
+const USAGE_LIMIT_SCREEN = 'usage-limit';
+const PLAN_BLOCK_SCREEN = 'plan-block';
+const TOOL_VIEW_SCREEN = 'tool-view';
+
 export const exitHint = (key: string): string => `Press ${key} again to exit`;
 
 type ExitAction = Extract<ActionId, 'prompt.interrupt' | 'prompt.exit'>;
@@ -237,6 +243,20 @@ export function App(props: AppProps) {
   const listTargetsRef = useRef<readonly ViewTarget[]>([]);
   const listSeen = useRef<{ rows: string; drawn: boolean }>({ rows: '', drawn: false });
   const listPress = useRef<{ row: number; col: number } | undefined>(undefined);
+  const renderedScreen = useRef<string | undefined>(undefined);
+  const drawnScreen = useRef<string | undefined>(undefined);
+  const arrivals = useRef(0);
+  const arrivedScreen = useRef<string | undefined>(undefined);
+  const frameWatch = useRef<{ readonly terminal: ScreenTerminal; readonly stop: () => void } | undefined>(undefined);
+  const answerMark = useRef<{ readonly arrival: number; sync: boolean } | undefined>(undefined);
+  const followingKeys = useRef<Array<{ readonly event: KeyEvent; readonly pressed: KeyTable; readonly arrival: number }>>([]);
+  const drainingKeys = useRef(false);
+  const drainImmediate = useRef<ReturnType<typeof setImmediate> | undefined>(undefined);
+  const activeKeyArrival = useRef<number | undefined>(undefined);
+  const pendingQueue = useRef<{ readonly arrival: number; cancel(): void } | undefined>(undefined);
+  const cancelPendingRun = useRef(false);
+  const opSeq = useRef(0);
+  const runSeq = useRef(0);
   const { now, timers } = props;
   const [openedAt] = useState(now);
   const baseSlash = props.slash ?? createSlashRegistry(DEFAULT_SLASH_COMMANDS);
@@ -458,15 +478,40 @@ export function App(props: AppProps) {
     append({ kind: 'error', text });
   };
 
-  const waitFor = <T,>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+  const runCancellable = <T,>(work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    const step = currentStep();
+    opSeq.current += 1;
+    const seq = opSeq.current;
+    return tasks.run(
+      async (signal) => {
+        if (signal.aborted) throw new Abandoned();
+        try {
+          return await untilAborted(signal, work(signal));
+        } catch (error) {
+          if (signal.aborted) throw new Abandoned();
+          throw error;
+        }
+      },
+      step === undefined ? { seq } : { signal: step.signal, seq },
+    );
+  };
+
+  const waitFor = <T,>(phase: string, work: (signal: AbortSignal) => Promise<T>, words: string = phase): Promise<T> => {
+    const shown = prompts.waitWords(words);
     const waiting: WaitingPhase = { text: phase, startedAt: now() };
-    setCommands((running) => [...running, waiting]);
-    prompts.leaveLists();
-    return tasks.run(work).finally(() => setCommands((running) => running.filter((other) => other !== waiting)));
+    if (shown === undefined) setCommands((running) => [...running, waiting]);
+    return runCancellable(work).finally(() => {
+      shown?.();
+      setCommands((running) => running.filter((other) => other !== waiting));
+    });
   };
 
   const reportError = (error: unknown): void => {
     append({ kind: 'error', text: describeFailure(error) });
+  };
+
+  const reportFlowError = (error: unknown): void => {
+    if (!isAbandoned(error)) reportError(error);
   };
 
   const shownModel = (stored: string): string => displaysRef.current.get(stored) ?? stored;
@@ -505,7 +550,8 @@ export function App(props: AppProps) {
   };
 
   const applyEffort = async (chosen: ReasoningEffort | null): Promise<void> => {
-    const session = await backend.setEffort(chosen);
+    overlayPorts.closeScreen();
+    const session = await runCancellable(() => backend.setEffort(chosen));
     sessionEffortRef.current = session.effort;
     setSessionEffort(session.effort);
     rereadModel();
@@ -635,7 +681,7 @@ export function App(props: AppProps) {
   const openSession = async (chosen: string | undefined, effort?: ReasoningEffort): Promise<void> => enterFirstSession(await backend.openSession(chosen, undefined, effort));
 
   const runFlow = (work: () => Promise<void>): void => {
-    prompts.flow(work).catch(reportError);
+    prompts.flow(work).catch(reportFlowError);
   };
 
   const switchModel = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {
@@ -669,11 +715,14 @@ export function App(props: AppProps) {
   };
 
   const connectModel = async (chosen: string): Promise<void> => {
-    if (sessionModelRef.current === undefined) {
-      await openSession(chosen);
-      return;
-    }
-    await applyModel(chosen);
+    overlayPorts.closeScreen();
+    await runCancellable(async () => {
+      if (sessionModelRef.current === undefined) {
+        await openSession(chosen);
+        return;
+      }
+      await applyModel(chosen);
+    });
   };
 
   const openedWith = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {
@@ -682,8 +731,9 @@ export function App(props: AppProps) {
   };
 
   const switchModelThen = async (chosen: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void> => {
+    overlayPorts.closeScreen();
     const previous = sessionModelRef.current;
-    const model = previous === undefined ? await openedWith(chosen, effort) : await switchModel(chosen, effort);
+    const model = await runCancellable(() => (previous === undefined ? openedWith(chosen, effort) : switchModel(chosen, effort)));
     const failure = await then().then(
       () => undefined,
       (error: unknown) => ({ error }),
@@ -719,12 +769,28 @@ export function App(props: AppProps) {
   };
 
   const cancelNewest = (): void => {
-    const runId = runIdRef.current;
-    if (runId === undefined) {
+    const queued = pendingQueue.current;
+    const keyArrival = activeKeyArrival.current ?? arrivals.current;
+    if (queued !== undefined && queued.arrival === keyArrival) {
+      pendingQueue.current = undefined;
+      queued.cancel();
+      return;
+    }
+    const runActive = runIdRef.current !== undefined || (busyRef.current && !betweenRuns.current);
+    if (tasks.active() && (!runActive || tasks.newestSeq() > runSeq.current)) {
       tasks.abortNewest();
       return;
     }
-    backend.cancel(runId).catch(reportError);
+    const runId = runIdRef.current;
+    if (runId !== undefined) {
+      backend.cancel(runId).catch(reportError);
+      return;
+    }
+    if (busyRef.current) {
+      cancelPendingRun.current = true;
+      return;
+    }
+    tasks.abortNewest();
   };
 
   const decideTrust = (decision: 'trusted' | 'untrusted'): void => {
@@ -739,20 +805,18 @@ export function App(props: AppProps) {
     backend,
     store,
     terminal,
-    timers,
-    keySettleMs: props.keySettleMs ?? KEY_SETTLE_MS,
     keepTyped: (text) => replaceEditor(typedIntoDraft(editorRef.current, text)),
     columns,
     panelRows: panelRowsCap(rows),
     keys,
     screenReader: a11y.screenReader,
     interruptRun: () => cancelAndArmExit('prompt.interrupt'),
+    stopActive: () => cancelNewest(),
     reportError,
     fail,
     exit: () => finish({}),
     append,
     decideTrust,
-    replayKeys: (events) => replayHeldKeys(events),
     externalEditor,
   });
   const { overlayPorts, overlay } = prompts;
@@ -768,14 +832,14 @@ export function App(props: AppProps) {
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), warn: warningNote, connected: connectModel, switchedThen: switchModelThen, effort: () => sessionEffortRef.current, setEffort: applyEffort, shownModel, timers, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, failed: failedNote, toast: (text) => view.showToast(text), warn: warningNote, connected: connectModel, switchedThen: switchModelThen, effort: () => sessionEffortRef.current, setEffort: applyEffort, shownModel, timers, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor, cancellable: runCancellable, invitationAnswered: () => prompts.dismissInvitation(), untilNextKey: () => untilNextKey(terminal.input) });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();
     rememberProfiles(listed);
     const profile = profileOf(listed.profiles, plan.profile);
     append({ kind: 'notice', level: 'warning', text: `${profile.messages.identityLabel}\n${profile.messages.usageLimitMessage}` });
-    if (code !== USAGE_PAUSED_CODE) await flows.usageLimit(profile);
+    if (code !== USAGE_PAUSED_CODE) await prompts.raise(USAGE_LIMIT_SCREEN, () => flows.usageLimit(profile));
   };
 
   const showPlanBlock = async (error: { code: string; message: string }, plan: PlanAccountRef): Promise<void> => {
@@ -783,8 +847,7 @@ export function App(props: AppProps) {
     rememberProfiles(listed);
     const profile = profileOf(listed.profiles, plan.profile);
     append({ kind: 'notice', level: 'error', text: `${profile.messages.identityLabel}\n${error.message}` });
-    if (error.code === PLAN_USE_NOT_ENABLED_CODE) await flows.planUseNotEnabled(profile, plan.account);
-    else await flows.notEligible(profile);
+    await prompts.raise(PLAN_BLOCK_SCREEN, () => (error.code === PLAN_USE_NOT_ENABLED_CODE ? flows.planUseNotEnabled(profile, plan.account) : flows.notEligible(profile)));
   };
 
   const offerInvitation = async (listed: PlanAccountsResponse): Promise<void> => {
@@ -795,13 +858,15 @@ export function App(props: AppProps) {
   };
 
   const connectAtLaunch = async (): Promise<void> => {
-    const pending = await backend.trustItems();
-    for (const sentence of pending.refused) append({ kind: 'notice', level: 'warning', text: sentence });
-    const approved = await askTrustItems(pending.items, overlayPorts.choose);
-    if (approved.length > 0) await backend.approveProjectItems(approved);
-    const proposal = await backend.checkProposal();
-    const check = proposal.ask ? await askProjectCheck(proposal.checks, overlayPorts) : undefined;
-    if (check !== undefined) await backend.answerCheck(check);
+    await prompts.flow(async () => {
+      const pending = await backend.trustItems();
+      for (const sentence of pending.refused) append({ kind: 'notice', level: 'warning', text: sentence });
+      const approved = await askTrustItems(pending.items, overlayPorts.choose);
+      if (approved.length > 0) await backend.approveProjectItems(approved);
+      const proposal = await backend.checkProposal();
+      const check = proposal.ask ? await askProjectCheck(proposal.checks, overlayPorts) : undefined;
+      if (check !== undefined) await backend.answerCheck(check);
+    });
     const [entries, listed] = await Promise.all([backend.models(), backend.plan.accounts()]);
     rememberProfiles(listed);
     if (entries.length > 0) {
@@ -992,6 +1057,8 @@ export function App(props: AppProps) {
           }, before + run.lastSeq);
         } else {
           store.update({ runId: run.id });
+          opSeq.current += 1;
+          runSeq.current = opSeq.current;
           await watchRun(run.id, { queue, before, notes }, undefined);
           await watchQueuedRuns(run.id);
         }
@@ -1032,7 +1099,9 @@ export function App(props: AppProps) {
 
   const resumeSession = async (id: string): Promise<void> => {
     if (refusedWhileWorking()) return;
-    await readConversation(await backend.resumeSession(id), async (session) => {
+    const read = await overlayPorts.read(() => backend.resumeSession(id));
+    if (read.kind === 'cancelled') return;
+    await readConversation(read.value, async (session) => {
       clearScreen();
       await showSession(session);
     });
@@ -1103,6 +1172,8 @@ export function App(props: AppProps) {
         if (next === undefined) return;
         runLeft(store);
         runCreated(store, next.id, now());
+        opSeq.current += 1;
+        runSeq.current = opSeq.current;
         await watchRun(next.id, undefined, undefined);
         ended = next.id;
       }
@@ -1147,8 +1218,27 @@ export function App(props: AppProps) {
       setHint(INBOX_FULL_HINT);
       refreshInbox().catch(reportError);
     };
+    let cancelled = false;
+    const adding = backend.inbox.add(delivery, draft.text, sent.map((attachment) => attachment.image), attachOn && hasMentionToken(draft.text));
+    if (delivery === 'queue') {
+      pendingQueue.current = {
+        arrival: activeKeyArrival.current ?? arrivals.current,
+        cancel: () => {
+          cancelled = true;
+          adding.then(
+            async (added) => {
+              await backend.inbox.withdraw(added.row.id);
+              sentMessages.current.delete(added.row.id);
+              await refreshInbox();
+            },
+            () => undefined,
+          ).catch(reportError);
+        },
+      };
+    }
     const accepted = async (): Promise<void> => {
-      const added = await backend.inbox.add(delivery, draft.text, sent.map((attachment) => attachment.image), attachOn && hasMentionToken(draft.text));
+      const added = await adding;
+      if (cancelled) return;
       sentMessages.current.set(added.row.id, { message: held, attachments: sent });
       setWaitingMessages(added.pending);
       await resumeQueuedRuns();
@@ -1178,14 +1268,20 @@ export function App(props: AppProps) {
   };
 
   const runStarted = async (prepare: () => { start: () => Promise<RunView>; resubmit: Resubmit | undefined }): Promise<void> => {
-    prompts.leaveLists();
     setBusyState(true);
+    opSeq.current += 1;
+    runSeq.current = opSeq.current;
+    cancelPendingRun.current = false;
     disarmExit();
     attention.runEnded(undefined);
     signInFailedRun.current = undefined;
     const { start, resubmit } = prepare();
     try {
       const started = await start();
+      if (cancelPendingRun.current) {
+        cancelPendingRun.current = false;
+        backend.cancel(started.id).catch(reportError);
+      }
       if (openedSession.current !== undefined) openedSession.current.hasRun = true;
       runCreated(store, started.id, now());
       await watchRun(started.id, undefined, resubmit);
@@ -1255,7 +1351,7 @@ export function App(props: AppProps) {
       compact: runCompaction,
       sessions: { startNew: startNewSession, resume: resumeSession, current: () => openedSession.current?.id, now, columns: () => terminal.state().size.columns },
       exit: () => finish({}),
-      background: (label, work) => waitFor(commandPhaseText(label), work),
+      background: (label, work) => waitFor(commandPhaseText(label), work, label),
       autoMode: props.autoMode ?? unavailableAutoMode,
       shell: props.shell ?? unavailableShell,
       screen: { current: () => terminal.state().screen, set: switchScreen },
@@ -1286,13 +1382,14 @@ export function App(props: AppProps) {
         pick: overlayPorts.pick,
       },
       keyBindings: { store: bindings, choose: overlayPorts.choose, captureKey: overlayPorts.captureKey },
-      overlays: { choose: overlayPorts.choose, promptText: overlayPorts.promptText },
+      overlays: { choose: overlayPorts.choose, promptText: overlayPorts.promptText, closeScreen: overlayPorts.closeScreen },
       externalEditor,
       clipboard: { selected: selectedText, lastAnswer },
       refusedWhileRunning: refusedWhileWorking,
       status: () => statusLines(statusFacts()),
       setMode: async (chosen) => {
-        const session = await backend.setMode(chosen);
+        overlayPorts.closeScreen();
+        const session = await runCancellable(() => backend.setMode(chosen));
         setModeState(session.permissionMode);
         view.showToast(modeToastText(session.permissionMode));
         showAutoNotice(session);
@@ -1328,7 +1425,7 @@ export function App(props: AppProps) {
   };
 
   const submitSafely = (text: string, held: HeldMessage): void => {
-    prompts.flow(() => submit(text, held)).catch(reportError);
+    prompts.flow(() => submit(text, held)).catch(reportFlowError);
   };
 
   const sendInitialPrompt = useEffectEvent((): void => {
@@ -1342,7 +1439,7 @@ export function App(props: AppProps) {
       if (initialSkill === undefined) await submit(initialPrompt);
       else await runPrompt(initialPrompt, { skill: initialSkill });
     };
-    prompts.flow(send).catch(reportError);
+    prompts.flow(send).catch(reportFlowError);
   });
 
   const reading = loading !== undefined;
@@ -1454,7 +1551,7 @@ export function App(props: AppProps) {
 
   const toggleAttach = async (): Promise<void> => {
     const next = !attachOn;
-    await tasks.run((signal) => tuiSettings.save('attachFileMentions', next, signal));
+    await runCancellable((signal) => tuiSettings.save('attachFileMentions', next, signal));
     setAttachOn(next);
   };
 
@@ -1522,7 +1619,8 @@ export function App(props: AppProps) {
         setCommands((before) => before.filter((other) => other !== command));
       }
     };
-    tasks.run(work).catch(reportError);
+    opSeq.current += 1;
+    tasks.run(work, { seq: opSeq.current }).catch(reportError);
   };
 
   const leaveShell = (): void => replaceEditor(leftShell(editorRef.current));
@@ -1632,6 +1730,7 @@ export function App(props: AppProps) {
     else if (listAction === 'agents.open') {
       if (listSeen.current.drawn) openView(rowAt(chosen));
     }
+    else if (pressed.actionOf(EDITOR_CONTEXTS, event) === 'run.stop') chooseRow(undefined);
     else {
       chooseRow(undefined);
       routeKey(keyRouteOf(routeFacts()), event, pressed);
@@ -1640,7 +1739,7 @@ export function App(props: AppProps) {
 
   const onEditorAction = (action: ActionId | undefined, typed: string | undefined): void => {
     const starting = phase.kind === 'starting';
-    const working = (busyRef.current && !betweenRuns.current) || commands.length > 0;
+    const working = (busyRef.current && !betweenRuns.current) || tasks.active() || commands.length > 0;
     const current = editorRef.current;
     if (action === 'prompt.submit') onEnter();
     else if (action === 'prompt.queue' || action === 'prompt.steer') {
@@ -1650,7 +1749,8 @@ export function App(props: AppProps) {
     else if (action === 'transcript.detail') {
       if (!starting) toolView.showNewest();
     } else if (action === 'run.stop') {
-      if (working) cancelNewest();
+      const keyArrival = activeKeyArrival.current ?? arrivals.current;
+      if (pendingQueue.current?.arrival === keyArrival || working) cancelNewest();
       else if (invitationShown) prompts.dismissInvitation();
     } else if (action === 'prompt.interrupt') {
       if (starting) finish({});
@@ -1675,7 +1775,6 @@ export function App(props: AppProps) {
     trust: phase.kind === 'trust',
     toolView: toolView.shown,
     overlay: prompts.overlayKind(),
-    betweenLists: prompts.betweenLists(),
     welcome: phase.kind === 'welcome',
     prompt: prompts.promptStage(),
     detail: prompts.detailShown(panelFacts),
@@ -1721,9 +1820,6 @@ export function App(props: AppProps) {
       case 'overlay':
         prompts.overlayKey(event, pressed);
         return;
-      case 'between-lists':
-        if (!prompts.holdKey(event, pressed)) routeKey(keyRouteOf(routeFacts()), event, pressed);
-        return;
       case 'welcome':
         return;
       case 'agents':
@@ -1737,7 +1833,6 @@ export function App(props: AppProps) {
           typedRef.current = true;
           prompts.dismissInvitation();
         }
-        if (route !== 'prompt' && action === 'prompt.submit') prompts.keyConsumed();
         if (action === 'mode.cycle') {
           if (sessionModel !== undefined) cycleMode();
         } else if (route === 'prompt') prompts.runPromptKey(event, pressed);
@@ -1745,7 +1840,106 @@ export function App(props: AppProps) {
     }
   };
 
+  const screenNow = (): string => {
+    if (toolView.shown) return TOOL_VIEW_SCREEN;
+    const base = prompts.screenId(phase.kind === 'trust');
+    if (base !== 'prompt') return base;
+    if (phase.kind === 'starting') return 'starting';
+    if (phase.kind === 'welcome') return 'welcome';
+    return base;
+  };
+
+  const judgedScreen = (): string | undefined => (arrivals.current > 0 ? arrivedScreen.current : drawnScreen.current);
+
+  const isLaunchScreen = (): boolean => drawnScreen.current === undefined || judgedScreen() === 'starting' || judgedScreen() === 'welcome';
+
+  const followsAnswer = (event: KeyEvent): boolean => {
+    const mark = answerMark.current;
+    if (!isPlainKey(event, 'escape') || mark === undefined) return false;
+    return mark.sync || (arrivals.current > 0 && mark.arrival === arrivals.current);
+  };
+
+  const markAnswer = (event: KeyEvent, pressed: KeyTable, arrival: number): void => {
+    if (!isPlainKey(event, 'escape') && !isPlainKey(event, 'enter') && pressed.actionOf(EDITOR_CONTEXTS, event) !== 'prompt.queue' && prompts.overlayKind() !== 'kept') return;
+    const mark = { arrival, sync: true };
+    answerMark.current = mark;
+    queueMicrotask(() => {
+      mark.sync = false;
+    });
+  };
+
+  const withKeyArrival = (arrival: number, work: () => void): void => {
+    const previous = activeKeyArrival.current;
+    activeKeyArrival.current = arrival;
+    try {
+      work();
+    } finally {
+      activeKeyArrival.current = previous;
+    }
+  };
+
+  const deliverEsc = (event: KeyEvent, pressed: KeyTable, arrival: number): void => {
+    withKeyArrival(arrival, () => {
+      if (screenNow() !== judgedScreen() && (isLaunchScreen() || prompts.isProductPanel(phase.kind === 'trust'))) {
+        prompts.undrawnKey(event, pressed);
+        return;
+      }
+      actOnKey(event, pressed);
+    });
+  };
+
+  const onImmediateKey = (event: KeyEvent, pressed: KeyTable, arrival: number): void => {
+    withKeyArrival(arrival, () => {
+      if (screenNow() !== judgedScreen()) {
+        if (isPlainKey(event, 'escape') && !isLaunchScreen() && !prompts.isProductPanel(phase.kind === 'trust')) {
+          actOnKey(event, pressed);
+          markAnswer(event, pressed, arrival);
+          return;
+        }
+        prompts.undrawnKey(event, pressed);
+        return;
+      }
+      actOnKey(event, pressed);
+      markAnswer(event, pressed, arrival);
+    });
+  };
+
+  const deliverFollowing = useEffectEvent((item: { readonly event: KeyEvent; readonly pressed: KeyTable; readonly arrival: number }): void => {
+    if (isPlainKey(item.event, 'escape')) deliverEsc(item.event, item.pressed, item.arrival);
+    else onImmediateKey(item.event, item.pressed, item.arrival);
+  });
+
+  const drainFollowingKeys = (): void => {
+    if (drainingKeys.current) return;
+    drainingKeys.current = true;
+    const step = (): void => {
+      drainImmediate.current = undefined;
+      const next = followingKeys.current.shift();
+      if (next === undefined) {
+        drainingKeys.current = false;
+        return;
+      }
+      deliverFollowing(next);
+      if (followingKeys.current.length > 0) drainImmediate.current = setImmediate(step);
+      else drainingKeys.current = false;
+    };
+    drainImmediate.current = setImmediate(step);
+  };
+
   const onKey = (event: KeyEvent, pressed: KeyTable): void => {
+    const arrival = arrivals.current;
+    if (pendingQueue.current !== undefined && pendingQueue.current.arrival !== arrival && !drainingKeys.current && followingKeys.current.length === 0) {
+      pendingQueue.current = undefined;
+    }
+    if (drainingKeys.current || followsAnswer(event)) {
+      followingKeys.current.push({ event, pressed, arrival });
+      drainFollowingKeys();
+      return;
+    }
+    onImmediateKey(event, pressed, arrival);
+  };
+
+  const actOnKey = (event: KeyEvent, pressed: KeyTable): void => {
     bindings.poll(now());
     const action = pressed.actionOf(EDITOR_CONTEXTS, event);
     const route = keyRouteOf(routeFacts());
@@ -1761,14 +1955,11 @@ export function App(props: AppProps) {
     routeKey(route, event, pressed);
   };
 
-  const replayHeldKeys = useEffectEvent((events: readonly KeyEvent[]): void => {
-    for (const event of events) {
-      const route = keyRouteOf(routeFacts());
-      if (route === 'agents' || route === 'shell' || route === 'menu' || route === 'editor') onKey(event, keys);
-    }
-  });
-
   const onPaste = (text: string): void => {
+    if (screenNow() !== drawnScreen.current) {
+      prompts.undrawnPaste(text);
+      return;
+    }
     if (prompts.paste(text)) return;
     if (phase.kind === 'trust' || phase.kind === 'welcome' || overlay !== undefined || promptTakesFocus(transcript)) return;
     disarmExit();
@@ -1905,7 +2096,9 @@ export function App(props: AppProps) {
     allocation: pointerAllocation,
     panelOpen: panel !== undefined,
     menuOpen: inputShown && completionOpen,
-    panelPress: (row) => prompts.press(panelFacts, row),
+    panelPress: (row) => {
+      if (screenNow() === drawnScreen.current) prompts.press(panelFacts, row);
+    },
     panelWheel: (wheelRows) => prompts.wheel(panelFacts, wheelRows),
     menuPress: (row) => {
       if (atMenu.open) {
@@ -1996,10 +2189,32 @@ export function App(props: AppProps) {
   useEffect(() => terminal.input.claim('chord', (event) => onChord(event)), [terminal]);
   useEffect(
     () =>
-      terminal.input.observeFrames(() => {
-        if (listSeen.current.rows !== '') listSeen.current.drawn = true;
+      terminal.input.observeArrivals?.(() => {
+        arrivals.current += 1;
+        arrivedScreen.current = drawnScreen.current;
       }),
     [terminal],
+  );
+  if (frameWatch.current?.terminal !== terminal) {
+    frameWatch.current?.stop();
+    frameWatch.current = {
+      terminal,
+      stop: terminal.input.observeFrames(() => {
+        drawnScreen.current = renderedScreen.current;
+        if (listSeen.current.rows !== '') listSeen.current.drawn = true;
+      }),
+    };
+  }
+  useEffect(
+    () => () => {
+      frameWatch.current?.stop();
+      frameWatch.current = undefined;
+      if (drainImmediate.current !== undefined) clearImmediate(drainImmediate.current);
+      drainImmediate.current = undefined;
+      followingKeys.current = [];
+      drainingKeys.current = false;
+    },
+    [],
   );
   useEffect(() => {
     facts.current = { overlay: overlay !== undefined, position: shownAgent === undefined ? view.position : FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush };
@@ -2066,6 +2281,7 @@ export function App(props: AppProps) {
         }
       : undefined;
 
+  renderedScreen.current = screenNow();
   return (
     <TailPoseContext value={tailPose}>
       <Screen

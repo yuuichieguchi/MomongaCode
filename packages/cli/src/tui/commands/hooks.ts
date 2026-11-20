@@ -2,8 +2,9 @@ import type { SettingsLayer, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import { HOOK_COMMAND_TYPE, HOOK_DEFAULT_TIMEOUT_SECONDS, HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError, hookTimeoutSecondsOf } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookMatcherGroup } from '@momonga/protocol';
-import { APPLIES_NOW, ENTRY_ACTIONS, chooseSaveTarget, chosenAction, removeQuestion, runCollection, writeSetting } from '../settings-screen.tsx';
+import { APPLIES_NOW, ENTRY_ACTIONS, chooseSaveTarget, removeQuestion, runCollection, writeSetting } from '../settings-screen.tsx';
 import type { Refusal } from '../settings-screen.tsx';
+import { chooseThen } from '../flow-step.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 export const HOOKS_TITLE = 'Hooks';
@@ -74,23 +75,36 @@ const replaceHook = (context: SlashContext, held: Held, asked: Asked): Promise<R
   writeSetting(context, held.layer, { kind: 'update', path: ['hooks', held.event], update: (current) => [...groupsOf(withoutHook(held)(current)), groupOf(asked)] });
 
 const addHook = async (context: SlashContext, snapshot: SettingsSnapshot): Promise<Refusal | 'left' | undefined> => {
-  const choice = await context.overlays.choose({ title: HOOK_EVENT_TITLE, rows: HOOK_EVENTS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false });
-  const event: HookEvent | undefined = choice === undefined ? undefined : HOOK_EVENTS[choice.index];
-  if (event === undefined) return 'left';
-  const asked = await askHook(context, event, undefined);
-  if (asked === undefined) return 'left';
-  const layer = await chooseSaveTarget(context, snapshot);
-  if (layer === undefined) return 'left';
-  return writeSetting(context, layer, { kind: 'update', path: ['hooks', event], update: (current) => [...groupsOf(current), groupOf(asked)] });
+  const added = await chooseThen(
+    context.overlays.choose,
+    () => ({ title: HOOK_EVENT_TITLE, rows: HOOK_EVENTS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false }),
+    async (choice): Promise<Refusal | 'left' | undefined> => {
+      const event: HookEvent | undefined = HOOK_EVENTS[choice.index];
+      if (event === undefined) return 'left';
+      const asked = await askHook(context, event, undefined);
+      if (asked === undefined) return 'left';
+      const layer = await chooseSaveTarget(context, snapshot);
+      if (layer === undefined) return 'left';
+      return writeSetting(context, layer, { kind: 'update', path: ['hooks', event], update: (current) => [...groupsOf(current), groupOf(asked)] });
+    },
+  );
+  return added === undefined ? 'left' : added.value;
 };
 
 const actOnHook = async (context: SlashContext, held: Held | undefined): Promise<Refusal | 'left' | 'remove' | undefined> => {
   if (held === undefined) return 'left';
-  const chosen = await chosenAction(context, hookLine(held), ENTRY_ACTIONS);
-  if (chosen === undefined) return 'left';
-  if (chosen === 'Remove') return 'remove';
-  const asked = await askHook(context, held.event, held);
-  return asked === undefined ? 'left' : replaceHook(context, held, asked);
+  const acted = await chooseThen(
+    context.overlays.choose,
+    () => ({ title: hookLine(held), rows: ENTRY_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false }),
+    async (choice): Promise<Refusal | 'left' | 'remove' | undefined> => {
+      const chosen = ENTRY_ACTIONS[choice.index];
+      if (chosen === undefined) return 'left';
+      if (chosen === 'Remove') return 'remove';
+      const asked = await askHook(context, held.event, held);
+      return asked === undefined ? 'left' : replaceHook(context, held, asked);
+    },
+  );
+  return acted === undefined ? 'left' : acted.value;
 };
 
 export const hooksCommand: SlashCommand = {

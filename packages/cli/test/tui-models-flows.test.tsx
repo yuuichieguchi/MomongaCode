@@ -8,7 +8,7 @@ import { folderTrustFakes } from './fake-backend.ts';
 import { runAddFlow } from '../src/tui/models/add.ts';
 import { runModelsHub } from '../src/tui/models/hub.ts';
 import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from '../src/tui/models/order.ts';
-import { HUB_ACTIONS } from '../src/tui/models/texts.ts';
+import { ADD_TITLE, HUB_ACTIONS } from '../src/tui/models/texts.ts';
 import { createPlanFlows } from '../src/tui/plan-flows.ts';
 import { runSettingsScreen, settingsFileLines } from '../src/tui/settings-screen.tsx';
 import type { SlashContext } from '../src/tui/slash.ts';
@@ -99,7 +99,7 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const cancelled = flowOf(context, undefined, [{ pick: SEARCH }], { found: (request) => untilAborted(request.signal), cancelPhase: SEARCHING });
     await runAddFlow(cancelled.context);
     expect(cancelled.detections[0]?.signal.aborted).toBe(true);
-    expect(cancelled.picks()).toHaveLength(1);
+    expect(cancelled.picks().map((pick) => pick.title)).toEqual([ADD_TITLE, ADD_TITLE]);
     expect(cancelled.bytes()).toBeUndefined();
   });
 
@@ -170,6 +170,8 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       captureKey: async () => undefined,
       waiting: () => undefined,
       closeWaiting: () => undefined,
+      read: async (read) => ({ kind: 'read', value: await read() }),
+      closeScreen: () => undefined,
       delivered: () => undefined,
       loading: async (_title, read) => ({ kind: 'read', value: await read() }),
     invitationAnswered: () => undefined,

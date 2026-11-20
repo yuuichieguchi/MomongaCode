@@ -15,9 +15,11 @@ export type ScreenInput = {
   observe(observer: EventObserver): () => void;
   framed(): void;
   observeFrames(listener: () => void): () => void;
+  arrived(): void;
+  observeArrivals(listener: () => void): () => void;
 };
 
-export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen' | 'setTitle' | 'bell' | 'enable' | 'disable'> & { input: Pick<ScreenInput, 'claim' | 'observe' | 'observeFrames'> };
+export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen' | 'setTitle' | 'bell' | 'enable' | 'disable'> & { input: Pick<ScreenInput, 'claim' | 'observe' | 'observeFrames'> & Partial<Pick<ScreenInput, 'observeArrivals'>> };
 
 export type ClaimTable = { claim(priority: ClaimPriority, handler: EventClaim): () => void; offer(event: TerminalEvent): boolean };
 
@@ -42,7 +44,17 @@ export const createScreenInput = (): ScreenInput => {
   const claims = createClaimTable();
   const observers = new Set<EventObserver>();
   const frameListeners = new Set<() => void>();
+  const arrivalListeners = new Set<() => void>();
   return {
+    arrived: () => {
+      for (const listener of [...arrivalListeners]) listener();
+    },
+    observeArrivals: (listener) => {
+      arrivalListeners.add(listener);
+      return () => {
+        arrivalListeners.delete(listener);
+      };
+    },
     observe: (observer) => {
       observers.add(observer);
       return () => {

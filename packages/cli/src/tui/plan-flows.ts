@@ -26,7 +26,8 @@ import type { SignInShown } from '../plan/sign-in.ts';
 import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, accountInUseLine, accountNotSessionModelLine, cancelledText, catalogUnreadHint, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import { LOADING_HINTS } from './picker.tsx';
-import type { OverlayPorts, PickRow } from './picker.tsx';
+import type { OverlayPorts, PickRequest, PickRow, PickUpdate } from './picker.tsx';
+import { Abandoned, chooseThen, currentStep, runInStep } from './flow-step.ts';
 import { NOT_NOW_LABEL, invitationKeyOf } from './screen/menu.tsx';
 
 export type PlanFlowPorts = OverlayPorts & {
@@ -46,6 +47,7 @@ export type PlanFlowPorts = OverlayPorts & {
   readonly found: FoundServers;
   readonly model: () => string | undefined;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  cancellable?<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   invitationAnswered(): void;
   untilNextKey(): AbortSignal;
 };
@@ -70,6 +72,9 @@ type Acted = typeof AGAIN | undefined;
 type Choice = { row: PickRow; act(): Promise<Acted | void> };
 
 const USE_API_KEY = 'Use an API key';
+export const MODEL_LIST_REREAD_BOUND_MS = 15_000;
+export const MODEL_LIST_NO_ANSWER_REASON = 'no answer within 15 seconds';
+export const modelListNotCurrent = (reason: string): string => `the list of models is not current: ${reason}`;
 const LOADING_PHASE = 'Loading models…';
 const CONNECT_TITLE = 'Connect a model';
 
@@ -81,6 +86,8 @@ const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.
 
 export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const { backend } = ports;
+  const runCancellable = <T,>(work: (signal: AbortSignal) => Promise<T>): Promise<T> =>
+    ports.cancellable === undefined ? work(new AbortController().signal) : ports.cancellable(work);
 
   const flowContext = (): ModelsFlowContext => ({
     backend,
@@ -155,11 +162,16 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const chooseFrom = async (request: { title?: string; lines?: readonly string[] }, choices: readonly Choice[]): Promise<boolean> => {
     for (;;) {
-      const index = await ports.pick({ ...request, rows: choices.map((choice) => choice.row) });
-      const chosen = index === undefined ? undefined : choices[index];
-      if (chosen === undefined) return false;
-      if ((await chosen.act()) !== AGAIN) return true;
+      const acted = await chooseThen(ports.choose, () => ({ ...request, rows: choices.map((choice) => choice.row) }), async (choice) => choices[choice.index]?.act());
+      if (acted === undefined) return false;
+      if (acted.value !== AGAIN) return true;
     }
+  };
+
+  const readBetween = async <T>(read: () => Promise<T>): Promise<T> => {
+    const loaded = await ports.read(read);
+    if (loaded.kind === 'cancelled') throw new Abandoned();
+    return loaded.value;
   };
 
   const addApiKey = async (): Promise<void> => {
@@ -187,7 +199,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
           ? {
               row: { label: `${entry.slug} · ${entry.displayName} · ${profile.messages.pickerLabel}` },
               act: async () => {
-                const created = await backend.plan.addTarget(account, { profile: profile.id, slug: entry.slug });
+                ports.closeScreen();
+                const created = await runCancellable(() => backend.plan.addTarget(account, { profile: profile.id, slug: entry.slug }));
                 await ports.connected(created.model);
               },
             }
@@ -217,15 +230,23 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const sandboxAccepted = async (): Promise<boolean> => {
-    if ((await backend.sandbox()) !== 'none') return true;
+    if ((await readBetween(() => backend.sandbox())) !== 'none') return true;
     return (await ports.pick({ title: 'The sandbox is off', lines: SANDBOX_OFF_NOTICE, rows: SANDBOX_OFF_ROWS, initial: SANDBOX_OFF_CANCEL, decideOn: 'enter', escape: SANDBOX_OFF_CANCEL })) === SANDBOX_OFF_CONTINUE;
   };
 
   const signInRow = (profile: PlanProfileView, label: string): PickRow => ({ label, opensBrowser: true, description: profile.messages.description });
 
-  const signInFlow = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<Acted> => {
+  const runSignInFlow = async (profile: PlanProfileView, account: string, reconsent: boolean, keepOnCancel: boolean): Promise<Acted> => {
     if (!(await sandboxAccepted())) return undefined;
+    const step = currentStep();
     const cancel = new AbortController();
+    const left = (): boolean => cancel.signal.aborted || step?.signal.aborted === true;
+    const notKept = async (label: string): Promise<undefined> => {
+      if (keepOnCancel) return undefined;
+      await backend.plan.signOut({ profile: profile.id, account: label });
+      ports.info(cancelledText(SIGN_IN_WORD));
+      return undefined;
+    };
     let deliver: (text: string) => void = () => undefined;
     const deliveries = new Promise<string>((resolve) => {
       deliver = resolve;
@@ -239,6 +260,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       });
     };
     const confirmIdentity = async (identity: PlanSignInIdentity, waiting: AbortSignal): Promise<boolean> => {
+      waiting.throwIfAborted();
       const chosen = await ports.pick({
         title: profile.loginLabel,
         lines: [identityQuestion('tui', profile, account, identity)],
@@ -269,7 +291,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     } catch (error) {
       if (cancel.signal.aborted && error === cancel.signal.reason) {
         ports.info(cancelledText(SIGN_IN_WORD));
-        return AGAIN;
+        return undefined;
       }
       if (error instanceof SignInListenerError || error instanceof SignInListenerFailedError) {
         ports.failed(error.message);
@@ -294,29 +316,43 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         for (const line of planDisabledLines('tui', profile, answer.account.label)) ports.info(line);
         await planUseNotEnabled(profile, answer.account.label);
         return undefined;
-      case SIGNED_IN_OUTCOME:
+      case SIGNED_IN_OUTCOME: {
+        if (left()) return notKept(answer.account.label);
         ports.info(signedInLine(answer.account));
-        try {
-          await afterSignIn(profile, answer.account, answer.firstSignIn);
-        } finally {
-          await ports.signedIn();
-        }
+        const after = await afterSignIn(profile, answer.account, answer.firstSignIn).then(
+          () => undefined,
+          (error: unknown) => ({ error }),
+        );
+        if (left()) return notKept(answer.account.label);
+        await ports.signedIn();
+        if (after !== undefined) throw after.error;
         return undefined;
+      }
     }
   };
+
+  const signInFlow = (profile: PlanProfileView, account: string, reconsent: boolean, keepOnCancel = false): Promise<Acted> =>
+    currentStep() === undefined ? runInStep(() => runSignInFlow(profile, account, reconsent, keepOnCancel)) : runSignInFlow(profile, account, reconsent, keepOnCancel);
 
   const savedAccount = async (profile: PlanProfileView, account: PlanAccountView): Promise<Acted> => {
     switch (savedAccountAction(account)) {
       case 'activate':
-        await backend.plan.setActive({ profile: profile.id, account: account.label });
+        if (account.pinnedBy.length > 0 || !account.active) {
+          ports.closeScreen();
+          await runCancellable(() => backend.plan.setActive({ profile: profile.id, account: account.label }));
+          ports.info(accountInUseLine(profile, account.label));
+          await accountInUse(profile, { ...account, active: true });
+          return undefined;
+        }
+        await readBetween(() => backend.plan.setActive({ profile: profile.id, account: account.label }));
         ports.info(accountInUseLine(profile, account.label));
         await accountInUse(profile, { ...account, active: true });
         return undefined;
       case 'sign-in':
-        return signInFlow(profile, account.label, account.state === PLAN_DISABLED_STATE);
+        return signInFlow(profile, account.label, account.state === PLAN_DISABLED_STATE, true);
       case 'replace':
         ports.info(recordUnreadableLine('tui', account));
-        return signInFlow(profile, account.label, false);
+        return signInFlow(profile, account.label, false, true);
       case 'none':
         ports.info(`${accountRowLabel(account)}${account.cause === undefined ? '' : `: ${account.cause}`}`);
         return undefined;
@@ -335,7 +371,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return undefined;
       },
     });
-    if (label === undefined) return AGAIN;
+    if (label === undefined) return undefined;
     return signInFlow(profile, label, false);
   };
 
@@ -351,24 +387,27 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       },
     });
     if (to === undefined || to === account.label) return;
-    await backend.plan.rename({ profile: profile.id, account: account.label, to });
+    ports.closeScreen();
+    await runCancellable(() => backend.plan.rename({ profile: profile.id, account: account.label, to }));
     let repointed = false;
     try {
       repointed = await repointAccountConnections(flowContext(), profile.id, account.label, to);
     } finally {
       if (!repointed) await backend.plan.rename({ profile: profile.id, account: to, to: account.label });
     }
-    await ports.refreshConnection();
+    await runCancellable(() => ports.refreshConnection());
   };
 
-  const removeAccount = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
+  const removeAccount = async (profile: PlanProfileView, account: PlanAccountView): Promise<Acted> => {
     const confirmed = await ports.pick({ title: `Remove account ${account.label}`, rows: [{ label: `Remove account ${account.label}` }], confirm: (_row, decideKey) => `press ${decideKey} again to sign out ${account.label}` });
-    if (confirmed === undefined) return;
-    const provider = await accountConnectionOf(flowContext(), account);
-    const report = await backend.plan.signOut({ profile: profile.id, account: account.label });
+    if (confirmed === undefined) return AGAIN;
+    ports.closeScreen();
+    const provider = await runCancellable(() => accountConnectionOf(flowContext(), account));
+    const report = await runCancellable(() => backend.plan.signOut({ profile: profile.id, account: account.label }));
     for (const line of signedOutLines(profile, account.label, report)) ports.info(line);
     if (provider !== undefined) await runRemoveServingConnection(flowContext(), provider);
-    await ports.refreshConnection();
+    await runCancellable(() => ports.refreshConnection());
+    return undefined;
   };
 
   const accountActionRows = (profile: PlanProfileView, listed: PlanAccountsResponse, records: readonly PlanAccountView[]): Choice[] =>
@@ -391,7 +430,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         .map((account) => ({
           row: { label: `Resume plan use for ${account.label}` },
           act: async () => {
-            const answer = await backend.plan.resume(account.label, { profile: profile.id });
+            ports.closeScreen();
+            const answer = await runCancellable(() => backend.plan.resume(account.label, { profile: profile.id }));
             ports.info(resumeLine(account.label, answer.resumed));
             if (answer.resumed && account.active) await accountInUse(profile, account);
           },
@@ -408,8 +448,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     return undefined;
   };
 
+  const providerFlowRead = async (profile: PlanProfileView): Promise<Acted> => providerFlowOf(profile, await readBetween(() => backend.plan.accounts()));
+
   const providerFlow = async (profile: PlanProfileView): Promise<void> => {
-    await providerFlowOf(profile, await backend.plan.accounts());
+    await providerFlowRead(profile);
   };
 
   const managedChoice = (server: DetectedManagedServer): Choice => {
@@ -444,7 +486,10 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     listed.profiles.filter((profile) => accountsOf(profile.id, listed.accounts).length === 0 && !Object.hasOwn(dismissed, invitationKeyOf(profile.id)));
 
   const answerNotNow = async (invited: readonly PlanProfileView[]): Promise<void> => {
-    for (const profile of invited) await backend.dismissNotice(invitationKeyOf(profile.id));
+    ports.closeScreen();
+    await runCancellable(async () => {
+      for (const profile of invited) await backend.dismissNotice(invitationKeyOf(profile.id));
+    });
     ports.invitationAnswered();
   };
 
@@ -462,7 +507,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     await chooseFrom({ title: CONNECT_TITLE }, [
       ...listed.profiles.map((profile) => {
         const label = `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}`;
-        return { row: accountsOf(profile.id, listed.accounts).length === 0 ? signInRow(profile, label) : { label }, act: () => providerFlowOf(profile, listed) };
+        return { row: accountsOf(profile.id, listed.accounts).length === 0 ? signInRow(profile, label) : { label }, act: () => providerFlowRead(profile) };
       }),
       ...keyed.map((provider) => ({
         row: { label: `${provider} [API key] · configured` },
@@ -487,7 +532,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const index = await ports.pick({ title: 'Sign out', rows: listed.accounts.map((account) => ({ label: accountRowLabel(account) })), confirm: (row, decideKey) => `press ${decideKey} again to sign out ${row.label}` });
     const chosen = index === undefined ? undefined : listed.accounts[index];
     if (chosen === undefined) return;
-    const report = await backend.plan.signOut({ profile: chosen.profile, account: chosen.label });
+    ports.closeScreen();
+    const report = await runCancellable(() => backend.plan.signOut({ profile: chosen.profile, account: chosen.label }));
     const profile = profileOf(listed.profiles, chosen.profile);
     for (const line of signedOutLines(profile, chosen.label, report)) ports.info(line);
   };
@@ -516,34 +562,37 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const catalogNotCurrent = (account: string, reason: string): string => `the list of models of ${account} is not current: ${reason}`;
 
-  const modelPicker = async (current: string | undefined): Promise<void> => modelList(current, undefined);
+  const modelPicker = async (current: string | undefined): Promise<void> => modelList(current);
 
-  const modelList = async (current: string | undefined, highlighted: string | undefined): Promise<void> => {
-    const context = flowContext();
-    const read = await ports.loading('Models', async () => {
-      const [readListing, readHealth, readListed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
-      const signedIn = readListed.accounts.filter((account) => account.state === 'active');
-      const readCatalogs = await Promise.all(
-        signedIn.map(async (account) => {
-          const profile = profileOf(readListed.profiles, account.profile);
-          try {
-            return { kind: 'read' as const, account, profile, catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) };
-          } catch (error) {
-            return { kind: 'unread' as const, account, reason: error instanceof Error ? error.message : String(error) };
-          }
-        }),
-      );
-      const remembered = ports.found.servers();
-      return { listing: readListing, health: readHealth, listed: readListed, catalogs: readCatalogs, remembered, opened: remembered.length === 0 ? undefined : await openEdit(context) };
-    }, LOADING_HINTS.readingAndCancel);
-    if (read.kind === 'cancelled') return;
-    const { listing, health, listed, catalogs, remembered, opened } = read.value;
+  const readModelList = async (context: ModelsFlowContext) => {
+    const [readListing, readHealth, readListed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
+    const signedIn = readListed.accounts.filter((account) => account.state === 'active');
+    const readCatalogs = await Promise.all(
+      signedIn.map(async (account) => {
+        const profile = profileOf(readListed.profiles, account.profile);
+        try {
+          return { kind: 'read' as const, account, profile, catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) };
+        } catch (error) {
+          return { kind: 'unread' as const, account, reason: error instanceof Error ? error.message : String(error) };
+        }
+      }),
+    );
+    const remembered = ports.found.servers();
+    return { listing: readListing, health: readHealth, listed: readListed, catalogs: readCatalogs, remembered, opened: remembered.length === 0 ? undefined : await openEdit(context) };
+  };
+
+  type ModelListRead = Awaited<ReturnType<typeof readModelList>>;
+
+  type ShownModelList = { readonly rows: readonly PickRow[]; readonly keys: readonly string[]; readonly currentIndex: number; readonly lines: readonly string[]; readonly alt: boolean; choose(index: number, atStart: boolean): Promise<ModelChosen> };
+
+  const modelListOf = (context: ModelsFlowContext, read: ModelListRead, current: string | undefined): ShownModelList => {
+    const { listing, health, listed, catalogs, remembered, opened } = read;
     const entries = listing.data;
     const served = new Set(entries.flatMap((entry) => entry.chain.map((member) => member.upstream)));
     const nothingMore = async (): Promise<undefined> => undefined;
-    const catalogChoices = catalogs.flatMap((read): { plan: PlanListRow; act(): Promise<ModelChosen> }[] => {
-      if (read.kind === 'unread') return [{ plan: { kind: 'note', label: catalogNotCurrent(read.account.label, read.reason) }, act: nothingMore }];
-      const { account, profile, catalog } = read;
+    const catalogChoices = catalogs.flatMap((catalogRead): { key: string; plan: PlanListRow; act(): Promise<ModelChosen> }[] => {
+      if (catalogRead.kind === 'unread') return [{ key: `unread:${catalogRead.account.profile}:${catalogRead.account.label}`, plan: { kind: 'note', label: catalogNotCurrent(catalogRead.account.label, catalogRead.reason) }, act: nothingMore }];
+      const { account, profile, catalog } = catalogRead;
       const billing = planProfileOf(profile.id).targetDefaults.billing;
       const searchTextsOf = (entry: { readonly displayName: string }): readonly string[] => [entry.displayName, profile.messages.pickerLabel];
       return catalog.models
@@ -551,48 +600,123 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         .map((entry) =>
           entry.usable
             ? {
+                key: `model:${entry.slug}`,
                 plan: { kind: 'model', slug: entry.slug, billing, searchTexts: searchTextsOf(entry) },
                 act: async () => {
                   const created = await backend.plan.addTarget(account.label, { profile: profile.id, slug: entry.slug });
                   return chosenWithEffort(created.model, nothingMore);
                 },
               }
-            : { plan: { kind: 'model', slug: entry.slug, billing, reason: entry.reason, searchTexts: searchTextsOf(entry) }, act: nothingMore },
+            : { key: `model:${entry.slug}`, plan: { kind: 'model', slug: entry.slug, billing, reason: entry.reason, searchTexts: searchTextsOf(entry) }, act: nothingMore },
         );
     });
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
     const { rows, listed: listedRows } = modelListRows({ listing, current, health, found, plan: catalogChoices.map((choice) => choice.plan) });
     const displays = displayMapOf(listingViewsOf(entries));
     const allRows = [...rows, { label: MODEL_SETTINGS_ROW }];
-    const chosenRow = async (index: number, atStart: boolean): Promise<ModelChosen> => {
-      const row = listedRows[index];
-      if (row === undefined) return catalogChoices[index - listedRows.length]?.act();
-      if (row.kind === 'configured') return useConfigured(row.entry, health, listed, atStart, displays.get(row.entry.id) ?? row.entry.id);
-      if (row.kind === 'found' && opened !== undefined) {
-        const added = await addFoundModel(context, opened, row.found.server, row.found.model, row.found.display);
-        if (added?.model !== undefined) return chosenWithEffort(added.model, nothingMore);
-      }
-      return undefined;
+    const keys = [
+      ...listedRows.map((row) => (row.kind === 'configured' ? `model:${displays.get(row.entry.id) ?? row.entry.id}` : row.kind === 'separator' ? 'separator:found' : `model:${row.found.display}`)),
+      ...catalogChoices.map((choice) => choice.key),
+      'model-settings',
+    ];
+    const currentIndex = current === undefined ? -1 : listedRows.findIndex((row) => row.kind === 'configured' && row.entry.id === current);
+    return {
+      rows: allRows,
+      keys,
+      currentIndex,
+      lines: allRows.length === 1 ? [messageOf('noModelConnected', 'tui')] : [MODEL_CHANGE_NOTE],
+      alt: allRows.length > 1,
+      choose: async (index, atStart) => {
+        const row = listedRows[index];
+        if (row === undefined) return catalogChoices[index - listedRows.length]?.act();
+        if (row.kind === 'configured') return useConfigured(row.entry, health, listed, atStart, displays.get(row.entry.id) ?? row.entry.id);
+        if (row.kind === 'found' && opened !== undefined) {
+          const added = await addFoundModel(context, opened, row.found.server, row.found.model, row.found.display);
+          if (added?.model !== undefined) return chosenWithEffort(added.model, nothingMore);
+        }
+        return undefined;
+      },
     };
-    const highlightedRow = listedRows.findIndex((row) => row.kind === 'configured' && row.entry.id === highlighted);
-    const choice =
-      allRows.length === 1
-        ? await ports.choose({ title: 'Models', lines: [messageOf('noModelConnected', 'tui')], rows: allRows })
-        : await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: allRows, alt: { label: ALSO_AT_START_LABEL }, ...(highlightedRow === -1 ? {} : { initial: highlightedRow }) });
-    if (choice === undefined) return;
-    if (choice.index === allRows.length - 1) {
-      await runModelsHub(context);
-      await ports.refreshConnection();
-      await modelPicker(ports.model());
-      return;
+  };
+
+  const modelList = async (current: string | undefined): Promise<void> => {
+    const context = flowContext();
+    const first = await ports.loading('Models', () => readModelList(context), LOADING_HINTS.readingAndCancel);
+    if (first.kind === 'cancelled') return;
+    let shown = modelListOf(context, first.value, current);
+    let highlightedKey: string | undefined;
+    let shownBefore = false;
+    const indexOfKey = (key: string | undefined): number => (key === undefined ? -1 : shown.keys.indexOf(key));
+    const highlightAfterReread = (): number => {
+      const kept = indexOfKey(highlightedKey);
+      if (kept !== -1) return kept;
+      return shown.currentIndex !== -1 ? shown.currentIndex : 0;
+    };
+    const reread = (show: (update: PickUpdate) => void): (() => void) => {
+      let following = true;
+      const notCurrent = (reason: string): void => {
+        following = false;
+        show({ rows: shown.rows, lines: [...shown.lines, modelListNotCurrent(reason)], alt: shown.alt ? { label: ALSO_AT_START_LABEL } : undefined, highlight: highlightAfterReread() });
+      };
+      const bound = ports.timers.setTimeout(() => {
+        if (following) notCurrent(MODEL_LIST_NO_ANSWER_REASON);
+      }, MODEL_LIST_REREAD_BOUND_MS);
+      readModelList(context).then(
+        (value) => {
+          if (!following) return;
+          following = false;
+          ports.timers.clearTimeout(bound);
+          shown = modelListOf(context, value, ports.model() ?? current);
+          show({ rows: shown.rows, lines: shown.lines, alt: shown.alt ? { label: ALSO_AT_START_LABEL } : undefined, highlight: highlightAfterReread() });
+        },
+        (error: unknown) => {
+          if (!following) return;
+          ports.timers.clearTimeout(bound);
+          notCurrent(error instanceof Error ? error.message : String(error));
+        },
+      );
+      return () => {
+        following = false;
+        ports.timers.clearTimeout(bound);
+      };
+    };
+    const request = (): PickRequest => {
+      const initial = indexOfKey(highlightedKey);
+      const again = shownBefore;
+      shownBefore = true;
+      return {
+        title: 'Models',
+        lines: shown.lines,
+        rows: shown.rows,
+        ...(shown.alt ? { alt: { label: ALSO_AT_START_LABEL } } : {}),
+        ...(initial === -1 ? {} : { initial }),
+        onHighlight: (index) => {
+          highlightedKey = shown.keys[index];
+        },
+        ...(again ? { watch: reread } : {}),
+      };
+    };
+    for (;;) {
+      const acted = await chooseThen(ports.choose, request, async (choice): Promise<Acted> => {
+        highlightedKey = shown.keys[choice.index];
+        if (choice.index === shown.rows.length - 1) {
+          try {
+            await runModelsHub(context);
+          } finally {
+            await ports.refreshConnection();
+          }
+          return AGAIN;
+        }
+        const chosen = await shown.choose(choice.index, choice.alt);
+        return chosen === undefined ? undefined : AGAIN;
+      });
+      if (acted?.value !== AGAIN) return;
     }
-    const chosen = await chosenRow(choice.index, choice.alt);
-    if (chosen !== undefined) await modelList(current, chosen.backTo);
   };
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {
     await chooseFrom({ title: 'Connect a model to start' }, [
-      ...profiles.map((profile) => ({ row: signInRow(profile, profile.loginLabel), act: async () => providerFlowOf(profile, await backend.plan.accounts()) })),
+      ...profiles.map((profile) => ({ row: signInRow(profile, profile.loginLabel), act: () => providerFlowRead(profile) })),
       { row: { label: USE_API_KEY }, act: addApiKey },
       { row: { label: 'Use a local server' }, act: addLocalServer },
     ]);
@@ -609,7 +733,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const planUseNotEnabled = async (profile: PlanProfileView, account: string | undefined): Promise<void> => {
     await chooseFrom({}, [
-      { row: signInRow(profile, `Enable ${profile.messages.identityLabel} plan use`), act: async () => (account === undefined ? providerFlowOf(profile, await backend.plan.accounts()) : signInFlow(profile, account, true)) },
+      { row: signInRow(profile, `Enable ${profile.messages.identityLabel} plan use`), act: () => (account === undefined ? providerFlowRead(profile) : signInFlow(profile, account, true, true)) },
       { row: { label: USE_API_KEY }, act: addApiKey },
     ]);
   };

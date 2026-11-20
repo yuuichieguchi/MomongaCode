@@ -4,7 +4,7 @@ import type { LocalServerDetection, PlanAccountState } from '@momonga/protocol';
 import { SESSION } from './fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
+import { LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, rowNumberOf, startPlan, submitLine, untilRow, untilPromptDrawn, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -238,6 +238,7 @@ describe('the invitation banner', () => {
     await eventually(() => backend.dismissals.length > 0, 'the dismissal');
     expect(backend.dismissals).toEqual(['invite:chatgpt']);
     await untilFrame(app, (shown) => !shown.includes('Not now'));
+    await untilPromptDrawn(app);
     expect(await untilTypedAfter(app)).not.toContain('Use your ChatGPT plan in this app.');
     app.unmount();
   });

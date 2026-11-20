@@ -7,7 +7,7 @@ import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import { account, fakePlanBackend, startPlan, submitLine } from '../fake-plan-gateway.tsx';
 import type { FakePlanOptions, PlanTiming } from '../fake-plan-gateway.tsx';
 import { KEY_SETTLE_MS } from '../../src/tui/terminal/constants.ts';
-import { FRAME_BOUND_MS, KEYS, TEST_KEY_SETTLE_MS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { FRAME_BOUND_MS, KEYS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { manualClock } from './screen-clock.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { systemTiming } from '@momonga/foundation';
@@ -86,7 +86,7 @@ const startReading = (options: FakePlanOptions, screenReader: Partial<ResolvedTu
     save: async () => undefined,
   };
   const terminal = fakeScreenTerminal({ screen: 'scrollback', columns: 160, rows: 40 });
-  const app = renderObservable(<App backend={backend as TuiBackend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} tuiSettings={tuiSettings} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend as TuiBackend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} tuiSettings={tuiSettings} onExit={() => undefined} />);
   return { app, backend };
 };
 
@@ -640,20 +640,20 @@ describe('the effort step after a plan model that is not configured is chosen', 
     app.unmount();
   });
 
-  it('esc during Loading models… shows the model list again, the added model stays added and nothing is switched', async () => {
+  it('esc during Loading models… shows the model list at once with its previous rows, the re-read then shows the added model as added, and nothing is switched', async () => {
     const pending = Promise.withResolvers<void>();
     const { app, backend } = await chooseSol({ reasoning: { ...APPROVED.reasoning, [SOL]: REASONING }, modelPending: pending.promise });
     await untilFrame(app, loadingShown);
     app.stdin.write(KEYS.escape);
     const again = await untilFrame(app, (frame) => listShown(frame) && !loadingShown(frame));
-    expect(listBlock(again)).toBe(
+    const listOf = (billing: string): string =>
       [
         'Models',
         'a change applies from the next run',
         'filter:',
         '   1. ollama/qwen3.8:27b (current)  local',
         '   2. gpt-6-luna                    plan',
-        '›  3. gpt-6.2-sol                   metered',
+        `›  3. gpt-6.2-sol                   ${billing}`,
         '   4. gpt-6.2-astra                 plan',
         '   5. gpt-6.2-nova                  plan',
         '   6. gpt-6.2-terra                 plan',
@@ -664,10 +664,11 @@ describe('the effort step after a plan model that is not configured is chosen', 
         '  11. gpt-6.2-mira                  plan',
         '  12. Model settings…',
         HINT,
-      ].join('\n'),
-    );
+      ].join('\n');
+    expect(listBlock(again)).toBe(listOf('plan'));
     expect((await backend.models()).some((entry) => entry.id === SOL)).toBe(true);
     pending.resolve();
+    expect(listBlock(await untilFrame(app, (frame) => listShown(frame) && listBlock(frame) === listOf('metered')))).toBe(listOf('metered'));
     expect(switches(backend)).toEqual([]);
     expect(notesOf(app.lastFrame() ?? '')).toEqual([]);
     app.stdin.write(KEYS.enter);
@@ -698,7 +699,7 @@ describe('the /model flow with the timing of the real program', () => {
 
   const listOpenAtRealTiming = async () => {
     const clock = manualClock(1_000_000);
-    const started = await startPlan({ ...APPROVED, answerTimers: clock.timers }, {}, {}, { now: clock.now, timers: clock.timers, keySettleMs: KEY_SETTLE_MS });
+    const started = await startPlan({ ...APPROVED, answerTimers: clock.timers }, {}, {}, { now: clock.now, timers: clock.timers });
     const pause = async (ms: number): Promise<void> => {
       for (let passed = 0; passed < ms; passed += STEP_MS) {
         clock.advance(Math.min(STEP_MS, ms - passed));
@@ -827,11 +828,17 @@ describe('the /model flow with the timing of the real program', () => {
         started.app.unmount();
       });
 
-      it(`enter then enter ${gap} ms later${run}: the second enter does nothing, the effort list shows and nothing is switched`, async () => {
+      const drawnFirst = gap > LISTING_MS;
+      it(`enter then enter ${gap} ms later${run}: ${drawnFirst ? 'the effort list is drawn first, so the second enter chooses its highlighted level' : 'the effort list is not drawn yet, so the second enter does nothing'}`, async () => {
         const started = await listOpenAtRealTiming();
         await withRun(started, working);
         await burst(started, [[KEYS.down, 0], [KEYS.enter, 0], [KEYS.enter, gap]]);
         await started.pause(1500);
+        if (drawnFirst) {
+          expect(switches(started.backend)).toEqual([`model:${LUNA} effort:medium`]);
+          expect(cancels(started.backend)).toEqual([]);
+          return started.app.unmount();
+        }
         expect(pickerShown(started.app.lastFrame() ?? '')).toBe(true);
         expect(switches(started.backend)).toEqual([]);
         started.app.stdin.write(KEYS.escape);
@@ -840,6 +847,41 @@ describe('the /model flow with the timing of the real program', () => {
         started.app.unmount();
       });
 
+      if (gap === 0)
+        it(`esc on the effort picker then esc 0 ms later${run}: first esc returns to the model list, second esc closes the list and switches nothing`, async () => {
+          const started = await listOpenAtRealTiming();
+          await withRun(started, working);
+          await burst(started, [[KEYS.down, 0], [KEYS.enter, 0]]);
+          await started.untilShown(pickerShown);
+          await burst(started, [[KEYS.escape, 0], [KEYS.escape, 0]]);
+          await started.pause(1500);
+          const frame = started.app.lastFrame() ?? '';
+          expect(pickerShown(frame)).toBe(false);
+          expect(listShown(frame)).toBe(false);
+          expect(switches(started.backend)).toEqual([]);
+          expect(cancels(started.backend)).toEqual([]);
+          started.app.unmount();
+        });
+
+      if (gap === 0)
+        it(`esc on the effort picker, then esc once the model list is drawn again${run}: the list closes at once and nothing is switched`, async () => {
+          const started = await listOpenAtRealTiming();
+          await withRun(started, working);
+          await burst(started, [[KEYS.down, 0], [KEYS.enter, 0]]);
+          await started.untilShown(pickerShown);
+          started.app.stdin.write(KEYS.escape);
+          await started.untilShown((now) => listShown(now) && !pickerShown(now));
+          started.app.stdin.write(KEYS.escape);
+          await started.pause(50);
+          const frame = started.app.lastFrame() ?? '';
+          expect(pickerShown(frame)).toBe(false);
+          expect(listShown(frame)).toBe(false);
+          expect(switches(started.backend)).toEqual([]);
+          expect(cancels(started.backend)).toEqual([]);
+          started.app.unmount();
+        });
+
+      if (gap > 0)
       it(`esc on the effort picker then esc ${gap} ms later${run} closes the list and switches nothing`, async () => {
         const started = await listOpenAtRealTiming();
         await withRun(started, working);

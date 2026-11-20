@@ -3,6 +3,7 @@ import type { SkillView } from '@momonga/protocol';
 import type { TemplateKind } from '../file-templates.ts';
 import { SkillInvocationError, skillTask } from '../../run/skill-invocation.ts';
 import type { SkillInvocation } from '../../run/skill-invocation.ts';
+import { chooseThen } from '../flow-step.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 export type SkillCommands = { commands: SlashCommand[]; shadowed: string[] };
@@ -75,27 +76,31 @@ export const listTemplateFiles = async (
   context: SlashContext,
   spec: { title: string; kind: TemplateKind; command: string; builtIns: readonly ListedBuiltIn[]; files: readonly ListedFile[]; warnings: readonly string[] },
 ): Promise<void> => {
-  const choice = await context.overlays.choose({
-    title: spec.title,
-    lines: [...spec.warnings],
-    rows: [
-      ...spec.builtIns.map((builtIn) => ({ label: `${builtIn.name}  ${builtIn.label}` })),
-      ...spec.files.map((file) => ({ label: `${file.name}  ${file.scope}  ${file.location}` })),
-      { label: CREATE_FROM_TEMPLATE_ROW },
-    ],
-    decideOn: 'enter',
-    escape: 'back',
-    filter: false,
-  });
-  if (choice === undefined) return;
-  const builtIn = spec.builtIns[choice.index];
-  if (builtIn !== undefined) {
-    builtIn.chosen(context);
-    return;
-  }
-  const file = spec.files[choice.index - spec.builtIns.length];
-  if (file === undefined) await createFile(context, spec.kind, spec.command);
-  else await openFile(context, file);
+  await chooseThen(
+    context.overlays.choose,
+    () => ({
+      title: spec.title,
+      lines: [...spec.warnings],
+      rows: [
+        ...spec.builtIns.map((builtIn) => ({ label: `${builtIn.name}  ${builtIn.label}` })),
+        ...spec.files.map((file) => ({ label: `${file.name}  ${file.scope}  ${file.location}` })),
+        { label: CREATE_FROM_TEMPLATE_ROW },
+      ],
+      decideOn: 'enter',
+      escape: 'back',
+      filter: false,
+    }),
+    async (choice) => {
+      const builtIn = spec.builtIns[choice.index];
+      if (builtIn !== undefined) {
+        builtIn.chosen(context);
+        return;
+      }
+      const file = spec.files[choice.index - spec.builtIns.length];
+      if (file === undefined) await createFile(context, spec.kind, spec.command);
+      else await openFile(context, file);
+    },
+  );
 };
 
 export const skillsCommand: SlashCommand = {

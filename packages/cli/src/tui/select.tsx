@@ -117,6 +117,13 @@ const stopsOf = (spec: SelectSpec, filter: string): number[] => listedOf(spec, f
 
 export const selectStart = (spec: SelectSpec): SelectState => ({ index: spec.initial, top: 0, scrolled: false, filter: '', confirming: undefined });
 
+export const selectWithFilter = (spec: SelectSpec, filter: string): SelectState => {
+  if (filter === '' || !spec.filter) return selectStart(spec);
+  const stops = stopsOf(spec, filter);
+  const index = stops.includes(spec.initial) ? spec.initial : (stops[0] ?? spec.initial);
+  return { index, top: 0, scrolled: false, filter, confirming: undefined };
+};
+
 export const spanAt = (count: number, top: number, capacity: number): { start: number; end: number } => {
   if (count <= capacity) return { start: 0, end: count };
   const start = Math.max(0, Math.min(top, count - (capacity - 1)));
@@ -431,9 +438,9 @@ export function MoreRow({ direction, count }: { direction: 'up' | 'down'; count:
   return <Text dimColor wrap="truncate">{moreRowText(direction, count, screenReader)}</Text>;
 }
 
-export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; settling: boolean; keys: KeyTable; error?: string };
+export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; keys: KeyTable; error?: string };
 
-export function SelectView({ spec, state, layout, border, sending, settling, keys, error }: SelectViewProps) {
+export function SelectView({ spec, state, layout, border, sending, keys, error }: SelectViewProps) {
   const { screenReader } = currentA11y();
   const stops = stopsOf(spec, state.filter);
   const confirming = state.confirming === undefined ? undefined : spec.rows[state.confirming];
@@ -455,7 +462,7 @@ export function SelectView({ spec, state, layout, border, sending, settling, key
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
       {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}
       {error === undefined ? null : <Text {...styleOfTokens(['error'])} wrap="truncate">{escapeTerminalLine(error)}</Text>}
-      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : layout.more > 0 && !layout.moreRow ? moreLinesText(layout.more, keys) : settling ? ' ' : selectHint(spec, keys)}</Text>
+      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : layout.more > 0 && !layout.moreRow ? moreLinesText(layout.more, keys) : selectHint(spec, keys)}</Text>
     </Panel>
   );
 }

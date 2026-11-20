@@ -6,7 +6,7 @@ import { createTerminalScreen } from '@momonga/testkit/terminal-screen';
 import { App } from '../../src/tui/app.tsx';
 import { createInputParser } from '../../src/tui/terminal/parser.ts';
 import { fakeBackend } from '../fake-backend.ts';
-import { TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
+import { settleAtOnce } from '../ink-helpers.ts';
 import type { FakeBackend, FakeBackendOptions } from '../fake-backend.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
@@ -35,7 +35,7 @@ export const startOnTerminal = async (size: { columns: number; rows: number }, o
   const stdin = Object.assign(new EventEmitter(), { isTTY: false, setEncoding: () => undefined, setRawMode: () => undefined, ref: () => undefined, unref: () => undefined, read: () => null, resume: () => undefined, pause: () => undefined });
   const terminal = fakeScreenTerminal(size);
   const backend = fakeBackend(options);
-  const instance = render(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} startup={{ version: '1.2.3', home: options.settingsPlace?.home ?? '/home/none' }} onExit={() => undefined} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true, onRender: () => terminal.framed() });
+  const instance = render(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} startup={{ version: '1.2.3', home: options.settingsPlace?.home ?? '/home/none' }} onExit={() => undefined} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true, onRender: () => terminal.framed() });
   const parser = createInputParser();
   const screen = (): string[] => shown.text();
   const until = async (holds: (lines: string[]) => boolean, description: string): Promise<string[]> => {

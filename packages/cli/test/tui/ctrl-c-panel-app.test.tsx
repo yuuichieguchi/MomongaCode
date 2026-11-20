@@ -174,24 +174,29 @@ describe('the panel interrupt bound to another key than the input interrupt', ()
 });
 
 describe('ctrl+c with the exit armed and no panel open', () => {
-  it('goes back from a list that opened after the exit was armed, and does not exit', { timeout: PLAN_TEST_TIMEOUT_MS }, async () => {
+  it('ctrl+c on the wait after a row was chosen ends the wait and goes back to the list, as esc does, and does not exit', { timeout: PLAN_TEST_TIMEOUT_MS }, async () => {
     const { app, backend, outcomes } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
     await untilFrame(app, 'mode: manual');
     const held = Promise.withResolvers<void>();
+    const asked = Promise.withResolvers<void>();
     backend.sandbox = async () => {
+      asked.resolve();
       await held.promise;
       return 'none';
     };
     await submitLine(app, '/login');
     await choose(app, 'ChatGPT');
-    await untilFrame(app, (shown) => !shown.includes('Add an API key'));
+    await asked.promise;
+    const beforeCtrlC = app.frames.length;
     app.stdin.write(KEYS.ctrlC);
-    await untilFrame(app, HINT);
+    await untilFrame(app, (shown) => app.frames.length > beforeCtrlC && shown.split('\n').some((row) => row.includes('›') && row.includes('ChatGPT')));
+    const since = app.frames.length;
     held.resolve();
-    await untilFrame(app, (shown) => shown.includes('The sandbox is off') && shown.includes(HINT));
-    app.stdin.write(KEYS.ctrlC);
-    await untilFrame(app, (shown) => !shown.includes('The sandbox is off'));
+    app.stdin.write(KEYS.escape);
+    await untilFrame(app, (shown) => !shown.split('\n').some((row) => row.includes('›') && row.includes('ChatGPT')));
+    expect(app.frames.slice(since).filter((shown) => shown.includes('The sandbox is off'))).toEqual([]);
+    expect(app.frames.filter((shown) => shown.includes(HINT))).toEqual([]);
     app.stdin.write('typed');
     await untilFrame(app, '> typed');
     expect(outcomes).toEqual([]);
@@ -245,7 +250,7 @@ const freshPanels: readonly FreshPanel[] = [
 
 const workingWithSettle = async () => {
   const clock = manualClock();
-  const started = await start({}, { now: clock.now, timers: clock.timers, keySettleMs: KEY_SETTLE_MS });
+  const started = await start({}, { now: clock.now, timers: clock.timers });
   await untilFrame(started.app, 'mode: manual');
   await runStarted(started.backend, started.app, 'go');
   clock.advance(KEY_SETTLE_MS);
@@ -255,7 +260,7 @@ const workingWithSettle = async () => {
 const freshlyOpened = async (panel: FreshPanel) => {
   const started = await workingWithSettle();
   panel.ask(started.backend);
-  await untilFrame(started.app, (shown) => shown.includes(panel.title) && !shown.includes('ctrl+c: cancel the run'));
+  await untilFrame(started.app, panel.title);
   return started;
 };
 

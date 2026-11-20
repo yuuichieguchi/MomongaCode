@@ -6,6 +6,8 @@ import type { FormInput, ModelsEdit, ModelsForm, ModelsHost, ModelsProposal } fr
 import type { TuiBackend } from '../backend.ts';
 import type { OverlayPorts, PickRequest } from '../picker.tsx';
 import { SAVING_PHASE } from './texts.ts';
+import { chooseThen, currentStep } from '../flow-step.ts';
+import type { Chosen } from '../flow-step.ts';
 
 export type FoundServers = { servers(): readonly DetectedLocalServer[]; remember(servers: readonly DetectedLocalServer[]): void };
 
@@ -55,22 +57,24 @@ export const openEdit = async (context: ModelsFlowContext): Promise<Opened> => {
 export type Cancellable<T> = { readonly value: T } | undefined;
 
 export const cancellable = async <T>(context: ModelsFlowContext, phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<Cancellable<T>> => {
-  let cancelled = false;
+  let given: AbortSignal | undefined;
   try {
     const value = await context.wait(phase, async (signal) => {
-      try {
-        return await work(signal);
-      } catch (error) {
-        cancelled = signal.aborted;
-        throw error;
-      }
+      given = signal;
+      return work(signal);
     });
     return { value };
   } catch (error) {
-    if (cancelled) return undefined;
-    throw error;
+    if (given?.aborted !== true) throw error;
+    const step = currentStep();
+    if (step === undefined) return undefined;
+    step.abandon();
+    throw step.signal.reason;
   }
 };
+
+export const chosenThen = <R>(context: ModelsFlowContext, request: PickRequest, step: (index: number) => Promise<R>): Promise<Chosen<R>> =>
+  chooseThen(context.overlays.choose, () => ({ decideOn: 'enter', escape: 'back', filter: false, ...request }), (choice) => step(choice.index));
 
 export const refusedSentence = async <T>(context: ModelsFlowContext, work: () => Promise<T>): Promise<Cancellable<T>> => {
   try {

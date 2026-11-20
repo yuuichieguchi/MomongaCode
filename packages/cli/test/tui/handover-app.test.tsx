@@ -314,7 +314,7 @@ describe('the fullscreen view across the move (16.6, red tests 21, 22 and 23)', 
 
   const scrolledUp = async () => {
     const old = await open({ conversations: [LONG] }, { reopen: { kind: 'id', id: SESSION_ID } }, SMALL);
-    await untilFrame(old.app, read);
+    await untilFrame(old.app, (shown) => read(shown) && shown.includes('context: 0%'));
     old.terminal.emit({ type: 'key', name: 'pageup', ...plain });
     old.terminal.emit({ type: 'key', name: 'pageup', ...plain });
     const frameBefore = await untilFrame(old.app, (shown) => !shown.includes('All green.'));

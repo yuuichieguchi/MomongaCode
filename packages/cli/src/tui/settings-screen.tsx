@@ -8,6 +8,7 @@ import type { PickRow } from './picker.tsx';
 import { switchWordOf } from './screen/a11y.ts';
 import { runModelsHub } from './models/hub.ts';
 import { MODELS_TITLE, settingsFileLine } from './models/texts.ts';
+import { chooseThen } from './flow-step.ts';
 import type { SlashContext } from './slash.ts';
 
 export const SETTINGS_TITLE = 'Settings';
@@ -348,7 +349,7 @@ export const writeSetting = (context: SlashContext, layer: SettingsLayer, operat
 
 export const savedOrRefused = async (context: SlashContext, write: (signal: AbortSignal) => Promise<unknown>): Promise<Refusal | undefined> => {
   try {
-    await context.background(SAVING_SETTING, write);
+    await context.background(SAVING_SETTING, (signal) => write(signal));
     return undefined;
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
@@ -421,11 +422,6 @@ const typed = (leaf: SettingLeaf, presentation: SettingPresentation, current: un
 
 const scalarValue = async (leaf: SettingLeaf, presentation: SettingPresentation, current: unknown, context: SlashContext): Promise<{ value: unknown } | undefined> => {
   if (leaf.kind === 'toggle') return { value: current !== true };
-  if (leaf.kind === 'choice') {
-    const values = leaf.schema['enum'] as readonly unknown[];
-    const choice = await context.overlays.choose({ title: presentation.label, rows: values.map((value) => ({ label: String(value) })), initial: Math.max(0, values.indexOf(current)), decideOn: 'enter', escape: 'back', filter: false });
-    return choice === undefined ? undefined : { value: values[choice.index] };
-  }
   const text = await typed(leaf, presentation, current, context);
   if (text === undefined) return undefined;
   if (leaf.kind === 'number') return { value: Number(text) };
@@ -434,8 +430,21 @@ const scalarValue = async (leaf: SettingLeaf, presentation: SettingPresentation,
 
 const editScalar = async (context: SlashContext, snapshot: SettingsSnapshot, leaf: SettingLeaf, presentation: SettingPresentation, live: LiveSetting | undefined): Promise<Outcome> => {
   const { value: current, source } = currentOf(snapshot, leaf.path);
+  if (leaf.kind === 'choice') {
+    const values = leaf.schema['enum'] as readonly unknown[];
+    const saved = await chooseThen(
+      context.overlays.choose,
+      () => ({ title: presentation.label, rows: values.map((value) => ({ label: String(value) })), initial: Math.max(0, values.indexOf(current)), decideOn: 'enter', escape: 'back', filter: false }),
+      (choice) => saveScalar(context, snapshot, leaf, presentation, live, source, { value: values[choice.index] }),
+    );
+    return saved?.value ?? LEFT;
+  }
   const chosen = await scalarValue(leaf, presentation, current, context);
   if (chosen === undefined) return LEFT;
+  return saveScalar(context, snapshot, leaf, presentation, live, source, chosen);
+};
+
+const saveScalar = async (context: SlashContext, snapshot: SettingsSnapshot, leaf: SettingLeaf, presentation: SettingPresentation, live: LiveSetting | undefined, source: SettingSource, chosen: { value: unknown }): Promise<Outcome> => {
   if (presentation.confirm !== undefined && chosen.value === presentation.confirm.value && !(await confirmed(context, presentation.confirm.question))) return LEFT;
   if (live !== undefined && chosen.value !== undefined) {
     await context.background(SAVING_SETTING, (signal) => live.store(context, wordOf(chosen.value), signal));
@@ -482,6 +491,8 @@ export const chosenAction = async <Action extends string>(context: SlashContext,
   return choice === undefined ? undefined : actions[choice.index];
 };
 
+const NOTHING_DONE = 'nothing';
+
 const removeAfterAsking = async (context: SlashContext, removal: Removal | undefined): Promise<SettingWrite | 'left'> => {
   if (removal === undefined || !(await confirmed(context, removal.question))) return 'left';
   return removal.remove(context);
@@ -495,25 +506,32 @@ export const runCollection = async (context: SlashContext, collection: Collectio
   for (;;) {
     const snapshot = await context.backend.settings();
     const entries = collection.entries(snapshot);
-    const choice = await context.overlays.choose({
-      title: collection.title,
-      lines: [...(collection.lines ?? []), ...(sentence === undefined ? [] : [sentence]), ...(sentence === undefined && changedNow && collection.applied !== undefined ? [collection.applied] : [])],
-      rows: [...entries.map((label) => ({ label })), ...(collection.add === undefined ? [] : [{ label: ADD_ROW }])],
-      initial: Math.min(at, entries.length),
-      decideOn: 'enter',
-      escape: 'back',
-      filter: false,
-      alt: { label: DELETE_LABEL, key: 'select.delete' },
-    });
-    if (choice === undefined) return changed;
-    at = choice.index;
-    const isAdd = collection.add !== undefined && choice.index === entries.length;
-    if (isAdd && choice.alt) {
+    const acted = await chooseThen(
+      context.overlays.choose,
+      () => ({
+        title: collection.title,
+        lines: [...(collection.lines ?? []), ...(sentence === undefined ? [] : [sentence]), ...(sentence === undefined && changedNow && collection.applied !== undefined ? [collection.applied] : [])],
+        rows: [...entries.map((label) => ({ label })), ...(collection.add === undefined ? [] : [{ label: ADD_ROW }])],
+        initial: Math.min(at, entries.length),
+        decideOn: 'enter',
+        escape: 'back',
+        filter: false,
+        alt: { label: DELETE_LABEL, key: 'select.delete' },
+      }),
+      async (choice): Promise<SettingWrite | 'left' | typeof NOTHING_DONE> => {
+        at = choice.index;
+        const isAdd = collection.add !== undefined && choice.index === entries.length;
+        if (isAdd && choice.alt) return NOTHING_DONE;
+        const asked = isAdd && collection.add !== undefined ? await collection.add(context, snapshot) : choice.alt ? 'remove' : await collection.act(context, snapshot, choice.index);
+        return asked === 'remove' ? removeAfterAsking(context, collection.removal(snapshot, choice.index)) : asked;
+      },
+    );
+    if (acted === undefined) return changed;
+    const result = acted.value;
+    if (result === NOTHING_DONE) {
       changedNow = false;
       continue;
     }
-    const asked = isAdd && collection.add !== undefined ? await collection.add(context, snapshot) : choice.alt ? 'remove' : await collection.act(context, snapshot, choice.index);
-    const result = asked === 'remove' ? await removeAfterAsking(context, collection.removal(snapshot, choice.index)) : asked;
     sentence = messageOf(result);
     changedNow = wroteOf(result);
     changed = changed || changedNow;
@@ -682,12 +700,19 @@ const formCollection = (leaf: SettingLeaf, presentation: SettingPresentation, fo
     },
     act: async (context, snapshot, index) => {
       const items = own(snapshot);
-      const chosen = await chosenAction(context, entryLine(presentation, items[index]), ENTRY_ACTIONS);
-      if (chosen === undefined) return 'left';
-      if (chosen === 'Remove') return 'remove';
-      const before = items[index];
-      const values = await formValues(context, presentation.label, form, isRecord(before) ? before : {});
-      return values === undefined ? 'left' : store(context, items.map((item, position) => (position === index ? { ...values, ...presentation.constants } : item)));
+      const acted = await chooseThen(
+        context.overlays.choose,
+        () => ({ title: entryLine(presentation, items[index]), rows: ENTRY_ACTIONS.map((label) => ({ label })), decideOn: 'enter', escape: 'back', filter: false }),
+        async (choice): Promise<SettingWrite | 'left' | 'remove'> => {
+          const chosen = ENTRY_ACTIONS[choice.index];
+          if (chosen === undefined) return 'left';
+          if (chosen === 'Remove') return 'remove';
+          const before = items[index];
+          const values = await formValues(context, presentation.label, form, isRecord(before) ? before : {});
+          return values === undefined ? 'left' : store(context, items.map((item, position) => (position === index ? { ...values, ...presentation.constants } : item)));
+        },
+      );
+      return acted === undefined ? 'left' : acted.value;
     },
   };
 };
@@ -700,20 +725,26 @@ const editChoices = async (context: SlashContext, leaf: SettingLeaf, presentatio
     const snapshot = await context.backend.settings();
     const stored = inLayer(snapshot, layer, leaf.path);
     const chosen = Array.isArray(stored) ? (stored as unknown[]).map(String) : (currentOf(snapshot, leaf.path).value as readonly string[] | undefined) ?? [];
-    const choice = await context.overlays.choose({
-      title: `${presentation.label} (${layer})`,
-      lines: sentenceLines(outcome),
-      rows: values.map((value) => ({ label: `[${chosen.includes(value) ? 'x' : ' '}] ${value}` })),
-      initial: at,
-      decideOn: 'enter',
-      escape: 'back',
-      filter: false,
-    });
-    if (choice === undefined) return outcome;
-    at = choice.index;
-    const value = values[choice.index] as string;
-    const next = values.filter((candidate) => (candidate === value ? !chosen.includes(candidate) : chosen.includes(candidate)));
-    outcome = outcomeOf(await settingWrite(context, layer, { kind: 'set', path: leaf.path, value: next }));
+    const acted = await chooseThen(
+      context.overlays.choose,
+      () => ({
+        title: `${presentation.label} (${layer})`,
+        lines: sentenceLines(outcome),
+        rows: values.map((value) => ({ label: `[${chosen.includes(value) ? 'x' : ' '}] ${value}` })),
+        initial: at,
+        decideOn: 'enter',
+        escape: 'back',
+        filter: false,
+      }),
+      async (choice) => {
+        at = choice.index;
+        const value = values[choice.index] as string;
+        const next = values.filter((candidate) => (candidate === value ? !chosen.includes(candidate) : chosen.includes(candidate)));
+        return outcomeOf(await settingWrite(context, layer, { kind: 'set', path: leaf.path, value: next }));
+      },
+    );
+    if (acted === undefined) return outcome;
+    outcome = acted.value;
   }
 };
 
@@ -841,26 +872,30 @@ export const runSettingsScreen = async (context: SlashContext, live: readonly Li
     const snapshot = await context.backend.settings();
     const mandate = snapshot.targets.includes('project') ? await context.backend.projectMandate() : undefined;
     const { rows, listed } = settingsRows(snapshot, context.commands, written, mandate);
-    const choice = await context.overlays.choose({ title: SETTINGS_TITLE, lines: sentence === undefined ? [] : [sentence], rows, initial: at, decideOn: 'enter', escape: 'back', filter: true });
-    const chosen = choice === undefined ? undefined : listed[choice.index];
-    if (choice === undefined || chosen === undefined || chosen.kind === 'heading') return;
-    at = choice.index;
-    if (chosen.kind === 'open') {
-      await openSettingsFile(context, snapshot);
-      continue;
-    }
-    if (chosen.kind === 'mandate') {
-      const outcome = mandate === undefined ? LEFT : await editMandate(context, mandate);
-      written = undefined;
-      sentence = outcome.kind === 'refused' ? outcome.sentence : undefined;
-      continue;
-    }
-    if (chosen.kind === 'link') {
-      await openLink(context, chosen.link);
-      continue;
-    }
-    const outcome = await editSetting(context, snapshot, chosen.leaf, chosen.presentation, live);
-    written = outcome.kind === 'written' && outcome.note === undefined ? chosen.leaf.key : undefined;
-    sentence = sentenceOf(outcome);
+    const acted = await chooseThen(
+      context.overlays.choose,
+      () => ({ title: SETTINGS_TITLE, lines: sentence === undefined ? [] : [sentence], rows, initial: at, decideOn: 'enter', escape: 'back', filter: true }),
+      async (choice): Promise<{ readonly written: string | undefined; readonly sentence: string | undefined } | undefined> => {
+        const chosen = listed[choice.index];
+        if (chosen === undefined || chosen.kind === 'heading') return undefined;
+        at = choice.index;
+        if (chosen.kind === 'open') {
+          await openSettingsFile(context, snapshot);
+          return { written, sentence };
+        }
+        if (chosen.kind === 'mandate') {
+          const outcome = mandate === undefined ? LEFT : await editMandate(context, mandate);
+          return { written: undefined, sentence: outcome.kind === 'refused' ? outcome.sentence : undefined };
+        }
+        if (chosen.kind === 'link') {
+          await openLink(context, chosen.link);
+          return { written, sentence };
+        }
+        const outcome = await editSetting(context, snapshot, chosen.leaf, chosen.presentation, live);
+        return { written: outcome.kind === 'written' && outcome.note === undefined ? chosen.leaf.key : undefined, sentence: sentenceOf(outcome) };
+      },
+    );
+    if (acted?.value === undefined) return;
+    ({ written, sentence } = acted.value);
   }
 };

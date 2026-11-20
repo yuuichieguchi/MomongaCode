@@ -31,6 +31,7 @@ export const themeCommand: SlashCommand = {
   run: async (args, context) => {
     const { display } = context;
     const store = async (theme: ThemeId): Promise<void> => {
+      context.overlays.closeScreen();
       await context.background(SAVING_THEME, (signal) => display.storeTheme(theme, signal));
       context.info(`theme: ${theme}`);
     };

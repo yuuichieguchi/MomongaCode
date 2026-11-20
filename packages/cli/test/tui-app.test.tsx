@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createSlashRegistry, BUILTIN_SLASH_COMMANDS, modeToastText } from '../src/tui/slash.ts';
 import { App } from '../src/tui/app.tsx';
 import { SESSION, fakeBackend, runView } from './fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from './ink-helpers.ts';
+import { KEYS, renderObservable, untilFrame, untilOutput, settleAtOnce } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 import { startPlan } from './fake-plan-gateway.tsx';
 import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './tui/screen-fakes.ts';
@@ -195,7 +195,7 @@ describe('App run rendering', () => {
     await untilFrame(app, 'Permission requested: Bash c1');
     app.stdin.write(KEYS.down);
     backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o3' }));
-    const next = await untilFrame(app, (shown) => shown.includes('Permission requested: Bash c2') && shown.includes('1-9 to choose'));
+    const next = await untilFrame(app, (shown) => shown.includes('Permission requested: Bash c2') && shown.includes('1. Allow once'));
     expect(next).toContain('› 1. Allow once');
     app.stdin.write('1');
     await backend.called('approve:ap2:o1');
@@ -431,7 +431,7 @@ describe('App slash commands', () => {
       { name: 'review', description: 'review the diff', run: async (args) => void seen.push(args) },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/review main', '> /review main');
     app.stdin.write(KEYS.enter);
@@ -453,7 +453,7 @@ describe('App slash commands', () => {
       },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/rows', '> /rows');
     app.stdin.write(KEYS.enter);

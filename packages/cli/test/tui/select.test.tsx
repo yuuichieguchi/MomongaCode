@@ -116,7 +116,7 @@ describe('the keys of the one selection component', () => {
     const typed = after(of, [['h'], ['i'], ['d']]);
     expect(typed).toMatchObject({ state: { filter: 'hid', index: 1 }, outcomes: [] });
     const frame = { width: 60, rows: 10, border: false };
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, typed.state, selectText(of, frame), frame, 0, false)} state={typed.state} border={false} keys={DEFAULT_KEY_TABLE} sending={false} settling={false} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, typed.state, selectText(of, frame), frame, 0, false)} state={typed.state} border={false} keys={DEFAULT_KEY_TABLE} sending={false} />);
     const shown = app.lastFrame() ?? '';
     app.unmount();
     expect(shown).toContain('beta');
@@ -225,7 +225,7 @@ describe('the list in the rows it is given', () => {
 describe('the rows a list panel draws are the rows it was given (cli-tui-23)', () => {
   const drawnRows = (of: SelectSpec, frame: { width: number; rows: number; border: boolean }): string[] => {
     const state = selectStart(of);
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, 0, false)} state={state} border={frame.border} keys={DEFAULT_KEY_TABLE} sending={false} settling={false} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, 0, false)} state={state} border={frame.border} keys={DEFAULT_KEY_TABLE} sending={false} />);
     const shown = (app.lastFrame() ?? '').split('\n');
     app.unmount();
     return shown;
@@ -285,7 +285,7 @@ describe('a row that opens a browser or starts a sign-in', () => {
 describe('the rows as drawn', () => {
   const drawn = (of: SelectSpec, state: SelectState, extra: { sending?: boolean; error?: string } = {}): string => {
     const frame = { width: 60, rows: 20, border: false };
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1, false)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} settling={false} {...(extra.error === undefined ? {} : { error: extra.error })} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1, false)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} {...(extra.error === undefined ? {} : { error: extra.error })} />);
     const shown = app.lastFrame() ?? '';
     app.unmount();
     return shown;

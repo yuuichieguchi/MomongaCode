@@ -30,6 +30,8 @@ const pickerOf = (harness: FlowHarness, connected: string[] = []) => {
     captureKey: async () => undefined,
     waiting: () => undefined,
     closeWaiting: () => undefined,
+    read: async (read) => ({ kind: 'read', value: await read() }),
+    closeScreen: () => undefined,
     delivered: () => undefined,
     loading: async (_title, read) => ({ kind: 'read', value: await read() }),
     invitationAnswered: () => undefined,

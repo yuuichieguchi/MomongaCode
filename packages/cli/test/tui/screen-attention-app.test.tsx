@@ -6,7 +6,7 @@ import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { fakeBackend, runView } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
+import { KEYS, renderObservable, untilFrame, untilOutput, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 import { pollUntil } from '@momonga/testkit';
@@ -36,7 +36,7 @@ const start = async (options: FakeBackendOptions = {}, initial: Partial<Resolved
   const backend = fakeBackend({ session: { cwd: HOSTILE_FOLDER }, ...options });
   const terminal = fakeScreenTerminal({ columns: 100, rows: 30 });
   const settings = storedSettings(initial);
-  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} tuiSettings={settings.port} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} tuiSettings={settings.port} onExit={() => undefined} />);
   return { backend, terminal, app, saved: settings.saved };
 };
 

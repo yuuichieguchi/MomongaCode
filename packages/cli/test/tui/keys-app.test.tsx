@@ -21,7 +21,7 @@ import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
 import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS as PRESS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from '../ink-helpers.ts';
+import { KEYS as PRESS, renderObservable, untilFrame, untilOutput, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './screen-fakes.ts';
 import type { FakeScreenSize } from './screen-fakes.ts';
@@ -70,7 +70,7 @@ const disk = (initial?: string) => {
 const startWith = async (options: FakeBackendOptions, extra: Partial<AppProps>, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakeBackend(options);
   const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
-  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} {...extra} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} {...extra} onExit={() => undefined} />);
   return { backend, terminal, app };
 };
 
@@ -356,7 +356,7 @@ describe('/keybindings', () => {
     terminal.emit(text('k', { ctrl: true }));
     await untilFrame(app, 'ctrl+k is used by editor.killLineEnd. Replace it?');
     app.stdin.write(PRESS.escape);
-    await untilFrame(app, 'Key bindings');
+    await untilFrame(app, (shown) => shown.includes('Key bindings') && !shown.includes('Press the new key') && !shown.includes('Replace it?'));
     expect(written).toEqual([]);
     app.stdin.write(PRESS.enter);
     await untilFrame(app, 'Press the new key for editor.yank');
