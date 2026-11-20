@@ -410,17 +410,12 @@ const flatTargetOf = (connection: ModelConnection, index: number, ownName: strin
 
 const savedEffortOf = (connection: ModelConnection, index: number): ReasoningEffort | undefined => ((connection.models ?? [])[index] as { effort?: ReasoningEffort } | undefined)?.effort;
 
-const declaredReasoningOf = (target: ResolvedModelTarget): { reasoning: ReasoningCapability } | 'none' | 'unknown' => {
-  const declared = (target.capabilities ?? {}) as { reasoning?: ReasoningCapability };
-  if (declared.reasoning !== undefined) return { reasoning: declared.reasoning };
-  return target.adapter === 'managed' || 'plan' in target ? 'unknown' : 'none';
-};
+const declaredReasoningOf = (target: ResolvedModelTarget): ReasoningCapability | undefined => ((target.capabilities ?? {}) as { reasoning?: ReasoningCapability }).reasoning;
 
 const checkSavedEffort = (target: ResolvedModelTarget, effort: ReasoningEffort, where: string): void => {
   const declared = declaredReasoningOf(target);
-  if (declared === 'unknown') return;
-  if (declared === 'none') throw new ConfigError(`${where}: effort ${effort} is set, but the model declares no capabilities.reasoning, so no effort can be sent to it`);
-  const accepted = acceptedReasoningEfforts(declared.reasoning);
+  if (declared === undefined) return;
+  const accepted = acceptedReasoningEfforts(declared);
   if (!accepted.includes(effort)) throw new ConfigError(`${where}: effort ${effort} is not a level capabilities.reasoning accepts; accepted: ${accepted.join(', ')}`);
 };
 

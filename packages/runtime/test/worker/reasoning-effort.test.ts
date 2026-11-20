@@ -67,4 +67,17 @@ describe('the reasoning effort of a session on the ordinary model step', () => {
     await env.runOnce(env.worker('worker-1'));
     expect(firstBody(env, chosen.id)).toMatchObject({ reasoning: { effort: 'low' } });
   });
+
+  it('sends a level saved for a model whose settings entry holds only its id as the listing reports its control allows: as saved, fitted, or not at all', async () => {
+    const sentFor = async (reasoning: { control: 'reasoning_effort'; lowest: 'low' } | undefined, saved: 'high' | 'minimal') => {
+      const env = await makeEnv({ capabilities: capabilitiesFor(8000, reasoning === undefined ? {} : { reasoning }) });
+      env.gateway.effortsByModel[MODEL_ID] = saved;
+      env.gateway.script.push(textStep('done'));
+      const run = await env.enqueue('think');
+      await env.runOnce(env.worker('worker-1'));
+      return (firstBody(env, run.id) as { reasoning?: unknown }).reasoning;
+    };
+    const reasoning = { control: 'reasoning_effort', lowest: 'low' } as const;
+    expect([await sentFor(reasoning, 'high'), await sentFor(reasoning, 'minimal'), await sentFor(undefined, 'high')]).toEqual([{ effort: 'high' }, { effort: 'low' }, undefined]);
+  });
 });

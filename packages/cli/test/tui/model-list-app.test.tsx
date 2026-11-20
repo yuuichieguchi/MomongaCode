@@ -859,19 +859,26 @@ const serverPlace = (): Place => {
 };
 
 describe('a server model whose reasoning control comes from the listing and whose settings entry holds only its id', () => {
-  it('enter on the level marked in use switches, shows the model line, and the saved write is refused', async () => {
-    const place = serverPlace();
-    const { app, backend } = await startPlan({ session: { model: QWEN }, models: [QWEN, THINK, PLAIN], billing: { [QWEN]: 'local', [THINK]: 'local', [PLAIN]: 'local' }, reasoning: { [THINK]: SERVER_REASONING }, settingsPlace: { home: place.home, projectDir: place.project } });
-    await openList(app);
-    app.stdin.write(`${KEYS.down}${KEYS.enter}`);
-    const picker = await untilFrame(app, pickerShown);
-    expect(listBlock(picker, 'Reasoning effort')).toBe(['Reasoning effort', '  1. none', '  2. minimal', '  3. low', '› 4. medium  in use', '  5. high', '  6. xhigh', EFFORT_HINT].join('\n'));
-    app.stdin.write(KEYS.enter);
-    await settled();
-    await settled();
-    await untilOutput(app, 'Not saved: models.connections[0].models[0]: effort medium is set, but the model declares no capabilities.reasoning, so no effort can be sent to it');
-    expect(switches(backend)).toEqual([`model:${THINK} effort:medium`]);
-    expect(notesOf(app.frames.join('\n'))).toEqual(['model: ollama-127.0.0.1-18477/think-c (effort: medium); applies from the next run']);
-    app.unmount();
-  });
+  const serverEntryOf = (place: Place): unknown => (stored(place.userFile) as SettingsDocument).models.connections[0]?.models.find((entry) => entry.id === 'think-c:latest');
+
+  for (const [moves, level] of [['', 'medium'], [KEYS.down, 'high']] as const) {
+    it(`enter on ${level}${moves === '' ? ', the level marked in use,' : ''} switches, shows the one model line, and saves only the level in the entry`, async () => {
+      const place = serverPlace();
+      const { app, backend } = await startPlan({ session: { model: QWEN }, models: [QWEN, THINK, PLAIN], billing: { [QWEN]: 'local', [THINK]: 'local', [PLAIN]: 'local' }, reasoning: { [THINK]: SERVER_REASONING }, settingsPlace: { home: place.home, projectDir: place.project } });
+      await openList(app);
+      app.stdin.write(`${KEYS.down}${KEYS.enter}`);
+      const picker = await untilFrame(app, pickerShown);
+      expect(listBlock(picker, 'Reasoning effort')).toBe(['Reasoning effort', '  1. none', '  2. minimal', '  3. low', '› 4. medium  in use', '  5. high', '  6. xhigh', EFFORT_HINT].join('\n'));
+      await settled();
+      app.stdin.write(`${moves}${KEYS.enter}`);
+      await untilOutput(app, `model: ollama-127.0.0.1-18477/think-c (effort: ${level}); applies from the next run`);
+      await pollUntil(() => serverEntryOf(place) !== undefined && (serverEntryOf(place) as { effort?: string }).effort !== undefined, { description: 'the level is written', boundMs: 5000 });
+      await settled();
+      expect(switches(backend)).toEqual([`model:${THINK} effort:${level}`]);
+      expect(notesOf(app.frames.join('\n'))).toEqual([`model: ollama-127.0.0.1-18477/think-c (effort: ${level}); applies from the next run`]);
+      expect(app.frames.join('\n')).not.toContain('Not saved');
+      expect(serverEntryOf(place)).toEqual({ id: 'think-c:latest', effort: level });
+      app.unmount();
+    });
+  }
 });
