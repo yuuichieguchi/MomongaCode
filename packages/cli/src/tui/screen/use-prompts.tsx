@@ -233,6 +233,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   };
 
   const opened = (next: Overlay): void => {
+    escapedBetween.current = false;
     pickId.current += 1;
     showOverlay(next);
   };
