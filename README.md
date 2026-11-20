@@ -42,17 +42,23 @@ In MomongaCode, memory and context are built by the runtime from recorded events
 
 Every token-saving mechanism is on by default; each has a setting only so you can turn it off, and `momonga eval` measures it against a base with it off.
 
-- **Prompt cache.** Keeps the leading prefix of requests stable across turns so provider prompt caches hit reliably. The runtime tracks which events legitimately change the prefix and surfaces a notice if a request preserves fewer leading items than expected. Turn off with `context.cachePrefix: false`.
-- **Tool deferral.** Once a folder has at least 20 runs, tools that were offered in every one of the last 20 runs without being called are replaced with a one-line catalog and a `LoadTools` tool. Full schemas are sent only when the model asks for them. Turn off with `tools.deferral: false`.
-- **Concise tool descriptions.** Sends compact tool descriptions to cut fixed per-turn overhead. Turn off with `tools.conciseDescriptions: false`.
-- **Output formatters.** Built-in formatters (`log`, `json`, `grep`, and `identicalOutput`) trim noisy tool output before it enters the model context. Disable individual formatters by listing only the ones you want in `context.outputFormatters`, or disable all with `[]`.
-- **Loop guidance.** Detects repeated identical tool calls and warns the model—showing the repeated call and prior failing commands—before halting the run. Turn off with `context.loopGuidance: false`.
-- **Observed capacity.** Tracks effective context capacity from real responses. Turn off with `context.observedCapacity: false`.
-- **Cost visibility.** Run `momonga cost --breakdown` to inspect request composition, billed tokens by category, cache hit rate, timing, and cost.
-- **Measurement and benchmarks.**
-  - `momonga eval context <dataset>` runs a golden dataset and reports context-efficiency metrics.
-  - `momonga eval compare <baseline> <candidate> --gate token` compares the defaults against a baseline run with `--settings packages/eval/policies/core-off.json` (all core optimizations off).
-  - `momonga eval yield <dataset> --model <model> --report <file>` runs paired sessions to measure whether reflection pays for itself, comparing downstream token savings against reflection cost.
+| Mechanism | Default | Turn off / configure | What it does |
+| --- | --- | --- | --- |
+| **Prompt cache** | On | `context.cachePrefix: false` | Keeps the leading request prefix stable across turns so provider prompt caches hit reliably, and reports a notice if fewer leading items are preserved than expected. |
+| **Tool deferral** | On | `tools.deferral: false` | After 20 runs in a folder, replaces tools never called in the last 20 runs with a one-line catalog and `LoadTools`; full schemas are sent only when loaded. |
+| **Concise tool descriptions** | On | `tools.conciseDescriptions: false` | Sends compact tool descriptions to reduce fixed per-turn token overhead. |
+| **Output formatters** | On | `context.outputFormatters` | Built-in formatters (`log`, `json`, `grep`, `identicalOutput`) trim noisy tool output before it enters context. List a subset to narrow, or `[]` to disable all. |
+| **Loop guidance** | On | `context.loopGuidance: false` | Detects repeated identical tool calls and warns the model—showing the repeated call and prior failing commands—before halting the run. |
+| **Observed capacity** | On | `context.observedCapacity: false` | Tracks effective context capacity from real responses. |
+
+**Cost visibility & evaluation:**
+
+| Command | Purpose |
+| --- | --- |
+| `momonga cost --breakdown` | Inspect request composition, billed tokens by category, cache hit rate, timing, and cost. |
+| `momonga eval context <dataset>` | Run a golden dataset and report context-efficiency metrics. |
+| `momonga eval compare` | Compare `<baseline>` and `<candidate>` with `--gate token` against a baseline using `--settings` with `packages/eval/policies/core-off.json` (all core optimizations off). |
+| `momonga eval yield <dataset>` | Run paired sessions (`--model <model>`, `--report <file>`) to measure whether reflection pays for itself, comparing downstream savings against reflection cost. |
 
 All of these optimizations are on by default and can be toggled individually (see [Configuration](#6-configuration)).
 
@@ -132,26 +138,39 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 
 ## 4. Features
 
+### Interface, models & tools
+
 - **Terminal UI and headless mode.** Work interactively in the terminal, or script runs with `-p`/`--print` and `--output-format text|json|stream-json`.
 - **Models.** Connect to Ollama, OpenAI chat-completions, Open Responses, Anthropic, or managed local servers that MomongaCode starts on demand (such as Apple's `fm`). Every model is referenced by the name its server reports. Configure `models.fallback` to fail over when a server cannot answer, and run `momonga gateway probe <model>` to measure and cache a model's capabilities.
 - **Built-in tools.** Includes `Bash` (plus `BashOutput` and `KillBash` for background commands), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (with a built-in `general-purpose` subagent ready out of the box), `LoadTools`, `activate_skill`, and dedicated Git/PR/issue tools (`GitStage`, `GitCommit`, `GitPush`, and more) that clearly declare what they modify before asking for approval. See [the reference](docs/reference.md) for the full list.
-- **Permission modes.** Controls how MomongaCode handles tool calls that no explicit rule matches:
-  - `manual` — asks before every state-changing or network call.
-  - `acceptEdits` — automatically allows file edits and filesystem commands inside the workspace, while still asking for everything else.
-  - `plan` — blocks all write/mutating tools and asks before non-read-only commands so the model can inspect the codebase and propose a plan safely.
-  - `auto` — delegates approval decisions to a classifier model (see **Auto mode** below).
-  - `bypassPermissions` — allows all calls not matched by a deny rule without prompting.
 
-  In every mode, deny rules still block calls, secret locations stay protected (see [Permission rules](#permission-rules)), and workspace-deletion commands still ask unless `bypassPermissions` is active. Define rules as `Tool(specifier)` in `permissions.allow`, `permissions.ask`, and `permissions.deny` ([Configuration](#6-configuration)), and manage pending requests with `momonga approve` (`allow_once`, `allow_always`, `reject_once`, or `reject_always`).
+### Safety, permissions & verification
+
+- **Permission modes.** Controls how MomongaCode handles tool calls that no explicit rule matches. In every mode, deny rules still block calls, secret locations stay protected (see [Permission rules](#permission-rules)), and workspace-deletion commands still ask unless `bypassPermissions` is active. Define rules as `Tool(specifier)` in `permissions.allow`, `permissions.ask`, and `permissions.deny` ([Configuration](#6-configuration)), and resolve pending approvals with `momonga approve` (`allow_once`, `allow_always`, `reject_once`, or `reject_always`).
+
+| Mode | Workspace edits | Commands & network | Best for |
+| --- | --- | --- | --- |
+| `manual` | Asks | Asks | Maximum control over every action |
+| `acceptEdits` | Auto-allowed | Asks | Fast iterative coding inside a repo |
+| `plan` | Blocked | Read-only only (asks otherwise) | Codebase exploration and planning |
+| `auto` | Classifier decides | Classifier decides | Hands-off work with classifier guardrails |
+| `bypassPermissions` | Auto-allowed | Auto-allowed | Isolated sandboxes only (deny rules still hold) |
+
 - **Policy verification.** Run `momonga policy verify` to have the daemon formally check your folder's rules: ensuring no allow rule bypasses a deny rule, no rule exposes secret paths, and every rule is reachable. It reports what is proved and what is not, and lists redundant, shadowed, or unreachable rules as non-blocking notes. The verdict is stored with the folder's rules and reused by subsequent runs until a rule changes.
 - **Verifiable completion.** Attach shell-command completion conditions that MomongaCode runs itself inside the sandbox after the model finishes. A run reaches `COMPLETED` only if every required condition passes on the final workspace state; otherwise failures are sent back to the model, and stopping again without changes ends as `STOPPED` (`conditions_unmet`). Inspect results with `momonga report` (see [Usage](#5-usage)).
 - **Auto mode.** Evaluate how reliably a classifier model judges approvals with `momonga auto-mode`. Auto mode can only be enabled from user settings or CLI flags—never from project settings.
 - **Sandbox.** `Bash` commands run inside Seatbelt on macOS and bubblewrap on Linux. Windows does not yet have a sandbox in this release, so `Bash` prompts before every command there.
+
+### Memory, extensions & editor integration
+
 - **Memory and rules.** Manage project/user memories with `momonga memory` and standing rules with `momonga rule` (see [Why MomongaCode?](#2-why-momongacode)).
 - **Skills and agents.** Load `SKILL.md` skills from `.momonga/skills`, `.agents/skills`, `~/.momonga/skills`, and `~/.agents/skills`. A `general-purpose` subagent is built in. Custom agents are loaded from `.momonga/agents` directories (project and user), and a custom agent named `general-purpose` replaces the built-in one. Project skills load only in trusted folders.
 - **MCP.** Connect to MCP servers over stdio or HTTP (with OAuth). Inspect and authorize servers with `momonga mcp list` and `momonga mcp login <server>`, and answer pending MCP input prompts with `momonga elicit`.
 - **Hooks.** Run shell hooks on `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, and `SessionStart`. A hook that exits with code `2` blocks the action.
 - **Editor integration.** Run `momonga acp` to expose MomongaCode over stdio using the Agent Client Protocol.
+
+### Observability, delegation & reliability
+
 - **Observability.** Inspect model and tool spans with `momonga trace`, review token spend with `momonga cost`, or export traces to an OTLP endpoint via `telemetry.otlp`.
 - **Background jobs and runs.** Monitor and control active work with `momonga status`, `momonga jobs`, `momonga attach`, and `momonga cancel`.
 - **Delegated work.** Hand off bounded tasks using named mandates via `momonga -p --mandate <name>` or `/delegate <mandate> <request>` in the interactive UI (see [Usage](#5-usage)).
@@ -181,9 +200,11 @@ momonga [options] [prompt]
 
 ### Verification and reports
 
-- `momonga reliability` summarizes run outcomes over a time period—completed, recovered, repeated work, human interventions, budget hits, duration, and cost—grouped by model, mode, agent, origin, or period (supports `--json` and `--out <file>`).
-- `momonga eval bench <folder>` executes every benchmark case in `<folder>` against one model in fresh repository copies and scores each with its oracle. Compare two reports with `momonga eval compare <baseline> <candidate> --gate reliability`.
-- `momonga permissions review` samples recorded tool calls (both auto-allowed and prompted) so you can audit and label each decision with `--label correct`, `unneeded_ask`, or `missed_ask`.
+| Command | What it does |
+| --- | --- |
+| `momonga reliability` | Summarize run outcomes over a period (completed, recovered, repeated work, human interventions, budget hits, time, and cost) grouped by model, mode, agent, origin, or period (`--json`, `--out <file>`). |
+| `momonga eval bench <folder>` | Execute every benchmark case in `<folder>` against one model in fresh repo copies and score each with its oracle. Compare reports with `momonga eval compare <baseline> <candidate> --gate reliability`. |
+| `momonga permissions review` | Sample recorded tool calls (auto-allowed and prompted) and record your audit label (`--label correct`, `unneeded_ask`, or `missed_ask`). |
 
 If a run fails its completion conditions, it stops (`STOPPED`) rather than silently escalating to a stronger model.
 
@@ -210,7 +231,14 @@ Completion conditions are fixed when a run starts and come from the union of thr
 
 ### Interactive slash commands
 
-Inside an interactive session, common slash commands include `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/rule`, `/memory`, `/auto-mode`, `/cost`, `/status`, `/jobs`, `/trace`, `/report`, `/mcp`, `/context`, `/policy`, and `/gateway`. Run `/help` for the complete list. To view or edit model settings interactively, open `/model` and choose `Model settings…`, or open `Models` inside `/config`.
+| Category | Slash commands |
+| --- | --- |
+| Session | `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/auto-mode` |
+| Memory, policy & context | `/memory`, `/rule`, `/context`, `/policy` |
+| Runs & observability | `/status`, `/jobs`, `/trace`, `/cost`, `/report` |
+| Servers & gateway | `/mcp`, `/gateway` |
+
+Run `/help` for the complete list. To view or edit model settings interactively, open `/model` and choose `Model settings…`, or open `Models` inside `/config`.
 
 ## 6. Configuration
 
@@ -337,19 +365,21 @@ PATH is updated only if the install directory is not already on it (`install.sh`
 
 MomongaCode is organized as an npm workspace under `packages/`. The `momonga` CLI is a thin client; execution, policy enforcement, and model I/O run inside background daemon processes.
 
-- **Client (`packages/cli`).** Provides the CLI, terminal UI, and ACP editor server; starts and communicates with the daemon.
-- **Supervisor (`packages/supervisor`).** Manages the lifecycle of two child processes—the gateway and the runtime. Each daemon start forms a versioned generation so updates can hand over new requests smoothly while older work drains. Settings updates are read per operation without restarting child processes.
-- **Runtime (`packages/runtime`).** Drives sessions, runs, and the model/tool loop—assembling context (`packages/context`), checking permissions (`packages/policy`), running tools (`packages/tools`) inside the sandbox (`packages/sandbox`), and persisting events (`packages/store`).
-- **Gateway (`packages/gateway`).** Centralizes all model traffic across Ollama, chat-completions, Open Responses, and Anthropic adapters, handling routing, retries, admission control, and probing. Apple's `fm` runs as a managed server started by MomongaCode and accessed via the chat-completions adapter.
-- **Store (`packages/store`).** Persists runs, events, approvals, memories, rules, and jobs in local databases under `~/.momonga/state`.
-- **Context (`packages/context`).** Builds budgeted prompts, compacts conversation history, and formats tool outputs.
-- **Memory (`packages/memory`).** Implements memory validity checks, recall ranking, deduplication, forgetting, and adaptive budget sizing.
-- **Tools & extensions (`packages/tools`, `packages/skills`, `packages/agents`, `packages/mcp`).** Implements built-in tools, loads skills and custom agents, and connects to MCP servers.
-- **Policy (`packages/policy`).** Evaluates tool calls against permission rules, parsed shell commands, and affected paths.
-- **Sandbox (`packages/sandbox`).** Isolates shell commands using Seatbelt (macOS) or bubblewrap (Linux).
-- **Configuration (`packages/config`).** Defines the settings schema and merges user, project, and local layers.
-- **Shared & observability (`packages/protocol`, `packages/foundation`, `packages/observability`, `packages/reliability`).** Shared types and wire formats, platform utilities and credential handling, traces/cost/OTLP export, and reliability reporting.
-- **Verification & evaluation (`packages/verify`, `packages/eval`, `packages/testkit`).** Formal policy verification with Z3, benchmark/eval runners and comparators, and test fakes.
+| Layer | Package | Responsibility |
+| --- | --- | --- |
+| Client | `packages/cli` | CLI, terminal UI, and ACP editor server; starts and talks to the daemon. |
+| Supervisor | `packages/supervisor` | Manages gateway and runtime lifecycles across versioned daemon generations so updates hand over without interrupting active work. Settings are read per operation with no child restart. |
+| Runtime | `packages/runtime` | Drives sessions, runs, and the model/tool loop—combining context, policy, tools, sandbox, and persistence. |
+| Gateway | `packages/gateway` | Centralizes model traffic across Ollama, chat-completions, Open Responses, and Anthropic adapters (plus routing, retries, admission, probing, and managed servers like Apple's `fm`). |
+| Store | `packages/store` | Persists runs, events, approvals, memories, rules, and jobs in databases under `~/.momonga/state`. |
+| Context | `packages/context` | Builds budgeted prompts, compacts conversation history, and formats tool outputs. |
+| Memory | `packages/memory` | Handles memory validity checks, recall ranking, deduplication, forgetting, and adaptive budget sizing. |
+| Tools & extensions | `packages/tools`, `packages/skills`, `packages/agents`, `packages/mcp` | Built-in tool execution, skill/agent loading, and MCP server connections. |
+| Policy | `packages/policy` | Evaluates tool calls against permission rules, parsed shell commands, and affected paths. |
+| Sandbox | `packages/sandbox` | Isolates shell commands using Seatbelt (macOS) or bubblewrap (Linux). |
+| Configuration | `packages/config` | Defines the settings schema and merges user, project, and local layers. |
+| Shared & observability | `packages/protocol`, `packages/foundation`, `packages/observability`, `packages/reliability` | Shared types and wire formats, platform/credential helpers, traces/cost/OTLP export, and reliability reports. |
+| Verification & eval | `packages/verify`, `packages/eval`, `packages/testkit` | Formal Z3 rule verification, benchmark/eval runners and comparators, and test fakes. |
 
 Core state machines are formally specified in TLA+ under `specs/tla/` and model-checked with TLC in the test suite.
 

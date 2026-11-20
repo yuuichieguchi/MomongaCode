@@ -3,6 +3,7 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import { readEmbeddedReleaseRepo } from './release-key.ts';
 import { INSTALLERS, INSTALLER_CONTENT_TYPE, SITE_ORIGIN, SITE_OUTPUT } from './site-target.ts';
+import { architectureDiagram, daemonHandoverDiagram, memoryLoopDiagram, verificationLoopDiagram } from './site/diagrams.ts';
 import { iconFigure, landingFigure } from './site/figure.ts';
 import { docsLayout, groupHeading, hasGroupList, page } from './site/layout.ts';
 import type { Assets, Chrome } from './site/layout.ts';
@@ -138,6 +139,21 @@ const pageDescription = (doc: DocPage, fallback: string): string => {
   return paragraph?.type === 'paragraph' ? squash(plainText(doc.spec.file, paragraph.tokens)) : fallback;
 };
 
+const insertAfterHeading = (html: string, id: string, snippet: string): string => {
+  const pattern = new RegExp(`(<h[1-6]\\b[^>]*\\sid="${id}"[^>]*>[\\s\\S]*?<\\/h[1-6]>\\s*(?:<p>[\\s\\S]*?<\\/p>)?)`);
+  if (!pattern.test(html)) throw new Error(`diagram anchor #${id} was not found`);
+  return html.replace(pattern, `$1\n${snippet}`);
+};
+
+const withDiagrams = (url: string, html: string): string => {
+  if (url === '/docs/architecture') return insertAfterHeading(html, 'architecture', architectureDiagram());
+  if (url === '/docs/why-momongacode') return insertAfterHeading(html, 'adaptive-agent-memory--context-orchestration', memoryLoopDiagram());
+  if (url === '/docs/usage') {
+    return insertAfterHeading(insertAfterHeading(html, 'updating-momongacode', daemonHandoverDiagram()), 'verifiable-completion', verificationLoopDiagram());
+  }
+  return html;
+};
+
 const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFacts, link: ReturnType<typeof linkResolver>): string => {
   const { title, lead } = front;
   const installation = sectionOf(guide, 1);
@@ -264,7 +280,7 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
       each.key,
       page(chrome, {
         title: each.title,
-        body: docsLayout(chrome, each.url, sourceText(result.html), result.toc),
+        body: docsLayout(chrome, each.url, sourceText(withDiagrams(each.url, result.html)), result.toc),
         menu: true,
         className: 'page-docs',
         meta: { canonical: `${SITE_ORIGIN}${each.url}`, ogTitle: `${each.title} — ${front.name}`, description: pageDescription(each, front.description), type: 'article' },
