@@ -32,6 +32,7 @@ export const wireCopyButtons = (
   copiedLabel: string,
   report: (error: unknown) => void,
   clock: CopyClock = DEFAULT_CLOCK,
+  onCopied?: () => void,
 ): void => {
   if (write === undefined) return;
   for (const target of targets) {
@@ -40,6 +41,7 @@ export const wireCopyButtons = (
     const showCopied = (): void => {
       target.setDone(true);
       target.setStatus(copiedLabel);
+      onCopied?.();
       if (restore !== undefined) clock.cancel(restore);
       restore = clock.schedule(() => {
         restore = undefined;

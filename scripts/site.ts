@@ -124,6 +124,15 @@ const frontOf = (guide: SourceSet): Front => {
   return { title, lead, name: squash(plainText(guide.spec.file, title.token.tokens)), description: squash(plainText(guide.spec.file, lead.token.tokens)) };
 };
 
+const heroStage = (): string =>
+  [
+    '<div class="hero-stage" data-stage>',
+    '<div class="stage-bar" aria-hidden="true"><span class="stage-dots"><span class="stage-dot stage-dot-close"></span><span class="stage-dot stage-dot-min"></span><span class="stage-dot stage-dot-max"></span></span><span class="stage-live"></span></div>',
+    `<div class="stage-body"><div class="stage-bob">${landingFigure()}</div></div>`,
+    '<div class="stage-prompt" aria-hidden="true"><span class="stage-cursor"></span></div>',
+    '</div>',
+  ].join('\n');
+
 const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFacts, link: ReturnType<typeof linkResolver>): string => {
   const { title, lead } = front;
   const installation = sectionOf(guide, 1);
@@ -138,7 +147,7 @@ const landing = (chrome: Chrome, guide: SourceSet, front: Front, facts: SiteFact
   const body = [
     '<main id="content" class="landing">',
     '<section class="hero">',
-    landingFigure(),
+    heroStage(),
     rendered([title, joined(lead)]),
     `<p class="version"><a href="${escapeHtml(release)}" data-ui>v${escapeHtml(facts.version)}</a></p>`,
     installBlock(),
