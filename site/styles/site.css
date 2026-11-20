@@ -46,6 +46,18 @@ a:hover {
   display: none !important;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .skip {
   position: absolute;
   left: 1rem;
@@ -344,16 +356,30 @@ pre {
   border-radius: 8px;
 }
 
+.code-block pre {
+  padding-right: 0;
+}
+
 pre code {
   white-space: pre;
 }
 
+.code-block pre code {
+  display: inline-block;
+  min-width: 100%;
+  padding-right: 3.25rem;
+}
+
 .copy {
   position: absolute;
-  top: 0.45rem;
-  right: 0.45rem;
-  padding: 0.15rem 0.55rem;
-  font-size: 0.8rem;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
   background: var(--page-background);
   color: var(--notice);
   border: 1px solid var(--border);
@@ -362,6 +388,24 @@ pre code {
 
 .copy:hover {
   color: var(--page-text);
+}
+
+.copy-icon {
+  display: block;
+}
+
+.copy-icon-done,
+.copy[data-copy-done] .copy-icon-idle {
+  display: none;
+}
+
+.copy[data-copy-done] .copy-icon-done {
+  display: block;
+}
+
+.copy[data-copy-done] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .table-wrap {
@@ -588,8 +632,18 @@ tr:target td {
 }
 
 .install pre {
-  padding-right: 5rem;
+  padding-right: 0;
   font-size: 0.95rem;
+}
+
+.install pre code {
+  padding-right: 3.5rem;
+}
+
+.install .copy {
+  top: 50%;
+  right: 0.65rem;
+  transform: translateY(-50%);
 }
 
 .landing-section {

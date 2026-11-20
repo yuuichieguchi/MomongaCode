@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { COPIED_SHOWN_MS, clipboardWriter, wireCopyButtons } from '../site/client/copy.ts';
+import type { CopyClock, CopyTarget } from '../site/client/copy.ts';
 import { indexLoader } from '../site/client/index-loader.ts';
 import type { FetchIndex } from '../site/client/index-loader.ts';
 import type { SearchRecord } from '../site/client/search.ts';
@@ -123,5 +125,183 @@ describe('wireAll', () => {
       ),
     ).toThrow(missing);
     expect(done).toEqual([]);
+  });
+});
+
+const fakeTarget = (snippet: string): {
+  target: CopyTarget;
+  shown: () => boolean;
+  done: () => boolean;
+  status: () => string;
+  click: () => void;
+  listeners: () => number;
+} => {
+  let visible = false;
+  let copied = false;
+  let announced = '';
+  const handlers: (() => void)[] = [];
+  return {
+    target: {
+      show: () => {
+        visible = true;
+      },
+      setDone: (value: boolean) => {
+        copied = value;
+      },
+      setStatus: (value: string) => {
+        announced = value;
+      },
+      onClick: (listener: () => void) => {
+        handlers.push(listener);
+      },
+      code: () => snippet,
+    },
+    shown: () => visible,
+    done: () => copied,
+    status: () => announced,
+    click: () => {
+      for (const listener of handlers) listener();
+    },
+    listeners: () => handlers.length,
+  };
+};
+
+const fakeClock = (): { clock: CopyClock; scheduled: { id: number; ms: number; callback: () => void }[]; cancelled: number[]; run: (id: number) => void } => {
+  let nextId = 1;
+  const scheduled: { id: number; ms: number; callback: () => void }[] = [];
+  const cancelled: number[] = [];
+  return {
+    clock: {
+      schedule: (callback, ms) => {
+        const id = nextId++;
+        scheduled.push({ id, ms, callback });
+        return id as unknown as ReturnType<typeof setTimeout>;
+      },
+      cancel: (timer) => {
+        cancelled.push(timer as unknown as number);
+      },
+    },
+    scheduled,
+    cancelled,
+    run: (id) => {
+      const entry = scheduled.find((each) => each.id === id);
+      if (entry === undefined) throw new Error(`no timer ${id}`);
+      entry.callback();
+    },
+  };
+};
+
+describe('clipboardWriter', () => {
+  it('binds writeText when the clipboard exposes it and returns undefined otherwise', async () => {
+    const written: string[] = [];
+    const owner = {
+      prefix: 'ok:',
+      writeText(this: { prefix: string }, text: string): Promise<void> {
+        written.push(`${this.prefix}${text}`);
+        return Promise.resolve();
+      },
+    };
+    const write = clipboardWriter(owner);
+    expect(write).toBeDefined();
+    await write?.('curl -fsSL https://momongacode.com/install.sh | bash');
+    expect(written).toEqual(['ok:curl -fsSL https://momongacode.com/install.sh | bash']);
+    expect(clipboardWriter(undefined)).toBeUndefined();
+    expect(clipboardWriter(null)).toBeUndefined();
+    expect(clipboardWriter({})).toBeUndefined();
+    expect(clipboardWriter({ writeText: 'not a function' })).toBeUndefined();
+  });
+});
+
+describe('wireCopyButtons', () => {
+  it('shows each button, copies its code on click, switches to the copied state for COPIED_SHOWN_MS, and restores it', async () => {
+    const first = fakeTarget('curl -fsSL https://momongacode.com/install.sh | bash');
+    const second = fakeTarget('irm https://momongacode.com/install.ps1 | iex');
+    const written: string[] = [];
+    const errors: unknown[] = [];
+    const timer = fakeClock();
+    wireCopyButtons(
+      [first.target, second.target],
+      async (text) => {
+        written.push(text);
+      },
+      'Copied',
+      (error) => errors.push(error),
+      timer.clock,
+    );
+    expect(first.shown()).toBe(true);
+    expect(second.shown()).toBe(true);
+    first.click();
+    await Promise.resolve();
+    expect(written).toEqual(['curl -fsSL https://momongacode.com/install.sh | bash']);
+    expect(first.done()).toBe(true);
+    expect(first.status()).toBe('Copied');
+    expect(second.done()).toBe(false);
+    expect(timer.scheduled.map(({ id, ms }) => ({ id, ms }))).toEqual([{ id: 1, ms: COPIED_SHOWN_MS }]);
+    timer.run(1);
+    expect(first.done()).toBe(false);
+    expect(first.status()).toBe('');
+    second.click();
+    await Promise.resolve();
+    expect(written).toEqual([
+      'curl -fsSL https://momongacode.com/install.sh | bash',
+      'irm https://momongacode.com/install.ps1 | iex',
+    ]);
+    expect(second.done()).toBe(true);
+    expect(second.status()).toBe('Copied');
+    expect(errors).toEqual([]);
+  });
+
+  it('replaces the restore timer when clicked again before COPIED_SHOWN_MS elapses', async () => {
+    const entry = fakeTarget('momonga');
+    const timer = fakeClock();
+    wireCopyButtons([entry.target], async () => {}, 'Copied', () => {}, timer.clock);
+    entry.click();
+    await Promise.resolve();
+    entry.click();
+    await Promise.resolve();
+    expect(timer.cancelled).toEqual([1]);
+    expect(timer.scheduled.map(({ id, ms }) => ({ id, ms }))).toEqual([
+      { id: 1, ms: COPIED_SHOWN_MS },
+      { id: 2, ms: COPIED_SHOWN_MS },
+    ]);
+    expect(entry.done()).toBe(true);
+    timer.run(2);
+    expect(entry.done()).toBe(false);
+    expect(entry.status()).toBe('');
+  });
+
+  it('leaves the button idle and reports the error when writing to the clipboard rejects or throws', async () => {
+    const rejected = new DOMException('denied', 'NotAllowedError');
+    const thrown = new TypeError('clipboard unavailable');
+    const first = fakeTarget('a');
+    const second = fakeTarget('b');
+    const errors: unknown[] = [];
+    const timer = fakeClock();
+    wireCopyButtons([first.target], () => Promise.reject(rejected), 'Copied', (error) => errors.push(error), timer.clock);
+    wireCopyButtons(
+      [second.target],
+      () => {
+        throw thrown;
+      },
+      'Copied',
+      (error) => errors.push(error),
+      timer.clock,
+    );
+    first.click();
+    second.click();
+    await Promise.resolve();
+    expect(first.done()).toBe(false);
+    expect(first.status()).toBe('');
+    expect(second.done()).toBe(false);
+    expect(second.status()).toBe('');
+    expect(timer.scheduled).toEqual([]);
+    expect(errors).toEqual([thrown, rejected]);
+  });
+
+  it('keeps copy buttons hidden and wires no listener when clipboard writing is unavailable', () => {
+    const entry = fakeTarget('momonga');
+    wireCopyButtons([entry.target], undefined, 'Copied', () => {});
+    expect(entry.shown()).toBe(false);
+    expect(entry.listeners()).toBe(0);
   });
 });

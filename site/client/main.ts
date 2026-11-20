@@ -1,3 +1,4 @@
+import { clipboardWriter, wireCopyButtons } from './copy.ts';
 import { indexLoader } from './index-loader.ts';
 import { searchRecords } from './search.ts';
 import type { SearchRecord } from './search.ts';
@@ -67,30 +68,33 @@ const prepareTheme = (): Commit => {
   };
 };
 
-const COPIED_SHOWN_MS = 2000;
-
 const prepareCopy = (): Commit => {
   const buttons = [...document.querySelectorAll<HTMLButtonElement>('button[data-copy]')];
   const copied = buttons.length === 0 ? '' : templateText('copied');
-  const blocks = buttons.map((button) => {
+  const targets = buttons.map((button) => {
     const block = button.parentElement;
     if (block === null) throw new Error('a copy button stands outside a code block');
-    return { button, code: required(block, 'code', HTMLElement), copy: button.textContent };
+    const code = required(block, 'code', HTMLElement);
+    const status = required(block, '[data-copy-status]', HTMLElement);
+    return {
+      show: () => {
+        button.hidden = false;
+      },
+      setDone: (done: boolean) => {
+        button.toggleAttribute('data-copy-done', done);
+      },
+      setStatus: (text: string) => {
+        status.textContent = text;
+      },
+      onClick: (listener: () => void) => {
+        button.addEventListener('click', listener);
+      },
+      code: () => code.textContent,
+    };
   });
+  const write = clipboardWriter(navigator.clipboard);
   return () => {
-    for (const { button, code, copy } of blocks) {
-      let restore: ReturnType<typeof setTimeout> | undefined;
-      const showCopied = (): void => {
-        button.textContent = copied;
-        clearTimeout(restore);
-        restore = setTimeout(() => {
-          button.textContent = copy;
-        }, COPIED_SHOWN_MS);
-      };
-      button.addEventListener('click', () => {
-        navigator.clipboard.writeText(code.textContent).then(showCopied, reportError);
-      });
-    }
+    wireCopyButtons(targets, write, copied, reportError);
   };
 };
 
