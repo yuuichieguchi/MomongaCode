@@ -648,6 +648,36 @@ describe('the website', () => {
     expect(landing).toContain(inlineText(after.join(' ')));
   });
 
+  it('gives every install panel and documentation code block an icon copy button that stays hidden until the client verifies clipboard support and centres vertically in the install frame', () => {
+    const copyButtonsOf = (html: string): RegExpMatchArray[] => [...html.matchAll(/<button\b[^>]*\bdata-copy\b[^>]*>([\s\S]*?)<\/button>/g)];
+    const landingButtons = copyButtonsOf(text('index.html'));
+    expect(landingButtons).toHaveLength(INSTALLERS.length);
+    let docButtons = 0;
+    for (const key of pageKeys()) {
+      const html = text(key);
+      const blocks = [...html.matchAll(/<div class="code-block">/g)].length;
+      const buttons = copyButtonsOf(html);
+      const statuses = [...html.matchAll(/<span class="sr-only" role="status" aria-live="polite" data-copy-status><\/span>/g)].length;
+      expect(buttons, key).toHaveLength(blocks);
+      expect(statuses, key).toBe(blocks);
+      if (key.startsWith('docs/')) docButtons += buttons.length;
+      for (const button of buttons) {
+        const opening = /<button\b[^>]*>/.exec(button[0])?.[0] ?? '';
+        expect(opening, key).toMatch(/\bhidden\b/);
+        expect(opening, key).not.toMatch(/\bdata-needs-script\b/);
+        const inner = button[1] as string;
+        expect(inner, key).toContain('class="copy-icon copy-icon-idle"');
+        expect(inner, key).toContain('class="copy-icon copy-icon-done"');
+        expect(inner, key).toContain('<span class="sr-only">Copy</span>');
+      }
+    }
+    expect(docButtons).toBeGreaterThan(0);
+    const css = cssText().replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.sr-only\s*\{[^}]*clip-path:\s*inset\(50%\)/);
+    expect(css).toMatch(/\.copy\[data-copy-done\]\s*\.copy-icon-done\s*\{[^}]*display:\s*block/);
+    expect(css).toMatch(/\.install \.copy\s*\{[^}]*top:\s*50%[^}]*transform:\s*translateY\(-50%\)/);
+  });
+
   type Card = { href: string; heading: boolean; title: string; text: string };
   const cardsOf = (html: string): Card[] =>
     [...html.matchAll(/<a\b[^>]*\sclass="card"[^>]*>([\s\S]*?)<\/a>/g)].map((match) => {

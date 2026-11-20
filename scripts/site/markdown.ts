@@ -127,8 +127,13 @@ const highlighted = (code: string, language: string): string => {
   return html + escapeHtml(code.slice(position));
 };
 
+const COPY_ICON =
+  '<svg class="copy-icon copy-icon-idle" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3.5 11H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6.5A1.5 1.5 0 0 1 11 3v.5"/></svg>';
+const COPIED_ICON =
+  '<svg class="copy-icon copy-icon-done" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8.5 6.5 12 13 4.5"/></svg>';
+
 export const codeBlock = (code: string, language: string): string =>
-  `<div class="code-block"><pre><code${language === '' ? '' : ` class="language-${escapeHtml(language)}"`}>${highlighted(code, language)}</code></pre><button type="button" class="copy" data-copy hidden data-ui>Copy</button></div>`;
+  `<div class="code-block"><pre><code${language === '' ? '' : ` class="language-${escapeHtml(language)}"`}>${highlighted(code, language)}</code></pre><button type="button" class="copy" data-copy hidden data-ui>${COPY_ICON}${COPIED_ICON}<span class="sr-only">Copy</span></button><span class="sr-only" role="status" aria-live="polite" data-copy-status></span></div>`;
 
 const inline = (state: RenderState, tokens: readonly Token[]): string =>
   tokens
