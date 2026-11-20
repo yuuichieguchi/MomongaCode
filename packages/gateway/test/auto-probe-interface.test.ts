@@ -26,7 +26,7 @@ const lantern = (dir: string) => {
   };
   const subject: ProbeSubject<LanternKey, LanternReport> = {
     target: KEY.target,
-    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
+    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling', model: 'lantern' },
     readKey: async () => KEY,
     precondition: {
       boundMs: 50,

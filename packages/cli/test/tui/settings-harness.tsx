@@ -7,7 +7,7 @@ import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from '../fake-backend.ts';
 import { freshHome } from '../fresh-home.ts';
-import { KEYS, TEST_KEY_SETTLE_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
@@ -42,7 +42,7 @@ export type Started = { app: Instance; backend: FakeBackend; place: Place };
 export const startAt = async (place: Place, options: FakeBackendOptions = {}, tuiSettings?: TuiSettingsPort, { size = { columns: 140, rows: 120 }, ...extra }: Partial<Pick<AppProps, 'externalEditor'>> & { size?: { columns: number; rows: number } } = {}): Promise<Started> => {
   const backend = fakeBackend({ settingsPlace: { home: place.home, projectDir: place.project }, ...options });
   const terminal = fakeScreenTerminal(size);
-  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} {...(tuiSettings === undefined ? {} : { tuiSettings })} {...extra} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} {...(tuiSettings === undefined ? {} : { tuiSettings })} {...extra} onExit={() => undefined} />);
   await untilFrame(app, 'mode: manual');
   return { app, backend, place };
 };

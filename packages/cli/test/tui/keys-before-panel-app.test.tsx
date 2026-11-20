@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { KEPT_DRAFT_LABEL } from '../../src/tui/screen/input-box.tsx';
-import { UNDER_HANDS_LINE, UNDER_HANDS_PAUSE_LINE } from '../../src/tui/screen/prompt-settle.ts';
+import { pollUntil } from '@momonga/testkit';
 import { KEY_SETTLE_MS } from '../../src/tui/terminal/constants.ts';
+import { throughTheLayer } from './screen-fakes.ts';
 import type { FakeBackend } from '../fake-backend.ts';
 import type { FakePlanBackend } from '../fake-plan-gateway.tsx';
 import { PLAN_TEST_TIMEOUT_MS, eventually, startPlan, untilRow } from '../fake-plan-gateway.tsx';
-import { KEYS, untilFrame } from '../ink-helpers.ts';
+import { FRAME_BOUND_MS, KEYS, untilFrame } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
-import { frame, runStarted, start } from '../tui-harness.tsx';
+import { frame, runStarted, start, startStillStarting } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 
 const ALLOW = { optionId: 'o1', name: 'Allow once', kind: 'allow_once' };
@@ -32,11 +33,27 @@ const renderedAfter = (app: Instance, backend: FakeBackend): Promise<string> => 
 
 const working = async () => {
   const clock = manualClock();
-  const started = await start({}, { now: clock.now, timers: clock.timers, keySettleMs: KEY_SETTLE_MS });
+  const started = await start({}, { now: clock.now, timers: clock.timers });
   await untilFrame(started.app, 'mode: manual');
   await runStarted(started.backend, started.app, 'write a file');
   clock.advance(KEY_SETTLE_MS);
   return { ...started, clock };
+};
+
+const withheldFrames = (app: Instance) => {
+  const original = app.stdout.write;
+  const pass = original as unknown as (frame: string, written?: () => void) => void;
+  const held: [string, (() => void) | undefined][] = [];
+  app.stdout.write = ((frame: string, written?: () => void): void => {
+    held.push([frame, written]);
+  }) as typeof app.stdout.write;
+  return {
+    held: (): readonly string[] => held.map(([frame]) => frame),
+    release: (): void => {
+      app.stdout.write = original;
+      for (const [frame, written] of held.splice(0)) pass(frame, written);
+    },
+  };
 };
 
 const withdrawn = async (app: Instance, backend: FakeBackend, draft: string): Promise<void> => {
@@ -55,8 +72,7 @@ describe('keys that arrive before an approval is on the screen never answer it',
       ask(backend);
       expect(app.lastFrame()).not.toContain(PANEL);
       app.stdin.write(keys);
-      const opened = await untilFrame(app, PANEL);
-      expect(opened).toContain(UNDER_HANDS_LINE);
+      await untilFrame(app, PANEL);
       clock.advance(KEY_SETTLE_MS * 10);
       await renderedAfter(app, backend);
       expect(approvals(backend)).toEqual([]);
@@ -73,22 +89,74 @@ describe('keys that arrive before an approval is on the screen never answer it',
     });
   }
 
-  it('a key pressed after its first frame and the settle answers it', async () => {
-    const { app, backend, clock } = await working();
+  it('a key pressed 0 ms after its first frame answers it', async () => {
+    const { app, backend } = await working();
     ask(backend);
-    app.stdin.write('1');
     await untilFrame(app, PANEL);
-    clock.advance(KEY_SETTLE_MS);
-    await renderedAfter(app, backend);
-    expect(approvals(backend)).toEqual([]);
     app.stdin.write('1');
     await backend.called('approve:ap1:o1');
+    expect(approvals(backend)).toEqual(['approve:ap1:o1']);
+    app.unmount();
+  });
+
+  it('enter pressed before it is drawn does not answer it; a key after it is drawn does', async () => {
+    const { app, backend } = await working();
+    const frames = withheldFrames(app);
+    ask(backend);
+    await pollUntil(async () => frames.held().some((held) => held.includes(PANEL)), { description: 'the approval rendered but not yet drawn', boundMs: FRAME_BOUND_MS });
+    expect(app.lastFrame()).not.toContain(PANEL);
+    app.stdin.write(KEYS.enter);
+    frames.release();
+    await untilFrame(app, PANEL);
+    await renderedAfter(app, backend);
+    expect(approvals(backend)).toEqual([]);
+    app.stdin.write('2');
+    await backend.called('approve:ap1:o3');
+    expect(approvals(backend)).toEqual(['approve:ap1:o3']);
+    app.unmount();
+  });
+
+  it('esc pressed while a run works, with the approval request arriving before the esc is handled, stops the run and does not answer the approval', async () => {
+    const { app, backend, clock, terminal } = await working();
+    const bytes = throughTheLayer(terminal, clock.timers);
+    bytes(KEYS.escape);
+    ask(backend);
+    await untilFrame(app, PANEL);
+    expect(approvals(backend)).toEqual([]);
+    clock.advance(KEY_SETTLE_MS);
+    await backend.called('cancel:run-1');
+    await renderedAfter(app, backend);
+    expect(approvals(backend)).toEqual([]);
+    expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual(['cancel:run-1']);
+    expect(app.lastFrame()).not.toContain('Press ctrl+c again to exit');
+    app.unmount();
+  });
+
+  it('esc pressed while a run works, with an elicitation arriving before the esc is handled, stops the run', async () => {
+    const { app, backend, clock, terminal } = await working();
+    const bytes = throughTheLayer(terminal, clock.timers);
+    bytes(KEYS.escape);
+    backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'mcp__calc__ask', kind: 'other', title: 'mcp__calc__ask {}', rawInput: {} }));
+    backend.emit(
+      frame({
+        type: 'tool.elicitation.requested',
+        inputId: 'in1',
+        callId: 'c1',
+        server: 'calc',
+        requests: [{ key: 'profile', mode: 'form', message: 'Tell me about you', requestedSchema: { type: 'object', properties: { name: { type: 'string', title: 'Your name' } }, required: ['name'] } }],
+      }),
+    );
+    await untilFrame(app, 'MCP server calc asks for input');
+    clock.advance(KEY_SETTLE_MS);
+    await backend.called('cancel:run-1');
+    expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual(['cancel:run-1']);
+    expect(app.lastFrame()).not.toContain('Press ctrl+c again to exit');
     app.unmount();
   });
 });
 
-describe('text typed at an approval that is on the screen is kept for the input and never lets enter answer', () => {
-  it('the case seen: the panel settled over an empty draft, then /exit and enter', async () => {
+describe('text typed at an approval that is on the screen is kept for the input, and enter after it is drawn answers it', () => {
+  it('the case seen: the panel drawn over an empty draft, then /exit and enter: the enter answers with the highlighted row and /exit stays in the draft', async () => {
     const { app, backend, clock } = await working();
     ask(backend);
     await untilFrame(app, PANEL);
@@ -98,35 +166,43 @@ describe('text typed at an approval that is on the screen is kept for the input 
       app.stdin.write(key);
       clock.advance(KEY_SETTLE_MS * 2);
     }
-    app.stdin.write(KEYS.enter);
-    clock.advance(KEY_SETTLE_MS * 2);
-    app.stdin.write(KEYS.enter);
-    const shown = await untilFrame(app, (frame) => frame.includes(UNDER_HANDS_LINE) && frame.includes(`${KEPT_DRAFT_LABEL}/exit`));
+    const shown = await untilFrame(app, (frame) => frame.includes(`${KEPT_DRAFT_LABEL}/exit`));
     expect(shown).toContain(PANEL);
-    await renderedAfter(app, backend);
     expect(approvals(backend)).toEqual([]);
-    await withdrawn(app, backend, '/exit');
+    app.stdin.write(KEYS.enter);
+    await backend.called('approve:ap1:o1');
+    expect(approvals(backend)).toEqual(['approve:ap1:o1']);
+    backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
+    await untilFrame(app, (now) => !now.includes(PANEL) && now.includes('> /exit'));
     app.unmount();
   });
 });
 
 describe('the folder trust prompt', () => {
-  it('text typed at it is kept for the input and enter does not trust the folder', async () => {
+  it('an enter queued before it is drawn does nothing; a key after it is drawn answers it', async () => {
     const clock = manualClock();
-    const { app, backend } = await start({ trust: { path: '/work/project', decision: null } }, { now: clock.now, timers: clock.timers, keySettleMs: KEY_SETTLE_MS });
+    const { app, backend } = await startStillStarting({ trust: { path: '/work/project', decision: null } }, { now: clock.now, timers: clock.timers });
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, TRUST_TITLE);
+    expect(backend.calls.filter((call) => call.startsWith('trust:'))).toEqual([]);
+    app.stdin.write('2');
+    app.stdin.write(KEYS.enter);
+    await backend.called('trust:untrusted');
+    expect(backend.calls.filter((call) => call.startsWith('trust:'))).toEqual(['trust:untrusted']);
+    app.unmount();
+  });
+
+  it('text typed at it is kept for the input, and enter after it is drawn trusts the folder with the highlighted row', async () => {
+    const clock = manualClock();
+    const { app, backend } = await start({ trust: { path: '/work/project', decision: null } }, { now: clock.now, timers: clock.timers });
     await untilFrame(app, TRUST_TITLE);
     clock.advance(KEY_SETTLE_MS);
     await untilFrame(app, 'enter to choose');
     app.stdin.write('/exit');
     clock.advance(KEY_SETTLE_MS * 2);
     app.stdin.write(KEYS.enter);
-    await untilFrame(app, UNDER_HANDS_LINE);
-    clock.advance(KEY_SETTLE_MS * 2);
-    app.stdin.write(KEYS.enter);
-    clock.advance(KEY_SETTLE_MS * 2);
-    expect(backend.calls.filter((call) => call.startsWith('trust:'))).toEqual([]);
-    app.stdin.write('2');
-    await backend.called('trust:untrusted');
+    await backend.called('trust:trusted');
+    expect(backend.calls.filter((call) => call.startsWith('trust:'))).toEqual(['trust:trusted']);
     await untilFrame(app, '> /exit');
     app.unmount();
   });
@@ -151,6 +227,19 @@ describe('a list that opens while keys are on their way', () => {
   );
 
   it(
+    'an enter pressed once the welcome list is drawn starts its sign-in at once',
+    async () => {
+      const { app, backend } = await startPlan({ models: [], accounts: [], callbackArrives: false });
+      await untilRow(app, 'Continue with ChatGPT', 'esc: go back');
+      app.stdin.write(KEYS.enter);
+      await eventually(() => signInSteps(backend).includes('sign-in/begin'), 'the sign-in begun');
+      expect(signInSteps(backend).filter((route) => route === 'sign-in/begin')).toHaveLength(1);
+      app.unmount();
+    },
+    PLAN_TEST_TIMEOUT_MS,
+  );
+
+  it(
     'a doubled enter on the welcome list starts one sign-in and opens the browser once, with no second list',
     async () => {
       const { app, backend } = await startPlan({ models: [], accounts: [], callbackArrives: false });
@@ -169,12 +258,11 @@ describe('a list that opens while keys are on their way', () => {
   );
 
   it(
-    'text typed at the welcome list keeps it open under the hands; enter after a pause still chooses its sign-in row',
+    'text typed at the welcome list stays out of it; enter then chooses its sign-in row',
     async () => {
       const { app, backend } = await startPlan({ models: [], accounts: [] });
       await untilRow(app, 'Continue with ChatGPT', 'esc: go back');
       app.stdin.write('x');
-      await untilFrame(app, UNDER_HANDS_PAUSE_LINE);
       expect(signInSteps(backend)).toEqual([]);
       app.stdin.write(KEYS.enter);
       await eventually(() => backend.openedUrls.length === 1, 'the browser');

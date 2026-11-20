@@ -6,7 +6,7 @@ import { KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { frame, runStarted } from './tui-harness.tsx';
 import { authLogout } from '../src/commands/auth.ts';
-import { account, AUTHORIZATION_URL, CHATGPT, choose, eventually, fakePlanBackend, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, rowNumberOf, startPlan, submitLine, untilRow, untilTypedAfter } from './fake-plan-gateway.tsx';
+import { account, AUTHORIZATION_URL, CHATGPT, choose, eventually, fakePlanBackend, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, rowNumberOf, startPlan, submitLine, untilRow, untilPromptDrawn, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -129,6 +129,7 @@ describe('choosing a saved account in the picker', () => {
     await submitLine(app, '/login chatgpt');
     await choose(app, 'work · w@example.com');
     await eventually(() => routesOf(backend).includes('accounts/active'), 'the pointer move');
+    await untilPromptDrawn(app);
     await untilTypedAfter(app);
     expect(bodyOf(backend, 'accounts/active')).toEqual({ profile: 'chatgpt', account: 'work' });
     expect(routesOf(backend).filter((route) => route !== 'accounts' && route !== 'accounts/active')).toEqual([]);
@@ -219,6 +220,7 @@ describe('the account picker and a new sign-in', () => {
     await ready(app);
     await submitLine(app, '/login chatgpt');
     await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
+    await untilPromptDrawn(app);
     await untilTypedAfter(app);
     expect(app.frames.join('\n')).not.toContain("You're using your ChatGPT plan");
     app.unmount();
@@ -241,6 +243,7 @@ describe('the account picker and a new sign-in', () => {
     await backend.called('openSession');
     expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });
     await eventually(() => backend.started.length > 0, 'the initial prompt');
+    await untilPromptDrawn(app);
     await untilTypedAfter(app);
     expect(backend.started.map((run) => run.text)).toEqual(['start here']);
     app.unmount();
@@ -278,7 +281,7 @@ describe('an account that becomes the one in use', () => {
     expect(before).not.toBe('');
     await submitLine(app, '/login chatgpt');
     await choose(app, 'chatgpt · ada@example.com');
-    await untilFrame(app, 'Choose a model of chatgpt');
+    await untilRow(app, 'gpt-5.1', 'Choose a model of chatgpt');
     app.stdin.write(KEYS.escape);
     const shown = flat(await untilOutput(app, 'still runs on'));
     expect(shown).toContain(`chatgpt is signed in and selected, but this session still runs on ${before}; /model lists the models of chatgpt and switches to one.`);
@@ -295,6 +298,7 @@ describe('an account that becomes the one in use', () => {
     const shown = flat(await untilOutput(app, 'still runs on'));
     expect(shown).toContain('ChatGPT account in use: chatgpt');
     expect(shown).toContain(`chatgpt is signed in and selected, but this session still runs on ${before}; /model lists the models of chatgpt and switches to one.`);
+    await untilPromptDrawn(app);
     await untilTypedAfter(app);
     expect(app.frames.join('\n')).not.toContain('Choose a model of chatgpt');
     expect(routesOf(backend)).not.toContain('accounts/chatgpt/models');
@@ -424,7 +428,7 @@ describe('the model picker', () => {
     app.unmount();
   });
 
-  it('lists a catalog model that is not yet a target, tagged with the profile picker label, and choosing it creates the target', async () => {
+  it('lists a catalog model that is not yet a target by its slug and the billing of its profile, and choosing it creates the target', async () => {
     const { app, backend } = await startPlan({
       accounts: [account()],
       catalogs: {
@@ -441,8 +445,9 @@ describe('the model picker', () => {
     await submitLine(app, '/model');
     const picker = await untilFrame(app, 'gpt-5.1');
     const row = picker.split('\n').find((line) => line.includes('gpt-5.1')) ?? '';
-    expect(row).toContain('OpenAI (ChatGPT subscription)');
-    expect(picker).toContain('no context window reported');
+    expect(row).toMatch(/gpt-5\.1 +plan/);
+    expect(row).not.toContain('OpenAI (ChatGPT subscription)');
+    expect(picker).toMatch(/gpt-odd +plan +no context window reported/);
     await choose(app, 'gpt-5.1');
     await eventually(() => routesOf(backend).includes('accounts/chatgpt/targets'), 'the target creation');
     expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });

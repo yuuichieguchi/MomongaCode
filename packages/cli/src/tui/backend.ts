@@ -81,7 +81,7 @@ export type TuiBackend = {
   projectMandate(): Promise<ProjectMandateState>;
   writeProjectMandate(document: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
   writeProjectMcpServer(name: string, server: Readonly<Record<string, unknown>>, signal: AbortSignal): Promise<void>;
-  openSession(model?: string, permissionMode?: PermissionMode): Promise<SessionView>;
+  openSession(model?: string, permissionMode?: PermissionMode, effort?: ReasoningEffort): Promise<SessionView>;
   resumeSession(id: string): Promise<SessionView>;
   continueSession(): Promise<SessionView>;
   sessions(): Promise<readonly SessionSummary[]>;
@@ -119,6 +119,7 @@ export type TuiBackend = {
   ruleHistory(id: string): Promise<GoverningFactView[]>;
   ignoreMarker(name: string): Promise<void>;
   model(): Promise<MomongaModelEntry>;
+  modelOf(model: string): Promise<MomongaModelEntry>;
   startupNotices(): Promise<readonly string[]>;
   readImage(file: string): Promise<ImageAttachment>;
   loadHistory(): Promise<readonly string[]>;
@@ -277,8 +278,9 @@ export const createTuiBackend = (
       const shown = await runtime().trust(ports.cwd);
       await runtime().clearTrust(shown.inheritedFrom ?? shown.path);
     },
-    openSession: async (model, permissionMode) => {
+    openSession: async (model, permissionMode, effort) => {
       const chosen = model ?? options.model;
+      const chosenEffort = effort ?? options.effort;
       const chosenMode = permissionMode ?? options.permissionMode;
       const created = await runtime().createSession({
         cwd: ports.cwd,
@@ -288,7 +290,7 @@ export const createTuiBackend = (
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
         ...(options.sandboxNetwork === undefined ? {} : { sandboxNetwork: options.sandboxNetwork }),
         ...(chosen === undefined ? {} : { model: chosen }),
-        ...(options.effort === undefined ? {} : { effort: options.effort }),
+        ...(chosenEffort === undefined ? {} : { effort: chosenEffort }),
       });
       return adopt(created.session);
     },
@@ -420,6 +422,7 @@ export const createTuiBackend = (
     ruleHistory: (id) => runtime().ruleHistory(id),
     ignoreMarker: (name) => runtime().ignoreMarker(name),
     model: () => withGateway((gateway) => gateway.modelOf(current().model)),
+    modelOf: (model) => withGateway((gateway) => gateway.modelOf(model)),
     startupNotices: async () => [...stopNotices.splice(0), ...(await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat()],
     readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),

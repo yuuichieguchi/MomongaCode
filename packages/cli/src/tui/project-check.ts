@@ -1,5 +1,6 @@
 import type { AcceptedCheck, DeclaredCheck } from '@momonga/config';
 import type { OverlayPorts } from './picker.tsx';
+import { chooseThen } from './flow-step.ts';
 
 export const TYPE_CHECK_ROW = 'Type another command';
 export const DECLINE_CHECK_ROW = 'Decline: runs in this folder stay unverified';
@@ -28,9 +29,14 @@ export const askProjectCheck = async (
   { choose, promptText }: Pick<OverlayPorts, 'choose' | 'promptText'>,
 ): Promise<AcceptedCheck | undefined> => {
   const rows = [...checks.map(useCheckRow), TYPE_CHECK_ROW, DECLINE_CHECK_ROW];
-  const choice = await choose({ title: QUESTION_TITLE, lines: QUESTION_LINES, rows: rows.map((label) => ({ label })), initial: 0, decideOn: 'enter', escape: 'back', filter: false });
-  if (choice === undefined) return undefined;
-  const chosen = checks[choice.index];
-  if (chosen !== undefined) return { commands: [chosen.command] };
-  return rows[choice.index] === TYPE_CHECK_ROW ? typedCheck(checks, promptText) : { declined: true };
+  const answered = await chooseThen(
+    choose,
+    () => ({ title: QUESTION_TITLE, lines: QUESTION_LINES, rows: rows.map((label) => ({ label })), initial: 0, decideOn: 'enter', escape: 'back', filter: false }),
+    async (choice): Promise<AcceptedCheck | undefined> => {
+      const chosen = checks[choice.index];
+      if (chosen !== undefined) return { commands: [chosen.command] };
+      return rows[choice.index] === TYPE_CHECK_ROW ? typedCheck(checks, promptText) : { declined: true };
+    },
+  );
+  return answered?.value;
 };

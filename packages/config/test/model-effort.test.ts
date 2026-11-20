@@ -32,8 +32,9 @@ describe('the effort a model entry saves for itself', () => {
     expect(message).toMatch(/models\.connections\[0\]\.models\[0\]: effort minimal is not a level capabilities\.reasoning accepts; accepted: low, medium, high/);
   });
 
-  it('refuses an effort on a model that declares no reasoning control', async () => {
-    const { message } = await refusalOf({ models: { connections: [connectionWith([{ id: 'a', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 }, effort: 'high' }])] } });
-    expect(message).toMatch(/models\.connections\[0\]\.models\[0\]: effort high is set, but the model declares no capabilities\.reasoning, so no effort can be sent to it/);
+  it('keeps the level of an entry whose written capabilities say nothing of reasoning, whatever its adapter', async () => {
+    const declared = await loadFile({ models: { connections: [connectionWith([{ id: 'a', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 }, effort: 'high' }])] } });
+    const idOnly = await loadFile({ models: { connections: [{ adapter: 'ollama', provider: 'ollama-127.0.0.1-18477', baseUrl: 'http://127.0.0.1:18477', models: [{ id: 'think-c:latest', effort: 'high' }] }] } });
+    expect([declared, idOnly].map(({ models }) => models.efforts.get(models.views[0]?.canon ?? ''))).toEqual(['high', 'high']);
   });
 });

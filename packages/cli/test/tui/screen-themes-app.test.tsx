@@ -9,7 +9,7 @@ import type { ColourHost } from '../../src/tui/screen/theme.ts';
 import type { TerminalState } from '../../src/tui/terminal/layer.ts';
 import { fakeBackend, runView } from '../fake-backend.ts';
 import { freshHome } from '../fresh-home.ts';
-import { KEYS, TEST_KEY_SETTLE_MS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS, renderObservable, settleAtOnce, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 import { testKernelLock } from '@momonga/testkit';
@@ -64,7 +64,7 @@ const startIn = async (home: string, colour: ColourHost = TRUECOLOR, backgroundC
     }
     return shown as TerminalState;
   };
-  const app = renderObservable(<App backend={backend} terminal={{ ...terminal, state }} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} colour={colour} tuiSettings={await portOf(home)} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={{ ...terminal, state }} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} colour={colour} tuiSettings={await portOf(home)} onExit={() => undefined} />);
   await untilFrame(app, 'mode: manual');
   app.stdin.write('hello there');
   await untilFrame(app, '> hello there');

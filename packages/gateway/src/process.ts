@@ -720,7 +720,7 @@ const createProbedOllamaAdapter = async (
     readRecord,
     readReported: () => readOllamaReported(upstream, probes.ports, target.model),
     startProbe: async (ask, contextWindow) => {
-      if (isMeteredTarget(target) && contextWindow === undefined) throw await unknownWindowRefusal(listed, displayOf(), endpointLockKeyOf(key).target);
+      if (isMeteredTarget(target) && contextWindow === undefined) throw await unknownWindowRefusal(listed, displayOf());
       return probes.autoProbe.ensure({ ...subjectFor(isMeteredTarget(target) && contextWindow !== undefined ? { displayOf, declaredContextWindow: contextWindow } : undefined), unknown: ask }, endpointLockKeyOf(key));
     },
     readDigest: (signal) => readOllamaDigest(upstream, probes.ports, target.model, signal),

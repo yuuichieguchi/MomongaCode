@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { KEYS, TUI_TEST_TIMEOUT_MS } from '../ink-helpers.ts';
-import { freshPlace } from './settings-harness.tsx';
+import { freshPlace, writeSettings } from './settings-harness.tsx';
 import { startOnTerminal } from './terminal-app.tsx';
 import type { TerminalApp } from './terminal-app.tsx';
 
@@ -15,6 +15,7 @@ const isHeader = (line: string): boolean => line.startsWith('Subagent ');
 
 const opened = async (): Promise<TerminalApp> => {
   const place = freshPlace();
+  writeSettings(place.userFile, { models: { connections: [{ adapter: 'chat-completions', provider: 'chatgpt', baseUrl: 'http://127.0.0.1:9/v1', models: [{ id: 'gpt-6-luna', capabilities: { contextWindow: 8192, maxOutputTokens: 1024, reasoning: REASONING[PLAN] } }] }] } });
   return startOnTerminal({ columns: 100, rows: 30 }, { settingsPlace: { home: place.home, projectDir: place.project }, session: { model: LOCAL }, models: [LOCAL, PLAN], reasoning: REASONING });
 };
 
@@ -37,11 +38,15 @@ describe('a model is shown by one name on every surface of a session', () => {
   it('the switch line, the footer and the header of a subagent name each model by its one name', async () => {
     const app = await opened();
     await app.type('/model\r', holds('gpt-6-luna'), 'the model list is open');
-    const switched = await app.type('2', holds('model: gpt-6-luna'), 'the switch line is written');
+    await app.type('2', holds('Reasoning effort'), 'the effort picker opens');
+    const switched = await app.type(KEYS.enter, holds('model: gpt-6-luna'), 'the switch line is written');
     expect(switched.join('\n')).not.toContain(PLAN);
-    await app.type('go', holds('go'), 'the prompt is typed');
-    const sent = await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('tokens:') && line.includes('gpt-6-luna · ')), 'the footer names the model');
-    expect(sent.find((line) => line.includes('tokens:'))).not.toContain(PLAN);
+    expect(switched.join('\n')).not.toContain('is not configured');
+    await app.type('go', holds('> go'), 'the prompt is typed');
+    const isFooter = (line: string): boolean => line.includes('tokens:') && line.includes('gpt-6-luna (effort: medium)');
+    const sent = await app.type(KEYS.enter, (lines) => lines.some(isFooter), 'the footer names the model');
+    expect(sent.find(isFooter)).not.toContain(PLAN);
+    expect(sent.join('\n')).not.toContain('is not configured');
     await app.backend.called('openSession');
     app.backend.following().onChildStarted('general-purpose', 'child-1', 0, LOCAL, undefined);
     const listed = await app.type('', holds('general-purpose · starting'), 'the child is listed');

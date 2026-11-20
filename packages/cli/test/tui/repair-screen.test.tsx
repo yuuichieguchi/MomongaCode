@@ -19,8 +19,43 @@ describe('the repair screen', () => {
     expect(lastFrame()).toContain('invalid settings at /tui/screen');
     expect(lastFrame()).toContain('Open the settings file');
     expect(lastFrame()).toContain('No session starts until the file loads.');
+    input.framed();
     input.push([named('enter')]);
     expect(asked).toEqual(['open']);
+    input.push([named('escape')]);
+    expect(asked).toEqual(['open', 'quit']);
+    unmount();
+  });
+
+  it('ignores keys pressed before the first frame is drawn', () => {
+    const input = createScreenInput();
+    const asked: string[] = [];
+    const { unmount } = render(
+      <RepairScreen broken={{ kind: 'broken', file: '/h/.momonga/settings.json', message: 'broken' }} input={input} keys={DEFAULT_KEY_TABLE} onOpen={() => asked.push('open')} onQuit={() => asked.push('quit')} />,
+    );
+    input.push([named('enter')]);
+    input.push([named('escape')]);
+    expect(asked).toEqual([]);
+    input.framed();
+    input.push([named('enter')]);
+    expect(asked).toEqual(['open']);
+    unmount();
+  });
+
+  it('catches a synchronous first-render frame notification that fires before useEffect', () => {
+    const input = createScreenInput();
+    const asked: string[] = [];
+    const NotifyFrame = () => {
+      input.framed();
+      return null;
+    };
+    const { unmount } = render(
+      <>
+        <RepairScreen broken={{ kind: 'broken', file: '/h/.momonga/settings.json', message: 'broken' }} input={input} keys={DEFAULT_KEY_TABLE} onOpen={() => asked.push('open')} onQuit={() => asked.push('quit')} />
+        <NotifyFrame />
+      </>,
+    );
+    input.push([named('enter')]);
     input.push([named('escape')]);
     expect(asked).toEqual(['open', 'quit']);
     unmount();
@@ -56,6 +91,7 @@ describe('the repair flow', () => {
         failed={(error) => ended.push(String(error))}
       />,
     );
+    input.framed();
     input.push([named('enter')]);
     await pollUntil(() => ended.length > 0, { description: 'the flow ends', boundMs: 2000 });
     expect(reads).toBe(1);

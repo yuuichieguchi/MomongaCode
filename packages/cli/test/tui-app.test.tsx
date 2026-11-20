@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createSlashRegistry, BUILTIN_SLASH_COMMANDS, modeToastText } from '../src/tui/slash.ts';
 import { App } from '../src/tui/app.tsx';
 import { SESSION, fakeBackend, runView } from './fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput, TEST_KEY_SETTLE_MS, settleAtOnce } from './ink-helpers.ts';
+import { KEYS, renderObservable, untilFrame, untilOutput, settleAtOnce } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 import { startPlan } from './fake-plan-gateway.tsx';
 import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './tui/screen-fakes.ts';
@@ -77,7 +77,7 @@ describe('App run rendering', () => {
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
     backend.finish(runView());
     await untilFrame(app, IDLE);
-    expect(app.lastFrame()).toMatch(/mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20% +ctrl\+j: new line$/m);
+    expect(app.lastFrame()).toMatch(/mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20% · scripted-model +ctrl\+j: new line$/m);
     app.unmount();
   });
 
@@ -195,7 +195,7 @@ describe('App run rendering', () => {
     await untilFrame(app, 'Permission requested: Bash c1');
     app.stdin.write(KEYS.down);
     backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o3' }));
-    const next = await untilFrame(app, (shown) => shown.includes('Permission requested: Bash c2') && shown.includes('1-9 to choose'));
+    const next = await untilFrame(app, (shown) => shown.includes('Permission requested: Bash c2') && shown.includes('1. Allow once'));
     expect(next).toContain('› 1. Allow once');
     app.stdin.write('1');
     await backend.called('approve:ap2:o1');
@@ -341,9 +341,9 @@ describe('App slash commands', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
-    const picker = await untilFrame(app, (shown) => shown.includes('qwen3.8:27b  ·  metered') && shown.includes('esc: go back'));
-    expect(picker).toContain('scripted-model  ·  metered  ·  current');
-    expect(picker).not.toContain('qwen3.8:27b  ·  metered  ·  current');
+    const picker = await untilFrame(app, (shown) => shown.includes('qwen3.8:27b ') && shown.includes('esc: go back'));
+    expect(picker).toContain('scripted-model (current)  metered');
+    expect(picker).not.toContain('qwen3.8:27b (current)');
     expect(picker).toContain('tab: also use at every start');
     app.unmount();
   });
@@ -353,7 +353,7 @@ describe('App slash commands', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/model qwen3.8:27b', '> /model qwen3.8:27b');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: ollama/qwen3.8:27b · effort: not available; applies from the next run');
+    await untilOutput(app, 'model: ollama/qwen3.8:27b (effort: not available); applies from the next run');
     expect(backend.calls).toContain(`model:${QWEN}`);
     await runStarted(backend, app, 'what is here');
     backend.emit(frame({ type: 'model.responded', attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1500, output_tokens: 100, total_tokens: 1600 } } }));
@@ -378,7 +378,7 @@ describe('App slash commands', () => {
     await runStarted(backend, app, 'long task');
     await type(app, '/model qwen3.8:27b', '> /model qwen3.8:27b');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: ollama/qwen3.8:27b · effort: not available; the run that is working keeps scripted-model, the next run uses ollama/qwen3.8:27b');
+    await untilOutput(app, 'model: ollama/qwen3.8:27b (effort: not available); the run that is working keeps scripted-model, the next run uses ollama/qwen3.8:27b');
     app.unmount();
   });
 
@@ -431,7 +431,7 @@ describe('App slash commands', () => {
       { name: 'review', description: 'review the diff', run: async (args) => void seen.push(args) },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/review main', '> /review main');
     app.stdin.write(KEYS.enter);
@@ -453,7 +453,7 @@ describe('App slash commands', () => {
       },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal(WIDE_TEST_SCREEN)} now={Date.now} timers={settleAtOnce(systemTiming)} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/rows', '> /rows');
     app.stdin.write(KEYS.enter);

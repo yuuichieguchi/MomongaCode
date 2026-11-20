@@ -129,6 +129,14 @@ describe('the footer row', () => {
     expect(footerRow({ ...facts, tokens: 1600, contextPercent: 20, newline: 'shift+enter: new line' }, 80)).toMatch(/^mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20% +shift\+enter: new line$/);
   });
 
+  it('keeps every segment that fits after a lower one was removed: the newline hint stays when a long model name does not fit', () => {
+    const name = 'ollama-127.0.0.1-18477/plain-b';
+    expect([footerRow({ ...facts, model: { name } }, 80), footerRow({ ...facts, model: { name, effort: 'effort: medium' } }, 80)]).toEqual([
+      `mode: manual (shift+tab) · tokens: 0 · context: 0%${' '.repeat(80 - 50 - 16)}${NEWLINE}`,
+      'mode: manual (shift+tab) · tokens: 0 · context: 0% · effort: medium',
+    ]);
+  });
+
   it('says the context is unknown while the window is, never a guessed share', () => {
     expect(footerRow({ ...facts, contextPercent: undefined }, 80)).toContain('context: unknown');
   });
@@ -141,7 +149,7 @@ describe('the footer row', () => {
 
   it('names the model and the effort it runs at after the context share, before the image and newline hints, and keeps the effort alone before it drops the segment', () => {
     const withModel = { ...facts, newline: undefined, model: { name: 'qwen3.8:27b', effort: 'effort: high' } };
-    const full = 'mode: manual (shift+tab) · tokens: 0 · context: 0% · qwen3.8:27b · effort: high';
+    const full = 'mode: manual (shift+tab) · tokens: 0 · context: 0% · qwen3.8:27b (effort: high)';
     expect(footerRow(withModel, 80)).toBe(full);
     expect(footerRow(withModel, full.length - 1)).toBe('mode: manual (shift+tab) · tokens: 0 · context: 0% · effort: high');
     expect(footerRow(withModel, 'mode: manual (shift+tab) · tokens: 0 · context: 0%'.length)).toBe('mode: manual (shift+tab) · tokens: 0 · context: 0%');
@@ -152,7 +160,7 @@ describe('the footer row', () => {
     const full = 'mode: manual (shift+tab) · tokens: 0 · context: 0% · image input: paste a file path';
     expect(footerRow(wide, full.length + 1 + NEWLINE.length)).toBe(`${full} ${NEWLINE}`);
     expect(footerRow(wide, full.length + NEWLINE.length)).toBe(full);
-    expect(footerRow(wide, full.length - 1)).toBe('mode: manual (shift+tab) · tokens: 0 · context: 0%');
+    expect(footerRow(wide, full.length - 1)).toBe(`mode: manual (shift+tab) · tokens: 0 · context: 0%${' '.repeat(full.length - 1 - 50 - NEWLINE.length)}${NEWLINE}`);
     expect(footerRow(wide, 49)).toBe('mode: manual (shift+tab) · tokens: 0');
     expect(footerRow(wide, 30)).toBe('mode: manual (shift+tab)');
     expect(footerRow(wide, 23)).toBe('mode: manual');

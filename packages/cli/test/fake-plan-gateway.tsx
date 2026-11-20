@@ -1,4 +1,4 @@
-import { TEST_KEY_SETTLE_MS, settleAtOnce } from './ink-helpers.ts';
+import { settleAtOnce } from './ink-helpers.ts';
 import { PLAN_PROFILES } from '@momonga/config';
 import type {
   DetectedLocalServer,
@@ -96,6 +96,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   const listedModels = base.models;
   const listing = base.modelList;
   const sessionModel = base.model;
+  const listedModelOf = base.modelOf;
   const planCalls: PlanCall[] = [];
   const dismissals: string[] = [];
   const listenerPaths: string[] = [];
@@ -210,6 +211,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       return { ...listed, data: listed.data.map(withBilling) };
     },
     model: async () => withBilling(await sessionModel()),
+    modelOf: async (model: string) => withBilling(await listedModelOf(model)),
     health: async (): Promise<GatewayHealth> => ({
       ok: true,
       models: Object.fromEntries(members().map((member) => [member, options.health?.[member] ?? { ok: true, breaker: 'closed' as const }])),
@@ -231,9 +233,9 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   return backend;
 };
 
-export type PlanTiming = Pick<AppProps, 'now' | 'timers' | 'keySettleMs'>;
+export type PlanTiming = Pick<AppProps, 'now' | 'timers'>;
 
-const AT_ONCE: PlanTiming = { now: Date.now, timers: settleAtOnce(systemTiming), keySettleMs: TEST_KEY_SETTLE_MS };
+const AT_ONCE: PlanTiming = { now: Date.now, timers: settleAtOnce(systemTiming) };
 
 export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill' | 'startup'> = {}, screen: Partial<FakeScreenSize> = {}, timing: PlanTiming = AT_ONCE) => {
   const backend = fakePlanBackend(options);
@@ -269,6 +271,10 @@ export const submitLine = async (app: Instance, text: string): Promise<void> => 
 export const eventually = (holds: () => boolean, what: string): Promise<void> => pollUntil(holds, { description: what, boundMs: FRAME_BOUND_MS });
 
 export const TYPED_AFTER = 'typed-after';
+
+export const promptDrawn = (frame: string): boolean => frame.includes('mode: ') && frame.split('\n').some((row) => /^│ >( |$)/.test(row));
+
+export const untilPromptDrawn = (app: Instance): Promise<string> => untilFrame(app, promptDrawn);
 
 export const untilTypedAfter = async (app: Instance): Promise<string> => {
   app.stdin.write(TYPED_AFTER);

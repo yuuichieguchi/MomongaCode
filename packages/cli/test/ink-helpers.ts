@@ -4,10 +4,11 @@ import { render } from 'ink-testing-library';
 import { systemTiming } from '@momonga/foundation';
 import type { TerminalEvent } from '../src/tui/terminal/events.ts';
 import { createInputParser } from '../src/tui/terminal/parser.ts';
+import { KEY_SETTLE_MS } from '../src/tui/terminal/constants.ts';
 
 export type Instance = ReturnType<typeof render>;
 
-type TypedInto = { emit(event: TerminalEvent): boolean; framed?: () => void };
+type TypedInto = { emit(event: TerminalEvent): boolean; push?: (events: readonly TerminalEvent[]) => void; arrived?: () => void; framed?: () => void };
 
 const LONE_ESCAPE = '\u001b';
 const ESCAPE_KEY = '\u001b[27u';
@@ -25,8 +26,21 @@ export const renderObservable = (element: ReactElement): Instance => {
   const terminal = terminalOf(element);
   if (terminal !== undefined) {
     const parser = createInputParser();
+    const deliver = (events: readonly TerminalEvent[]): void => {
+      if (terminal.push === undefined) for (const event of events) terminal.emit(event);
+      else terminal.push(events);
+    };
+    let settle: unknown;
     instance.stdin.write = (text: string): void => {
-      for (const event of parser.push(Buffer.from(text === LONE_ESCAPE ? ESCAPE_KEY : text, 'utf8'))) terminal.emit(event);
+      terminal.arrived?.();
+      if (settle !== undefined) systemTiming.clearTimeout(settle);
+      settle = undefined;
+      deliver(parser.push(Buffer.from(text === LONE_ESCAPE ? ESCAPE_KEY : text, 'utf8')));
+      if (parser.holdsOpen())
+        settle = systemTiming.setTimeout(() => {
+          settle = undefined;
+          deliver(parser.settle());
+        }, KEY_SETTLE_MS);
     };
   }
   const record = instance.stdout.write;
@@ -39,6 +53,7 @@ export const renderObservable = (element: ReactElement): Instance => {
     written?.();
   };
   instance.stdout.write = write;
+  if ((instance.lastFrame() ?? '') !== '') terminal?.framed?.();
   return instance;
 };
 

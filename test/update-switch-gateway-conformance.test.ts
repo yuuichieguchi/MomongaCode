@@ -75,7 +75,7 @@ describe('UpdateSwitch.tla and the gateway agree', () => {
     const key = { target: 'switch', lamp: 'retiring-gateway' };
     const subject: ProbeSubject<typeof key, { ok: true }> = {
       target: 'switch',
-      unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
+      unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling', model: 'switch' },
       readKey: async () => key,
       precondition: { boundMs: 50, check: async () => ({ kind: 'met' }) },
       measure: () => {

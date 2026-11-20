@@ -1,7 +1,8 @@
+import { pollUntil } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
-import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, choose, eventually, startPlan, submitLine, untilTypedAfter } from './fake-plan-gateway.tsx';
+import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, choose, eventually, startPlan, submitLine, untilPromptDrawn, untilTypedAfter } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 import { GatewayAnswerError } from '../src/client/gateway-client.ts';
 
@@ -126,13 +127,14 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     await untilFrame(app, '> half-typed');
     app.stdin.write(key);
     await untilOutput(app, 'sign-in cancelled');
+    await untilPromptDrawn(app);
     await untilTypedAfter(app);
     expect(bodiesOf(backend, 'sign-in/cancel')).toEqual([{ attemptId: 'attempt-1' }]);
     expect(routesOf(backend)).not.toContain('sign-in/complete');
     app.unmount();
   });
 
-  it('after a valid paste shows Finishing the sign-in… and sends no cancel on esc', async () => {
+  it('after a valid paste shows Finishing the sign-in…, and esc then cancels the sign-in: it is not kept', async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -143,15 +145,16 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     expect(frame).toContain('please wait');
     expect(frame).not.toContain(PASTE_LABEL);
     app.stdin.write(KEYS.escape);
-    app.stdin.write(KEYS.ctrlC);
-    expect(routesOf(backend)).not.toContain('sign-in/cancel');
+    await untilFrame(app, (shown) => !shown.includes('Finishing the sign-in…'));
     release();
-    await untilFrame(app, 'Signed in as chatgpt');
-    expect(routesOf(backend)).not.toContain('sign-in/cancel');
+    await held;
+    await Promise.resolve();
+    await pollUntil(async () => (await backend.plan.accounts()).accounts.every((listed) => listed.state !== 'active'), { description: 'the sign-in not kept', boundMs: 10_000 });
+    expect(app.frames.some((shown) => shown.includes('Signed in as chatgpt'))).toBe(false);
     app.unmount();
   });
 
-  it('a loopback callback marks the screen delivered and Esc and Ctrl-C then send no cancel', async () => {
+  it('a loopback callback marks the screen delivered, and esc then cancels the sign-in: the screen closes and it is not kept', async () => {
     const held = new Promise<void>(() => undefined);
     const { app, backend } = await startPlan({ accounts: [], callbackArrives: true, completeHeld: held });
     await untilFrame(app, 'mode: manual');
@@ -160,9 +163,8 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     const frame = await untilFrame(app, 'Finishing the sign-in…');
     expect(frame).not.toContain(PASTE_LABEL);
     app.stdin.write(KEYS.escape);
-    app.stdin.write(KEYS.ctrlC);
-    expect(routesOf(backend)).not.toContain('sign-in/cancel');
-    expect(app.lastFrame() ?? '').toContain('Finishing the sign-in…');
+    await untilFrame(app, (shown) => !shown.includes('Finishing the sign-in…'));
+    expect((await backend.plan.accounts()).accounts.filter((listed) => listed.state === 'active')).toEqual([]);
     app.unmount();
   });
 
@@ -224,6 +226,7 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
   ] as const)('after %s the screen holds neither the sign-in URL nor the pasted redirect, and the input history does not bring them back (B)', async (_name, end) => {
     const { app } = await waitingScreen();
     await end(app);
+    await untilPromptDrawn(app);
     app.stdin.write(KEYS.up);
     const frame = (await untilFrame(app, '> /login chatgpt')).replace(/\s+/g, '');
     expect(frame).not.toContain('auth.openai.com/api/accounts/authorize');

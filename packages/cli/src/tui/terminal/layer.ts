@@ -66,6 +66,7 @@ export type TerminalLayerOptions = {
   screenSetByUser: boolean;
   mouse: boolean;
   onEvents(events: readonly TerminalEvent[]): void;
+  onArrival?(): void;
   onFailure(error: unknown): void;
 };
 
@@ -307,6 +308,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   };
 
   const onData = (chunk: Uint8Array): void => {
+    options.onArrival?.();
     stopKeySettle();
     const events = parser.push(chunk);
     if (parser.holdsOpen()) keySettle = { timer: timers.setTimeout(endKeySettle, KEY_SETTLE_MS) };

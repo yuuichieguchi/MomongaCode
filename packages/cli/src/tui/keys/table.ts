@@ -62,8 +62,6 @@ export const KEYS = [
   { id: 'select.escape', context: 'select', default: ['escape'], description: 'decline or go back' },
   { id: 'select.interrupt', context: 'select', default: ['ctrl+c'], description: 'interrupt' },
   { id: 'select.alt', context: 'select', default: ['tab'], description: 'the second choice of a list that has one' },
-  { id: 'select.less', context: 'select', default: ['left'], description: 'the previous value of the highlighted row of a list whose rows carry one' },
-  { id: 'select.more', context: 'select', default: ['right'], description: 'the next value of the highlighted row of a list whose rows carry one' },
   { id: 'select.detail', context: 'select', default: ['ctrl+o'], description: 'show all of what is asked' },
   { id: 'select.filterBack', context: 'select', default: ['backspace'], description: 'delete the last character of the filter' },
   { id: 'select.delete', context: 'select', default: ['delete'], description: 'delete the highlighted row of a list that has it, after asking' },

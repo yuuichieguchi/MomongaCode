@@ -7,6 +7,7 @@ import type { KeyBindings, KeyEdit } from '../keys/store.ts';
 import { isPlainKey, KEYS, KEY_CONTEXTS, keyReported, needsReport, shownKey } from '../keys/table.ts';
 import type { ActionRow, KeySpec } from '../keys/table.ts';
 import type { OverlayPorts, PickRow } from '../picker.tsx';
+import { chooseThen } from '../flow-step.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 import type { NegotiationState } from '../terminal/negotiation.ts';
 
@@ -125,37 +126,44 @@ export const keybindingsCommand: SlashCommand = {
     for (;;) {
       const report = store.report();
       const { rows, listed } = keybindingRows(report, context.negotiation);
-      const choice = await choose({
-        title: KEYBINDINGS_TITLE,
-        lines: keybindingLines(report, store.shownFile),
-        rows,
-        initial: at,
-        decideOn: 'enter',
-        escape: 'back',
-        filter: true,
-        alt: { label: RESET_ONE_LABEL },
-      });
-      const chosen = choice === undefined ? undefined : listed[choice.index];
-      if (choice === undefined || chosen === undefined || chosen.kind === 'heading') return;
-      at = choice.index;
-      if (chosen.kind === 'open') {
-        if (choice.alt) continue;
-        if (store.file === undefined) {
-          context.info(KEY_FILE_UNAVAILABLE);
-          return;
-        }
-        await openInEditor(context.externalEditor, store.file, (text) => context.info(text));
-        await store.load();
-        continue;
-      }
-      if (chosen.kind === 'reset-all') {
-        if (!choice.alt && (await resetConfirmed(context, RESET_ALL_QUESTION))) await save(context, withAllDefaults);
-        continue;
-      }
-      const { row } = chosen;
-      if (choice.alt) {
-        if (await resetConfirmed(context, resetOneQuestion(row.id))) await save(context, (document) => withDefaultsOf(document, { ...row, default: defaultsOf(row) }));
-      } else await rebind(context, row);
+      const acted = await chooseThen(
+        choose,
+        () => ({
+          title: KEYBINDINGS_TITLE,
+          lines: keybindingLines(report, store.shownFile),
+          rows,
+          initial: at,
+          decideOn: 'enter',
+          escape: 'back',
+          filter: true,
+          alt: { label: RESET_ONE_LABEL },
+        }),
+        async (choice): Promise<boolean> => {
+          const chosen = listed[choice.index];
+          if (chosen === undefined || chosen.kind === 'heading') return false;
+          at = choice.index;
+          if (chosen.kind === 'open') {
+            if (choice.alt) return true;
+            if (store.file === undefined) {
+              context.info(KEY_FILE_UNAVAILABLE);
+              return false;
+            }
+            await openInEditor(context.externalEditor, store.file, (text) => context.info(text));
+            await store.load();
+            return true;
+          }
+          if (chosen.kind === 'reset-all') {
+            if (!choice.alt && (await resetConfirmed(context, RESET_ALL_QUESTION))) await save(context, withAllDefaults);
+            return true;
+          }
+          const { row } = chosen;
+          if (choice.alt) {
+            if (await resetConfirmed(context, resetOneQuestion(row.id))) await save(context, (document) => withDefaultsOf(document, { ...row, default: defaultsOf(row) }));
+          } else await rebind(context, row);
+          return true;
+        },
+      );
+      if (acted?.value !== true) return;
     }
   },
 };

@@ -315,9 +315,9 @@ export const ollamaPrecondition = (upstream: UpstreamEndpoint, ports: ProbeHostP
   },
 });
 
-export const unknownWindowRefusal = async (listed: ProbePrecondition, display: string, target: string): Promise<Error> => {
+export const unknownWindowRefusal = async (listed: ProbePrecondition, display: string): Promise<Error> => {
   const verdict = await listed.check(new AbortController().signal);
-  return verdict.kind === 'refused' ? targetNotReadyError(target, verdict) : new ReportedWindowMissingError(display);
+  return verdict.kind === 'refused' ? targetNotReadyError(display, verdict) : new ReportedWindowMissingError(display);
 };
 
 export type OllamaProbeSubjectOptions = {

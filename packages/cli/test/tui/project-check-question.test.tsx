@@ -4,14 +4,14 @@ import { App } from '../../src/tui/app.tsx';
 import { DECLINE_CHECK_ROW, useCheckRow } from '../../src/tui/project-check.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS, renderObservable, settleAtOnce, TEST_KEY_SETTLE_MS, untilFrame } from '../ink-helpers.ts';
+import { KEYS, renderObservable, settleAtOnce, untilFrame } from '../ink-helpers.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
 const NPM_TEST = { source: 'package.json', command: 'npm test' } as const;
 
 const start = (options: FakeBackendOptions) => {
   const backend = fakeBackend(options);
-  const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal({ columns: 120, rows: 40 })} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal({ columns: 120, rows: 40 })} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} onExit={() => undefined} />);
   return { backend, app };
 };
 

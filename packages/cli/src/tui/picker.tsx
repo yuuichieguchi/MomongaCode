@@ -10,13 +10,16 @@ import type { SelectRow, SelectSpec } from './select.tsx';
 
 export type PickRow = SelectRow;
 
-export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm' | 'alt' | 'stepsLabel'> & Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly onHighlight?: (index: number) => void };
+export type PickUpdate = Pick<SelectSpec, 'rows'> & Partial<Pick<SelectSpec, 'lines'>> & { readonly alt?: SelectSpec['alt'] | undefined; readonly highlight: number };
+
+export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm' | 'alt'> &
+  Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly onHighlight?: (index: number) => void; readonly watch?: (show: (update: PickUpdate) => void) => () => void };
 
 const FILTER_FROM_ROWS = 10;
 const TEXT_ROWS_AROUND = 2;
 const WAITING_ROWS_AROUND = 6;
 
-export const pickerSpec = ({ onHighlight: _onHighlight, ...request }: PickRequest): SelectSpec => ({
+export const pickerSpec = ({ onHighlight: _onHighlight, watch: _watch, ...request }: PickRequest): SelectSpec => ({
   initial: 0,
   decideOn: 'immediate',
   escape: 'back',
@@ -47,7 +50,7 @@ export type WaitingOverlay = {
   readonly status?: string;
 };
 
-export type PickChoice = { readonly index: number; readonly alt: boolean; readonly step?: number };
+export type PickChoice = { readonly index: number; readonly alt: boolean };
 
 export type CaptureRequest = { readonly title: string; problemOf(spec: KeySpec): string | undefined };
 
@@ -58,7 +61,16 @@ export type Overlay =
   | { readonly kind: 'capture'; readonly request: CaptureRequest; readonly problem?: string; readonly resolve: (outcome: CaptureOutcome | undefined) => void }
   | { readonly kind: 'text'; readonly request: TextRequest; readonly error?: string; readonly resolve: (text: string | undefined) => void }
   | WaitingOverlay
-  | { readonly kind: 'loading'; readonly title: string; cancel(): void };
+  | LoadingOverlay
+  | { readonly kind: 'kept'; readonly shown: KeptScreen; readonly phase?: string };
+
+export type LoadingOverlay = { readonly kind: 'loading'; readonly title: string; readonly line?: string; readonly hint: LoadingHint; cancel(): void };
+
+export type KeptScreen = Exclude<Overlay, { kind: 'kept' }>;
+
+export const LOADING_HINTS = { readingAndCancel: 'readingAndCancel', none: 'none' } as const;
+
+export type LoadingHint = (typeof LOADING_HINTS)[keyof typeof LOADING_HINTS];
 
 export type Loaded<T> = { readonly kind: 'read'; readonly value: T } | { readonly kind: 'cancelled' };
 
@@ -70,7 +82,9 @@ export type OverlayPorts = {
   waiting(view: WaitingView, handlers: WaitingHandlers): void;
   closeWaiting(): void;
   delivered(): void;
-  loading<T>(title: string, read: () => Promise<T>): Promise<Loaded<T>>;
+  loading<T>(title: string, read: () => Promise<T>, hint: LoadingHint): Promise<Loaded<T>>;
+  read<T>(read: () => Promise<T>): Promise<Loaded<T>>;
+  closeScreen(): void;
 };
 
 const keyed = (key: string, text: (key: string) => string): string[] => (key === '' ? [] : [text(key)]);
@@ -96,7 +110,7 @@ export const READING_TEXT = 'reading…';
 
 export const loadingHint = (keys: KeyTable): string => joinHint([READING_TEXT, ...keyed(keys.keyHint('select.escape'), (key) => `${key} cancels`)]);
 
-export type PanelOverlay = Exclude<Overlay, { kind: 'pick' }>;
+export type PanelOverlay = Exclude<Overlay, { kind: 'pick' | 'kept' }>;
 
 type ViewRoom = { readonly columns: number; readonly rows: number };
 
@@ -162,7 +176,8 @@ export function OverlayView({ overlay, editor, keys, columns, rows }: { overlay:
       return (
         <Box flexDirection="column">
           <Text bold>{escapeTerminalLine(overlay.title)}</Text>
-          <Text dimColor>{loadingHint(keys)}</Text>
+          {overlay.line === undefined ? null : <Text>{escapeTerminalLine(overlay.line)}</Text>}
+          {overlay.hint === LOADING_HINTS.none ? null : <Text dimColor>{loadingHint(keys)}</Text>}
         </Box>
       );
     case 'waiting':

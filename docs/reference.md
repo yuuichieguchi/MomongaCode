@@ -946,8 +946,6 @@ The file `~/.momonga/keybindings.json` changes the keys of the interactive sessi
 | `select.escape` | select | `escape` | decline or go back |
 | `select.interrupt` | select | `ctrl+c` | interrupt |
 | `select.alt` | select | `tab` | the second choice of a list that has one |
-| `select.less` | select | `left` | the previous value of the highlighted row of a list whose rows carry one |
-| `select.more` | select | `right` | the next value of the highlighted row of a list whose rows carry one |
 | `select.detail` | select | `ctrl+o` | show all of what is asked |
 | `select.filterBack` | select | `backspace` | delete the last character of the filter |
 | `select.delete` | select | `delete` | delete the highlighted row of a list that has it, after asking |

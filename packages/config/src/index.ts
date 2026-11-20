@@ -88,7 +88,7 @@ export { APPROVAL_DIGEST_PATTERN, approvalDigestOf, hookGroupApprovalDigestOf, p
 export { DECLARED_CHECK_SOURCES, acceptedCheckOf, declaredChecksOf, recordProjectCheck } from './declared-checks.ts';
 export { forgetProjectCheck, readProjectCheck } from './project-checks.ts';
 export type { AcceptedCheck, CheckProposal, DeclaredCheck, DeclaredCheckSource } from './declared-checks.ts';
-export { baseUrlProblem } from './models.ts';
+export { baseUrlProblem, resolvedBillingOf } from './models.ts';
 export { declaredCommandProblem } from './server-registry.ts';
 export { SETTING_READ_POINTS, SETTING_READ_POINT_KINDS, settingReadPointOf } from './setting-read-points.ts';
 export type { SettingReadPoint } from './setting-read-points.ts';

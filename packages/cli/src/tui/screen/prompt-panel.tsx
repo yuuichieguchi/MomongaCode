@@ -111,7 +111,7 @@ export const fieldHint = (keys: KeyTable): string => {
   return joinHint([...(confirm === '' ? [] : [`${confirm} to confirm the value`]), ...(leave === '' ? [] : [`${leave}: decline or cancel instead`])]);
 };
 
-export function ElicitationFields({ elicitation, title, editor, columns, waiting, settling, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; columns: number; waiting: number; settling: boolean; keys: KeyTable }) {
+export function ElicitationFields({ elicitation, title, editor, columns, waiting, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; columns: number; waiting: number; keys: KeyTable }) {
   const { flow } = elicitation;
   const request = currentRequest(flow);
   const field = currentField(flow);
@@ -131,7 +131,7 @@ export function ElicitationFields({ elicitation, title, editor, columns, waiting
           </Box>
         )}
         {flow.error === undefined ? null : <Text {...styleOf(['error'])}>{inertText(flow.error)}</Text>}
-        <Text dimColor>{settling ? ' ' : fieldHint(keys)}</Text>
+        <Text dimColor>{fieldHint(keys)}</Text>
       </Box>
       <EditorView editor={editor} columns={columns} rows={undefined} hidden={false} framed={!currentA11y().screenReader} />
     </Box>

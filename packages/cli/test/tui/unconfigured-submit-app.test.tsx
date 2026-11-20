@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
+import { KEYS, TUI_TEST_TIMEOUT_MS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { start } from '../tui-harness.tsx';
+
+vi.setConfig({ testTimeout: TUI_TEST_TIMEOUT_MS });
 
 const GEMMA = 'ollama/gemma-3-4b:latest';
 const QWEN = 'ollama/qwen3.8:27b';
@@ -30,6 +32,21 @@ describe('a message on a session whose model is not configured any more (cli-tui
     app.stdin.write(KEYS.escape);
     await untilFrame(app, (shown) => !shown.includes(LIST) && shown.includes('> hello'));
     expect(backend.started).toEqual([]);
+    app.unmount();
+  });
+
+  it('cancels the run the chosen model works on at esc, and the esc reaches no list opened after it', async () => {
+    const { app, backend } = await typedOnUnconfigured();
+    app.stdin.write(KEYS.enter);
+    await vi.waitFor(() => expect(backend.started).toEqual([{ text: 'hello' }]));
+    await untilFrame(app, (shown) => !shown.includes(LIST));
+    app.stdin.write(KEYS.escape);
+    await backend.called('cancel:run-1');
+    app.stdin.write('/model');
+    await untilFrame(app, '> /model');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, LIST);
+    expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual(['cancel:run-1']);
     app.unmount();
   });
 });

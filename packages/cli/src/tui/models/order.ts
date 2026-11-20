@@ -2,7 +2,7 @@ import { durationText, editModelsSettings } from '@momonga/config';
 import type { TargetBilling } from '@momonga/protocol';
 import { SEPARATOR, START_MARK, billingRows, displayIn, fallbackRows, proposeForm, roleRows } from '../../commands/models.ts';
 import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
-import { chosenOf, confirmAndWrite, confirmedBy, openEdit, proposeAndWrite, refusedSentence } from './context.ts';
+import { chosenOf, chosenThen, confirmAndWrite, confirmedBy, openEdit, proposeAndWrite, refusedSentence } from './context.ts';
 import type { ModelsFlowContext, Opened } from './context.ts';
 import {
   BILLING_TITLE,
@@ -36,11 +36,12 @@ export const runStartFlow = async (context: ModelsFlowContext): Promise<boolean>
   const { edit } = opened;
   const canons = canonsOf(edit);
   const rows = [...canons.map((canon) => ({ label: `${displayIn(edit, canon)}${canon === edit.resolved.start ? `${SEPARATOR}${START_MARK}` : ''}` })), { label: FIRST_MODEL_ROW }];
-  const index = await chosenOf(context, { title: START_TITLE, rows });
-  if (index === undefined) return false;
-  const canon = canons[index];
-  const written = await proposeAndWrite(opened, context, 'start', canon === undefined ? { args: [], options: { clear: true } } : { args: [canon], options: {} });
-  return written !== undefined;
+  const acted = await chosenThen(context, { title: START_TITLE, rows }, async (index) => {
+    const canon = canons[index];
+    const written = await proposeAndWrite(opened, context, 'start', canon === undefined ? { args: [], options: { clear: true } } : { args: [canon], options: {} });
+    return written !== undefined;
+  });
+  return acted?.value === true;
 };
 
 export const writeStart = async (context: Pick<ModelsFlowContext, 'backend' | 'info' | 'wait'>, model: string): Promise<void> => {
@@ -76,28 +77,30 @@ const withBillingChange = async (context: ModelsFlowContext, edit: ModelsEdit, a
 const addFallback = async (context: ModelsFlowContext, opened: Opened): Promise<void> => {
   const { edit, host } = opened;
   const offered = canonsOf(edit).filter((canon) => !edit.resolved.fallback.includes(canon));
-  const index = await chosenOf(context, { title: FALLBACK_ADD_ROW, rows: offered.map((canon) => ({ label: displayIn(edit, canon) })) });
-  const added = index === undefined ? undefined : offered[index];
-  if (added === undefined) return;
-  const proposal = await refusedSentence(context, () => proposeForm(host, edit, 'fallback add', { args: [added], options: {} }));
-  if (proposal === undefined) return;
-  await confirmAndWrite(opened, context, await withBillingChange(context, edit, added, proposal.value));
+  await chosenThen(context, { title: FALLBACK_ADD_ROW, rows: offered.map((canon) => ({ label: displayIn(edit, canon) })) }, async (index) => {
+    const added = offered[index];
+    if (added === undefined) return;
+    const proposal = await refusedSentence(context, () => proposeForm(host, edit, 'fallback add', { args: [added], options: {} }));
+    if (proposal === undefined) return;
+    await confirmAndWrite(opened, context, await withBillingChange(context, edit, added, proposal.value));
+  });
 };
 
 const changeFallback = async (context: ModelsFlowContext, opened: Opened, position: number): Promise<void> => {
   const { edit } = opened;
   const member = edit.resolved.fallback[position];
   if (member === undefined) return;
-  const action = await chosenOf(context, { title: displayIn(edit, member), rows: FALLBACK_ACTIONS.map((label) => ({ label })) });
-  const chosen = action === undefined ? undefined : FALLBACK_ACTIONS[action];
-  if (chosen === undefined) return;
-  if (chosen === 'Remove') {
-    await proposeAndWrite(opened, context, 'fallback remove', { args: [member], options: {} });
-    return;
-  }
-  const to = chosen === 'Move up' ? position : position + 2;
-  if (to < 1 || to > edit.resolved.fallback.length) return;
-  await proposeAndWrite(opened, context, 'fallback move', { args: [member], options: { to: String(to) } });
+  await chosenThen(context, { title: displayIn(edit, member), rows: FALLBACK_ACTIONS.map((label) => ({ label })) }, async (action) => {
+    const chosen = FALLBACK_ACTIONS[action];
+    if (chosen === undefined) return;
+    if (chosen === 'Remove') {
+      await proposeAndWrite(opened, context, 'fallback remove', { args: [member], options: {} });
+      return;
+    }
+    const to = chosen === 'Move up' ? position : position + 2;
+    if (to < 1 || to > edit.resolved.fallback.length) return;
+    await proposeAndWrite(opened, context, 'fallback move', { args: [member], options: { to: String(to) } });
+  });
 };
 
 export const runFallbackFlow = async (context: ModelsFlowContext): Promise<void> => {
@@ -108,10 +111,11 @@ export const runFallbackFlow = async (context: ModelsFlowContext): Promise<void>
     const chain = sessionChainText(edit, context.model);
     const lines = [...(members.length === 0 ? fallbackRows(edit) : []), ...(chain === undefined ? [] : [chain])];
     const rows = [...(members.length === 0 ? [] : fallbackRows(edit)).map((label) => ({ label })), { label: FALLBACK_ADD_ROW }];
-    const index = await chosenOf(context, { title: FALLBACK_TITLE, lines, rows });
-    if (index === undefined) return;
-    if (index === members.length) await addFallback(context, opened);
-    else await changeFallback(context, opened, index);
+    const acted = await chosenThen(context, { title: FALLBACK_TITLE, lines, rows }, async (index) => {
+      if (index === members.length) await addFallback(context, opened);
+      else await changeFallback(context, opened, index);
+    });
+    if (acted === undefined) return;
   }
 };
 
@@ -124,12 +128,14 @@ export const runBillingFlow = async (context: ModelsFlowContext): Promise<void> 
       context.info(billingRows(edit).join('\n'));
       return;
     }
-    const index = await chosenOf(context, { title: BILLING_TITLE, rows: billingRows(edit).map((label) => ({ label })) });
-    const change = index === undefined ? undefined : changes[index];
-    if (change === undefined) return;
-    const action = await chosenOf(context, { title: billingRows(edit)[index ?? 0] ?? BILLING_TITLE, rows: [{ label: FORBID_ROW }] });
-    if (action === undefined) continue;
-    await proposeAndWrite(opened, context, 'billing forbid', { args: [change.from, change.to], options: change.model === undefined ? {} : { model: change.model } });
+    const acted = await chosenThen(context, { title: BILLING_TITLE, rows: billingRows(edit).map((label) => ({ label })) }, async (index) => {
+      const change = changes[index];
+      if (change === undefined) return;
+      await chosenThen(context, { title: billingRows(edit)[index] ?? BILLING_TITLE, rows: [{ label: FORBID_ROW }] }, async () => {
+        await proposeAndWrite(opened, context, 'billing forbid', { args: [change.from, change.to], options: change.model === undefined ? {} : { model: change.model } });
+      });
+    });
+    if (acted === undefined) return;
   }
 };
 
@@ -138,20 +144,22 @@ type Job = (typeof ROLE_ROWS)[number]['job'];
 export const chooseRoleModel = async (context: ModelsFlowContext, opened: Opened, job: Job, label: string): Promise<boolean> => {
   const { edit } = opened;
   const canons = canonsOf(edit);
-  const index = await chosenOf(context, { title: label, rows: [...canons.map((canon) => ({ label: displayIn(edit, canon) })), { label: SESSION_MODEL_ROW }] });
-  if (index === undefined) return false;
-  const canon = canons[index];
-  const written = canon === undefined ? await proposeAndWrite(opened, context, 'role clear', { args: [job], options: {} }) : await proposeAndWrite(opened, context, 'role set', { args: [job, canon], options: {} });
-  return written !== undefined;
+  const acted = await chosenThen(context, { title: label, rows: [...canons.map((canon) => ({ label: displayIn(edit, canon) })), { label: SESSION_MODEL_ROW }] }, async (index) => {
+    const canon = canons[index];
+    const written = canon === undefined ? await proposeAndWrite(opened, context, 'role clear', { args: [job], options: {} }) : await proposeAndWrite(opened, context, 'role set', { args: [job, canon], options: {} });
+    return written !== undefined;
+  });
+  return acted?.value === true;
 };
 
 export const runRoleFlow = async (context: ModelsFlowContext): Promise<void> => {
   for (;;) {
     const opened = await openEdit(context);
-    const index = await chosenOf(context, { title: ROLE_TITLE, rows: roleRows(opened.edit).map((label) => ({ label })) });
-    const row = index === undefined ? undefined : ROLE_ROWS[index];
-    if (row === undefined) return;
-    await chooseRoleModel(context, opened, row.job, row.label);
+    const acted = await chosenThen(context, { title: ROLE_TITLE, rows: roleRows(opened.edit).map((label) => ({ label })) }, async (index) => {
+      const row = ROLE_ROWS[index];
+      if (row !== undefined) await chooseRoleModel(context, opened, row.job, row.label);
+    });
+    if (acted === undefined) return;
   }
 };
 
@@ -168,10 +176,11 @@ export const runTimeoutsFlow = async (context: ModelsFlowContext): Promise<void>
     const opened = await openEdit(context);
     const { resolved } = opened.edit;
     const rows = [{ label: headersWaitRow(durationText(resolved.headersTimeoutMs)) }, { label: idleWaitRow(durationText(resolved.idleTimeoutMs)) }];
-    const index = await chosenOf(context, { title: TIMEOUTS_TITLE, rows });
-    if (index === undefined) return;
-    const minutes = await context.overlays.promptText({ title: MINUTES_PROMPT, validate: (text) => (WHOLE_MINUTES.test(text.trim()) ? undefined : MINUTES_PROBLEM) });
-    if (minutes === undefined) continue;
-    await proposeAndWrite(opened, context, 'timeouts', { args: [], options: { [index === 0 ? 'headers' : 'idle']: minutes.trim() } });
+    const acted = await chosenThen(context, { title: TIMEOUTS_TITLE, rows }, async (index) => {
+      const minutes = await context.overlays.promptText({ title: MINUTES_PROMPT, validate: (text) => (WHOLE_MINUTES.test(text.trim()) ? undefined : MINUTES_PROBLEM) });
+      if (minutes === undefined) return;
+      await proposeAndWrite(opened, context, 'timeouts', { args: [], options: { [index === 0 ? 'headers' : 'idle']: minutes.trim() } });
+    });
+    if (acted === undefined) return;
   }
 };

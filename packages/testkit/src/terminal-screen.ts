@@ -16,7 +16,7 @@ export type TerminalScreen = {
 const SCROLLBACK_LINES = 1000;
 
 export const createTerminalScreen = ({ columns, rows }: { readonly columns: number; readonly rows: number }): TerminalScreen => {
-  const terminal = new xterm.Terminal({ cols: columns, rows, allowProposedApi: true, scrollback: SCROLLBACK_LINES });
+  const terminal = new xterm.Terminal({ cols: columns, rows, allowProposedApi: true, scrollback: SCROLLBACK_LINES, convertEol: true });
   const bufferLine = (index: number): string => {
     const line = terminal.buffer.active.getLine(index);
     if (line === undefined) throw new Error(`the terminal buffer has no line ${index}; it has ${terminal.buffer.active.length}`);

@@ -68,7 +68,7 @@ export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report
       },
       (error: unknown) => {
         if (stop.signal.aborted) return;
-        if (flightInstance === instance) failure = probeFailureOf(error, options.target, options.ask, options.redactor);
+        if (flightInstance === instance) failure = probeFailureOf(error, options.redactor);
         options.onFailure?.(error);
       },
     );
@@ -85,7 +85,7 @@ export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report
         noticed = true;
         options.onNotice(unreadableKeyNotice(options.target, options.unknown.component, options.unknown.reason));
       }
-      if (failure !== undefined) throw targetProbeFailedError(failure);
+      if (failure !== undefined) throw targetProbeFailedError(failure, options.ask);
       if (flight === undefined && !stop.signal.aborted) startFlight();
       return { kind: 'probing', probing: probing() };
     },

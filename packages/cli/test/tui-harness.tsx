@@ -5,7 +5,7 @@ import { STARTING_TEXT } from '../src/tui/screen/waiting-row.tsx';
 import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
 import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
-import { KEYS, TEST_KEY_SETTLE_MS, renderObservable, untilFrame, untilOutput, settleAtOnce } from './ink-helpers.ts';
+import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { WIDE_TEST_SCREEN, fakeScreenTerminal } from './tui/screen-fakes.ts';
 import type { FakeScreenSize } from './tui/screen-fakes.ts';
@@ -20,12 +20,11 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const startStillStarting = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'keySettleMs' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption' | 'keyBindings'>> = {}, screen: Partial<FakeScreenSize> = {}) => {
+export const startStillStarting = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'colour' | 'copyOnSelect' | 'now' | 'timers' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption' | 'keyBindings'>> = {}, screen: Partial<FakeScreenSize> = {}) => {
   const backend = fakeBackend(options);
   const terminal = fakeScreenTerminal({ ...WIDE_TEST_SCREEN, ...screen });
   const outcomes: TuiOutcome[] = [];
   const exited = Promise.withResolvers<TuiOutcome>();
-  const keySettleMs = extra.keySettleMs ?? TEST_KEY_SETTLE_MS;
   const given = extra.timers ?? systemTiming;
   const app = renderObservable(
     <App
@@ -34,8 +33,7 @@ export const startStillStarting = async (options: FakeBackendOptions = {}, extra
       initialMode={undefined}
       now={Date.now}
       {...extra}
-      keySettleMs={keySettleMs}
-      timers={keySettleMs === TEST_KEY_SETTLE_MS ? settleAtOnce(given) : given}
+      timers={given}
       onExit={(outcome) => {
         outcomes.push(outcome);
         exited.resolve(outcome);

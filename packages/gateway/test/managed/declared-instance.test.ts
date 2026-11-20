@@ -116,7 +116,7 @@ describe('a declared server whose binary exists but cannot be read for its hash 
         createInstanceProbe({ redactor: createRedactor({ credentials: [] }),
           target: 'workbench',
           unknown,
-          ask: { fields: ['toolCalling'], declaration: 'declare toolCalling' },
+          ask: { fields: ['toolCalling'], declaration: 'declare toolCalling', model: 'workbench' },
           dir: probeRecordDir,
           measure: async () => {
             measured += 1;

@@ -54,7 +54,7 @@ const unusedExternalEditor: SlashContext['externalEditor'] = { open: () => Promi
 
 const unusedClipboard: SlashContext['clipboard'] = { selected: () => undefined, lastAnswer: () => undefined };
 
-const unusedOverlays: SlashContext['overlays'] = { choose: async () => undefined, promptText: async () => undefined };
+const unusedOverlays: SlashContext['overlays'] = { choose: async () => undefined, promptText: async () => undefined, closeScreen: () => undefined };
 const unusedKeyBindings: SlashContext['keyBindings'] = { store: fixedKeyBindings(DEFAULT_KEY_TABLE), choose: async () => undefined, captureKey: async () => undefined };
 
 const unusedAutoMode: SlashContext['autoMode'] = {

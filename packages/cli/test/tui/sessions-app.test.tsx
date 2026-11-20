@@ -1,3 +1,4 @@
+import { pollUntil } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame } from '../../src/client/runtime-client.ts';
@@ -236,6 +237,7 @@ describe('/clear (9.4)', () => {
     await untilFrame(app, IDLE);
 
     await enter(app, '/clear');
+    await pollUntil(() => backend.opened.length === 2 && (screen === 'fullscreen' || app.frames.join('').includes(ERASE_SCREEN)), { description: 'the new session is open', boundMs: 5000 });
     await untilFrame(app, (frame) => screen === 'scrollback' || !frame.includes('> first task'));
     await untilFrame(app, IDLE);
     expect(backend.opened[1]).toEqual({ model: QWEN, permissionMode: 'acceptEdits' });

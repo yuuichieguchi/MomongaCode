@@ -13,7 +13,7 @@ import type { ReasoningCapability, ReasoningEffort, UserShellRecord } from '@mom
 import { editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
-import { hostPaths, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import { hostPaths, momongaLayout, nodeFileSystem, systemTiming } from '@momonga/foundation';
 import { fileLinkRootsOf, openFileLink, resolveFileLinks } from '../src/tui/screen/file-links.ts';
 import type { FileLinkPorts } from '../src/tui/screen/file-links.ts';
 import type { DetectRequest } from '../src/commands/models.ts';
@@ -72,8 +72,11 @@ export type FakeConversationRun = { id: string; status?: RunStatus; frames: read
 
 export type FakeConversation = { session: Partial<SessionView> & { id: string }; firstPrompt: string; runs: readonly FakeConversationRun[] };
 
+export const FAKE_ANSWER_MS = 5;
+
+
 export type FakeBackend = TuiBackend & {
-  readonly opened: { model: string | undefined; permissionMode: PermissionMode | undefined }[];
+  readonly opened: { model: string | undefined; permissionMode: PermissionMode | undefined; effort?: ReasoningEffort }[];
   readonly detections: DetectRequest[];
   readonly secrets: Map<string, string>;
   readonly listings: number[];
@@ -97,6 +100,7 @@ export type FakeBackend = TuiBackend & {
 };
 
 export type FakeBackendOptions = {
+  answerTimers?: { setTimeout(run: () => void, ms: number): unknown };
   storedResults?: Readonly<Record<string, string>>;
   agents?: readonly AgentView[];
   network?: NetworkView;
@@ -122,11 +126,19 @@ export type FakeBackendOptions = {
   startupNotices?: readonly string[];
   autoModeAvailable?: boolean;
   modelPending?: Promise<void>;
+  modelFailure?: Error;
+  modelOfFailures?: Readonly<Record<string, Error>>;
+  setModelFailure?: Error;
+  modelsLockFailure?: Error;
+  openSessionFailure?: Error;
+  sessionModelFailures?: Readonly<Record<string, Error>>;
   models?: readonly string[];
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
   reasoning?: Readonly<Record<string, ReasoningCapability>>;
   listedProbing?: boolean;
+  probing?: readonly string[];
+  chains?: Readonly<Record<string, readonly string[]>>;
   conversations?: readonly FakeConversation[];
   settingsPlace?: { home: string; projectDir: string };
   files?: readonly string[];
@@ -140,6 +152,8 @@ const OLLAMA_DEFAULT_TAG = 'latest';
 
 const SERVER_PROVIDERS: ReadonlySet<string> = new Set(['ollama', 'lmstudio', 'apple']);
 
+const serverKindOf = (provider: string): string => provider.split('-')[0] ?? provider;
+
 export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain'][number]['capabilities'], members: readonly string[] = [id]): MomongaModelEntry => {
   const parsed = parseCanon(id) ?? { provider: SCRIPTED_PROVIDER, ownName: id };
   return {
@@ -147,8 +161,8 @@ export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain
     object: 'model',
     provider: parsed.provider,
     ownName: parsed.ownName,
-    ...(parsed.provider === 'ollama' ? { defaultTag: OLLAMA_DEFAULT_TAG } : {}),
-    naming: SERVER_PROVIDERS.has(parsed.provider) ? 'server' : 'account',
+    ...(serverKindOf(parsed.provider) === 'ollama' ? { defaultTag: OLLAMA_DEFAULT_TAG } : {}),
+    naming: SERVER_PROVIDERS.has(serverKindOf(parsed.provider)) ? 'server' : 'account',
     billing: 'local',
     capabilities,
     state: 'available',
@@ -245,6 +259,7 @@ export const folderTrustFakes = ({ settingsPlace, trust, trustItems, cwd, record
 };
 
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
+  const answerLater = (): Promise<void> => new Promise((resolve) => (options.answerTimers ?? systemTiming).setTimeout(resolve, FAKE_ANSWER_MS));
   const settingsPlace = (): { home: string; projectDir: string } => {
     if (options.settingsPlace === undefined) throw new Error('the fake backend was given no settings place');
     return options.settingsPlace;
@@ -319,9 +334,13 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     const effort = writtenEntries().find((entry) => entry.id === id)?.effort;
     return effort === undefined ? {} : { effort };
   };
+  let measured = false;
+  void options.modelPending?.then(() => {
+    measured = true;
+  });
   const listedModels = async (): Promise<MomongaModelEntry[]> => {
     const written = writtenEntries();
-    const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true ? PROBING_PLAN : listedCapabilities(id), options.chain ?? [id]), ...savedEffortOf(id) }));
+    const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true || (options.probing?.includes(id) === true && !measured) ? PROBING_PLAN : listedCapabilities(id), options.chains?.[id] ?? options.chain ?? [id]), ...savedEffortOf(id) }));
     return [...scripted, ...written.filter((entry) => !scripted.some((other) => other.id === entry.id))];
   };
 
@@ -399,11 +418,13 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     answerCheck: async (answer) => {
       record(`check:${JSON.stringify(answer)}`);
     },
-    openSession: async (model, permissionMode) => {
+    openSession: async (model, permissionMode, effort) => {
       record('openSession');
-      opened.push({ model, permissionMode });
-      if (opened.length === 1) return model === undefined ? session : adopt({ ...session, model });
-      return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, latestRunAt: null, activeRunId: null, activeRunAt: null, ...(model === undefined ? {} : { model }), ...(permissionMode === undefined ? {} : { permissionMode }) });
+      opened.push({ model, permissionMode, ...(effort === undefined ? {} : { effort }) });
+      await answerLater();
+      if (options.openSessionFailure !== undefined) throw options.openSessionFailure;
+      if (opened.length === 1) return model === undefined ? session : adopt({ ...session, model, ...(effort === undefined ? {} : { effort }) });
+      return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, latestRunAt: null, activeRunId: null, activeRunAt: null, ...(model === undefined ? {} : { model }), ...(permissionMode === undefined ? {} : { permissionMode }), ...(effort === undefined ? {} : { effort }) });
     },
     resumeSession: async (id) => {
       record(`resume:${id}`);
@@ -425,15 +446,21 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return { text, offset, next: null, totalBytes: new TextEncoder().encode(text).length };
     },
     autoModeAvailable: async () => options.autoModeAvailable ?? false,
-    models: listedModels,
+    models: async () => {
+      await answerLater();
+      return listedModels();
+    },
     modelList: async () => {
+      await answerLater();
       listings.push(listings.length);
       return { object: 'list', data: await listedModels(), start: null, roles: {} };
     },
     modelsHost: (signal) => ({
       home: homeOfModels(),
       settingsFile: modelsFile(),
-      lock: testKernelLock,
+      lock: options.modelsLockFailure === undefined ? testKernelLock : () => {
+        throw options.modelsLockFailure;
+      },
       platform: 'linux',
       interrupt: signal,
       files: {
@@ -457,12 +484,15 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     setEffort: async (effort: ReasoningEffort | null) => {
       record(`effort:${effort ?? 'none chosen'}`);
+      await answerLater();
       const { effort: _dropped, ...rest } = session;
       session = effort === null ? rest : { ...rest, effort };
       return session;
     },
     setModel: async (model: string, effort?: ReasoningEffort) => {
       record(effort === undefined ? `model:${model}` : `model:${model} effort:${effort}`);
+      await answerLater();
+      if (options.setModelFailure !== undefined) throw options.setModelFailure;
       const { effort: _dropped, ...rest } = session;
       session = model === session.model && effort === undefined ? { ...session } : { ...rest, model, ...(effort === undefined ? {} : { effort }) };
       return session;
@@ -635,9 +665,22 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
+      await answerLater();
       if (options.modelPending !== undefined) await options.modelPending;
+      if (options.modelFailure !== undefined) throw options.modelFailure;
+      const sessionFailure = options.sessionModelFailures?.[session.model];
+      if (sessionFailure !== undefined) throw sessionFailure;
       const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model), ...reasoningOf(session.model) };
       return { ...listedEntryOf(session.model, capabilities, options.chain ?? [session.model]), ...savedEffortOf(session.model) };
+    },
+    modelOf: async (model: string) => {
+      await answerLater();
+      if (options.modelPending !== undefined) await options.modelPending;
+      const failure = options.modelOfFailures?.[model];
+      if (failure !== undefined) throw failure;
+      const entry = (await listedModels()).find((listed) => listed.id === model);
+      if (entry === undefined) throw new Error(`the fake gateway does not list the model ${model}`);
+      return entry;
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {

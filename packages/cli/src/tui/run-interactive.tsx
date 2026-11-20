@@ -180,6 +180,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     screenSetByUser: readerAtStart || setByPerson(start, 'screen'),
     mouse: tuiSettings.initial.mouse,
     onEvents: input.push,
+    onArrival: input.arrived,
     onFailure: (error) => moveFailures.push(error),
   });
   if (adoption.kind === 'record') startWithHandoverTerminal(layer, ports.handover?.started?.terminal, adoption.record.neg);
@@ -240,7 +241,7 @@ const repairedStart = async (ports: CliPorts, terminal: Terminal, output: Termin
       <TerminalFrame layer={layer}>
         <RepairFlow first={first} input={input} keys={DEFAULT_KEY_TABLE} open={editor.open} reread={reread} done={outcome.resolve} failed={outcome.reject} />
       </TerminalFrame>,
-      { stdin: createInkStdin().stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput), exitOnCtrlC: false, maxFps: MAX_FPS },
+      { stdin: createInkStdin().stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput), exitOnCtrlC: false, maxFps: MAX_FPS, onRender: () => input.framed() },
     );
     const answer = await outcome.promise;
     instance.unmount();

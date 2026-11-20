@@ -5,6 +5,7 @@ import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protoco
 import { APPLIES_NEXT_SESSION, APPLIES_NOW, REMOVE_ACTIONS, chooseSaveTarget, chosenAction, currentOf, removeQuestion, runCollection, writeSetting } from '../settings-screen.tsx';
 import type { Removal } from '../settings-screen.tsx';
 import type { TrustView } from '../../client/views.ts';
+import { chooseThen } from '../flow-step.ts';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 export const PERMISSIONS_TITLE = 'Permissions';
@@ -105,39 +106,51 @@ const editDirectories = (context: SlashContext): Promise<boolean> =>
 
 const editStartMode = async (context: SlashContext, snapshot: SettingsSnapshot): Promise<string | undefined> => {
   const current = currentOf(snapshot, START_MODE_PATH).value;
-  const choice = await context.overlays.choose({
-    title: START_MODE_ROW,
-    rows: PERMISSION_MODES.map((mode) => ({ label: `${mode}  ${PERMISSION_MODE_DESCRIPTIONS[mode]}` })),
-    initial: Math.max(0, PERMISSION_MODES.findIndex((mode) => mode === current)),
-    decideOn: 'enter',
-    escape: 'back',
-    filter: false,
-  });
-  const mode = choice === undefined ? undefined : PERMISSION_MODES[choice.index];
-  if (mode === undefined) return undefined;
-  const layer = await chooseSaveTarget(context, snapshot);
-  if (layer === undefined) return undefined;
-  const refusal = await writeSetting(context, layer, { kind: 'set', path: START_MODE_PATH, value: mode });
-  return refusal === undefined ? `${START_MODE_ROW}: ${mode}  ${APPLIES_NEXT_SESSION}` : refusal.refused;
+  const edited = await chooseThen(
+    context.overlays.choose,
+    () => ({
+      title: START_MODE_ROW,
+      rows: PERMISSION_MODES.map((mode) => ({ label: `${mode}  ${PERMISSION_MODE_DESCRIPTIONS[mode]}` })),
+      initial: Math.max(0, PERMISSION_MODES.findIndex((mode) => mode === current)),
+      decideOn: 'enter',
+      escape: 'back',
+      filter: false,
+    }),
+    async (choice): Promise<string | undefined> => {
+      const mode = PERMISSION_MODES[choice.index];
+      if (mode === undefined) return undefined;
+      const layer = await chooseSaveTarget(context, snapshot);
+      if (layer === undefined) return undefined;
+      const refusal = await writeSetting(context, layer, { kind: 'set', path: START_MODE_PATH, value: mode });
+      return refusal === undefined ? `${START_MODE_ROW}: ${mode}  ${APPLIES_NEXT_SESSION}` : refusal.refused;
+    },
+  );
+  return edited?.value;
 };
 
 const trustShown = (trust: TrustView): string => `${trust.decision ?? NOT_DECIDED}${trust.inheritedFrom === undefined ? '' : `  from ${trust.inheritedFrom}`}`;
 
 const editTrust = async (context: SlashContext, trust: TrustView): Promise<string | undefined> => {
-  const choice = await context.overlays.choose({
-    title: TRUST_TITLE,
-    lines: [`${trust.path}: ${trustShown(trust)}`],
-    rows: TRUST_ACTIONS.map((action) => ({ label: action.label })),
-    initial: Math.max(0, TRUST_ACTIONS.findIndex((action) => action.decision === trust.decision)),
-    decideOn: 'enter',
-    escape: 'back',
-    filter: false,
-  });
-  const action = choice === undefined ? undefined : TRUST_ACTIONS[choice.index];
-  if (action === undefined) return undefined;
-  if (action.decision === null) await context.backend.clearTrust();
-  else await context.backend.decideTrust(action.decision);
-  return `${TRUST_ROW}: ${action.decision ?? NOT_DECIDED}  ${APPLIES_NEXT_SESSION}`;
+  const edited = await chooseThen(
+    context.overlays.choose,
+    () => ({
+      title: TRUST_TITLE,
+      lines: [`${trust.path}: ${trustShown(trust)}`],
+      rows: TRUST_ACTIONS.map((action) => ({ label: action.label })),
+      initial: Math.max(0, TRUST_ACTIONS.findIndex((action) => action.decision === trust.decision)),
+      decideOn: 'enter',
+      escape: 'back',
+      filter: false,
+    }),
+    async (choice): Promise<string | undefined> => {
+      const action = TRUST_ACTIONS[choice.index];
+      if (action === undefined) return undefined;
+      if (action.decision === null) await context.backend.clearTrust();
+      else await context.backend.decideTrust(action.decision);
+      return `${TRUST_ROW}: ${action.decision ?? NOT_DECIDED}  ${APPLIES_NEXT_SESSION}`;
+    },
+  );
+  return edited?.value;
 };
 
 const startModeLabel = (snapshot: SettingsSnapshot): string => {
@@ -155,30 +168,36 @@ export const permissionsCommand: SlashCommand = {
     for (;;) {
       const snapshot = await context.backend.settings();
       const trust = await context.backend.trust();
-      const choice = await context.overlays.choose({
-        title: PERMISSIONS_TITLE,
-        lines: line === undefined ? [] : [line],
-        rows: [
-          { label: startModeLabel(snapshot) },
-          ...RULE_KINDS.map((kind) => ({ label: `${kind.row}  ${heldAt(snapshot, kind.effect).length}` })),
-          { label: `${DIRECTORIES_ROW}  ${heldAt(snapshot, 'additionalDirectories').length}` },
-          { label: `${TRUST_ROW}  ${trustShown(trust)}` },
-          { label: PROTECTED_HEADING, separator: true },
-          ...PROTECTED_LINES.map((label) => ({ label, separator: true })),
-        ],
-        initial: at,
-        decideOn: 'enter',
-        escape: 'back',
-        filter: false,
-      });
-      if (choice === undefined) return;
-      at = choice.index;
-      line = undefined;
-      const kind = RULE_KINDS[choice.index - 1];
-      if (choice.index === 0) line = await editStartMode(context, snapshot);
-      else if (kind !== undefined) await editRules(context, kind);
-      else if (choice.index === TRUST_ROW_INDEX) line = await editTrust(context, trust);
-      else await editDirectories(context);
+      const acted = await chooseThen(
+        context.overlays.choose,
+        () => ({
+          title: PERMISSIONS_TITLE,
+          lines: line === undefined ? [] : [line],
+          rows: [
+            { label: startModeLabel(snapshot) },
+            ...RULE_KINDS.map((kind) => ({ label: `${kind.row}  ${heldAt(snapshot, kind.effect).length}` })),
+            { label: `${DIRECTORIES_ROW}  ${heldAt(snapshot, 'additionalDirectories').length}` },
+            { label: `${TRUST_ROW}  ${trustShown(trust)}` },
+            { label: PROTECTED_HEADING, separator: true },
+            ...PROTECTED_LINES.map((label) => ({ label, separator: true })),
+          ],
+          initial: at,
+          decideOn: 'enter',
+          escape: 'back',
+          filter: false,
+        }),
+        async (choice): Promise<string | undefined> => {
+          at = choice.index;
+          const kind = RULE_KINDS[choice.index - 1];
+          if (choice.index === 0) return editStartMode(context, snapshot);
+          if (kind !== undefined) await editRules(context, kind);
+          else if (choice.index === TRUST_ROW_INDEX) return editTrust(context, trust);
+          else await editDirectories(context);
+          return undefined;
+        },
+      );
+      if (acted === undefined) return;
+      line = acted.value;
     }
   },
 };

@@ -8,9 +8,7 @@ import { styleOf as styleOfTokens } from './screen/theme.ts';
 import type { StyleToken } from './screen/theme.ts';
 import { displayWidth, segmentsOf, withoutTabs, wrapLine } from './screen/wrap.ts';
 
-export type RowSteps = { readonly name: string; readonly values: readonly string[]; readonly at: number };
-
-export type SelectRow = { readonly label: string; readonly value?: string; readonly kept?: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean; readonly description?: string; readonly steps?: RowSteps };
+export type SelectRow = { readonly label: string; readonly value?: string; readonly kept?: string; readonly disabled?: boolean; readonly separator?: boolean; readonly opensBrowser?: boolean; readonly description?: string; readonly searchTexts?: readonly string[] };
 
 export type SelectLine = string | { readonly text: string; readonly token?: StyleToken; readonly dim?: boolean; readonly bold?: boolean; readonly first?: string };
 
@@ -26,18 +24,17 @@ export type SelectSpec = {
   readonly confirm?: (row: SelectRow, decideKey: string) => string;
   readonly alt?: { readonly label: string; readonly key?: SecondKey };
   readonly enterOff?: true;
-  readonly stepsLabel?: string;
 };
 
 export type SecondKey = Extract<ActionId, 'select.alt' | 'select.delete'>;
 
 const secondKeyOf = (spec: SelectSpec): SecondKey | undefined => (spec.alt === undefined ? undefined : (spec.alt.key ?? 'select.alt'));
 
-export type SelectState = { readonly index: number; readonly top: number; readonly scrolled: boolean; readonly filter: string; readonly confirming: number | undefined; readonly steps: Readonly<Record<number, number>> };
+export type SelectState = { readonly index: number; readonly top: number; readonly scrolled: boolean; readonly filter: string; readonly confirming: number | undefined };
 
 export type SelectOutcome =
-  | { readonly kind: 'decide'; readonly index: number; readonly step?: number }
-  | { readonly kind: 'alt'; readonly index: number; readonly step?: number }
+  | { readonly kind: 'decide'; readonly index: number }
+  | { readonly kind: 'alt'; readonly index: number }
   | { readonly kind: 'back' }
   | { readonly kind: 'interrupt'; readonly action: SelectSpec['interrupt'] };
 
@@ -101,7 +98,6 @@ export const selectHint = (spec: SelectSpec, keys: KeyTable): string => {
   return joinHint([
     ...(spec.decideOn === 'enter' ? [...move, ...choose] : [...choose, ...move]),
     ...(spec.filter ? ['type to filter'] : []),
-    ...(spec.stepsLabel === undefined ? [] : keyed(keyPair(keys, 'select.less', 'select.more'), (key) => `${key}: ${spec.stepsLabel}`)),
     ...(alt === undefined ? [] : keyed(keys.keyHint(alt.key ?? 'select.alt'), (key) => `${key}: ${alt.label}`)),
     ...(spec.escape === 'back' ? keyed(escapeKey, (key) => `${key}: go back`) : []),
     ...(escapeRow === undefined ? [] : keyed(escapeKey, (key) => `${key}: ${escapeRow.label}`)),
@@ -113,38 +109,19 @@ const PART_GAP = '  ';
 
 export const rowText = (row: SelectRow): string => (row.value === undefined ? row.label : `${row.label}${PART_GAP}${row.value}`);
 
-const matches = (row: SelectRow, filter: string): boolean => rowText(row).toLowerCase().includes(filter.toLowerCase());
+const matches = (row: SelectRow, filter: string): boolean => [rowText(row), ...(row.searchTexts ?? [])].some((text) => text.toLowerCase().includes(filter.toLowerCase()));
 
 const listedOf = (spec: SelectSpec, filter: string): number[] => spec.rows.flatMap((row, index) => (filter === '' || (row.separator !== true && matches(row, filter)) ? [index] : []));
 
 const stopsOf = (spec: SelectSpec, filter: string): number[] => listedOf(spec, filter).filter((index) => spec.rows[index]?.separator !== true);
 
-export const selectStart = (spec: SelectSpec): SelectState => ({ index: spec.initial, top: 0, scrolled: false, filter: '', confirming: undefined, steps: {} });
+export const selectStart = (spec: SelectSpec): SelectState => ({ index: spec.initial, top: 0, scrolled: false, filter: '', confirming: undefined });
 
-const stepOf = (row: SelectRow | undefined, state: SelectState, index: number): number | undefined => (row?.steps === undefined ? undefined : (state.steps[index] ?? row.steps.at));
-
-const STEP_MARKS = { before: '‹ ', after: ' ›' } as const;
-
-export const shownRow = (row: SelectRow, state: SelectState, index: number): SelectRow => {
-  const step = stepOf(row, state, index);
-  if (row.steps === undefined || step === undefined) return row;
-  const level = row.steps.values[step] ?? '';
-  const shown = index === state.index ? `${STEP_MARKS.before}${level}${STEP_MARKS.after}` : level;
-  const part = `${row.steps.name}: ${shown}`;
-  return { ...row, value: row.value === undefined ? part : `${row.value}${PART_GAP}${part}` };
-};
-
-const stepped = (spec: SelectSpec, state: SelectState, delta: number): SelectStep => {
-  const row = spec.rows[state.index];
-  const step = stepOf(row, state, state.index);
-  if (row?.steps === undefined || step === undefined || row.disabled === true) return { state };
-  const next = Math.max(0, Math.min(row.steps.values.length - 1, step + delta));
-  return next === step ? { state } : { state: { ...state, steps: { ...state.steps, [state.index]: next } } };
-};
-
-const withStep = (spec: SelectSpec, state: SelectState, index: number): { step?: number } => {
-  const step = stepOf(spec.rows[index], state, index);
-  return step === undefined ? {} : { step };
+export const selectWithFilter = (spec: SelectSpec, filter: string): SelectState => {
+  if (filter === '' || !spec.filter) return selectStart(spec);
+  const stops = stopsOf(spec, filter);
+  const index = stops.includes(spec.initial) ? spec.initial : (stops[0] ?? spec.initial);
+  return { index, top: 0, scrolled: false, filter, confirming: undefined };
 };
 
 export const spanAt = (count: number, top: number, capacity: number): { start: number; end: number } => {
@@ -173,7 +150,7 @@ const chosen = (spec: SelectSpec, state: SelectState, index: number, capacity: n
   const at = highlighted(spec, state, index, capacity);
   if (row.disabled === true) return { state: { ...at, confirming: undefined } };
   if (spec.confirm !== undefined && state.confirming !== index) return { state: { ...at, confirming: index } };
-  return { state: at, outcome: { kind: 'decide', index, ...withStep(spec, state, index) } };
+  return { state: at, outcome: { kind: 'decide', index } };
 };
 
 const moved = (spec: SelectSpec, state: SelectState, capacity: number, target: (position: number, count: number) => number): SelectStep => {
@@ -220,11 +197,7 @@ export const selectAct = (spec: SelectSpec, state: SelectState, action: ActionId
       return spec.escape === 'inactive' ? { state } : { state, outcome: { kind: 'decide', index: spec.escape } };
     case 'select.alt':
     case 'select.delete':
-      return action === secondKeyOf(spec) && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index, ...withStep(spec, state, state.index) } } : { state };
-    case 'select.less':
-      return stepped(spec, state, -1);
-    case 'select.more':
-      return stepped(spec, state, 1);
+      return action === secondKeyOf(spec) && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index } } : { state };
     case 'select.filterBack':
       return spec.filter ? filtered(spec, state, state.filter.slice(0, -1), capacity) : { state };
     default:
@@ -282,7 +255,7 @@ export type RowPlace = { readonly numberWidth: number };
 
 const NO_PLACE: RowPlace = { numberWidth: 0 };
 
-const placeOf = (stops: readonly number[]): RowPlace => ({ numberWidth: String(stops.length).length });
+const placeOf = (spec: SelectSpec): RowPlace => ({ numberWidth: String(stopsOf(spec, '').length).length });
 
 const choiceText = (label: string, number: number | undefined, disabled: boolean | undefined, place: RowPlace): string =>
   `${number === undefined ? '' : `${String(number).padStart(place.numberWidth)}. `}${escapeTerminalLine(label)}${disabled === true ? ' (unavailable)' : ''}`;
@@ -350,18 +323,13 @@ const linesOfRow = (row: SelectRow | undefined, number: number, place: RowPlace,
   return choiceLines(partsOf(row, number, place), prefix, width, selected).length + (!described || row.description === undefined ? 0 : descriptionLines(row.description, prefix, width).length);
 };
 
-const shownRowAt = (spec: SelectSpec, state: SelectState, index: number): SelectRow | undefined => {
-  const row = spec.rows[index];
-  return row === undefined ? undefined : shownRow(row, state, index);
-};
-
 export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonly TextRow[], frame: SelectFrame, extraRows: number, screenReader: boolean): SelectLayout => {
   const listed = listedOf(spec, state.filter);
   const stops = stopsOf(spec, state.filter);
   const border = frame.border ? BORDER_ROWS : 0;
   const filterRows = spec.filter ? 1 : 0;
   const rowWidth = innerWidth(frame);
-  const tallRowsOf = (described: boolean): number => listed.reduce((sum, index) => sum + linesOfRow(shownRowAt(spec, state, index), stops.indexOf(index) + 1, placeOf(stops), rowWidth, screenReader, index === state.index, described) - 1, 0);
+  const tallRowsOf = (described: boolean): number => listed.reduce((sum, index) => sum + linesOfRow(spec.rows[index], stops.indexOf(index) + 1, placeOf(spec), rowWidth, screenReader, index === state.index, described) - 1, 0);
   const chrome = border + filterRows + (state.confirming === undefined ? 0 : 1) + extraRows + 1;
   const described = chrome + tallRowsOf(true) + listed.length + Math.min(text.length, TEXT_KEPT_ROWS) <= frame.rows;
   const tallRows = tallRowsOf(described);
@@ -386,7 +354,7 @@ export const selectLayout = (spec: SelectSpec, state: SelectState, text: readonl
     more,
     moreRow,
     items,
-    itemLines: items.map((index) => linesOfRow(shownRowAt(spec, state, index), stops.indexOf(index) + 1, placeOf(stops), rowWidth, screenReader, index === state.index, described)),
+    itemLines: items.map((index) => linesOfRow(spec.rows[index], stops.indexOf(index) + 1, placeOf(spec), rowWidth, screenReader, index === state.index, described)),
     described,
     rowWidth,
     above: onlyHighlighted ? 0 : span.start,
@@ -470,13 +438,13 @@ export function MoreRow({ direction, count }: { direction: 'up' | 'down'; count:
   return <Text dimColor wrap="truncate">{moreRowText(direction, count, screenReader)}</Text>;
 }
 
-export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; settling: boolean; keys: KeyTable; error?: string };
+export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; keys: KeyTable; error?: string };
 
-export function SelectView({ spec, state, layout, border, sending, settling, keys, error }: SelectViewProps) {
+export function SelectView({ spec, state, layout, border, sending, keys, error }: SelectViewProps) {
   const { screenReader } = currentA11y();
   const stops = stopsOf(spec, state.filter);
   const confirming = state.confirming === undefined ? undefined : spec.rows[state.confirming];
-  const highlightedRow = shownRowAt(spec, state, state.index);
+  const highlightedRow = spec.rows[state.index];
   return (
     <Panel border={border}>
       <TextRows rows={layout.text} />
@@ -486,15 +454,15 @@ export function SelectView({ spec, state, layout, border, sending, settling, key
       {layout.above > 0 ? <MoreRow direction="up" count={layout.above} /> : null}
       {layout.items.length === 0 ? <Text dimColor>{screenReader ? 'no match' : '  no match'}</Text> : null}
       {layout.items.map((index) => {
-        const row = shownRowAt(spec, state, index);
+        const row = spec.rows[index];
         if (row === undefined) return null;
         if (row.separator === true) return <Text key={index} dimColor wrap="truncate">{`${screenReader ? '' : '  '}${escapeTerminalLine(row.label)}`}</Text>;
-        return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} place={placeOf(stops)} label={row.label} width={layout.rowWidth} {...(row.value === undefined ? {} : { value: row.value })} {...(row.kept === undefined ? {} : { kept: row.kept })} {...(row.disabled === true ? { disabled: true } : {})} {...(!layout.described || row.description === undefined ? {} : { description: row.description })} />;
+        return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} place={placeOf(spec)} label={row.label} width={layout.rowWidth} {...(row.value === undefined ? {} : { value: row.value })} {...(row.kept === undefined ? {} : { kept: row.kept })} {...(row.disabled === true ? { disabled: true } : {})} {...(!layout.described || row.description === undefined ? {} : { description: row.description })} />;
       })}
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
       {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}
       {error === undefined ? null : <Text {...styleOfTokens(['error'])} wrap="truncate">{escapeTerminalLine(error)}</Text>}
-      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : layout.more > 0 && !layout.moreRow ? moreLinesText(layout.more, keys) : settling ? ' ' : selectHint(spec, keys)}</Text>
+      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : layout.more > 0 && !layout.moreRow ? moreLinesText(layout.more, keys) : selectHint(spec, keys)}</Text>
     </Panel>
   );
 }

@@ -63,7 +63,7 @@ export type SlashContext = ModeAvailability & {
   readonly negotiation: NegotiationState;
   readonly display: DisplayPort;
   readonly keyBindings: KeyBindingsScreen;
-  readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText'>;
+  readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText' | 'closeScreen'>;
   readonly externalEditor: Pick<ExternalEditorPort, 'open'>;
   readonly clipboard: ClipboardTextPort;
   refusedWhileRunning(): boolean;

@@ -159,7 +159,7 @@ describe('a state that ends is not an entry (6.5)', () => {
     expect(said.slice(0, 10).join('').trim()).toBe('');
     terminal.emit(keyX);
     const after = linesOf(await untilFrame(app, 'new line'));
-    expect(after[13]).toMatch(/^mode: plan \(shift\+tab\) · tokens: 0 · context: 0% +ctrl\+j: new line$/);
+    expect(after[13]).toMatch(/^mode: plan \(shift\+tab\) · tokens: 0 · context: 0% · scripted-model +ctrl\+j: new line$/);
     app.unmount();
   });
 });

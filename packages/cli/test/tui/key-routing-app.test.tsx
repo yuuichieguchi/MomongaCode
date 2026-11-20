@@ -3,7 +3,7 @@ import { exitHint } from '../../src/tui/app.tsx';
 import { NOT_NOW_LABEL, invitationLine } from '../../src/tui/screen/menu.tsx';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
-import { CHATGPT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, startPlan, untilTypedAfter, submitLine, untilRow } from '../fake-plan-gateway.tsx';
+import { CHATGPT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, startPlan, untilPromptDrawn, untilTypedAfter, submitLine, untilRow } from '../fake-plan-gateway.tsx';
 import type { FakePlanBackend } from '../fake-plan-gateway.tsx';
 import { runView } from '../fake-backend.ts';
 import { runStarted } from '../tui-harness.tsx';
@@ -95,6 +95,7 @@ describe('the invitation is one line that takes no key', () => {
     const { app, backend } = await invited();
     app.stdin.write(KEYS.escape);
     await untilFrame(app, (shown) => !shown.includes(LINE));
+    await untilPromptDrawn(app);
     await untilTypedAfter(app);
     expect(backend.dismissals).toEqual([]);
     app.unmount();
@@ -107,6 +108,7 @@ describe('the invitation is one line that takes no key', () => {
     await eventually(() => backend.dismissals.length > 0, 'the stored answer');
     expect(backend.dismissals).toEqual(['invite:chatgpt']);
     await untilFrame(app, (shown) => !shown.includes(NOT_NOW_LABEL));
+    await untilPromptDrawn(app);
     expect(await untilTypedAfter(app)).not.toContain(LINE);
     app.unmount();
   });
@@ -170,18 +172,20 @@ describe('the loading overlay has a key that leaves it and is closed by the flow
 });
 
 describe('a key typed between two lists of one flow never acts on the list that opens', () => {
-  it('holds the key while the flow works, applies none to the next list, and keeps typed text for the input', async () => {
+  it('drops the key while the flow works: none acts on the next list and no typed text reaches the input', async () => {
     const { app, backend } = await startPlan({ accounts: [], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
     await untilFrame(app, 'mode: manual');
     const held = Promise.withResolvers<void>();
+    const asked = Promise.withResolvers<void>();
     backend.sandbox = async () => {
+      asked.resolve();
       await held.promise;
       return 'none';
     };
     await submitLine(app, '/login');
     await choose(app, 'ChatGPT');
-    await untilFrame(app, (shown) => !shown.includes('Add an API key'));
+    await asked.promise;
     app.stdin.write(KEYS.down);
     app.stdin.write('x');
     held.resolve();
@@ -189,12 +193,13 @@ describe('a key typed between two lists of one flow never acts on the list that 
     expect(app.lastFrame()).toContain('› 2. Cancel');
     expect(app.lastFrame()).not.toContain('> x');
     app.stdin.write(KEYS.escape);
-    await untilFrame(app, (shown) => !shown.includes('The sandbox is off') && shown.includes('> x'));
+    const closed = await untilFrame(app, (shown) => !shown.includes('The sandbox is off') && shown.split('\n').some((row) => row.includes('›') && row.includes('ChatGPT')));
+    expect(closed).not.toContain('> x');
     expect(signInSteps(backend)).toEqual([]);
     app.unmount();
   });
 
-  it('gives the held keys to the input, in order, when the flow ends without another list', async () => {
+  it('puts the keys typed while the last step of the flow is saved in the input at once, once, and replays nothing when it ends', async () => {
     const { app, backend } = await startPlan({ accounts: [account()], dismissed: { 'invite:chatgpt': 'x' } });
     await backend.called('openSession');
     await untilFrame(app, 'mode: manual');
@@ -212,8 +217,12 @@ describe('a key typed between two lists of one flow never acts on the list that 
     await untilFrame(app, (shown) => !shown.includes('again to sign out'));
     app.stdin.write('a');
     app.stdin.write('b');
+    const typed = await untilFrame(app, (shown) => shown.includes('> ab') || shown.includes('> a'));
+    expect(typed).toContain('> ab');
     held.resolve();
-    await untilFrame(app, '> ab');
+    const ended = await untilFrame(app, 'Signed out chatgpt');
+    expect(ended).toContain('> ab');
+    expect(ended).not.toContain('> abab');
     app.unmount();
   });
 });

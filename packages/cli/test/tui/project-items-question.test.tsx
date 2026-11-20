@@ -4,14 +4,14 @@ import { App } from '../../src/tui/app.tsx';
 import { APPROVE_ROW, NOT_NOW_ROW, NOT_RECORDED_LINE } from '../../src/tui/project-items.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS, renderObservable, settleAtOnce, TEST_KEY_SETTLE_MS, untilFrame } from '../ink-helpers.ts';
+import { KEYS, renderObservable, settleAtOnce, untilFrame } from '../ink-helpers.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 
 const GROUP = { matcher: 'Bash', hooks: [{ type: 'command' as const, command: './scripts/check.sh --fix' }] };
 
 const start = (options: FakeBackendOptions) => {
   const backend = fakeBackend(options);
-  const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal({ columns: 120, rows: 40 })} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} keySettleMs={TEST_KEY_SETTLE_MS} onExit={() => undefined} />);
+  const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal({ columns: 120, rows: 40 })} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} onExit={() => undefined} />);
   return { backend, app };
 };
 

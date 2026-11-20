@@ -111,6 +111,20 @@ describe('the keys of the one selection component', () => {
     expect(after(of, [['z'], ['', { return: true }]]).outcomes).toEqual([]);
   });
 
+  it('a typed filter also matches the searched text of a row, which is never drawn', () => {
+    const of = spec({ filter: true, rows: [{ label: 'alpha' }, { label: 'beta', searchTexts: ['Hidden Provider'] }, { label: 'gamma' }] });
+    const typed = after(of, [['h'], ['i'], ['d']]);
+    expect(typed).toMatchObject({ state: { filter: 'hid', index: 1 }, outcomes: [] });
+    const frame = { width: 60, rows: 10, border: false };
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, typed.state, selectText(of, frame), frame, 0, false)} state={typed.state} border={false} keys={DEFAULT_KEY_TABLE} sending={false} />);
+    const shown = app.lastFrame() ?? '';
+    app.unmount();
+    expect(shown).toContain('beta');
+    expect(shown).not.toContain('alpha');
+    expect(shown).not.toContain('gamma');
+    expect(shown.toLowerCase()).not.toContain('provider');
+  });
+
   it('a press on a row moves to it when only enter decides and decides it when the prompt decides at once', () => {
     const entered = spec({ decideOn: 'enter' });
     expect(selectClick(entered, selectStart(entered), 2)).toMatchObject({ state: { index: 2 } });
@@ -211,7 +225,7 @@ describe('the list in the rows it is given', () => {
 describe('the rows a list panel draws are the rows it was given (cli-tui-23)', () => {
   const drawnRows = (of: SelectSpec, frame: { width: number; rows: number; border: boolean }): string[] => {
     const state = selectStart(of);
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, 0, false)} state={state} border={frame.border} keys={DEFAULT_KEY_TABLE} sending={false} settling={false} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, 0, false)} state={state} border={frame.border} keys={DEFAULT_KEY_TABLE} sending={false} />);
     const shown = (app.lastFrame() ?? '').split('\n');
     app.unmount();
     return shown;
@@ -271,7 +285,7 @@ describe('a row that opens a browser or starts a sign-in', () => {
 describe('the rows as drawn', () => {
   const drawn = (of: SelectSpec, state: SelectState, extra: { sending?: boolean; error?: string } = {}): string => {
     const frame = { width: 60, rows: 20, border: false };
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1, false)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} settling={false} {...(extra.error === undefined ? {} : { error: extra.error })} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1, false)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} {...(extra.error === undefined ? {} : { error: extra.error })} />);
     const shown = app.lastFrame() ?? '';
     app.unmount();
     return shown;
@@ -329,25 +343,5 @@ describe('a row keeps its key, its value and its kept text readable at every wid
     const [line] = choiceLines({ key: KEY, value }, '  ', 36, false);
     expect(line?.indexOf(value)).toBeLessThanOrEqual(2 + 12 + 2);
     expect(line?.slice(2, line.indexOf('  /'))).toMatch(/^77\..*….*\(ms\)$/);
-  });
-});
-
-describe('a row that carries a value the arrows change', () => {
-  const stepped = spec({ rows: [{ label: 'a', steps: { name: 'effort', values: ['low', 'medium', 'high'], at: 1 } }, { label: 'b' }], decideOn: 'enter', stepsLabel: 'change the effort' });
-
-  it('moves the value of the highlighted row within its values, shows it marked, and gives it with the choice', () => {
-    const right = press(stepped, selectStart(stepped), '', { rightArrow: true });
-    const further = press(stepped, right.state, '', { rightArrow: true });
-    expect(further.state.steps).toEqual({ 0: 2 });
-    const chosen = press(stepped, further.state, '\r', { return: true });
-    expect(chosen.outcome).toEqual({ kind: 'decide', index: 0, step: 2 });
-    const left = press(stepped, selectStart(stepped), '', { leftArrow: true });
-    expect(press(stepped, left.state, '\r', { return: true }).outcome).toEqual({ kind: 'decide', index: 0, step: 0 });
-  });
-
-  it('leaves a row without values unchanged and names the keys in the hint', () => {
-    const onB = press(stepped, selectStart(stepped), '', { downArrow: true });
-    expect(press(stepped, onB.state, '', { rightArrow: true }).state.steps).toEqual({});
-    expect(selectHint(stepped, DEFAULT_KEY_TABLE)).toContain('left/right: change the effort');
   });
 });

@@ -1,13 +1,12 @@
 import type { KeyContext } from '../keys/table.ts';
 import type { Overlay } from '../picker.tsx';
 
-export type KeyRoute = 'trust' | 'tool-view' | 'overlay' | 'between-lists' | 'welcome' | 'prompt' | 'agents' | 'shell' | 'menu' | 'editor';
+export type KeyRoute = 'trust' | 'tool-view' | 'overlay' | 'welcome' | 'prompt' | 'agents' | 'shell' | 'menu' | 'editor';
 
 export type KeyRouteFacts = {
   readonly trust: boolean;
   readonly toolView: boolean;
   readonly overlay: Overlay['kind'] | undefined;
-  readonly betweenLists: boolean;
   readonly welcome: boolean;
   readonly prompt: 'decision' | 'fields' | undefined;
   readonly detail: boolean;
@@ -21,7 +20,6 @@ export const keyRouteOf = (facts: KeyRouteFacts): KeyRoute => {
   if (facts.trust) return 'trust';
   if (facts.toolView) return 'tool-view';
   if (facts.overlay !== undefined) return 'overlay';
-  if (facts.betweenLists) return 'between-lists';
   if (facts.welcome) return 'welcome';
   if (facts.prompt !== undefined) return 'prompt';
   if (facts.agentsChosen) return 'agents';
@@ -35,7 +33,7 @@ const LINE_ENTRY: readonly KeyContext[] = ['select', 'chat'];
 const NO_CONTEXT: readonly KeyContext[] = [];
 const EDITOR: readonly KeyContext[] = ['chat', 'global'];
 
-const OVERLAY_CONTEXTS: Readonly<Record<Overlay['kind'], readonly KeyContext[]>> = { pick: LIST, text: LINE_ENTRY, waiting: LINE_ENTRY, loading: LIST, capture: NO_CONTEXT };
+const OVERLAY_CONTEXTS: Readonly<Record<Overlay['kind'], readonly KeyContext[]>> = { pick: LIST, text: LINE_ENTRY, waiting: LINE_ENTRY, loading: LIST, capture: NO_CONTEXT, kept: LIST };
 
 const listContexts = (facts: KeyRouteFacts): readonly KeyContext[] => (facts.detail ? DETAIL : LIST);
 
@@ -50,7 +48,6 @@ export const chordContextsOf = (facts: KeyRouteFacts): readonly KeyContext[] => 
       return DETAIL;
     case 'overlay':
       return facts.overlay === 'pick' ? listContexts(facts) : facts.overlay === undefined ? NO_CONTEXT : OVERLAY_CONTEXTS[facts.overlay];
-    case 'between-lists':
     case 'welcome':
       return NO_CONTEXT;
     case 'prompt':

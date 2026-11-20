@@ -161,7 +161,7 @@ const subjectOf = (world: World, keys: readonly Key[], outcome: 'ok' | 'fail'): 
   let reads = 0;
   return {
     target: 'm',
-    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling for the model "m" in its settings' },
+    unknown: { fields: ['toolCalling'], declaration: 'declare toolCalling for the model "m" in its settings', model: 'm' },
     readKey: async () => keys[Math.min(reads++, keys.length - 1)] as Key,
     precondition: { boundMs: 1000, check: async () => ({ kind: 'met' }) },
     measure: async ({ key }) => {

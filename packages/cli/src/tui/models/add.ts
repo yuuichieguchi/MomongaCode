@@ -8,7 +8,8 @@ import { addProposalOf, entryOf, foundProposalOf, foundRowOf, kindOf, nameInputO
 import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
 import { NO_SERVER_ANSWERED_TEXT, noServerAnsweredAtText } from '../../models-texts.ts';
 import { MEASURING_TEXT } from '../screen/waiting-row.tsx';
-import { cancellable, chosenOf, confirmAndWrite, hostOf, openEdit, refusedSentence } from './context.ts';
+import { cancellable, chosenOf, chosenThen, confirmAndWrite, hostOf, openEdit, refusedSentence } from './context.ts';
+import { isAbandoned } from '../flow-step.ts';
 import type { ModelsFlowContext, Opened } from './context.ts';
 import {
   ADDRESS_PROMPT,
@@ -51,6 +52,10 @@ import {
 export type Added = { readonly model: string | undefined };
 
 const NOT_ADDED = undefined;
+const BACK = Symbol('back');
+
+export type AddOutcome = Added | undefined;
+type AddStepOutcome = AddOutcome | typeof BACK;
 
 export const addressProblem = (text: string): string | undefined => {
   if (!URL.canParse(text.trim())) return NOT_AN_ADDRESS;
@@ -115,10 +120,11 @@ const addFromServer = async (context: ModelsFlowContext, opened: Opened, found: 
   }
   const displays = await refusedSentence(context, async () => foundDisplays(opened.edit, server));
   if (displays === undefined) return NOT_ADDED;
-  const index = await chosenOf(context, { title: foundRowOf(server), rows: displays.value.map((label) => ({ label })) });
-  const model = index === undefined ? undefined : server.models[index];
-  if (index === undefined || model === undefined) return NOT_ADDED;
-  return addFoundModel(context, opened, server, model, displays.value[index] ?? model.id);
+  const added = await chosenThen(context, { title: foundRowOf(server), rows: displays.value.map((label) => ({ label })) }, async (index) => {
+    const model = server.models[index];
+    return model === undefined ? NOT_ADDED : addFoundModel(context, opened, server, model, displays.value[index] ?? model.id);
+  });
+  return added?.value;
 };
 
 export const searchServers = async (context: ModelsFlowContext, typed: readonly string[]): Promise<readonly LocalServerDetection[] | undefined> => {
@@ -136,7 +142,7 @@ const search = async (context: ModelsFlowContext, typed: readonly string[]): Pro
 const askModelName = (context: ModelsFlowContext): Promise<string | undefined> =>
   context.overlays.promptText({ title: MODEL_NAME_PROMPT, validate: (text) => (text.trim() === '' ? MODEL_NAME_PROBLEM : undefined) });
 
-const addTyped = async (context: ModelsFlowContext, opened: Opened, connection: Record<string, unknown>, before?: () => Promise<void>): Promise<Added | undefined> => {
+const addTyped = async (context: ModelsFlowContext, opened: Opened, connection: Record<string, unknown>, before?: () => Promise<void>): Promise<AddOutcome> => {
   const name = await askModelName(context);
   if (name === undefined) return NOT_ADDED;
   const id = name.trim();
@@ -149,17 +155,26 @@ const addTyped = async (context: ModelsFlowContext, opened: Opened, connection: 
   return written === undefined ? NOT_ADDED : { model: written.model };
 };
 
-const addUnanswered = async (context: ModelsFlowContext, opened: Opened, address: string): Promise<Added | undefined> => {
-  const api = await chosenOf(context, { title: noServerAnsweredAtText(address), rows: API_ROWS.map((row) => ({ label: row.label })) });
-  const row = api === undefined ? undefined : API_ROWS[api];
-  return row === undefined ? NOT_ADDED : addTyped(context, opened, { adapter: row.adapter, baseUrl: address });
+const addUnanswered = async (context: ModelsFlowContext, opened: Opened, address: string): Promise<AddOutcome> => {
+  const added = await chosenThen(context, { title: noServerAnsweredAtText(address), rows: API_ROWS.map((row) => ({ label: row.label })) }, async (api) => {
+    const row = API_ROWS[api];
+    return row === undefined ? NOT_ADDED : addTyped(context, opened, { adapter: row.adapter, baseUrl: address });
+  });
+  return added?.value;
 };
 
 export const addFromFound = async (context: ModelsFlowContext, servers: readonly DetectedLocalServer[]): Promise<Added | undefined> => {
+  const step = await addFromFoundStep(context, servers);
+  return step === BACK ? NOT_ADDED : step;
+};
+
+const addFromFoundStep = async (context: ModelsFlowContext, servers: readonly DetectedLocalServer[]): Promise<AddStepOutcome> => {
   const opened = await openEdit(context);
-  const index = await chosenOf(context, { title: SEARCH_ROW, rows: servers.map((server) => ({ label: foundRowOf(addableOf(opened.edit, server)) })) });
-  const server = index === undefined ? undefined : servers[index];
-  return server === undefined ? NOT_ADDED : addFromServer(context, opened, server);
+  const added = await chosenThen(context, { title: SEARCH_ROW, rows: servers.map((server) => ({ label: foundRowOf(addableOf(opened.edit, server)) })) }, async (index) => {
+    const server = servers[index];
+    return server === undefined ? NOT_ADDED : addFromServer(context, opened, server);
+  });
+  return added === undefined ? BACK : added.value;
 };
 
 export const builtInRowOf = (server: Pick<ManagedServerDescription, 'label'>): string => builtInServerRow(server.label);
@@ -170,7 +185,7 @@ export const managedRowOf = (id: string): string => {
   return builtInRowOf(server);
 };
 
-export const addByAddress = async (context: ModelsFlowContext): Promise<Added | undefined> => {
+export const addByAddress = async (context: ModelsFlowContext): Promise<AddOutcome> => {
   const typed = await context.overlays.promptText({ title: ADDRESS_PROMPT, validate: addressProblem });
   if (typed === undefined) return NOT_ADDED;
   const address = typed.trim();
@@ -181,14 +196,19 @@ export const addByAddress = async (context: ModelsFlowContext): Promise<Added | 
   return server === undefined ? addUnanswered(context, opened, address) : addFromServer(context, opened, server);
 };
 
-export const addBySearch = async (context: ModelsFlowContext): Promise<Added | undefined> => {
+const addBySearchStep = async (context: ModelsFlowContext): Promise<AddStepOutcome> => {
   const servers = await search(context, []);
   if (servers === undefined) return NOT_ADDED;
   if (servers.length === 0) {
-    const next = await chosenOf(context, { title: NO_SERVER_ANSWERED_TEXT, rows: [{ label: TYPE_ADDRESS_ROW }, { label: BACK_ROW }] });
-    return next === 0 ? addByAddress(context) : NOT_ADDED;
+    const added = await chosenThen(context, { title: NO_SERVER_ANSWERED_TEXT, rows: [{ label: TYPE_ADDRESS_ROW }, { label: BACK_ROW }] }, async (next) => (next === 0 ? addByAddress(context) : NOT_ADDED));
+    return added === undefined ? BACK : added.value;
   }
-  return addFromFound(context, servers);
+  return addFromFoundStep(context, servers);
+};
+
+export const addBySearch = async (context: ModelsFlowContext): Promise<AddOutcome> => {
+  const step = await addBySearchStep(context);
+  return step === BACK ? NOT_ADDED : step;
 };
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -212,10 +232,7 @@ export const secretNameOf = (server: string): string => `${server}${SECRET_NAME_
 
 export const storeKey = (context: ModelsFlowContext, name: string, value: string): Promise<void> => context.wait(SAVING_KEY_PHASE, (signal) => context.backend.storeSecret(name, value, signal));
 
-export const addService = async (context: ModelsFlowContext): Promise<Added | undefined> => {
-  const api = await chosenOf(context, { title: SERVICE_ROW, rows: SERVICE_API_ROWS.map((row) => ({ label: row.label })) });
-  const row = api === undefined ? undefined : SERVICE_API_ROWS[api];
-  if (row === undefined) return NOT_ADDED;
+const serviceEntry = async (context: ModelsFlowContext, row: (typeof SERVICE_API_ROWS)[number]): Promise<AddOutcome> => {
   const typed = await context.overlays.promptText({ title: SERVICE_ADDRESS_PROMPT, validate: addressProblem });
   if (typed === undefined) return NOT_ADDED;
   const key = await askKey(context);
@@ -229,16 +246,25 @@ export const addService = async (context: ModelsFlowContext): Promise<Added | un
   return addTyped(context, opened, { ...base, apiKeySecret: name }, () => storeKey(context, name, key.value));
 };
 
+export const addService = async (context: ModelsFlowContext): Promise<AddOutcome> => {
+  const added = await chosenThen(context, { title: SERVICE_ROW, rows: SERVICE_API_ROWS.map((row) => ({ label: row.label })) }, async (api) => {
+    const row = SERVICE_API_ROWS[api];
+    return row === undefined ? NOT_ADDED : serviceEntry(context, row);
+  });
+  return added?.value;
+};
+
 const measured = async (context: ModelsFlowContext, work: (signal: AbortSignal) => Promise<ModelsProposal>): Promise<ModelsProposal | undefined> => {
   try {
     return (await cancellable(context, MEASURING_TEXT, work))?.value;
   } catch (error) {
+    if (isAbandoned(error)) throw error;
     context.info(describeFailure(error));
     return undefined;
   }
 };
 
-export const addProgram = async (context: ModelsFlowContext): Promise<Added | undefined> => {
+export const addProgram = async (context: ModelsFlowContext): Promise<AddOutcome> => {
   const opened = await openEdit(context);
   const { platform } = opened.host;
   const isFullPath = platform === 'win32' ? path.win32.isAbsolute : path.posix.isAbsolute;
@@ -269,7 +295,7 @@ export const addProgram = async (context: ModelsFlowContext): Promise<Added | un
   return written === undefined ? NOT_ADDED : { model: written.model };
 };
 
-export const addBuiltIn = async (context: ModelsFlowContext, id: string): Promise<Added | undefined> => {
+export const addBuiltIn = async (context: ModelsFlowContext, id: string): Promise<AddOutcome> => {
   const opened = await openEdit(context);
   const proposal = await measured(context, async (signal) => addProposalOf(opened.edit, { adapter: 'managed', server: id }, { id: await hostOf(context, signal).programModel({ id, builtIn: true }, signal) }));
   if (proposal === undefined) return NOT_ADDED;
@@ -279,10 +305,10 @@ export const addBuiltIn = async (context: ModelsFlowContext, id: string): Promis
 
 export const unusedBuiltIns = (edit: ModelsEdit): string[] => MANAGED_SERVERS.map((server) => server.id).filter((id) => !edit.resolved.connections.some((connection) => connection.server === id));
 
-type AddRow = { label: string; act(): Promise<Added | undefined> };
+type AddRow = { label: string; act(): Promise<AddStepOutcome> };
 
 export const addRows = (context: ModelsFlowContext, edit: ModelsEdit): AddRow[] => [
-  { label: SEARCH_ROW, act: () => addBySearch(context) },
+  { label: SEARCH_ROW, act: () => addBySearchStep(context) },
   { label: TYPE_ADDRESS_ROW, act: () => addByAddress(context) },
   { label: SERVICE_ROW, act: () => addService(context) },
   { label: PROGRAM_ROW, act: () => addProgram(context) },
@@ -290,9 +316,16 @@ export const addRows = (context: ModelsFlowContext, edit: ModelsEdit): AddRow[] 
 ];
 
 export const runAddFlow = async (context: ModelsFlowContext): Promise<Added | undefined> => {
-  const { edit } = await openEdit(context);
-  const rows = addRows(context, edit);
-  const index = await chosenOf(context, { title: ADD_TITLE, rows: rows.map((row) => ({ label: row.label })) });
-  const row = index === undefined ? undefined : rows[index];
-  return row === undefined ? NOT_ADDED : row.act();
+  let at = 0;
+  for (;;) {
+    const { edit } = await openEdit(context);
+    const rows = addRows(context, edit);
+    const added = await chosenThen(context, { title: ADD_TITLE, rows: rows.map((row) => ({ label: row.label })), initial: Math.min(at, Math.max(0, rows.length - 1)) }, async (index) => {
+      at = index;
+      return rows[index]?.act();
+    });
+    if (added === undefined) return undefined;
+    if (added.value === BACK) continue;
+    return added.value;
+  }
 };
