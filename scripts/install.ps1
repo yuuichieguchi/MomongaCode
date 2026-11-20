@@ -6,7 +6,7 @@
   $checksumsName = 'SHA256SUMS'
   $signatureName = 'SHA256SUMS.sig'
   $signatureNamespace = 'momonga-release'
-  $embeddedReleasePublicKey = ''
+  $embeddedReleasePublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEsNopRVJ6s7vlMTDNEr6C/4bOBn2UyAFvMFQKu+TVyd'
   $embeddedReleaseRepo = 'yuuichieguchi/MomongaCode'
 
   function Fail([string]$message) {

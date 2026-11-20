@@ -30,9 +30,11 @@ describe('install.ps1', () => {
     expect(VARIABLE_FOLLOWED_BY_COLON.test('path $env:LOCALAPPDATA')).toBe(false);
   });
 
-  it('fails clearly, and says what to do, when no release key is pinned', () => {
+  const RELEASE_PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEsNopRVJ6s7vlMTDNEr6C/4bOBn2UyAFvMFQKu+TVyd';
+
+  it('pins the release public key and fails clearly when no release key is pinned', () => {
     const source = fs.readFileSync(SCRIPT, 'utf8');
-    expect(source).toContain("$embeddedReleasePublicKey = ''");
+    expect(source).toContain(`$embeddedReleasePublicKey = '${RELEASE_PUBLIC_KEY}'`);
     expect(source).toContain('this installer pins no release signing key');
     expect(source).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
   });
@@ -45,7 +47,7 @@ describe('install.ps1', () => {
 
   it('declares the release repository yuuichieguchi/MomongaCode right after the embedded release public key', () => {
     const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n').map((line) => line.trim());
-    const keyLine = lines.indexOf("$embeddedReleasePublicKey = ''");
+    const keyLine = lines.indexOf(`$embeddedReleasePublicKey = '${RELEASE_PUBLIC_KEY}'`);
     expect(keyLine).toBeGreaterThanOrEqual(0);
     expect(lines[keyLine + 1]).toBe("$embeddedReleaseRepo = 'yuuichieguchi/MomongaCode'");
   });

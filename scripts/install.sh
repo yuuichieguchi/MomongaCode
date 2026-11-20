@@ -4,7 +4,7 @@ set -euo pipefail
 readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly SIGNATURE_NAME="SHA256SUMS.sig"
 readonly SIGNATURE_NAMESPACE="momonga-release"
-readonly EMBEDDED_RELEASE_PUBLIC_KEY=""
+readonly EMBEDDED_RELEASE_PUBLIC_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEsNopRVJ6s7vlMTDNEr6C/4bOBn2UyAFvMFQKu+TVyd"
 readonly EMBEDDED_RELEASE_REPO="yuuichieguchi/MomongaCode"
 
 fail() {

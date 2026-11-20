@@ -83,8 +83,10 @@ describe('release-key.ts', () => {
     expect(() => readPinnedReleaseKey(repo)).toThrow('scripts/install.sh has no embedded release declaration');
   });
 
-  it('reads the installers of this repository, which pin no key until the maintainers choose one', () => {
-    expect(() => readPinnedReleaseKey(repoRoot)).toThrow('no release signing key is pinned');
+  const REPO_RELEASE_PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEsNopRVJ6s7vlMTDNEr6C/4bOBn2UyAFvMFQKu+TVyd';
+
+  it('reads the pinned release key of this repository from both installers', () => {
+    expect(readPinnedReleaseKey(repoRoot)).toBe(REPO_RELEASE_PUBLIC_KEY);
   });
 
   it('accepts a signature made by the pinned key', async () => {
@@ -101,11 +103,11 @@ describe('release-key.ts', () => {
     await expect(verifyWithPinnedKey(pinned, genuine.checksums, genuine.signature)).rejects.toThrow('refusing to publish');
   });
 
-  it('exits non-zero from the command line when the pin is missing', () => {
+  it('prints the pinned release key from the command line', () => {
     const result = spawnSync(process.execPath, [`${repoRoot}scripts/release-key.ts`, 'print'], { encoding: 'utf8' });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('release-key.ts: no release signing key is pinned');
-    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(`${REPO_RELEASE_PUBLIC_KEY}\n`);
   });
 
   it('prints yuuichieguchi/MomongaCode as the release repository from the command line', () => {

@@ -50,9 +50,9 @@ const listen = async (files: () => Served): Promise<http.Server> => {
 
 type Outcome = { readonly code: number; readonly stdout: string; readonly stderr: string };
 
-const runInstall = (env: NodeJS.ProcessEnv): Promise<Outcome> =>
+const runInstall = (env: NodeJS.ProcessEnv, script: string = INSTALL_SCRIPT): Promise<Outcome> =>
   new Promise((resolve, reject) => {
-    execFile('/bin/bash', [INSTALL_SCRIPT], { env }, (error, stdout, stderr) => {
+    execFile('/bin/bash', [script], { env }, (error, stdout, stderr) => {
       if (error === null) return resolve({ code: 0, stdout, stderr });
       if (typeof error.code === 'number') return resolve({ code: error.code, stdout, stderr });
       reject(error);
@@ -266,8 +266,19 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(outcome.stderr).toBe('install.sh: unsupported architecture riscv64: only x86_64 and aarch64 are supported on Linux\n');
   });
 
+  const RELEASE_PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEsNopRVJ6s7vlMTDNEr6C/4bOBn2UyAFvMFQKu+TVyd';
+  const EMBEDDED_KEY_DECLARATION = `readonly EMBEDDED_RELEASE_PUBLIC_KEY="${RELEASE_PUBLIC_KEY}"`;
   const RELEASE_REPO = 'yuuichieguchi/MomongaCode';
   const EMBEDDED_REPO_DECLARATION = `readonly EMBEDDED_RELEASE_REPO="${RELEASE_REPO}"`;
+
+  const installerWithKey = (key: string): string => {
+    const source = fs.readFileSync(INSTALL_SCRIPT, 'utf8');
+    expect(source).toContain(EMBEDDED_KEY_DECLARATION);
+    const directory = createTempDir({ parent: root });
+    const script = path.join(directory, 'install.sh');
+    fs.writeFileSync(script, source.replace(EMBEDDED_KEY_DECLARATION, `readonly EMBEDDED_RELEASE_PUBLIC_KEY="${key}"`));
+    return script;
+  };
 
   const installerWithRepo = (repo: string): string => {
     const source = fs.readFileSync(INSTALL_SCRIPT, 'utf8');
@@ -297,7 +308,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
 
   it('declares the release repository right after the embedded release public key', () => {
     const lines = fs.readFileSync(INSTALL_SCRIPT, 'utf8').split('\n');
-    const keyLine = lines.indexOf('readonly EMBEDDED_RELEASE_PUBLIC_KEY=""');
+    const keyLine = lines.indexOf(EMBEDDED_KEY_DECLARATION);
     expect(keyLine).toBeGreaterThanOrEqual(0);
     expect(lines[keyLine + 1]).toBe(EMBEDDED_REPO_DECLARATION);
   });
@@ -394,7 +405,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     serveRelease(GOOD_BINARY, GOOD_BINARY);
     const env = baseEnv();
     delete env['MOMONGA_RELEASE_PUBLIC_KEY'];
-    const outcome = await runInstall(env);
+    const outcome = await runInstall(env, installerWithKey(''));
     expect(outcome.code).toBe(1);
     expect(outcome.stderr).toContain('this installer pins no release signing key');
     expect(outcome.stderr).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
