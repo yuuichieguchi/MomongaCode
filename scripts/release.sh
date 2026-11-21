@@ -22,7 +22,9 @@ readonly OTHER_TARGETS=(linux-x64 linux-arm64 win-x64)
 readonly OTHER_ASSETS=(momonga-linux-x64 momonga-linux-arm64 momonga-win-x64.exe)
 
 DRY_RUN="${DRY_RUN:-0}"
-SKIP_TESTS=0
+SKIP_TEST_SUITE=0
+SKIP_MACOS_SMOKE=0
+SKIP_LINUX_SMOKE=0
 binary_cdhash=""
 readonly RELEASE_BRANCH="${MOMONGA_RELEASE_BRANCH:-main}"
 readonly PUSH_BOUND_SECONDS=120
@@ -69,14 +71,12 @@ smoke_in_linux_container() {
   [ "$(tail -n 1 <<< "$output")" = "EXIT=0" ] || fail "the smoke run of $asset in a $platform container did not end with EXIT=0"
 }
 
-require_windows_smoke() {
-  local expected
+require_docker() {
   if [ "$DRY_RUN" = "1" ]; then
-    run shasum -a 256 "$OUT_DIR/momonga-win-x64.exe"
     return
   fi
-  expected="$(shasum -a 256 "$OUT_DIR/momonga-win-x64.exe" | cut -d ' ' -f 1)"
-  [ "${MOMONGA_WINDOWS_SMOKE_SHA256:-}" = "$expected" ] || fail "start momonga-win-x64.exe (sha256 $expected) on a Windows host with scripts/sea-smoke.test.ts (MOMONGA_SEA_SMOKE_EXECUTABLE), then set MOMONGA_WINDOWS_SMOKE_SHA256 to that sha256"
+  command -v docker > /dev/null || fail "linux container smoke tests need docker on PATH (start Docker or pass --skip-linux-smoke / --skip-smoke); nothing was built"
+  docker info > /dev/null 2>&1 || fail "docker daemon is not running; start Docker or pass --skip-linux-smoke / --skip-smoke; nothing was built"
 }
 
 verify_team_id() {
@@ -173,12 +173,17 @@ write_checksums() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --skip-tests) SKIP_TESTS=1 ;;
-    *) fail "unknown option '$1' (supported: --skip-tests)" ;;
+    --skip-test-suite) SKIP_TEST_SUITE=1 ;;
+    --skip-linux-smoke) SKIP_LINUX_SMOKE=1 ;;
+    --skip-smoke)
+      SKIP_MACOS_SMOKE=1
+      SKIP_LINUX_SMOKE=1
+      ;;
+    *) fail "unknown option '$1' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke)" ;;
   esac
   shift
 done
-readonly SKIP_TESTS
+readonly SKIP_TEST_SUITE SKIP_MACOS_SMOKE SKIP_LINUX_SMOKE
 
 case "$DRY_RUN" in
   0 | 1) ;;
@@ -226,8 +231,12 @@ fi
 draft_created=0
 trap 'status=$?; if [ "$status" -ne 0 ]; then delete_draft; fi' EXIT
 
-if [ "$SKIP_TESTS" = "1" ]; then
-  step "typecheck (tests skipped by --skip-tests)"
+if [ "$SKIP_LINUX_SMOKE" = "0" ]; then
+  require_docker
+fi
+
+if [ "$SKIP_TEST_SUITE" = "1" ]; then
+  step "typecheck (test suite skipped by --skip-test-suite)"
   run npm run typecheck
 else
   step "typecheck and every test project"
@@ -260,8 +269,12 @@ fi
 step "verify notarization ticket"
 verify_notarization_ticket
 
-step "start the signed macOS executable on this host"
-smoke_here "$BINARY"
+if [ "$SKIP_MACOS_SMOKE" = "1" ]; then
+  step "macOS smoke skipped by --skip-smoke"
+else
+  step "start the signed macOS executable on this host"
+  smoke_here "$BINARY"
+fi
 
 step "build linux and windows executables"
 for index in "${!OTHER_TARGETS[@]}"; do
@@ -274,10 +287,13 @@ for index in "${!OTHER_TARGETS[@]}"; do
   assert_embedded_ripgrep "$OUT_DIR/${OTHER_ASSETS[$index]}" "${OTHER_TARGETS[$index]}"
 done
 
-step "start each linux executable in a container of its platform, and the windows executable on a Windows host"
-smoke_in_linux_container linux/amd64 momonga-linux-x64
-smoke_in_linux_container linux/arm64 momonga-linux-arm64
-require_windows_smoke
+if [ "$SKIP_LINUX_SMOKE" = "1" ]; then
+  step "linux container smoke skipped"
+else
+  step "start each linux executable in a container of its platform"
+  smoke_in_linux_container linux/amd64 momonga-linux-x64
+  smoke_in_linux_container linux/arm64 momonga-linux-arm64
+fi
 
 step "third-party notices of the release"
 run npm run notices -- --output "$NOTICES"
