@@ -25,10 +25,12 @@ DRY_RUN="${DRY_RUN:-0}"
 SKIP_TEST_SUITE=0
 SKIP_MACOS_SMOKE=0
 SKIP_LINUX_SMOKE=0
+NOTES_FILE_ARG=""
 binary_cdhash=""
 readonly RELEASE_BRANCH="${MOMONGA_RELEASE_BRANCH:-main}"
 readonly PUSH_BOUND_SECONDS=120
 readonly FETCH_BOUND_SECONDS=120
+readonly MAX_NOTES_CHARS="${MOMONGA_RELEASE_MAX_NOTES_CHARS:-100000}"
 
 fail() {
   printf 'release.sh: %s\n' "$*" >&2
@@ -179,11 +181,20 @@ while [ "$#" -gt 0 ]; do
       SKIP_MACOS_SMOKE=1
       SKIP_LINUX_SMOKE=1
       ;;
-    *) fail "unknown option '$1' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke)" ;;
+    --notes-file)
+      [ "$#" -ge 2 ] || fail "--notes-file requires a path"
+      NOTES_FILE_ARG="$2"
+      shift
+      ;;
+    *) fail "unknown option '$1' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke, --notes-file <path>)" ;;
   esac
   shift
 done
-readonly SKIP_TEST_SUITE SKIP_MACOS_SMOKE SKIP_LINUX_SMOKE
+if [ -n "$NOTES_FILE_ARG" ]; then
+  [ -f "$NOTES_FILE_ARG" ] || fail "notes file '$NOTES_FILE_ARG' does not exist"
+  NOTES_FILE_ARG="$(cd "$(dirname "$NOTES_FILE_ARG")" && pwd)/$(basename "$NOTES_FILE_ARG")"
+fi
+readonly SKIP_TEST_SUITE SKIP_MACOS_SMOKE SKIP_LINUX_SMOKE NOTES_FILE_ARG
 
 case "$DRY_RUN" in
   0 | 1) ;;
@@ -220,16 +231,60 @@ tag="v$version"
 git rev-parse --verify --quiet "refs/tags/$tag" > /dev/null && fail "tag $tag already exists"
 if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1; then fail "tag $tag already exists on origin"; fi
 
-previous_tag="$(git for-each-ref --count=1 --sort=-v:refname --format='%(refname:short)' 'refs/tags/v*')"
-if [ -n "$previous_tag" ]; then
-  notes="$(git log --no-merges --pretty='- %s (%h)' "$previous_tag..HEAD")"
-else
-  notes="$(git log --no-merges --pretty='- %s (%h)' HEAD)"
-fi
-[ -n "$notes" ] || fail "no commits since $previous_tag"
-
+notes_file="$(mktemp "${TMPDIR:-/tmp}/momonga-release-notes.XXXXXX")"
 draft_created=0
-trap 'status=$?; if [ "$status" -ne 0 ]; then delete_draft; fi' EXIT
+trap 'status=$?; rm -f "$notes_file"; if [ "$status" -ne 0 ]; then delete_draft; fi' EXIT
+
+previous_tag="$(git for-each-ref --count=1 --sort=-v:refname --format='%(refname:short)' 'refs/tags/v*')"
+if [ -n "$NOTES_FILE_ARG" ]; then
+  node -e '
+    const fs = require("node:fs");
+    const [src, dst, maxRaw] = process.argv.slice(1);
+    const max = Number(maxRaw);
+    const body = fs.readFileSync(src, "utf8").trim();
+    if (body.length === 0) process.exit(2);
+    if (body.length > max) process.exit(3);
+    fs.writeFileSync(dst, `${body}\n`);
+  ' "$NOTES_FILE_ARG" "$notes_file" "$MAX_NOTES_CHARS" || {
+    status=$?
+    if [ "$status" -eq 2 ]; then fail "notes file '$NOTES_FILE_ARG' is empty"; fi
+    if [ "$status" -eq 3 ]; then fail "notes file '$NOTES_FILE_ARG' exceeds $MAX_NOTES_CHARS characters"; fi
+    fail "could not read notes file '$NOTES_FILE_ARG'"
+  }
+elif [ -n "$previous_tag" ]; then
+  git log --no-merges --pretty='- %s (%h)' "$previous_tag..HEAD" | node -e '
+    const fs = require("node:fs");
+    const [dst, maxRaw] = process.argv.slice(1);
+    const max = Number(maxRaw);
+    const raw = fs.readFileSync(0, "utf8").trim();
+    if (raw.length === 0) process.exit(2);
+    if (raw.length <= max) {
+      fs.writeFileSync(dst, `${raw}\n`);
+      process.exit(0);
+    }
+    const lines = raw.split("\n");
+    const kept = [];
+    let used = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const remaining = lines.length - i;
+      const suffix = `\n- ...and ${remaining} more commits`;
+      const piece = (kept.length === 0 ? "" : "\n") + lines[i];
+      if (used + piece.length + suffix.length > max) break;
+      kept.push(lines[i]);
+      used += piece.length;
+    }
+    const omitted = lines.length - kept.length;
+    const suffix = `- ...and ${omitted} more commits`;
+    const body = kept.length > 0 ? `${kept.join("\n")}\n${suffix}` : suffix;
+    fs.writeFileSync(dst, `${body}\n`);
+  ' "$notes_file" "$MAX_NOTES_CHARS" || {
+    status=$?
+    if [ "$status" -eq 2 ]; then fail "no commits since $previous_tag"; fi
+    fail "could not prepare release notes"
+  }
+else
+  printf 'Initial release %s.\n' "$tag" > "$notes_file"
+fi
 
 if [ "$SKIP_LINUX_SMOKE" = "0" ]; then
   require_docker
@@ -312,9 +367,10 @@ run node "$ROOT/scripts/site/bounded.ts" "$PUSH_BOUND_SECONDS" git push --quiet 
   || fail "$RELEASE_BRANCH could not be pushed to origin; check that origin is reachable and that its $RELEASE_BRANCH is not ahead of or diverged from HEAD, then run scripts/release.sh again; nothing was published"
 
 step "publish $tag"
-printf 'release notes:\n%s\n' "$notes"
+printf 'release notes:\n'
+cat "$notes_file"
 draft_created=1
-run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$NOTICES" "$CHECKSUMS" "$SIGNATURE" --repo "$MOMONGA_REPO" --draft --target "$commit" --title "$tag" --notes "$notes"
+run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$NOTICES" "$CHECKSUMS" "$SIGNATURE" --repo "$MOMONGA_REPO" --draft --target "$commit" --title "$tag" --notes-file "$notes_file"
 run gh release edit "$tag" --repo "$MOMONGA_REPO" --draft=false
 draft_created=0
 run git fetch origin "refs/tags/$tag:refs/tags/$tag"

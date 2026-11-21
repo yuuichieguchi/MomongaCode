@@ -53,7 +53,13 @@ printf 'signature' > "$last.sig"`,
   "release edit")
     if [ "\${STUB_GH_FAIL_ON:-}" = "edit" ]; then exit 1; fi
     /usr/bin/git --git-dir "$STUB_ORIGIN" tag "$3" "$(/usr/bin/git --git-dir "$STUB_ORIGIN" rev-parse refs/heads/main)" ;;
-  "release create") if [ "\${STUB_GH_FAIL_ON:-}" = "create" ]; then exit 1; fi ;;
+  "release create")
+    prev=""
+    for arg in "$@"; do
+      if [ "$prev" = "--notes-file" ]; then cp "$arg" "$(dirname "$STUB_LOG")/gh-release-notes.txt"; fi
+      prev="$arg"
+    done
+    if [ "\${STUB_GH_FAIL_ON:-}" = "create" ]; then exit 1; fi ;;
 esac`,
   curl: `out=''
 headers=''
@@ -198,6 +204,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     spawnSync('/bin/bash', [path.join(work, 'scripts/site-deploy.sh')], { cwd: work, encoding: 'utf8', env: releaseEnv(extra) });
 
   const loggedCalls = (): string[] => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter((line) => line.length > 0) : []);
+  const releaseNotes = (): string => fs.readFileSync(path.join(path.dirname(log), 'gh-release-notes.txt'), 'utf8');
   const loggedNames = (): string[] => loggedCalls().map((line) => line.split(' ')[0] as string);
   const originTags = (): string => git(origin, 'tag', '--list');
   const fetchesOf = (url: string): number => loggedCalls().filter((line) => line.startsWith('curl ') && line.includes(` ${url} `)).length;
@@ -319,8 +326,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'git fetch',
       expect.stringContaining('scripts/site-deploy.sh'),
     ]);
-    expect(result.stdout).toContain('- second change (');
-    expect(result.stdout).toContain('- first change (');
+    expect(result.stdout).toContain('Initial release v1.2.3.');
     expect(result.stdout).toContain(`DRY_RUN: node ${work}/scripts/site/bounded.ts 120 git push --quiet origin refs/heads/main:refs/heads/main\n`);
   });
 
@@ -396,8 +402,9 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(calls[18]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
     expect(calls[19]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
     expect(calls[20]).toContain(
-      `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/THIRD-PARTY-NOTICES.md ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes - second change (`,
+      `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/THIRD-PARTY-NOTICES.md ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes-file `,
     );
+    expect(releaseNotes()).toBe('Initial release v1.2.3.\n');
     expect(calls[21]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
     const deployed = calls.slice(22);
     expect(deployed[0]).toMatch(/^site --output \S+ $/);
@@ -451,23 +458,56 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(originTags()).toBe('');
   });
 
-  it('covers every commit when there is no previous tag', () => {
+  it('uses a concise initial release note when there is no previous tag', () => {
     commit('second change');
-    expect(release().status).toBe(0);
-    const notes = loggedCalls().find((line) => line.startsWith('gh '));
-    expect(notes).toContain('- second change (');
-    expect(notes).toContain('- first change (');
+    const result = release();
+    expect(result.status, result.stderr).toBe(0);
+    expect(releaseNotes()).toBe('Initial release v1.2.3.\n');
   });
 
   it('covers only the commits since the previous tag', () => {
     git(work, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0');
     commit('second change');
     commit('third change');
-    expect(release().status).toBe(0);
-    const notes = loggedCalls().find((line) => line.startsWith('gh '));
+    const result = release();
+    expect(result.status, result.stderr).toBe(0);
+    const notes = releaseNotes();
     expect(notes).toContain('- third change (');
     expect(notes).toContain('- second change (');
     expect(notes).not.toContain('first change');
+  });
+
+  it('truncates commit notes cleanly when they exceed the release note character limit', () => {
+    git(work, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0');
+    commit('change one with a moderately long commit subject');
+    commit('change two with a moderately long commit subject');
+    commit('change three with a moderately long commit subject');
+    const result = release({ MOMONGA_RELEASE_MAX_NOTES_CHARS: '90' });
+    expect(result.status, result.stderr).toBe(0);
+    const notes = releaseNotes().trimEnd();
+    expect(notes.length).toBeLessThanOrEqual(90);
+    expect(notes).toContain('- change three with a moderately long commit subject (');
+    expect(notes).toContain('- ...and 2 more commits');
+  });
+
+  it('--notes-file uses the provided release notes file and rejects missing or empty files', () => {
+    commit('second change');
+    const missing = release({}, ['--notes-file', path.join(root, 'no-such-notes.md')]);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain('does not exist');
+    expect(loggedCalls()).toEqual([]);
+
+    const emptyFile = path.join(root, 'empty-notes.md');
+    fs.writeFileSync(emptyFile, '   \n');
+    const empty = release({}, ['--notes-file', emptyFile]);
+    expect(empty.status).not.toBe(0);
+    expect(empty.stderr).toContain('is empty');
+
+    const customFile = path.join(root, 'custom-notes.md');
+    fs.writeFileSync(customFile, '## Highlights\n- Custom release notes\n');
+    const ok = release({}, ['--notes-file', customFile]);
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(releaseNotes()).toBe('## Highlights\n- Custom release notes\n');
   });
 
   it.each([
@@ -952,7 +992,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
   it('rejects an unknown option before running any command', () => {
     const result = release({}, ['--bogus']);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toBe("release.sh: unknown option '--bogus' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke)\n");
+    expect(result.stderr).toBe("release.sh: unknown option '--bogus' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke, --notes-file <path>)\n");
     expect(loggedCalls()).toEqual([]);
   });
 
