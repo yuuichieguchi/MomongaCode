@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { EXTERNAL_CLI_PATH_ENV, EntryUsageError, NETWORK_ENV_NAMES, createPathResolver, minimalChildEnv, nodeFileSystem, systemTiming } from '@momonga/foundation';
 import type { Clock, PathResolver, Timing } from '@momonga/foundation';
@@ -102,12 +103,27 @@ export const systemProcessPorts: ProcessPorts = {
   pid: process.pid,
 };
 
+const currentUsername = (): string | undefined => {
+  try {
+    const name = os.userInfo().username;
+    return name === '' ? undefined : name;
+  } catch {
+    return undefined;
+  }
+};
+
 export const externalCliEnv = (env: NodeJS.ProcessEnv = process.env): Record<string, string> => {
   const result: Record<string, string> = { ...minimalChildEnv(env) };
   for (const name of NETWORK_ENV_NAMES) {
     const value = env[name];
     if (value !== undefined) result[name] = value;
   }
+  const user = env['USER'] && env['USER'] !== '' ? env['USER'] : currentUsername();
+  if (user !== undefined) result['USER'] = user;
+  const logname = env['LOGNAME'] && env['LOGNAME'] !== '' ? env['LOGNAME'] : user;
+  if (logname !== undefined) result['LOGNAME'] = logname;
+  const dbus = env['DBUS_SESSION_BUS_ADDRESS'];
+  if (dbus !== undefined && dbus !== '') result['DBUS_SESSION_BUS_ADDRESS'] = dbus;
   const cliPath = env[EXTERNAL_CLI_PATH_ENV] ?? env['PATH'];
   if (cliPath !== undefined && cliPath !== '') result['PATH'] = cliPath;
   return result;

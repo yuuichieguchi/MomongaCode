@@ -231,8 +231,36 @@ describe('CLI subprocess adapter', () => {
     expect(built['PATH']).toBe('/Users/alice/.local/bin:/opt/homebrew/bin:/usr/bin:/bin');
     expect(built['HOME']).toBe('/Users/alice');
     expect(built['HTTPS_PROXY']).toBe('http://proxy:3128');
+    expect(built['USER']).toBeTruthy();
+    expect(built['LOGNAME']).toBe(built['USER']);
     expect(built[EXTERNAL_CLI_PATH_ENV]).toBeUndefined();
     expect(built[CREDENTIAL_CAPABILITY_ENV]).toBeUndefined();
     expect(built['ANTHROPIC_API_KEY']).toBeUndefined();
+
+    const withDbus = externalCliEnv({
+      PATH: '/usr/bin:/bin',
+      HOME: '/home/alice',
+      USER: 'alice',
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+    });
+    expect(withDbus['USER']).toBe('alice');
+    expect(withDbus['LOGNAME']).toBe('alice');
+    expect(withDbus['DBUS_SESSION_BUS_ADDRESS']).toBe('unix:path=/run/user/1000/bus');
+  });
+
+  it('recognizes claude auth status JSON with empty email and planTier as active', () => {
+    const status = parseExternalCliStatus(CLAUDE_CLI, {
+      kind: 'exited',
+      code: 0,
+      stdout: JSON.stringify({
+        loggedIn: true,
+        authMethod: 'claude.ai',
+        email: '',
+        subscriptionType: 'max',
+        planTier: 'max_20x',
+      }),
+      stderr: '',
+    });
+    expect(status).toEqual({ state: 'active' });
   });
 });
