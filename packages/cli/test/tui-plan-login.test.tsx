@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { planProfileOf } from '@momonga/config';
 import { PLAN_LABEL_REFUSAL } from '@momonga/protocol';
-import type { PlanModelsResponse } from '@momonga/protocol';
+import type { PlanModelsResponse, PlanProfileView } from '@momonga/protocol';
 import { runView } from './fake-backend.ts';
 import { KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
@@ -263,9 +264,9 @@ describe('an account that becomes the one in use', () => {
     await submitLine(app, '/login');
     await choose(app, 'OpenAI (ChatGPT subscription)');
     await choose(app, 'chatgpt · ada@example.com');
-    await untilOutput(app, 'ChatGPT account in use: chatgpt');
     await untilFrame(app, 'Choose a model of chatgpt');
     await choose(app, 'gpt-5.1');
+    await untilOutput(app, 'ChatGPT account in use: chatgpt');
     await untilOutput(app, 'model: chatgpt/gpt-5.1');
     expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });
     const after = await untilFrame(app, (shown) => figureModel(shown) === 'chatgpt/gpt-5.1');
@@ -274,8 +275,8 @@ describe('an account that becomes the one in use', () => {
     app.unmount();
   });
 
-  it('leaving the model list without a choice says the account is selected and the session still runs on its model', async () => {
-    const { app } = await startPlan({ accounts: [account({ pinnedBy: [] })], catalogs: { chatgpt: GPT } }, { startup: STARTUP });
+  it('leaving the model list with Esc cancels switching without activating the account or printing a confirmation', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ pinnedBy: [] })], catalogs: { chatgpt: GPT } }, { startup: STARTUP });
     await ready(app);
     const before = figureModel(app.lastFrame() ?? '');
     expect(before).not.toBe('');
@@ -283,37 +284,125 @@ describe('an account that becomes the one in use', () => {
     await choose(app, 'chatgpt · ada@example.com');
     await untilRow(app, 'gpt-5.1', 'Choose a model of chatgpt');
     app.stdin.write(KEYS.escape);
-    const shown = flat(await untilOutput(app, 'still runs on'));
-    expect(shown).toContain(`chatgpt is signed in and selected, but this session still runs on ${before}; /model lists the models of chatgpt and switches to one.`);
-    expect(figureModel(app.lastFrame() ?? '')).toBe(before);
-    app.unmount();
-  });
-
-  it('an active account that already serves a configured model other than the session model names the account, says the session model is unchanged and opens no list', async () => {
-    const { app, backend } = await startPlan({ accounts: [account()], catalogs: { chatgpt: GPT } }, { startup: STARTUP });
-    await ready(app);
-    const before = figureModel(app.lastFrame() ?? '');
-    await submitLine(app, '/login chatgpt');
-    await choose(app, 'chatgpt · ada@example.com');
-    const shown = flat(await untilOutput(app, 'still runs on'));
-    expect(shown).toContain('ChatGPT account in use: chatgpt');
-    expect(shown).toContain(`chatgpt is signed in and selected, but this session still runs on ${before}; /model lists the models of chatgpt and switches to one.`);
     await untilPromptDrawn(app);
     await untilTypedAfter(app);
-    expect(app.frames.join('\n')).not.toContain('Choose a model of chatgpt');
-    expect(routesOf(backend)).not.toContain('accounts/chatgpt/models');
+    expect(routesOf(backend)).not.toContain('active');
+    expect(app.frames.join('\n')).not.toContain('ChatGPT account in use:');
     expect(figureModel(app.lastFrame() ?? '')).toBe(before);
     app.unmount();
   });
 
-  it('switching to another account that serves no configured model opens that account\'s model list', async () => {
-    const { app } = await startPlan({ accounts: [account({ label: 'home' }), account({ label: 'work', email: 'w@example.com', active: false, pinnedBy: [] })], catalogs: { work: GPT } });
+  it('an active account that already serves one configured model switches the session directly to it without opening a picker', async () => {
+    const { app, backend } = await startPlan({ accounts: [account()], catalogs: { chatgpt: GPT } }, { startup: STARTUP });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'chatgpt · ada@example.com');
+    await untilOutput(app, 'ChatGPT account in use: chatgpt');
+    const after = await untilFrame(app, (shown) => figureModel(shown) === 'gpt-5');
+    expect(after).not.toContain('still runs on');
+    expect(app.frames.join('\n')).not.toContain('Choose a model of chatgpt');
+    expect(routesOf(backend)).not.toContain('accounts/chatgpt/models');
+    app.unmount();
+  });
+
+  it('an active account with multiple configured models opens a picker of those models and switches to the chosen one', async () => {
+    const { app, backend } = await startPlan(
+      { accounts: [account({ pinnedBy: ['chatgpt/gpt-5.1', 'chatgpt/gpt-5.2'] })], catalogs: { chatgpt: GPT } },
+      { startup: STARTUP },
+    );
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'chatgpt · ada@example.com');
+    await untilFrame(app, 'Choose a model of chatgpt');
+    await choose(app, 'chatgpt/gpt-5.2');
+    await untilOutput(app, 'ChatGPT account in use: chatgpt');
+    await untilFrame(app, (shown) => figureModel(shown) === 'chatgpt/gpt-5.2');
+    expect(routesOf(backend)).not.toContain('accounts/chatgpt/models');
+    app.unmount();
+  });
+
+  it('switching to another account that serves no configured model opens that account\'s model list before activating it', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'home' }), account({ label: 'work', email: 'w@example.com', active: false, pinnedBy: [] })], catalogs: { work: GPT } });
     await ready(app);
     await submitLine(app, '/login chatgpt');
     await choose(app, 'work · w@example.com');
-    await untilOutput(app, 'ChatGPT account in use: work');
     const picker = await untilFrame(app, 'Choose a model of work');
     expect(picker).toContain('gpt-5.1');
+    expect(routesOf(backend)).not.toContain('active');
+    app.unmount();
+  });
+
+  it('external CLI plan (/login claude-code) cancels silently on Esc when unconfigured', async () => {
+    const shipped = planProfileOf('claude-code');
+    const claudeView: PlanProfileView = {
+      id: shipped.id,
+      usageUrl: shipped.usageUrl,
+      loginLabel: shipped.loginLabel,
+      messages: shipped.messages,
+      usesHostIdentity: false,
+      externalCli: {
+        command: shipped.externalCli!.command,
+        loginCommand: shipped.externalCli!.loginCommand,
+        installHint: shipped.externalCli!.installHint,
+      },
+    };
+    const claudeCatalog: PlanModelsResponse = {
+      readAt: '2026-11-22T00:00:00.000Z',
+      models: [{ slug: 'fable', displayName: 'Claude Fable', usable: true, contextWindow: 200000, maxOutputTokens: 16384 }],
+    };
+    const { app } = await startPlan(
+      {
+        profiles: [claudeView],
+        accounts: [account({ profile: 'claude-code', label: 'claude-code', email: 'dev@example.com', state: 'active', pinnedBy: [] })],
+        catalogs: { 'claude-code': claudeCatalog },
+      },
+      { startup: STARTUP },
+    );
+    await ready(app);
+    const before = figureModel(app.lastFrame() ?? '');
+    await submitLine(app, '/login claude-code');
+    await untilRow(app, 'fable', 'Choose a model of claude-code');
+    app.stdin.write(KEYS.escape);
+    await untilPromptDrawn(app);
+    await untilTypedAfter(app);
+    expect(app.frames.join('\n')).not.toContain('Using Claude Code plan');
+    expect(figureModel(app.lastFrame() ?? '')).toBe(before);
+    app.unmount();
+  });
+
+  it('external CLI plan (/login claude-code) opens the catalog when unconfigured and switches the session on Enter', async () => {
+    const shipped = planProfileOf('claude-code');
+    const claudeView: PlanProfileView = {
+      id: shipped.id,
+      usageUrl: shipped.usageUrl,
+      loginLabel: shipped.loginLabel,
+      messages: shipped.messages,
+      usesHostIdentity: false,
+      externalCli: {
+        command: shipped.externalCli!.command,
+        loginCommand: shipped.externalCli!.loginCommand,
+        installHint: shipped.externalCli!.installHint,
+      },
+    };
+    const claudeCatalog: PlanModelsResponse = {
+      readAt: '2026-11-22T00:00:00.000Z',
+      models: [{ slug: 'fable', displayName: 'Claude Fable', usable: true, contextWindow: 200000, maxOutputTokens: 16384 }],
+    };
+    const { app, backend } = await startPlan(
+      {
+        profiles: [claudeView],
+        accounts: [account({ profile: 'claude-code', label: 'claude-code', email: 'dev@example.com', state: 'active', pinnedBy: [] })],
+        catalogs: { 'claude-code': claudeCatalog },
+      },
+      { startup: STARTUP },
+    );
+    await ready(app);
+    await submitLine(app, '/login claude-code');
+    await untilRow(app, 'fable', 'Choose a model of claude-code');
+    await choose(app, 'fable');
+    await untilOutput(app, 'Using Claude Code plan · dev@example.com.');
+    expect(bodyOf(backend, 'accounts/claude-code/targets')).toEqual({ profile: 'claude-code', slug: 'fable' });
+    await untilFrame(app, (shown) => figureModel(shown) === 'fable');
     app.unmount();
   });
 });

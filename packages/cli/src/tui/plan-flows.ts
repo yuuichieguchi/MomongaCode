@@ -23,7 +23,7 @@ import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInListenerError, SignInListenerFailedError, SignInNotFinishedError, signIn, waitForPaste } from '../plan/sign-in.ts';
 import type { SignInShown } from '../plan/sign-in.ts';
-import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, accountInUseLine, accountNotSessionModelLine, cancelledText, catalogUnreadHint, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
+import { NO_ACCOUNT_SAVED_TEXT, IDENTITY_CANCEL, IDENTITY_CHOICES, IDENTITY_SAVE, SIGN_IN_WORD, accountInUseLine, cancelledText, catalogUnreadHint, codeNotAcceptedLine, identityNotConfirmedLine, identityQuestion, listProblemLine, planDisabledLines, recordUnreadableLine, resumeLine, signInFailureLine, signedInLine, signedOutLines } from '../plan/texts.ts';
 import type { TuiBackend } from './backend.ts';
 import { LOADING_HINTS } from './picker.tsx';
 import type { OverlayPorts, PickRequest, PickRow, PickUpdate } from './picker.tsx';
@@ -178,21 +178,30 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     await connectAdded(await addService(flowContext()));
   };
 
-  const catalogPicker = async (profile: PlanProfileView, account: string): Promise<boolean> => {
+  type AccountModelChoice =
+    | { kind: 'selected'; model: string }
+    | { kind: 'already' }
+    | { kind: 'unread'; failed?: string; info: string }
+    | { kind: 'cancelled' };
+
+  const reportUnread = (choice: Extract<AccountModelChoice, { kind: 'unread' }>): void => {
+    if (choice.failed !== undefined) ports.failed(choice.failed);
+    ports.info(choice.info);
+  };
+
+  const catalogPickerSelect = async (profile: PlanProfileView, account: string): Promise<Extract<AccountModelChoice, { kind: 'selected' | 'unread' | 'cancelled' }>> => {
     let catalog: PlanModelsResponse;
     try {
       catalog = await backend.plan.accountModels(account, { profile: profile.id });
     } catch (error) {
       if (!(error instanceof GatewayAnswerError)) throw error;
-      ports.failed(error.message);
-      ports.info(catalogUnreadHint(profile.id, account));
-      return false;
+      return { kind: 'unread', failed: error.message, info: catalogUnreadHint(profile.id, account) };
     }
     if (catalog.models.length === 0) {
-      ports.info(`${profile.messages.identityLabel} lists no model for ${account}`);
-      return false;
+      return { kind: 'unread', info: `${profile.messages.identityLabel} lists no model for ${account}` };
     }
-    return chooseFrom(
+    let createdModel: string | undefined;
+    await chooseFrom(
       { title: `Choose a model of ${account}` },
       catalog.models.map((entry) =>
         entry.usable
@@ -201,32 +210,63 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
               act: async () => {
                 ports.closeScreen();
                 const created = await runCancellable(() => backend.plan.addTarget(account, { profile: profile.id, slug: entry.slug }));
-                await ports.connected(created.model);
+                createdModel = created.model;
               },
             }
           : { row: { label: `${entry.slug} · ${entry.reason}`, disabled: true }, act: async () => undefined },
       ),
     );
+    return createdModel === undefined ? { kind: 'cancelled' } : { kind: 'selected', model: createdModel };
   };
 
-  const accountInUse = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
+  const catalogPicker = async (profile: PlanProfileView, account: string): Promise<boolean> => {
+    const picked = await catalogPickerSelect(profile, account);
+    if (picked.kind === 'unread') {
+      reportUnread(picked);
+      return false;
+    }
+    if (picked.kind !== 'selected') return false;
+    await ports.connected(picked.model);
+    return true;
+  };
+
+  const selectAccountModel = async (profile: PlanProfileView, account: PlanAccountView): Promise<AccountModelChoice> => {
     const entries = await backend.models();
     const serving = entries.filter((entry) =>
       entry.chain.some((member) => member.plan !== undefined && planServesAccount(member.plan, account)),
     );
-    if (account.pinnedBy.length === 0 && serving.length === 0 && (await catalogPicker(profile, account.label))) return;
-    await ports.refreshConnection();
+    const configured = [...new Set([...account.pinnedBy, ...serving.map((entry) => entry.id)])];
     const current = ports.model();
-    const configured = [...account.pinnedBy, ...serving.map((entry) => entry.id)];
-    if (current !== undefined && !configured.includes(current)) ports.info(accountNotSessionModelLine(account.label, displayMapOf(listingViewsOf(entries)).get(current) ?? current));
+    if (current !== undefined && configured.includes(current)) return { kind: 'already' };
+    if (configured.length === 0) return catalogPickerSelect(profile, account.label);
+    if (configured.length === 1) return { kind: 'selected', model: configured[0]! };
+    const displays = displayMapOf(listingViewsOf(entries));
+    let chosenModel: string | undefined;
+    await chooseFrom(
+      { title: `Choose a model of ${account.label}` },
+      configured.map((id) => ({
+        row: { label: displays.get(id) ?? id },
+        act: async () => {
+          ports.closeScreen();
+          chosenModel = id;
+        },
+      })),
+    );
+    return chosenModel === undefined ? { kind: 'cancelled' } : { kind: 'selected', model: chosenModel };
   };
 
-  const afterSignIn = async (profile: PlanProfileView, account: PlanAccountView, firstSignIn: boolean): Promise<void> => {
+  const accountInUse = async (profile: PlanProfileView, account: PlanAccountView): Promise<void> => {
+    const picked = await selectAccountModel(profile, account);
+    if (picked.kind === 'selected') await ports.connected(picked.model);
+    else if (picked.kind === 'already') await ports.refreshConnection();
+  };
+
+  const afterSignIn = async (profile: PlanProfileView, account: PlanAccountView, firstSignIn: boolean): Promise<AccountModelChoice> => {
     if (firstSignIn) {
       const { title, body, action } = profile.messages.firstSignIn;
       await ports.pick({ title, lines: [body, `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`], rows: [{ label: action }] });
     }
-    await accountInUse(profile, account);
+    return selectAccountModel(profile, account);
   };
 
   const sandboxAccepted = async (): Promise<boolean> => {
@@ -318,14 +358,26 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         return undefined;
       case SIGNED_IN_OUTCOME: {
         if (left()) return notKept(answer.account.label);
-        ports.info(signedInLine(answer.account));
         const after = await afterSignIn(profile, answer.account, answer.firstSignIn).then(
-          () => undefined,
-          (error: unknown) => ({ error }),
+          (choice) => ({ kind: 'ok' as const, choice }),
+          (error: unknown) => ({ kind: 'err' as const, error }),
         );
         if (left()) return notKept(answer.account.label);
+        if (after.kind === 'ok' && after.choice.kind === 'cancelled') {
+          if (!keepOnCancel) return notKept(answer.account.label);
+          ports.info(cancelledText(SIGN_IN_WORD));
+          return undefined;
+        }
+        ports.info(signedInLine(answer.account));
+        if (after.kind === 'ok') {
+          if (after.choice.kind === 'selected') await ports.connected(after.choice.model);
+          else {
+            if (after.choice.kind === 'unread') reportUnread(after.choice);
+            await ports.refreshConnection();
+          }
+        }
         await ports.signedIn();
-        if (after !== undefined) throw after.error;
+        if (after.kind === 'err') throw after.error;
         return undefined;
       }
     }
@@ -336,18 +388,19 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const savedAccount = async (profile: PlanProfileView, account: PlanAccountView): Promise<Acted> => {
     switch (savedAccountAction(account)) {
-      case 'activate':
-        if (account.pinnedBy.length > 0 || !account.active) {
-          ports.closeScreen();
-          await runCancellable(() => backend.plan.setActive({ profile: profile.id, account: account.label }));
-          ports.info(accountInUseLine(profile, account.label));
-          await accountInUse(profile, { ...account, active: true });
-          return undefined;
-        }
-        await readBetween(() => backend.plan.setActive({ profile: profile.id, account: account.label }));
+      case 'activate': {
+        const picked = await selectAccountModel(profile, account);
+        ports.closeScreen();
+        if (picked.kind === 'cancelled') return undefined;
+        await runCancellable(() => backend.plan.setActive({ profile: profile.id, account: account.label }));
         ports.info(accountInUseLine(profile, account.label));
-        await accountInUse(profile, { ...account, active: true });
+        if (picked.kind === 'selected') await ports.connected(picked.model);
+        else {
+          if (picked.kind === 'unread') reportUnread(picked);
+          await ports.refreshConnection();
+        }
         return undefined;
+      }
       case 'sign-in':
         return signInFlow(profile, account.label, account.state === PLAN_DISABLED_STATE, true);
       case 'replace':
@@ -445,14 +498,22 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     for (const problem of listed.listProblems ?? []) ports.info(listProblemLine(problem));
     if (profile.externalCli !== undefined) {
       const account = accountsOf(profile.id, listed.accounts)[0];
-      ports.closeScreen();
-      if (account?.state === 'active') {
-        ports.info(`${profile.messages.planInUseLabel}${account.email === undefined ? '' : ` · ${account.email}`}. Run /model to add or switch a model.`);
-        ports.info(`${profile.messages.manageUsageLabel}: ${profile.usageUrl}`);
-      } else {
+      if (account?.state !== 'active') {
+        ports.closeScreen();
         ports.info(account?.cause ?? `${profile.messages.signInRequiredMessage}. Run ${profile.externalCli.loginCommand}`);
         ports.info(profile.externalCli.installHint);
+        return undefined;
       }
+      const picked = await selectAccountModel(profile, account);
+      ports.closeScreen();
+      if (picked.kind === 'cancelled') return undefined;
+      if (picked.kind === 'selected') await ports.connected(picked.model);
+      else {
+        if (picked.kind === 'unread') reportUnread(picked);
+        await ports.refreshConnection();
+      }
+      ports.info(`${profile.messages.planInUseLabel}${account.email === undefined ? '' : ` · ${account.email}`}.`);
+      ports.info(`${profile.messages.manageUsageLabel}: ${profile.usageUrl}`);
       return undefined;
     }
     if (accountsOf(profile.id, listed.accounts).length === 0) return signInFlow(profile, nextAccountLabel(profile.id, listed.accounts), false);
