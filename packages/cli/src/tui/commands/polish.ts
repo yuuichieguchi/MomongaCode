@@ -1,4 +1,4 @@
-import { buildPolishPrompt, DEFAULT_POLISH_AUDIENCE } from '@momonga/runtime';
+import { buildPolishPrompt, DEFAULT_POLISH_AUDIENCE } from '@momonga/protocol';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 export const NOTHING_TO_POLISH = 'Nothing to polish: wait for an assistant response or pass a file path (/polish <file>).';

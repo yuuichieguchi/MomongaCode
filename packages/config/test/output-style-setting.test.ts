@@ -1,9 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defaultOutputSettings, mergeOutputSettings, writeOutputStyleSetting } from '@momonga/config';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import { assertSettings } from '../src/settings.ts';
 
 const dirs: string[] = [];
@@ -25,7 +24,7 @@ describe('output.style setting', () => {
   });
 
   it('writes and removes output.style in user settings.json', async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), 'momonga-style-'));
+    const home = createTempDir();
     dirs.push(home);
     const settingsFile = path.join(home, 'settings.json');
     const signal = new AbortController().signal;
