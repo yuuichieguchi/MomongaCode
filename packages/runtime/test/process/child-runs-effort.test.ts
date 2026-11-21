@@ -70,7 +70,7 @@ describe('the reasoning effort a subagent runs at', () => {
     const { created, runs } = childRunsUnder(undefined);
     const failure = await runs.spawn({ parentRunId: 'parent-1', parentCallId: 'call-1', agent: agentWith({ model: OTHER }), prompt: 'p', effort: 'minimal' }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ChildRunError);
-    expect((failure as Error).message).toBe('Subagent reviewer cannot run at effort minimal: its model lmstudio/other accepts low, medium, high, xhigh; call Agent again with one of them');
+    expect((failure as Error).message).toBe('Subagent reviewer cannot run at effort minimal: its model lmstudio/other accepts low, medium, high, xhigh, max; call Agent again with one of them');
     expect(created).toEqual([]);
   });
 

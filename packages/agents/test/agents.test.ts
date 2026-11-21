@@ -133,7 +133,7 @@ describe('the effort of an agent definition', () => {
   it('skips a definition whose effort is not a level, saying which levels exist', async () => {
     const set = await load({ [`${HOME}/.momonga/agents/r.md`]: agentFile('r', 'd', 'effort: huge\n', 'Prompt.') });
     expect(set.agents.some((agent) => agent.name === 'r')).toBe(false);
-    expect(set.warnings).toEqual([`Agent at ${HOME}/.momonga/agents/r.md was skipped: effort must be one of none, minimal, low, medium, high, xhigh`]);
+    expect(set.warnings).toEqual([`Agent at ${HOME}/.momonga/agents/r.md was skipped: effort must be one of none, minimal, low, medium, high, xhigh, max`]);
   });
 });
 
@@ -171,7 +171,7 @@ describe('the Agent tool', () => {
       efforts.push(request.effort);
       return { state: 'running', runId: 'child', sessionId: 'cs' };
     });
-    expect(tool.inputSchema).toMatchObject({ properties: { effort: { enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] } } });
+    expect(tool.inputSchema).toMatchObject({ properties: { effort: { enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] } } });
     await tool.execute({ ...input, effort: 'high' }, context, undefined);
     await tool.execute(input, context, undefined);
     expect(efforts).toEqual(['high', undefined]);
