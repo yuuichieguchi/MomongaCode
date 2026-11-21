@@ -70,7 +70,9 @@ export type SiwcIdentity = { sub: string; email: string };
 
 export type SiwcRegistration = { clientId: string; hostId: string; agentName: string; sub: string };
 
-export type SiwcJwk = { kty: string; n: string; e: string; kid: string; alg: 'RS256'; use: 'sig' };
+export type SiwcJwk =
+  | { kty: string; n: string; e: string; kid: string; alg: 'RS256'; use: 'sig' }
+  | { kty: string; crv: string; x: string; y: string; kid: string; alg: 'ES256'; use: 'sig' };
 
 export type SiwcAuth = {
   issuer: string;
@@ -114,6 +116,7 @@ export type SiwcAuthOptions = {
   publicClientId?: string;
   callbackPath?: string;
   requireResource?: boolean;
+  idTokenAlg?: 'RS256' | 'ES256';
 };
 
 type SigningKey = { kid: string; privateKey: KeyObject; jwk: SiwcJwk };
@@ -134,23 +137,37 @@ const base64Url = (value: unknown): string => Buffer.from(JSON.stringify(value))
 
 const sha256Base64Url = (value: string): string => createHash('sha256').update(value).digest('base64url');
 
-const newSigningKey = async (): Promise<SigningKey> => {
-  const { publicKey, privateKey } = await generateKeyPairAsync('rsa', { modulusLength: RSA_MODULUS_BITS });
+const newSigningKey = async (alg: 'RS256' | 'ES256' = 'RS256'): Promise<SigningKey> => {
   const kid = `kid-${randomBytes(6).toString('hex')}`;
+  if (alg === 'ES256') {
+    const { publicKey, privateKey } = await generateKeyPairAsync('ec', { namedCurve: 'prime256v1' });
+    const exported = publicKey.export({ format: 'jwk' }) as { kty: string; crv: string; x: string; y: string };
+    return { kid, privateKey, jwk: { kty: exported.kty, crv: exported.crv, x: exported.x, y: exported.y, kid, alg: 'ES256', use: 'sig' } };
+  }
+  const { publicKey, privateKey } = await generateKeyPairAsync('rsa', { modulusLength: RSA_MODULUS_BITS });
   const exported = publicKey.export({ format: 'jwk' }) as { kty: string; n: string; e: string };
   return { kid, privateKey, jwk: { kty: exported.kty, n: exported.n, e: exported.e, kid, alg: 'RS256', use: 'sig' } };
 };
 
 let sharedKeys: Promise<{ signing: SigningKey; forged: SigningKey }> | undefined;
+let sharedEcKeys: Promise<{ signing: SigningKey; forged: SigningKey }> | undefined;
 
-const sharedKeyPair = (): Promise<{ signing: SigningKey; forged: SigningKey }> => {
-  sharedKeys ??= Promise.all([newSigningKey(), newSigningKey()]).then(([signing, forged]) => ({ signing, forged }));
+const sharedKeyPair = (alg: 'RS256' | 'ES256' = 'RS256'): Promise<{ signing: SigningKey; forged: SigningKey }> => {
+  if (alg === 'ES256') {
+    sharedEcKeys ??= Promise.all([newSigningKey('ES256'), newSigningKey('ES256')]).then(([signing, forged]) => ({ signing, forged }));
+    return sharedEcKeys;
+  }
+  sharedKeys ??= Promise.all([newSigningKey('RS256'), newSigningKey('RS256')]).then(([signing, forged]) => ({ signing, forged }));
   return sharedKeys;
 };
 
-const signRs256 = (header: Record<string, unknown>, claims: Record<string, unknown>, key: SigningKey, kid: string): string => {
-  const signed = `${base64Url({ ...header, alg: 'RS256', typ: 'JWT', kid })}.${base64Url(claims)}`;
-  const signature = createSign('RSA-SHA256').update(signed).sign(key.privateKey).toString('base64url');
+const signJwt = (header: Record<string, unknown>, claims: Record<string, unknown>, key: SigningKey, kid: string): string => {
+  const alg = key.jwk.alg;
+  const signed = `${base64Url({ ...header, alg, typ: 'JWT', kid })}.${base64Url(claims)}`;
+  const signature =
+    alg === 'ES256'
+      ? createSign('sha256').update(signed).sign({ key: key.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url')
+      : createSign('RSA-SHA256').update(signed).sign(key.privateKey).toString('base64url');
   return `${signed}.${signature}`;
 };
 
@@ -175,7 +192,8 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
   const publicClientId = options.publicClientId;
   const callbackPath = options.callbackPath ?? SIWC_CALLBACK_PATH;
   const requireResource = options.requireResource ?? true;
-  const keys = await sharedKeyPair();
+  const idTokenAlg = options.idTokenAlg ?? 'RS256';
+  const keys = await sharedKeyPair(idTokenAlg);
   const published: SigningKey[] = [keys.signing];
   let signing: SigningKey = keys.signing;
   const registrationsById = new Map<string, SiwcRegistration>();
@@ -218,7 +236,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
       jwksScript.push(...steps);
     },
     rotateKeys: async ({ retireOld }) => {
-      const fresh = await newSigningKey();
+      const fresh = await newSigningKey(idTokenAlg);
       if (retireOld) published.length = 0;
       published.push(fresh);
       signing = fresh;
@@ -280,9 +298,9 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
       const signed = `${base64Url({ alg: 'HS256', typ: 'JWT', kid: signing.kid })}.${base64Url(claims)}`;
       return `${signed}.${createHmac('sha256', randomBytes(32)).update(signed).digest('base64url')}`;
     }
-    if (flaw === 'forged_signature') return signRs256({}, claims, keys.forged, signing.kid);
-    if (flaw === 'unknown_kid') return signRs256({}, claims, keys.forged, `kid-unknown-${randomBytes(4).toString('hex')}`);
-    return signRs256({}, claims, signing, signing.kid);
+    if (flaw === 'forged_signature') return signJwt({}, claims, keys.forged, signing.kid);
+    if (flaw === 'unknown_kid') return signJwt({}, claims, keys.forged, `kid-unknown-${randomBytes(4).toString('hex')}`);
+    return signJwt({}, claims, signing, signing.kid);
   };
 
   const issueAccess = (family: Family, clientId: string, resource: string, scope: string, expiresIn: number): string => {
@@ -290,7 +308,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     const token = remember(
       accessTokenForm === 'opaque'
         ? randomBytes(32).toString('base64url')
-        : signRs256(
+        : signJwt(
             {},
             {
               sub: registrationsById.get(clientId)?.sub ?? fixture.identity.sub,

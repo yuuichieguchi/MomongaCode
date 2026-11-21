@@ -52,7 +52,7 @@ export type { AuthorizationFailure } from './oauth-authorization-error.ts';
 export { CLIENT_NAME, createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
-export { parseJwt, verifyRs256 } from './oidc.ts';
+export { parseJwt, verifyEs256, verifyRs256 } from './oidc.ts';
 export type { ParsedJwt } from './oidc.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
 export { ATOMIC_WRITE_STEP_ACTIONS, atomicWriteSteps, isAtomicWriteTemporary, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';

@@ -104,6 +104,7 @@ const startGrokGateway = async (options: {
     publicClientId: GROK_PUBLIC_CLIENT_ID,
     callbackPath: '/callback',
     requireResource: false,
+    idTokenAlg: 'ES256',
     ...(options.clock === undefined ? {} : { now: options.clock.now }),
   });
   if (options.withheldScopes !== undefined) auth.withheldScopes = [...options.withheldScopes];

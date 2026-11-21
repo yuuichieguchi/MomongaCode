@@ -263,7 +263,7 @@ describe('the Grok profile', () => {
       client: { kind: 'public', clientId: 'b1a00492-073a-47ea-816f-4c329264a828' },
       callbackPath: '/callback',
       callbackPort: 56121,
-      idTokenAlgorithms: ['RS256'],
+      idTokenAlgorithms: ['ES256'],
     });
     const origin = new URL(grok().oauth.issuer).origin;
     for (const url of [grok().oauth.discoveryUrl, grok().oauth.authorizeUrl, grok().oauth.tokenUrl, grok().oauth.jwksUrl]) {

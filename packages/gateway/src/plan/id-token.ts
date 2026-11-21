@@ -1,4 +1,4 @@
-import { isRecord, parseJwt, parseOutsideJson, verifyRs256 } from '@momonga/foundation';
+import { isRecord, parseJwt, parseOutsideJson, verifyEs256, verifyRs256 } from '@momonga/foundation';
 import type { Clock, ParsedJwt } from '@momonga/foundation';
 import type { IdTokenCheck } from '@momonga/protocol';
 import { PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
@@ -124,7 +124,8 @@ export const createIdTokenVerifier = (options: IdTokenVerifierOptions): IdTokenV
     } catch {
       return { kind: 'invalid', check: 'signature' };
     }
-    if (jwt.header['alg'] !== 'RS256' || !expected.algorithms.includes(jwt.header['alg'])) return { kind: 'invalid', check: 'algorithm' };
+    const alg = jwt.header['alg'];
+    if ((alg !== 'RS256' && alg !== 'ES256') || !expected.algorithms.includes(alg)) return { kind: 'invalid', check: 'algorithm' };
     const kid = jwt.header['kid'];
     if (typeof kid !== 'string') return { kind: 'invalid', check: 'signature' };
     let key: Jwk | undefined;
@@ -134,7 +135,8 @@ export const createIdTokenVerifier = (options: IdTokenVerifierOptions): IdTokenV
       if (error instanceof KeysUnavailable) return { kind: 'keys_unavailable' };
       throw error;
     }
-    if (key === undefined || !verifyRs256(jwt, key)) return { kind: 'invalid', check: 'signature' };
+    const verified = key !== undefined && (alg === 'ES256' ? verifyEs256(jwt, key) : verifyRs256(jwt, key));
+    if (!verified) return { kind: 'invalid', check: 'signature' };
     return claimsCheck(jwt, expected, options.clock.now());
   };
 };

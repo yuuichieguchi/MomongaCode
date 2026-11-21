@@ -185,7 +185,7 @@ const PLAN_PROFILE_SCHEMA = {
         },
         callbackPath: { type: 'string', pattern: '^/[^\\s]*$' },
         callbackPort: { type: 'integer', minimum: 1, maximum: 65535 },
-        idTokenAlgorithms: { type: 'array', items: { enum: ['RS256'] }, minItems: 1, uniqueItems: true },
+        idTokenAlgorithms: { type: 'array', items: { enum: ['RS256', 'ES256'] }, minItems: 1, uniqueItems: true },
       },
       required: ['issuer', 'discoveryUrl', 'authorizeUrl', 'tokenUrl', 'jwksUrl', 'resource', 'sendResource', 'identityScopes', 'useScopes', 'requiredScope', 'client', 'callbackPath', 'idTokenAlgorithms'],
       additionalProperties: false,
@@ -485,7 +485,7 @@ const GROK_PROFILE_DATA = {
     client: { kind: 'public', clientId: 'b1a00492-073a-47ea-816f-4c329264a828' },
     callbackPath: '/callback',
     callbackPort: 56121,
-    idTokenAlgorithms: ['RS256'],
+    idTokenAlgorithms: ['ES256'],
   },
   targetDefaults: {
     baseUrl: 'https://api.x.ai/v1',

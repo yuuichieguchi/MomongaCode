@@ -30,3 +30,9 @@ export const verifyRs256 = (jwt: ParsedJwt, jwk: Readonly<Record<string, unknown
   const key = createPublicKey({ key: { kty: 'RSA', n: jwk['n'], e: jwk['e'] } satisfies JsonWebKey, format: 'jwk' });
   return verify('RSA-SHA256', Buffer.from(jwt.signingInput), key, jwt.signature);
 };
+
+export const verifyEs256 = (jwt: ParsedJwt, jwk: Readonly<Record<string, unknown>>): boolean => {
+  if (jwk['kty'] !== 'EC' || jwk['crv'] !== 'P-256' || typeof jwk['x'] !== 'string' || typeof jwk['y'] !== 'string') return false;
+  const key = createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: jwk['x'], y: jwk['y'] } satisfies JsonWebKey, format: 'jwk' });
+  return verify('sha256', Buffer.from(jwt.signingInput), { key, dsaEncoding: 'ieee-p1363' }, jwt.signature);
+};
