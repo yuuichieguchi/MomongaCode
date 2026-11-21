@@ -402,7 +402,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     refuseNewWork();
-    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, ...(body.effort === undefined ? {} : { effort: body.effort }), bypassAllowed, ...(body.sandboxNetwork === undefined ? {} : { sandboxNetwork: body.sandboxNetwork }), additionalDirectories, mcpServers });
+    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, ...(body.effort === undefined ? {} : { effort: body.effort }), ...(body.outputStyle === undefined ? {} : { outputStyle: body.outputStyle }), bypassAllowed, ...(body.sandboxNetwork === undefined ? {} : { sandboxNetwork: body.sandboxNetwork }), additionalDirectories, mcpServers });
     const notice = body.terminalUi === false ? await undecidedFolderNotice(store.trust, cwd, context.req.raw.signal) : {};
     return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed, ...notice }, 201, { location: `/v1/sessions/${session.id}` });
   };
@@ -456,6 +456,11 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const effort = body.effort === undefined && model !== undefined && model !== session.model && current.effort !== null ? null : body.effort;
     if (effort !== undefined) {
       const result = store.setEffort(session.id, effort);
+      if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+      current = result.session;
+    }
+    if (body.outputStyle !== undefined) {
+      const result = store.setOutputStyle(session.id, body.outputStyle);
       if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
       current = result.session;
     }

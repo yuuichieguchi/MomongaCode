@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { SANDBOX_NETWORK_SETTINGS } from '@momonga/foundation';
 import type { SandboxNetworkSetting } from '@momonga/foundation';
-import { REASONING_EFFORTS, APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, EVENT_PAYLOAD_RENAMES, withCurrentNames, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
-import type { ReasoningEffort, OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxChangeRow, UserShellRecord } from '@momonga/protocol';
+import { OUTPUT_STYLES, REASONING_EFFORTS, APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, EVENT_PAYLOAD_RENAMES, withCurrentNames, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxChangeRow, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
@@ -38,6 +38,9 @@ const sandboxNetworkOf = (identity: string, value: string | null): SandboxNetwor
 const effortOf = (context: DecodeContext, identity: string, value: string | null): Stored<ReasoningEffort> | null =>
   value === null ? null : storedOneOf(context, 'sessions', identity, 'reasoning_effort', REASONING_EFFORTS, value);
 
+const outputStyleOf = (context: DecodeContext, identity: string, value: string | null): Stored<OutputStyle> | null =>
+  value === null ? null : storedOneOf(context, 'sessions', identity, 'output_style', OUTPUT_STYLES, value);
+
 export const decodeSession = (row: Row, context: DecodeContext): Session => {
   const identity = identityOf(row);
   const reader = readerFor('sessions', identity, row);
@@ -48,6 +51,7 @@ export const decodeSession = (row: Row, context: DecodeContext): Session => {
     permissionMode: storedOneOf(context, 'sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
     model: reader.string('model'),
     effort: effortOf(context, identity, reader.nullableString('reasoning_effort')),
+    outputStyle: outputStyleOf(context, identity, reader.nullableString('output_style')),
     bypassAllowed: reader.flag('bypass_allowed'),
     sandboxNetwork: sandboxNetworkOf(identity, reader.nullableString('sandbox_network')),
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),

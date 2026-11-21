@@ -1,6 +1,6 @@
 import type { ExternalEditorPort } from './external-editor.ts';
 import { ModelRefError, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, displayMapOf, isReasoningEffort } from '@momonga/protocol';
-import type { Mandate, MomongaModelEntry, PermissionMode, ReasoningEffort } from '@momonga/protocol';
+import type { Mandate, MomongaModelEntry, OutputStyle, PermissionMode, ReasoningEffort } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
 import { selectableModes } from '../modes.ts';
@@ -41,8 +41,10 @@ export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
   readonly model: string | undefined;
   readonly effort: ReasoningEffort | undefined;
+  readonly outputStyle?: OutputStyle | undefined;
   shownModel(model: string): string;
   setEffort(effort: ReasoningEffort | null): Promise<void>;
+  setOutputStyle?(style: OutputStyle | null): Promise<void>;
   readonly found: FoundServers;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   toast(text: string): void;

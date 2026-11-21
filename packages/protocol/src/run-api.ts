@@ -6,6 +6,7 @@ import type { JsonSchema } from './schema-helpers.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
 import { SURFACES } from './vocabulary.ts';
 import { REASONING_EFFORTS } from './capabilities.ts';
+import { OUTPUT_STYLES } from './output-style.ts';
 import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, QUIESCENT_BEHAVIOURS, REPORT_ANOMALY_CAUSES, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -1553,11 +1554,12 @@ export const RUN_API_SCHEMAS = {
         mcpServers: sessionMcpServers,
         terminalUi: boolean,
         effort: enumOf(REASONING_EFFORTS),
+        outputStyle: enumOf(OUTPUT_STYLES),
       },
       ['cwd', 'env'],
     ),
   ),
-  PatchSessionRequest: root({ ...closed({ permissionMode, model: { type: 'string', minLength: 1 }, mcpServers: sessionMcpServers, effort: nullable(enumOf(REASONING_EFFORTS)) }, []), minProperties: 1 }),
+  PatchSessionRequest: root({ ...closed({ permissionMode, model: { type: 'string', minLength: 1 }, mcpServers: sessionMcpServers, effort: nullable(enumOf(REASONING_EFFORTS)), outputStyle: nullable(enumOf(OUTPUT_STYLES)) }, []), minProperties: 1 }),
   CreateRunRequest: root(
     closed(
       {
@@ -1687,6 +1689,7 @@ export const RUN_API_SCHEMAS = {
         permissionMode: storedPermissionMode,
         model: string,
         effort: storedEnumOf(REASONING_EFFORTS),
+        outputStyle: storedEnumOf(OUTPUT_STYLES),
         bypassAllowed: boolean,
         createdAt: integer,
         envKeys: { type: 'array', items: string },

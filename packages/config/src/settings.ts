@@ -11,6 +11,7 @@ import { connectionAddressProblem } from './probe-record-key.ts';
 import { describeSchemaErrors, invalidSettingsMessage, schemaProblemOf } from './schema-errors.ts';
 import { BASH_ON_TIMEOUT, ISSUE_AUTHOR_ASSOCIATIONS, MCP_SERVERS_FILE_SCHEMA, apiKeyChoiceProblem, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
 import { DEFAULT_CAPTURE_MESSAGE_CONTENT, DEFAULT_RETENTION_DAYS } from './setting-defaults.ts';
+import type { OutputSettings } from './output-settings.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -481,6 +482,7 @@ export type Settings = {
   verification?: VerificationSettings;
   context?: ContextSettings;
   tools?: ToolsSettings;
+  output?: OutputSettings;
 };
 
 export type TuiTheme = (typeof TUI_THEMES)[number];

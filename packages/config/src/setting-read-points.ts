@@ -22,6 +22,7 @@ export const SETTING_READ_POINTS: Readonly<Record<string, SettingReadPoint>> = {
   memory: 'operation',
   context: 'operation',
   tools: 'operation',
+  output: 'operation',
   mcp: 'operation',
   mcpServers: 'operation',
   enabledMcpjsonServers: 'operation',

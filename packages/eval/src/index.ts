@@ -1,4 +1,6 @@
 export { ASK_RESPONSES, DATASET_FORMAT, DATASET_SCHEMA, DatasetError, PERMISSION_DECISIONS, parseDataset } from './dataset.ts';
+export { auditSystemPrompt, estimatePromptTokens, MAX_COMPACT_SYSTEM_PROMPT_TOKENS, MAX_STANDARD_SYSTEM_PROMPT_TOKENS, standardAuditMatrix } from './system-prompt-eval.ts';
+export type { PromptConstraintViolation, SystemPromptAudit } from './system-prompt-eval.ts';
 export type { AskResponse, CaseLimits, CaseMandate, CountRange, GoldenCase, GoldenDataset, GraderSpec, PermissionDecision } from './dataset.ts';
 export { grade } from './graders.ts';
 export type { DecisionObservation, GradeOutcome, Graded } from './graders.ts';

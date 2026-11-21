@@ -1,7 +1,7 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { isReasoningEffort, delegationOfMandate, pinnedMandateOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
-import type { ReasoningEffort, Capabilities, OutputFormatterName, PinnedRuleVerdict, TargetAnswers, PinnedDelegation, PinnedMandate } from '@momonga/protocol';
+import { isOutputStyle, isReasoningEffort, delegationOfMandate, pinnedMandateOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, Capabilities, OutputFormatterName, PinnedRuleVerdict, TargetAnswers, PinnedDelegation, PinnedMandate } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
 
@@ -19,6 +19,7 @@ export type TargetPin = { adapter: string; model: string; answers?: TargetAnswer
 export type RunPins = {
   model: string;
   effort?: ReasoningEffort;
+  outputStyle?: OutputStyle;
   systemPromptDigest: string;
   toolSetDigest: string;
   capabilities: Capabilities;
@@ -94,6 +95,12 @@ const effortPinOf = (value: unknown): ReasoningEffort | undefined => {
   return value;
 };
 
+const outputStylePinOf = (value: unknown): OutputStyle | undefined => {
+  if (value === undefined) return undefined;
+  if (!isOutputStyle(value)) throw new Error('the output style pinned for this run is malformed');
+  return value;
+};
+
 export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): { model: string; effort?: ReasoningEffort; roles: ModelRoles; delegation?: PinnedDelegation } => {
   const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
   if (started === undefined || started.type !== 'run.started') throw new Error(`run ${runId} has not recorded run.started, so it has pinned no model and no roles`);
@@ -133,9 +140,11 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     throw new Error(`the pins recorded for this run hold capabilities of a target that was not ready: ${readiness.message}`);
   }
   const effort = effortPinOf(value['effort']);
+  const outputStyle = outputStylePinOf(value['outputStyle']);
   return {
     model,
     ...(effort === undefined ? {} : { effort }),
+    ...(outputStyle === undefined ? {} : { outputStyle }),
     systemPromptDigest,
     toolSetDigest,
     capabilities,

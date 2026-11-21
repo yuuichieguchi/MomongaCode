@@ -150,6 +150,7 @@ export type {
   SessionMcpServers,
   SetModelResult,
   SetEffortResult,
+  SetOutputStyleResult,
   SetPermissionModeResult,
   SetSessionMcpServersResult,
   StartJobInput,

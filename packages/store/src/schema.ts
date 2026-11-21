@@ -1270,6 +1270,10 @@ const SESSION_REASONING_EFFORT = `
 ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT;
 `;
 
+const SESSION_OUTPUT_STYLE = `
+ALTER TABLE sessions ADD COLUMN output_style TEXT;
+`;
+
 const EVENT_SHOWN_FLAG = `
 ALTER TABLE events ADD COLUMN shown INTEGER;
 UPDATE events SET shown = 1 WHERE type = 'tool.permission.requested' AND json_extract(payload_json, '$.shown') IS NOT NULL;
@@ -1599,5 +1603,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 56,
     name: 'keep on a session the reasoning effort chosen for it, which its runs send to a model that declares a reasoning control; a session made before keeps NULL, read as no effort chosen',
     sql: SESSION_REASONING_EFFORT,
+  },
+  {
+    version: 57,
+    name: 'keep on a session the output style chosen for it, which its runs apply to the system prompt Edit Policy; a session made before keeps NULL, read as no session override',
+    sql: SESSION_OUTPUT_STYLE,
   },
 ];

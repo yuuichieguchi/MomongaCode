@@ -5,8 +5,8 @@ import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex, sleep } from '@momonga/foundation';
-import { isReasoningEffort, REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
-import type { ReasoningEffort, Capabilities, FunctionTool, Measuring } from '@momonga/protocol';
+import { DEFAULT_OUTPUT_STYLE, isOutputStyle, isReasoningEffort, REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, Capabilities, FunctionTool, Measuring } from '@momonga/protocol';
 import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
@@ -70,6 +70,12 @@ const effortPinOf = (session: Session, startsWith: ReasoningEffort | undefined):
   if (session.effort === null) return startsWith === undefined ? {} : { effort: startsWith };
   if (!isReasoningEffort(session.effort)) throw new Error(`the reasoning effort of session ${session.id} was written by a newer build`);
   return { effort: session.effort };
+};
+
+const outputStylePinOf = (session: Session, configured: OutputStyle): OutputStyle => {
+  if (session.outputStyle === null) return configured;
+  if (!isOutputStyle(session.outputStyle)) throw new Error(`the output style of session ${session.id} was written by a newer build`);
+  return session.outputStyle;
 };
 
 export type ClaimHost = {
@@ -422,9 +428,6 @@ const driveClaim = async (
   }
   const toolLess = readiness.state === 'no_tools';
   const agentPin = readAgentPin(run.pins);
-  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform, fence: sessionFenceOf(session), ...(toolLess ? { tools: 'none' as const } : {}) });
-  const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
-  const systemPromptDigest = sha256Hex(systemPrompt);
   const env = await tools.envFor(session, control.signal);
   const skills = await options.skills.load(session, control.signal);
   const admit = createSkillAdmission(() => ctx);
@@ -476,11 +479,41 @@ const driveClaim = async (
   }
   const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run, signal: control.signal }) : undefined;
   const newGuidelineVersion = recorded === undefined ? guidelineVersionFor(options.store, run) : undefined;
+  const newEffortPin = pinned === undefined ? effortPinOf(session, listing.effort) : undefined;
+  const configuredStyle =
+    pinned === undefined
+      ? options.settings.output === undefined
+        ? DEFAULT_OUTPUT_STYLE
+        : (await options.settings.output(session, control.signal)).style
+      : undefined;
+  const resolvedOutputStyle = pinned === undefined ? outputStylePinOf(session, configuredStyle ?? DEFAULT_OUTPUT_STYLE) : pinned.outputStyle ?? DEFAULT_OUTPUT_STYLE;
+  const newTokenPin =
+    pinned === undefined
+      ? {
+          ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run, signal: control.signal })),
+          ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run, signal: control.signal })),
+        }
+      : undefined;
+  const effectiveEffort = pinned === undefined ? newEffortPin?.effort : pinned.effort;
+  const effectiveConcise = (pinned === undefined ? newTokenPin : pinned.token)?.conciseDescriptions === true;
+  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({
+    cwd: session.cwd,
+    platform: options.platform,
+    fence: sessionFenceOf(session),
+    ...(toolLess ? { tools: 'none' as const } : { activeTools: toolSet.tools.map((tool) => tool.name) }),
+    capabilities,
+    ...(effectiveEffort === undefined ? {} : { effort: effectiveEffort }),
+    concise: effectiveConcise,
+    outputStyle: resolvedOutputStyle,
+  });
+  const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
+  const systemPromptDigest = sha256Hex(systemPrompt);
   const pins: RunPins =
     pinned === undefined
       ? {
           model: session.model,
-          ...effortPinOf(session, listing.effort),
+          ...newEffortPin,
+          ...(resolvedOutputStyle === DEFAULT_OUTPUT_STYLE ? {} : { outputStyle: resolvedOutputStyle }),
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
           capabilities,
@@ -489,10 +522,7 @@ const driveClaim = async (
           targets: { ...listing.targets },
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
-          token: {
-            ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run, signal: control.signal })),
-            ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run, signal: control.signal })),
-          },
+          token: newTokenPin ?? {},
           ...completionPin,
         }
       : pinned;
