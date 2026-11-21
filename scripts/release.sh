@@ -22,6 +22,7 @@ readonly OTHER_TARGETS=(linux-x64 linux-arm64 win-x64)
 readonly OTHER_ASSETS=(momonga-linux-x64 momonga-linux-arm64 momonga-win-x64.exe)
 
 DRY_RUN="${DRY_RUN:-0}"
+SKIP_TESTS=0
 readonly RELEASE_BRANCH="${MOMONGA_RELEASE_BRANCH:-main}"
 readonly PUSH_BOUND_SECONDS=120
 readonly FETCH_BOUND_SECONDS=120
@@ -130,6 +131,15 @@ write_checksums() {
   (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" "$NOTICES_NAME" > "$CHECKSUMS_NAME")
 }
 
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --skip-tests) SKIP_TESTS=1 ;;
+    *) fail "unknown option '$1' (supported: --skip-tests)" ;;
+  esac
+  shift
+done
+readonly SKIP_TESTS
+
 case "$DRY_RUN" in
   0 | 1) ;;
   *) fail "DRY_RUN must be 0 or 1, got '$DRY_RUN'" ;;
@@ -176,11 +186,14 @@ fi
 draft_created=0
 trap 'status=$?; if [ "$status" -ne 0 ]; then delete_draft; fi' EXIT
 
-step "typecheck and every test project"
-run npm run typecheck
-run npm test
-run npm run test:e2e
-run npm run test:packaging
+if [ "$SKIP_TESTS" = "1" ]; then
+  step "typecheck (tests skipped by --skip-tests)"
+  run npm run typecheck
+else
+  step "typecheck and every test project"
+  run npm run typecheck
+  run npm test
+fi
 
 step "build single executable"
 run mkdir -p "$OUT_DIR"

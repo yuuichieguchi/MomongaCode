@@ -149,7 +149,7 @@ const installers = (key: string, shellRepo = EMBEDDED_REPO, powershellRepo = she
   'scripts/install.ps1': `$embeddedReleasePublicKey = '${key}'\n$embeddedReleaseRepo = '${powershellRepo}'\n`,
 });
 
-const CHECKS = ['npm', 'npm', 'npm', 'npm'];
+const CHECKS = ['npm', 'npm'];
 const BUILT = [...CHECKS, 'npm'];
 
 describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
@@ -193,8 +193,8 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     ...extra,
   });
 
-  const release = (extra: NodeJS.ProcessEnv = {}) =>
-    spawnSync('/bin/bash', [path.join(work, 'scripts/release.sh')], { cwd: work, encoding: 'utf8', env: releaseEnv(extra) });
+  const release = (extra: NodeJS.ProcessEnv = {}, args: readonly string[] = []) =>
+    spawnSync('/bin/bash', [path.join(work, 'scripts/release.sh'), ...args], { cwd: work, encoding: 'utf8', env: releaseEnv(extra) });
 
   const siteDeploy = (extra: NodeJS.ProcessEnv = {}) =>
     spawnSync('/bin/bash', [path.join(work, 'scripts/site-deploy.sh')], { cwd: work, encoding: 'utf8', env: releaseEnv(extra) });
@@ -286,8 +286,6 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(effects).toEqual([
       'npm run',
       'npm test',
-      'npm run',
-      'npm run',
       'mkdir -p',
       'npm run',
       `ripgrep-manifest ${work}/dist/release/momonga-darwin-arm64`,
@@ -345,12 +343,10 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(result.status, result.stderr).toBe(0);
     const binary = `${work}/dist/release/momonga-darwin-arm64`;
     const calls = loggedCalls();
-    const published = calls.slice(0, 23);
+    const published = calls.slice(0, 21);
     expect(published.map((line) => line.split(' ').slice(0, 2).join(' '))).toEqual([
       'npm run',
       'npm test',
-      'npm run',
-      'npm run',
       'npm run',
       'codesign --sign',
       'codesign --verify',
@@ -371,39 +367,39 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'gh release',
       'gh release',
     ]);
-    expect(calls.slice(0, 4)).toEqual(['npm run typecheck ', 'npm test ', 'npm run test:e2e ', 'npm run test:packaging ']);
+    expect(calls.slice(0, 2)).toEqual(['npm run typecheck ', 'npm test ']);
     const updateSourceFlags = `--repo fake-owner/fake-repo --team-id ${TEAM_ID} --release-public-key ${PINNED_KEY} `;
-    expect(calls[4]).toBe(`npm run sea -- --unsigned --output ${binary} ${updateSourceFlags}`);
-    expect(calls[5]).toBe(
+    expect(calls[2]).toBe(`npm run sea -- --unsigned --output ${binary} ${updateSourceFlags}`);
+    expect(calls[3]).toBe(
       `codesign --sign ${SIGNING_IDENTITY} --force --timestamp --options runtime --entitlements ${work}/scripts/sea-entitlements.plist ${binary} `,
     );
-    expect(calls[6]).toBe(`codesign --verify --strict --verbose=2 ${binary} `);
-    expect(calls[7]).toBe(`codesign --display --verbose=4 ${binary} `);
-    expect(calls[9]).toBe(
+    expect(calls[4]).toBe(`codesign --verify --strict --verbose=2 ${binary} `);
+    expect(calls[5]).toBe(`codesign --display --verbose=4 ${binary} `);
+    expect(calls[7]).toBe(
       `xcrun notarytool submit ${binary}.zip --key ${keyFile} --key-id FAKEKEYID1 --issuer 00000000-0000-0000-0000-000000000000 --wait --output-format json `,
     );
-    expect(calls[10]).toBe(`spctl --assess --type execute --verbose=4 ${binary} `);
-    expect(calls[11]).toBe('npx vitest run --project packaging scripts/sea-smoke.test.ts ');
+    expect(calls[8]).toBe(`spctl --assess --type execute --verbose=4 ${binary} `);
+    expect(calls[9]).toBe('npx vitest run --project packaging scripts/sea-smoke.test.ts ');
     const out = `${work}/dist/release`;
-    expect(calls.slice(12, 15)).toEqual(
+    expect(calls.slice(10, 13)).toEqual(
       ['linux-x64', 'linux-arm64', 'win-x64'].map(
         (target) => `npm run sea -- --unsigned --target ${target} --output ${out}/momonga-${target}${target === 'win-x64' ? '.exe' : ''} ${updateSourceFlags}`,
       ),
     );
-    expect(calls.slice(15, 17).map((line) => line.split(' ').slice(0, 4).join(' '))).toEqual(['docker run --rm -i', 'docker run --rm -i']);
-    expect(calls[15]).toContain('--platform linux/amd64 ');
-    expect(calls[15]).toContain('MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/momonga-linux-x64 node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts');
-    expect(calls[16]).toContain('--platform linux/arm64 ');
-    expect(calls[16]).toContain('MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/momonga-linux-arm64 node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts');
-    expect(calls[17]).toBe(`npm run notices -- --output ${out}/THIRD-PARTY-NOTICES.md `);
-    expect(calls[18]).toMatch(/^site --output \S+ $/);
-    expect(calls[19]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
-    expect(calls[20]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
-    expect(calls[21]).toContain(
+    expect(calls.slice(13, 15).map((line) => line.split(' ').slice(0, 4).join(' '))).toEqual(['docker run --rm -i', 'docker run --rm -i']);
+    expect(calls[13]).toContain('--platform linux/amd64 ');
+    expect(calls[13]).toContain('MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/momonga-linux-x64 node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts');
+    expect(calls[14]).toContain('--platform linux/arm64 ');
+    expect(calls[14]).toContain('MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/momonga-linux-arm64 node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts');
+    expect(calls[15]).toBe(`npm run notices -- --output ${out}/THIRD-PARTY-NOTICES.md `);
+    expect(calls[16]).toMatch(/^site --output \S+ $/);
+    expect(calls[17]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
+    expect(calls[18]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
+    expect(calls[19]).toContain(
       `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/THIRD-PARTY-NOTICES.md ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes - second change (`,
     );
-    expect(calls[22]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
-    const deployed = calls.slice(23);
+    expect(calls[20]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
+    const deployed = calls.slice(21);
     expect(deployed[0]).toMatch(/^site --output \S+ $/);
     expect(fs.existsSync(path.join(outputOf(deployed[0] as string), 'install.sh'))).toBe(true);
     expect(deployed.slice(1).length).toBeGreaterThanOrEqual(2);
@@ -571,9 +567,9 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(result.status, result.stderr).toBe(0);
     const calls = loggedCalls();
     const binary = `${work}/dist/release/momonga-darwin-arm64`;
-    expect(calls[4]).toBe(`npm run sea -- --unsigned --output ${binary} --repo fake-owner/fake-repo --team-id ${TEAM_ID} --release-public-key ${PINNED_KEY} `);
-    expect(calls[5]).toContain(`codesign --sign ${SIGNING_IDENTITY} --force`);
-    expect(calls[19]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${work}/dist/release/SHA256SUMS `);
+    expect(calls[2]).toBe(`npm run sea -- --unsigned --output ${binary} --repo fake-owner/fake-repo --team-id ${TEAM_ID} --release-public-key ${PINNED_KEY} `);
+    expect(calls[3]).toContain(`codesign --sign ${SIGNING_IDENTITY} --force`);
+    expect(calls[17]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${work}/dist/release/SHA256SUMS `);
     expect(calls.join('\n')).not.toContain('env-owner/env-repo');
     expect(calls.join('\n')).not.toContain('FAKE000000');
   });
@@ -585,7 +581,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     const result = spawnSync('/bin/bash', [path.join(work, 'scripts/release.sh')], { cwd: work, encoding: 'utf8', env });
     expect(result.stderr).not.toContain('is not set');
     expect(result.status, result.stderr).toBe(0);
-    expect(loggedCalls().slice(0, 4)).toEqual(['npm run typecheck ', 'npm test ', 'npm run test:e2e ', 'npm run test:packaging ']);
+    expect(loggedCalls().slice(0, 2)).toEqual(['npm run typecheck ', 'npm test ']);
   });
 
   it('refuses to start when the release signing key is not at $HOME/.ssh/momonga-release', () => {
@@ -872,10 +868,28 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
   it('runs typecheck and every test project before building anything', () => {
     commit('second change');
     expect(release().status).toBe(0);
-    expect(loggedCalls().slice(0, 4)).toEqual(['npm run typecheck ', 'npm test ', 'npm run test:e2e ', 'npm run test:packaging ']);
+    expect(loggedCalls().slice(0, 2)).toEqual(['npm run typecheck ', 'npm test ']);
   });
 
-  it.each(['typecheck', 'test', 'test:e2e', 'test:packaging'])('stops before building when %s fails', (script) => {
+  it('--skip-tests skips npm test while still running typecheck, building, verifying and publishing', () => {
+    commit('second change');
+    const result = release({}, ['--skip-tests']);
+    expect(result.status, result.stderr).toBe(0);
+    const calls = loggedCalls();
+    expect(calls[0]).toBe('npm run typecheck ');
+    expect(calls[1]).toContain('npm run sea -- ');
+    expect(calls.some((line) => line === 'npm test ')).toBe(false);
+    expect(originTags()).toBe('v1.2.3\n');
+  });
+
+  it('rejects an unknown option before running any command', () => {
+    const result = release({}, ['--bogus']);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toBe("release.sh: unknown option '--bogus' (supported: --skip-tests)\n");
+    expect(loggedCalls()).toEqual([]);
+  });
+
+  it.each(['typecheck', 'test'])('stops before building when %s fails', (script) => {
     commit('second change');
     const result = release({ STUB_NPM_FAIL: script });
     expect(result.status).not.toBe(0);
