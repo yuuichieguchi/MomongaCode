@@ -4,7 +4,7 @@ import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution, HookStart } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import type { FallbackNotice } from './fallback-cause.ts';
-import type { MemoryStatus } from './memory.ts';
+import type { LoadedMemory } from './memory.ts';
 import type { Stored } from './stored-value.ts';
 import type { Surface } from './vocabulary.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
@@ -446,7 +446,7 @@ export type RunEventPayload =
       tokensAfterEstimated?: true;
     }
   | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
-  | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
+  | { type: 'context.memories_loaded'; memories: LoadedMemory[] }
   | { type: 'context.contribution'; items: { kind: ContributionKind; id: string; contributed: boolean }[] }
   | { type: 'context.compacting'; step: number; attempt: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
@@ -596,7 +596,7 @@ export type RunState = {
   verification: VerificationState;
   formsSinceCompaction: Record<string, number>;
   governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
-  memoriesLoaded?: { id: string; status: MemoryStatus }[];
+  memoriesLoaded?: LoadedMemory[];
   activatedSkills: ActivatedSkillEntry[];
   loadedTools: string[];
   offeredTools?: string[];

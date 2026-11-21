@@ -73,6 +73,33 @@ export type MemoryValidity = { intervals: ValidityInterval[]; changes: ValidityC
 
 export type MemoryView = Omit<MemoryRecord, 'observedStatus'> & { status: MemoryStatus; observedStatus?: Stored<MemoryStatus> | null; validity?: MemoryValidity };
 
+export type LoadedMemory = {
+  id: string;
+  status: MemoryStatus;
+  files?: string[];
+  commit?: string;
+};
+
+export type MemoryEvidenceSummary = {
+  files: string[];
+  commit?: string;
+};
+
+export const summarizeMemoryEvidence = (evidence: readonly Readonly<StoredMemoryEvidence>[]): MemoryEvidenceSummary => {
+  const files: string[] = [];
+  let commit: string | undefined;
+  for (const entry of evidence) {
+    if (entry.kind === 'file') {
+      if (!files.includes(entry.path)) files.push(entry.path);
+    } else if (entry.kind === 'commit' && commit === undefined && entry.sha !== '') {
+      commit = entry.sha;
+    }
+  }
+  return commit === undefined ? { files } : { files, commit };
+};
+
+export const shortCommitSha = (sha: string): string => sha.slice(0, 7);
+
 export const describeMemoryValidity = (memory: Pick<MemoryRecord, 'state' | 'retiredAt' | 'supersedes' | 'supersededBy'>): string =>
   [
     ...(memory.state === 'active' ? [] : [`state ${memory.state}`]),

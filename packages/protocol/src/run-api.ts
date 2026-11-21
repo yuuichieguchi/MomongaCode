@@ -826,7 +826,12 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['active', 'conflicts'],
   },
   'context.memories_loaded': {
-    properties: { memories: { type: 'array', items: closed({ id: string, status: enumOf(MEMORY_STATUSES) }, ['id', 'status']) } },
+    properties: {
+      memories: {
+        type: 'array',
+        items: closed({ id: string, status: enumOf(MEMORY_STATUSES), files: { type: 'array', items: string }, commit: string }, ['id', 'status']),
+      },
+    },
     required: ['memories'],
   },
   'context.contribution': {

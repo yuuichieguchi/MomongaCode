@@ -1,5 +1,5 @@
-import { escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
-import type { MemoryView } from '@momonga/protocol';
+import { escapeXmlAttribute, escapeXmlText, shortCommitSha, summarizeMemoryEvidence } from '@momonga/protocol';
+import type { MemoryView, StoredMemoryEvidence } from '@momonga/protocol';
 import type { DeepReadonly } from './types.ts';
 
 const MEMORY_SEARCH_TOOL = 'MemorySearch';
@@ -20,9 +20,18 @@ const sourceAttributesOf = (source: DeepReadonly<MemoryView['source']>): string 
   return ` source_run="${escapeXmlAttribute(source.runId)}"${source.kind === 'tool' ? ` source_step="${source.step}"` : ''}>`;
 };
 
+const evidenceAttributesOf = (evidence: readonly Readonly<StoredMemoryEvidence>[]): string => {
+  const { files, commit } = summarizeMemoryEvidence(evidence);
+  return [
+    ...(files.length === 0 ? [] : [` files="${escapeXmlAttribute(files.join(', '))}"`]),
+    ...(commit === undefined ? [] : [` commit="${escapeXmlAttribute(shortCommitSha(commit))}"`]),
+  ].join('');
+};
+
 const noteOf = (memory: DeepReadonly<MemoryView>): string =>
   [
     `<memory id="${escapeXmlAttribute(memory.id)}" scope="${memory.scope}" origin="${memory.origin === 'trusted' ? 'trusted' : 'untrusted'}" status="${memory.status}"`,
+    evidenceAttributesOf(memory.evidence),
     ` saved="${iso(memory.createdAt)}"`,
     sourceAttributesOf(memory.source),
     escapeXmlText(memory.text),

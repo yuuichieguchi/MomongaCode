@@ -148,6 +148,26 @@ describe('memory tools', () => {
     ]);
   });
 
+  it('includes file paths and short commit SHA in search results when present', async () => {
+    const withEvidence = viewOf({
+      id: 'mem-3',
+      scope: 'project',
+      project: '/p',
+      status: 'verified',
+      text: 'auth checks tokens',
+      evidence: [
+        { kind: 'file', project: '/p', path: 'src/auth.ts', sha256: 'a'.repeat(64) },
+        { kind: 'commit', sha: '1234567890abcdef1234567890abcdef12345678' },
+      ],
+    });
+    const harness = makeHarness();
+    const [outcome] = await harness.executor.runBatch(await harness.input(await toolSet(fakePort([withEvidence]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'auth' })]));
+    const output = outcome?.kind === 'result' ? outcome.result.output : '';
+    expect(output).toBe(
+      '[mem-3] (project memory, trusted origin, status verified, files src/auth.ts, commit 1234567, saved 2026-11-02T00:00:00.000Z in run run-1 step 1) auth checks tokens',
+    );
+  });
+
   it('asks the port for live memories by default and for all of them on request', async () => {
     const { port, includes } = fakePort();
     const harness = makeHarness();

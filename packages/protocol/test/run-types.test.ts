@@ -339,7 +339,7 @@ describe('run event payloads', () => {
     }>();
     expectTypeOf<Payload<'context.memories_loaded'>>().toEqualTypeOf<{
       type: 'context.memories_loaded';
-      memories: { id: string; status: MemoryStatus }[];
+      memories: { id: string; status: MemoryStatus; files?: string[]; commit?: string }[];
     }>();
     expectTypeOf<Payload<'context.contribution'>>().toEqualTypeOf<{
       type: 'context.contribution';
@@ -519,7 +519,7 @@ describe('RunState', () => {
       };
       formsSinceCompaction: Record<string, number>;
       governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
-      memoriesLoaded?: { id: string; status: MemoryStatus }[];
+      memoriesLoaded?: { id: string; status: MemoryStatus; files?: string[]; commit?: string }[];
       activatedSkills: { name: string; content: string; seq: number }[];
       loadedTools: string[];
       offeredTools?: string[];
