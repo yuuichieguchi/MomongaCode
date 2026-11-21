@@ -1,6 +1,27 @@
 export { UNKNOWN_VALUE } from './stored-value.ts';
 export { DEFAULT_OUTPUT_STYLE, OUTPUT_STYLES, isOutputStyle } from './output-style.ts';
 export type { OutputStyle } from './output-style.ts';
+export { buildSystemPrompt, buildSystemPromptSections, COMPACT_CONTEXT_WINDOW_THRESHOLD } from './system-prompt.ts';
+export type { SystemPromptContext, SystemPromptSections } from './system-prompt.ts';
+export {
+  actionableIssueCount,
+  buildPolishPrompt,
+  DEFAULT_POLISH_AUDIENCE,
+  MAX_POLISH_ITERATIONS,
+  POLISH_ISSUE_TYPES,
+  POLISH_SEVERITIES,
+  shouldStopPolish,
+  validateClarityReview,
+} from './polish.ts';
+export type {
+  PolishEvaluationResult,
+  PolishIssue,
+  PolishIssueType,
+  PolishRequest,
+  PolishSeverity,
+  PolishStopDecision,
+  PolishTarget,
+} from './polish.ts';
 export { enforcedBehaviorOf } from './governance.ts';
 export type { EnforcedBehavior } from './governance.ts';
 export type { Stored } from './stored-value.ts';

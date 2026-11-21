@@ -573,11 +573,6 @@
         "project": 1,
         "target": 1
       },
-      "packages/runtime/src/system-prompt.ts": {
-        "conversation": 2,
-        "directory": 3,
-        "project": 1
-      },
       "packages/runtime/src/worker/admitted-request.ts": {
         "ceiling": 2,
         "gateway": 1

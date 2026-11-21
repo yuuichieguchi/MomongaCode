@@ -33,6 +33,7 @@ describe('SETTINGS_SCHEMA', () => {
         'models',
         'network',
         'operations',
+        'output',
         'permissions',
         'pricing',
         'projectApprovals',

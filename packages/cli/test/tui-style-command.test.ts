@@ -1,9 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OutputStyle } from '@momonga/protocol';
-import { testKernelLock } from '@momonga/testkit';
+import { createTempDir, testKernelLock } from '@momonga/testkit';
 import { styleCommand, STYLE_IN_FORCE_MARK } from '../src/tui/commands/style.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 
@@ -14,9 +13,9 @@ afterEach(async () => {
 });
 
 const makeContext = async (options: { current?: OutputStyle; choice?: { index: number; alt?: boolean } }) => {
-  const home = await mkdtemp(path.join(os.tmpdir(), 'momonga-style-cmd-'));
+  const home = createTempDir();
   dirs.push(home);
-  const settingsFile = path.join(home, 'settings.json');
+  const settingsFile = path.join(home, '.momonga', 'settings.json');
   const infos: string[] = [];
   const applied: Array<OutputStyle | null> = [];
   let pickerRequest: unknown;

@@ -1,7 +1,12 @@
-import { ESTIMATED_CHARACTERS_PER_TOKEN, OUTPUT_STYLES, TOOL_OUTPUT_TAG } from '@momonga/protocol';
-import type { OutputStyle, ReasoningEffort } from '@momonga/protocol';
-import { buildSystemPrompt, buildSystemPromptSections, COMPACT_CONTEXT_WINDOW_THRESHOLD } from '@momonga/runtime';
-import type { SystemPromptContext } from '@momonga/runtime';
+import {
+  buildSystemPrompt,
+  buildSystemPromptSections,
+  COMPACT_CONTEXT_WINDOW_THRESHOLD,
+  ESTIMATED_CHARACTERS_PER_TOKEN,
+  OUTPUT_STYLES,
+  TOOL_OUTPUT_TAG,
+} from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, SystemPromptContext } from '@momonga/protocol';
 
 export type PromptConstraintViolation = {
   readonly code: string;

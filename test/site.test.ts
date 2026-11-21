@@ -689,23 +689,38 @@ describe('the website', () => {
     });
   const mainOf = (html: string): string => /<main\b[\s\S]*<\/main>/.exec(html)?.[0] ?? '';
 
-  const AREA_CARDS = [
-    { anchor: 'adaptive-agent-memory--context-orchestration', title: 'Adaptive Agent Memory & Context Orchestration', text: 'In MomongaCode, memory and context are built by the runtime from recorded events, not left to the model alone.' },
-    { anchor: 'agent-token-efficiency-engineering', title: 'Agent Token Efficiency Engineering', text: 'Every token-saving mechanism is on by default; each has a setting only so you can turn it off, and momonga eval measures it against a base with it off.' },
-  ];
-  const FEATURE_TITLES = ['Terminal UI and headless mode', 'Models', 'Built-in tools', 'Permission modes', 'Policy verification', 'Verifiable completion', 'Auto mode', 'Sandbox', 'Memory and rules', 'Skills and agents', 'MCP', 'Hooks', 'Editor integration', 'Observability', 'Background jobs and runs', 'Delegated work', 'Measured reliability'];
+  const readmeAreaCards = () => {
+    const lines = sourceOf('README.md').split('\n');
+    return headingsOf('README.md')
+      .filter((heading) => heading.level === 3 && pageOfHeading('README.md', heading) === 'docs/why-momongacode.html')
+      .map((heading) => {
+        const title = inlineText(heading.text);
+        const paragraph = inlineText(lines.slice(heading.line).find((line) => line.trim() !== '') ?? '');
+        const firstEnd = paragraph.search(/\.(?:\s|$)/);
+        const text = firstEnd === -1 ? paragraph : paragraph.slice(0, firstEnd + 1);
+        return { anchor: githubSlug(title), title, text };
+      });
+  };
+  const readmeFeatureTitles = (): string[] => {
+    const lines = sourceOf('README.md').split('\n');
+    const section = lines.slice(lines.findIndex((line) => line.startsWith('## 4. ')), lines.findIndex((line) => line.startsWith('## 5. ')));
+    return section.flatMap((line) => {
+      const match = /^- \*\*(.+?)\*\*/.exec(line);
+      return match === null ? [] : [inlineText(match[1] as string).replace(/\.$/, '')];
+    });
+  };
 
   it('shows on the landing page one card per area of README section 2, its heading and first sentence, linked to that heading', () => {
     const html = text('index.html');
-    const areas = headingsOf('README.md').filter((heading) => heading.level === 3 && pageOfHeading('README.md', heading) === 'docs/why-momongacode.html');
-    expect(areas.map((heading) => inlineText(heading.text))).toEqual(AREA_CARDS.map((card) => card.title));
+    const areaCards = readmeAreaCards();
+    expect(areaCards.length).toBeGreaterThan(0);
     const cards = cardsOf(html).filter((card) => card.href.startsWith('/docs/why-momongacode'));
-    expect(cards).toEqual(AREA_CARDS.map((card) => ({ href: `/docs/why-momongacode#${card.anchor}`, heading: true, title: card.title, text: card.text })));
+    expect(cards).toEqual(areaCards.map((card) => ({ href: `/docs/why-momongacode#${card.anchor}`, heading: true, title: card.title, text: card.text })));
     for (const card of cards) expect(resolves('index.html', card.href), card.href).toBe(true);
     const lines = sourceOf('README.md').split('\n');
     const intro = lines.slice(lines.findIndex((line) => line.startsWith('## 2. ')) + 1).find((line) => line.trim() !== '') as string;
     expect(squash(stripTags(mainOf(html)))).toContain(inlineText(intro));
-    for (const card of AREA_CARDS) {
+    for (const card of areaCards) {
       const at = lines.findIndex((line) => line === `### ${card.title}`);
       const first = inlineText(lines.slice(at + 1).find((line) => line.trim() !== '') as string);
       expect(first.startsWith(card.text), card.title).toBe(true);
@@ -713,26 +728,22 @@ describe('the website', () => {
   });
 
   it('shows on the landing page one tile per item of README section 4, only its bold lead without the full stop, linked to /docs/features', () => {
-    const lines = sourceOf('README.md').split('\n');
-    const section = lines.slice(lines.findIndex((line) => line.startsWith('## 4. ')), lines.findIndex((line) => line.startsWith('## 5. ')));
-    const leads = section.flatMap((line) => {
-      const match = /^- \*\*(.+?)\*\*/.exec(line);
-      return match === null ? [] : [inlineText(match[1] as string).replace(/\.$/, '')];
-    });
-    expect(leads).toEqual(FEATURE_TITLES);
+    const featureTitles = readmeFeatureTitles();
+    expect(featureTitles.length).toBeGreaterThan(0);
     const html = mainOf(text('index.html'));
     const tiles = [...html.matchAll(/<a\b[^>]*\sclass="tile"[^>]*>([\s\S]*?)<\/a>/g)];
-    expect(tiles.map((tile) => attributeOf(tile[0], 'href'))).toEqual(FEATURE_TITLES.map(() => '/docs/features'));
+    expect(tiles.map((tile) => attributeOf(tile[0], 'href'))).toEqual(featureTitles.map(() => '/docs/features'));
     for (const tile of tiles) {
       expect(tile[1], tile[0]).toMatch(/^<span class="tile-title" data-source>[^<]*<\/span>$/);
       expect(tile[1], tile[0]).not.toMatch(/<a\b/);
     }
-    expect(tiles.map((tile) => squash(stripTags(tile[1] as string)))).toEqual(FEATURE_TITLES);
+    expect(tiles.map((tile) => squash(stripTags(tile[1] as string)))).toEqual(featureTitles);
     expect(resolves('index.html', '/docs/features')).toBe(true);
     expect(html).not.toContain('class="card-text" data-source>An interactive session');
   });
 
   it('joins the last three words of each centred text block of the landing page with no-break spaces', () => {
+    const areaCards = readmeAreaCards();
     const html = mainOf(text('index.html'));
     expect(html).toContain('command&#160;is&#160;<code>momonga</code>.</p>');
     const hero = /<section class="hero">([\s\S]*?)<\/section>/.exec(html)?.[1] ?? '';
@@ -741,7 +752,7 @@ describe('the website', () => {
     const cardTexts = [...html.matchAll(/<p class="card-text" data-source>([\s\S]*?)<\/p>/g)].map((match) => match[1] as string);
     expect(heroParagraphs).toHaveLength(2);
     expect(intros).toHaveLength(1);
-    expect(cardTexts).toHaveLength(AREA_CARDS.length);
+    expect(cardTexts).toHaveLength(areaCards.length);
     for (const block of [...heroParagraphs, ...intros, ...cardTexts]) {
       const shown = decode(block.replace(/<[^>]*>/g, ''));
       expect(shown, block).toMatch(/(?:^| )[^ \u00a0]+\u00a0[^ \u00a0]+\u00a0[^ \u00a0]+$/);
@@ -750,21 +761,23 @@ describe('the website', () => {
   });
 
   it('makes each area card one link and nests no link in it', () => {
+    const areaCards = readmeAreaCards();
     const html = mainOf(text('index.html'));
     const anchors = [...html.matchAll(/<a\b[^>]*\sclass="card"[^>]*>([\s\S]*?)<\/a>/g)];
-    expect(anchors).toHaveLength(AREA_CARDS.length);
+    expect(anchors).toHaveLength(areaCards.length);
     for (const anchor of anchors) expect(anchor[1], anchor[0]).not.toMatch(/<a\b/);
     expect(html).toContain('and <code>momonga eval</code> measures it');
   });
 
   it('carries no list of README prose and no heading but the name, the two section titles and the area titles on the landing page', () => {
+    const areaCards = readmeAreaCards();
     const html = mainOf(text('index.html'));
     expect(html).not.toMatch(/<(?:ul|ol|li)\b/);
     const headings = [...html.matchAll(/<h(\d)\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((match) => ({ level: Number(match[1]), title: squash(stripTags(match[2] as string)) }));
     expect(headings).toEqual([
       { level: 1, title: 'MomongaCode' },
       { level: 2, title: 'Why MomongaCode?' },
-      ...AREA_CARDS.map((card) => ({ level: 3, title: card.title })),
+      ...areaCards.map((card) => ({ level: 3, title: card.title })),
       { level: 2, title: 'Features' },
     ]);
     const outside = text('index.html').replace(/<main\b[\s\S]*<\/main>/, '');

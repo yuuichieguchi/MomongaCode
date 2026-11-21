@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createOutboundDispatcher, findOutboundError, findProgramOnPath, hostPaths, outboundFetch, resolveLayoutLocks, routeOf } from '@momonga/foundation';
 import { withOutboundNetwork } from '../network.ts';
@@ -104,6 +105,7 @@ export type TuiBackend = {
   openUrl(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
   openFile(url: URL, watch: AbortSignal, onFailure: (message: string) => void): void;
   fileLinks(candidates: readonly string[], signal: AbortSignal): Promise<FileLinks>;
+  checkReadableFile?(filePath: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
   copyToClipboard(text: string): Promise<CopyOutcome>;
   skills(): Promise<SkillsResponse>;
   agents(): Promise<AgentsResponse>;
@@ -386,6 +388,17 @@ export const createTuiBackend = (
     fileLinks: async (candidates, signal) => {
       const filePorts = fileLinkPortsOf(AbortSignal.any([closing.signal, signal]));
       return resolveFileLinks(candidates, await fileLinkRootsOf(fileLinkPlace(), filePorts), filePorts);
+    },
+    checkReadableFile: async (filePath) => {
+      const resolved = path.resolve(ports.cwd, filePath);
+      try {
+        const info = await ports.files.stat(resolved);
+        if (!info.isFile()) return { ok: false, message: `cannot polish ${filePath}: not a regular file` };
+        await ports.files.readText(resolved);
+        return { ok: true };
+      } catch {
+        return { ok: false, message: `cannot polish ${filePath}: file does not exist or is not readable` };
+      }
     },
     copyToClipboard: async (text) => {
       const terminal = ports.terminal;

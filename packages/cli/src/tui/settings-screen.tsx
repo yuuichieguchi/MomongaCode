@@ -190,6 +190,7 @@ export const SETTINGS_REACHED_BY_LINK: Readonly<Record<string, string>> = {
   'models.roles.analysis': 'models',
   'models.headersTimeoutMs': 'models',
   'models.idleTimeoutMs': 'models',
+  'output.style': 'style',
 };
 
 export type SettingsLink = { readonly section: SettingSection; readonly label: string; readonly command?: string };
@@ -199,6 +200,7 @@ export const SETTINGS_LINKS: Readonly<Record<string, SettingsLink>> = {
   hooks: { section: 'Hooks', label: 'Hooks', command: 'hooks' },
   mcp: { section: 'MCP', label: 'MCP servers', command: 'mcp' },
   models: { section: 'Models', label: MODELS_TITLE },
+  style: { section: 'Display', label: 'Output style', command: 'style' },
 };
 
 export const settingsLinkLabel = (link: SettingsLink): string => (link.command === undefined ? link.label : `${link.label}  /${link.command}`);

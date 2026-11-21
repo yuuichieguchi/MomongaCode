@@ -1,7 +1,7 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createTempDir } from '@momonga/testkit';
 import { createPolishCommand, NOTHING_TO_POLISH, parsePolishArgs } from '../src/tui/commands/polish.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 
@@ -63,18 +63,23 @@ describe('/polish command', () => {
   });
 
   it('rejects missing files before starting a run and accepts readable files', async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'momonga-polish-'));
+    const dir = createTempDir();
     dirs.push(dir);
     const existing = path.join(dir, 'spec.md');
     await writeFile(existing, '# Spec\n', 'utf8');
 
+    const checkFile = async (filePath: string) =>
+      filePath === existing
+        ? ({ ok: true } as const)
+        : ({ ok: false, message: `cannot polish ${filePath}: file does not exist or is not readable` } as const);
+
     const missingCtx = makeContext();
-    await createPolishCommand().run(path.join(dir, 'missing.md'), missingCtx.context);
+    await createPolishCommand(checkFile).run(path.join(dir, 'missing.md'), missingCtx.context);
     expect(missingCtx.started).toEqual([]);
     expect(missingCtx.infos[0]).toMatch(/does not exist or is not readable/);
 
     const okCtx = makeContext();
-    await createPolishCommand().run(existing, okCtx.context);
+    await createPolishCommand(checkFile).run(existing, okCtx.context);
     expect(okCtx.infos).toEqual([]);
     expect(okCtx.started).toHaveLength(1);
     expect(okCtx.started[0]).toContain(existing);

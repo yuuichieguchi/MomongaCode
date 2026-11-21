@@ -1,7 +1,4 @@
-import { access, stat } from 'node:fs/promises';
-import { constants as fsConstants } from 'node:fs';
-import path from 'node:path';
-import { buildPolishPrompt, DEFAULT_POLISH_AUDIENCE } from '@momonga/runtime';
+import { buildPolishPrompt, DEFAULT_POLISH_AUDIENCE } from '@momonga/protocol';
 import type { SlashCommand, SlashContext } from '../slash.ts';
 
 export const NOTHING_TO_POLISH = 'Nothing to polish: wait for an assistant response or pass a file path (/polish <file>).';
@@ -80,21 +77,9 @@ export const parsePolishArgs = (args: string): ParsedPolishArgs => {
   };
 };
 
-export type PolishFileCheck = (filePath: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+export type PolishFileCheck = (filePath: string) => Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
 
-const defaultCheckFile: PolishFileCheck = async (filePath) => {
-  const resolved = path.resolve(filePath);
-  try {
-    const info = await stat(resolved);
-    if (!info.isFile()) return { ok: false, message: `cannot polish ${filePath}: not a regular file` };
-    await access(resolved, fsConstants.R_OK);
-    return { ok: true };
-  } catch {
-    return { ok: false, message: `cannot polish ${filePath}: file does not exist or is not readable` };
-  }
-};
-
-export const createPolishCommand = (checkFile: PolishFileCheck = defaultCheckFile): SlashCommand => ({
+export const createPolishCommand = (checkFile?: PolishFileCheck): SlashCommand => ({
   name: 'polish',
   description: `run bounded clarity and codebase-factuality revision on the last answer or a file (default audience: ${DEFAULT_POLISH_AUDIENCE})`,
   usage: '[<file>] [--audience <reader>]',
@@ -106,10 +91,13 @@ export const createPolishCommand = (checkFile: PolishFileCheck = defaultCheckFil
     }
 
     if (parsed.filePath !== undefined) {
-      const check = await checkFile(parsed.filePath);
-      if (!check.ok) {
-        context.info(check.message);
-        return;
+      const verifier = checkFile ?? (context.backend?.checkReadableFile === undefined ? undefined : (p: string) => context.backend.checkReadableFile!(p));
+      if (verifier !== undefined) {
+        const check = await verifier(parsed.filePath);
+        if (!check.ok) {
+          context.info(check.message);
+          return;
+        }
       }
       await context.startRun(
         buildPolishPrompt({
