@@ -7,10 +7,11 @@
       "README.md": {
         "benchmark": 2,
         "ceiling": 1,
+        "compact": 1,
         "directory": 5,
         "endpoint": 1,
         "evaluation": 1,
-        "gateway": 7,
+        "gateway": 6,
         "job": 5,
         "limit": 2,
         "project": 17,

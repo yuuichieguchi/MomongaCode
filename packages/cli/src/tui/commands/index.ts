@@ -1,4 +1,6 @@
 import { BUILTIN_SLASH_COMMANDS } from '../slash.ts';
+import type { PlanFlows } from '../plan-flows.ts';
+import { modelPickerCommand, planSlashCommands } from './auth.ts';
 import type { SlashCommand } from '../slash.ts';
 import { agentsCommand } from './agents.ts';
 import { autoModeCommand } from './auto-mode.ts';
@@ -28,3 +30,5 @@ import { styleCommand } from './style.ts';
 import { tuiCommand } from './tui.ts';
 
 export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, delegateCommand, resumeCommand, autoModeCommand, effortCommand, styleCommand, polishCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, contextCommand, permissionsCommand, hooksCommand, mcpCommand, initCommand, reportCommand, copyCommand, skillsCommand, agentsCommand, networkCommand, ...shellSlashCommands];
+
+export const sessionSlashCommands = (base: readonly SlashCommand[], flows: PlanFlows): readonly SlashCommand[] => [...base, modelPickerCommand(flows), ...planSlashCommands(flows)];

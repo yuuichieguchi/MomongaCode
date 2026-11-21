@@ -37,8 +37,8 @@ In MomongaCode, memory and context are built by the runtime from recorded events
 - **Human review and automatic decay.** Memories proposed by the agent sit in a review queue until you accept or reject them. Duplicates are flagged, replaced notes keep their full history, and active memories with stale file evidence or no bound file are archived after `memory.forgetAfterDays` without being kept or used (default: `90`).
 - **Adaptive memory budget.** Every 20 runs in a folder, MomongaCode adjusts how much of the context budget goes to memories based on actual usage: halved if fewer than 25% of injected memories were used, doubled if more than 75% were used and memories had to be dropped (clamped between 1/16 and 1/2 of the budget, starting at 1/4). On by default; turn off with `context.adaptiveBudget: false`.
 - **Budgeted context and searchable history.** Each model request is assembled under an explicit token budget from instruction files, rules, memories, active skills, and session history. When older history is compacted, the summary is checked against the content it replaces, and the agent can still look up earlier turns via `HistorySearch` and `HistoryRead`.
-- **Enforced standing rules.** Standing rules (`momonga rule`) apply to a single folder or globally. Rules added with `--deny` or `--ask` are enforced by the permission system—not just pasted into the prompt.
-- **Benchmarked compaction improvements.** `momonga context improve` generates candidate compaction guidelines, benchmarks them against your current guideline, and writes the results to a file. Nothing takes effect until you explicitly adopt a winner with `momonga context guideline adopt`.
+- **Enforced standing rules.** Standing rules (`/rule` or `momonga rule`) apply to a single folder or globally. Rules added with `--deny` or `--ask` are enforced by the permission system—not just pasted into the prompt.
+- **Benchmarked compaction improvements.** `/context improve` (or `momonga context improve`) generates candidate compaction guidelines, benchmarks them against your current guideline, and writes the results to a file. Nothing takes effect until you explicitly adopt a winner with `/context guideline adopt` (or `momonga context guideline adopt`).
 
 ### Agent Token Efficiency Engineering
 
@@ -57,7 +57,7 @@ Every token-saving mechanism is on by default; each has a setting only so you ca
 
 | Command | Purpose |
 | --- | --- |
-| `momonga cost --breakdown` | Inspect request composition, billed tokens by category, cache hit rate, timing, and cost. |
+| `/cost --breakdown`, `momonga cost --breakdown` | Inspect request composition, billed tokens by category, cache hit rate, timing, and cost. |
 | `momonga eval context <dataset>` | Run a golden dataset and report context-efficiency metrics. |
 | `momonga eval compare` | Compare `<baseline>` and `<candidate>` with `--gate token` against a baseline using `--settings` with `packages/eval/policies/core-off.json` (all core optimizations off). |
 | `momonga eval yield <dataset>` | Run paired sessions (`--model <model>`, `--report <file>`) to measure whether reflection pays for itself, comparing downstream savings against reflection cost. |
@@ -83,7 +83,7 @@ MomongaCode separates everyday terminal responses from high-stakes technical doc
 
 ## 3. Getting Started
 
-Configure a model using one of the three options below, then run your first prompt. Any command that needs the background daemon starts it automatically; check its state with `momonga daemon status`.
+Run `momonga` to open an interactive session and connect a model with `/login` and `/model`, or configure one from the command line using one of the three options below. Any command that needs the background daemon starts it automatically; check its state with `momonga daemon status`.
 
 ### A model server on this computer
 
@@ -150,12 +150,20 @@ Inside an interactive session, use `/login` to sign in and `/model` to switch mo
 
 ### The first prompt
 
+Open the interactive session in your repository:
+
 ```sh
 cd your-repository
-momonga -p "explain what this repository does"
+momonga
 ```
 
-Run `momonga` with no arguments to open an interactive terminal session.
+Type a request at the prompt and press Enter. A line that starts with `/` is a command to the session instead: typing `/` lists the commands that match what you have typed, `/help` lists every command and key, `/model` switches the model, `/mode` changes the permission mode, `/clear` starts a new session, and `/exit` leaves. [Interactive session](#interactive-session) describes the commands you will use most, and [the reference](docs/reference.md#slash-commands) lists them all.
+
+To run one prompt without the terminal UI, for example from a script:
+
+```sh
+momonga -p "explain what this repository does"
+```
 
 The first time you open an interactive session in a folder, MomongaCode asks whether you trust it. Until a folder is trusted, project-level settings—and anything they could execute—are ignored. Non-interactive commands (`momonga -p`, `momonga attach`, and editors over `momonga acp`) still run without project settings and print a one-line notice referencing `momonga trust <folder>`. To trust the current folder from the shell, run `momonga trust --set trusted`.
 
@@ -163,14 +171,14 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 
 ### Interface, models & tools
 
-- **Terminal UI and headless mode.** Work interactively in the terminal, or script runs with `-p`/`--print` and `--output-format text|json|stream-json`.
-- **Models.** Connect to Ollama, OpenAI chat-completions, Open Responses, Anthropic, or managed local servers that MomongaCode starts on demand (such as Apple's `fm`). Every model is referenced by the name its server reports. Configure `models.fallback` to fail over when a server cannot answer, and run `momonga gateway probe <model>` to measure and cache a model's capabilities.
+- **Terminal UI and headless mode.** Work interactively in the terminal and control the session with slash commands (see [Interactive session](#interactive-session)), or script runs with `-p`/`--print` and `--output-format text|json|stream-json`.
+- **Models.** Connect to Ollama, OpenAI chat-completions, Open Responses, Anthropic, or managed local servers that MomongaCode starts on demand (such as Apple's `fm`). Every model is referenced by the name its server reports. Switch models in the session with `/model`, configure `models.fallback` to fail over when a server cannot answer, and run `/gateway probe <model>` (or `momonga gateway probe <model>`) to measure and cache a model's capabilities.
 - **Built-in tools.** Includes `Bash` (plus `BashOutput` and `KillBash` for background commands), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (with a built-in `general-purpose` subagent ready out of the box), `LoadTools`, `activate_skill`, and dedicated Git/PR/issue tools (`GitStage`, `GitCommit`, `GitPush`, and more) that clearly declare what they modify before asking for approval. See [the reference](docs/reference.md) for the full list.
 - **Output styles and bounded polish.** Switch everyday reply density with `/style [standard|concise|explanatory] [--session] | reset` (`output.style`), or run `/polish [<file>] [--audience <reader>]` for bounded, codebase-verified revision of long responses and technical docs.
 
 ### Safety, permissions & verification
 
-- **Permission modes.** Controls how MomongaCode handles tool calls that no explicit rule matches. In every mode, deny rules still block calls, secret locations stay protected (see [Permission rules](#permission-rules)), and workspace-deletion commands still ask unless `bypassPermissions` is active. Define rules as `Tool(specifier)` in `permissions.allow`, `permissions.ask`, and `permissions.deny` ([Configuration](#6-configuration)), and resolve pending approvals with `momonga approve` (`allow_once`, `allow_always`, `reject_once`, or `reject_always`).
+- **Permission modes.** Controls how MomongaCode handles tool calls that no explicit rule matches. In every mode, deny rules still block calls, secret locations stay protected (see [Permission rules](#permission-rules)), and workspace-deletion commands still ask unless `bypassPermissions` is active. Define rules as `Tool(specifier)` in `permissions.allow`, `permissions.ask`, and `permissions.deny` ([Configuration](#6-configuration)), switch the mode in the session with `/mode`, change the rules with `/permissions`, and resolve pending approvals from the shell with `momonga approve` (`allow_once`, `allow_always`, `reject_once`, or `reject_always`).
 
 | Mode | Workspace edits | Commands & network | Best for |
 | --- | --- | --- | --- |
@@ -180,33 +188,93 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 | `auto` | Classifier decides | Classifier decides | Hands-off work with classifier guardrails |
 | `bypassPermissions` | Auto-allowed | Auto-allowed | Isolated sandboxes only (deny rules still hold) |
 
-- **Policy verification.** Run `momonga policy verify` to have the daemon formally check your folder's rules: ensuring no allow rule bypasses a deny rule, no rule exposes secret paths, and every rule is reachable. It reports what is proved and what is not, and lists redundant, shadowed, or unreachable rules as non-blocking notes. The verdict is stored with the folder's rules and reused by subsequent runs until a rule changes.
-- **Verifiable completion.** Attach shell-command completion conditions that MomongaCode runs itself inside the sandbox after the model finishes. A run reaches `COMPLETED` only if every required condition passes on the final workspace state; otherwise failures are sent back to the model, and stopping again without changes ends as `STOPPED` (`conditions_unmet`). Inspect results with `momonga report` (see [Usage](#5-usage)).
-- **Auto mode.** Evaluate how reliably a classifier model judges approvals with `momonga auto-mode`. Auto mode can only be enabled from user settings or CLI flags—never from project settings.
+- **Policy verification.** Run `/policy verify` in the session or `momonga policy verify` from the shell to have the daemon formally check your folder's rules: ensuring no allow rule bypasses a deny rule, no rule exposes secret paths, and every rule is reachable. It reports what is proved and what is not, and lists redundant, shadowed, or unreachable rules as non-blocking notes. The verdict is stored with the folder's rules and reused by subsequent runs until a rule changes.
+- **Verifiable completion.** Attach shell-command completion conditions that MomongaCode runs itself inside the sandbox after the model finishes. A run reaches `COMPLETED` only if every required condition passes on the final workspace state; otherwise failures are sent back to the model, and stopping again without changes ends as `STOPPED` (`conditions_unmet`). Inspect results with `/report` or `momonga report` (see [Usage](#5-usage)).
+- **Auto mode.** Evaluate how reliably a classifier model judges approvals with `/auto-mode` or `momonga auto-mode`. Auto mode can only be enabled from user settings or CLI flags—never from project settings.
 - **Sandbox.** `Bash` commands run inside Seatbelt on macOS and bubblewrap on Linux. Windows does not yet have a sandbox in this release, so `Bash` prompts before every command there.
 
 ### Memory, extensions & editor integration
 
-- **Memory and rules.** Manage project/user memories with `momonga memory` and standing rules with `momonga rule` (see [Why MomongaCode?](#2-why-momongacode)).
-- **Skills and agents.** Load `SKILL.md` skills from `.momonga/skills`, `.agents/skills`, `~/.momonga/skills`, and `~/.agents/skills`. A `general-purpose` subagent is built in. Custom agents are loaded from `.momonga/agents` directories (project and user), and a custom agent named `general-purpose` replaces the built-in one. Project skills load only in trusted folders.
-- **MCP.** Connect to MCP servers over stdio or HTTP (with OAuth). Inspect and authorize servers with `momonga mcp list` and `momonga mcp login <server>`, and answer pending MCP input prompts with `momonga elicit`.
-- **Hooks.** Run shell hooks on `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, and `SessionStart`. A hook that exits with code `2` blocks the action.
+- **Memory and rules.** Manage project/user memories with `/memory` and standing rules with `/rule` in the session, or with `momonga memory` and `momonga rule` from the shell (see [Why MomongaCode?](#2-why-momongacode)).
+- **Skills and agents.** Load `SKILL.md` skills from `.momonga/skills`, `.agents/skills`, `~/.momonga/skills`, and `~/.agents/skills`. A `general-purpose` subagent is built in. Custom agents are loaded from `.momonga/agents` directories (project and user), and a custom agent named `general-purpose` replaces the built-in one. Project skills load only in trusted folders. Each skill is a slash command, `/<skill> <request>`; `/skills` and `/agents` list the files, open one in your editor, or create one from a template.
+- **MCP.** Connect to MCP servers over stdio or HTTP (with OAuth). Show, add, remove and authorize servers with `/mcp` in the session, or with `momonga mcp list` and `momonga mcp login <server>` from the shell, and answer pending MCP input prompts with `momonga elicit`.
+- **Hooks.** Run shell hooks on `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, and `SessionStart`. A hook that exits with code `2` blocks the action. `/hooks` shows the hooks by event and adds, edits or removes one.
 - **Editor integration.** Run `momonga acp` to expose MomongaCode over stdio using the Agent Client Protocol.
 
 ### Observability, delegation & reliability
 
-- **Observability.** Inspect model and tool spans with `momonga trace`, review token spend with `momonga cost`, or export traces to an OTLP endpoint via `telemetry.otlp`.
-- **Background jobs and runs.** Monitor and control active work with `momonga status`, `momonga jobs`, `momonga attach`, and `momonga cancel`.
+- **Observability.** Inspect model and tool spans with `/trace` or `momonga trace`, review token spend with `/cost` or `momonga cost`, or export traces to an OTLP endpoint via `telemetry.otlp`.
+- **Background jobs and runs.** Monitor active work with `/status` and `/jobs` in the session, or with `momonga status`, `momonga jobs`, `momonga attach`, and `momonga cancel` from the shell.
 - **Delegated work.** Hand off bounded runs using named mandates via `momonga -p --mandate <name>` or `/delegate <mandate> <request>` in the interactive UI (see [Usage](#5-usage)).
-- **Measured reliability.** Track completion and failure rates with `momonga reliability`, run reproducible bench suites with `momonga eval bench <folder>`, and audit past approval decisions with `momonga permissions review` (see [Usage](#5-usage)).
+- **Measured reliability.** Track completion and failure rates with `/reliability` or `momonga reliability`, run reproducible bench suites with `momonga eval bench <folder>`, and audit past approval decisions with `momonga permissions review` (see [Usage](#5-usage)).
 
 ## 5. Usage
+
+### Interactive session
+
+`momonga` with no prompt opens the interactive session, where most work happens. Type a request and press Enter; a line that starts with `/` runs a command of the session. Typing `/` lists the commands that match what you have typed, and `/help` lists every command with the keys. The commands you will use most:
+
+**Session**
+
+| Command | What it does |
+| --- | --- |
+| `/clear` | Start a new session; the current one stays reopenable with `/resume`. |
+| `/resume [session-id]` | Reopen an earlier session of this folder, or choose one from a list. |
+| `/compact [instructions]` | Run compaction on the session now; the text after the command is what the summary should focus on. |
+| `/copy` | Copy the selected text, or the last answer when nothing is selected. |
+| `/exit` | Leave; a run that is working continues in the daemon. |
+
+**Model and behaviour**
+
+| Command | What it does |
+| --- | --- |
+| `/login [provider]` | Connect a model: sign in to a subscription or add an API key. |
+| `/model [model] [effort] [--start]` | Choose the model from a list, or switch to another; `--start` also makes new sessions start with it. |
+| `/effort` | Choose the reasoning effort of the model. |
+| `/mode [mode] [--start]` | Choose the permission mode (`manual`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`). |
+| `/style` | Choose the output style: `standard`, `concise` or `explanatory`. |
+| `/polish [<file>] [--audience <reader>]` | Revise the last answer or a file for a reader, checked against the code. |
+
+**Memory, rules and skills**
+
+| Command | What it does |
+| --- | --- |
+| `/init` | Create `AGENTS.md` from what the repository shows, or improve the one it has. |
+| `/memory` | List, add, review, restore, promote or retire memories; `/memory review` shows the ones the agent proposed. |
+| `/rule` | List, add or retire the standing rules of this folder. |
+| `/skills`, `/agents` | List the skill and agent files, open one in your editor, or create one from a template. |
+| `/<skill> <request>` | Run a request with a skill of the folder activated. |
+
+**Settings and safety**
+
+| Command | What it does |
+| --- | --- |
+| `/config` | Open the settings screen. |
+| `/permissions` | Show and change the start mode, the allow, ask and deny rules, the additional folders and the trust of this folder. |
+| `/policy verify` | Check that no allow rule gets around a deny rule and that no rule leaves a route to secrets. |
+| `/mcp` | Show the MCP servers with their status, add or remove one, or authorize one. |
+| `/hooks` | Show the hooks by event and add, edit or remove one. |
+| `/keybindings`, `/theme`, `/tui` | Change the keys, the colours and the screen mode. |
+
+**Runs and cost**
+
+| Command | What it does |
+| --- | --- |
+| `/status`, `/jobs` | Show a run with its subagents and the approvals waiting in them, and the background jobs of the session. |
+| `/report [run-id]` | Show the verification report of a run: what passed, failed or was not run. |
+| `/cost [--breakdown]` | Show the model cost of a run, a session or this folder. |
+| `/trace [run-id]` | Show the model and tool spans of a run. |
+| `/delegate <mandate> <request>` | Hand a request over under a mandate of your settings. |
+
+[Slash commands](docs/reference.md#slash-commands) in the reference lists every command with its arguments and subcommands. To view or edit model settings, open `/model` and choose `Model settings…`, or open `Models` inside `/config`.
+
+### Command line
 
 ```text
 momonga [options] [prompt]
 ```
 
-[The reference](docs/reference.md) documents every CLI option, subcommand, settings key, environment variable, and exit code directly from the product's own tables. You can also run `momonga <command> --help` for any subcommand.
+The `momonga` subcommands work from the shell without the terminal UI, for scripts, CI and editors; several of them, such as `momonga memory`, `momonga report` and `momonga cost`, are also slash commands of the same name in the session. [The reference](docs/reference.md) documents every CLI option, subcommand, settings key, environment variable, and exit code directly from the product's own tables. You can also run `momonga <command> --help` for any subcommand.
 
 ### Updating MomongaCode
 
@@ -252,17 +320,6 @@ Completion conditions are fixed when a run starts and come from the union of thr
 - When you start an interactive session in a trusted folder that defines a test command (a `test` script in `package.json`, or a `test` rule in a `Makefile` or `justfile`), MomongaCode proposes it once as the folder's standing check and saves your choice under `projectChecks` in user settings. View or update it anytime with `/init`, `/config`, or `momonga project-check show`, `set <command>`, and `clear`.
 
 > **Breaking change for folders using `verification.commands`:** Previously, `verification.commands` only told memory which commands counted as verification. They are now enforced completion conditions: after the model stops, MomongaCode runs them on the final workspace state, ends the run as `STOPPED` (`conditions_unmet`) with a non-zero exit code on `momonga -p` if any command fails, and allows a run to propose memories or repository facts only when it declared at least one condition and all of them passed (a passing command the model ran itself no longer counts).
-
-### Interactive slash commands
-
-| Category | Slash commands |
-| --- | --- |
-| Session | `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/effort`, `/style`, `/polish`, `/auto-mode` |
-| Memory, policy & context | `/memory`, `/rule`, `/context`, `/policy` |
-| Runs & observability | `/status`, `/jobs`, `/trace`, `/cost`, `/report` |
-| Servers & gateway | `/mcp`, `/gateway` |
-
-Run `/help` for the complete list. To view or edit model settings interactively, open `/model` and choose `Model settings…`, or open `Models` inside `/config`.
 
 ## 6. Configuration
 

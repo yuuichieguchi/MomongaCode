@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GENERAL_PURPOSE_AGENT } from '../packages/agents/src/builtin.ts';
+import { DEFAULT_SLASH_COMMANDS, sessionSlashCommands } from '../packages/cli/src/tui/commands/index.ts';
 import { referenceNames, renderReference } from '../scripts/reference.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -70,6 +71,37 @@ describe('the generated reference', () => {
     const sentence = (line ?? '').split(';')[0] ?? '';
     const listed = [...sentence.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? '');
     expect([...listed].sort()).toEqual([...names.userOnlySettings].sort());
+  });
+
+  it('every slash command the README names is one the interactive session offers', async () => {
+    const names = await referenceNames();
+    const written = inlineCode(read('README.md')).flatMap((text) => text.split(/,\s*/)).flatMap((text) => {
+      const match = /^\/([a-z][a-z-]*)(?:\s|$)/.exec(text);
+      return match === null ? [] : [match[1] ?? ''];
+    });
+    expect(written.length).toBeGreaterThan(20);
+    expect(written.filter((name) => !names.slashCommands.has(name))).toEqual([]);
+  });
+});
+
+describe('the slash commands of the reference', () => {
+  it('lists every command of the interactive session, first, with its other names, usage, description and subcommands', async () => {
+    const reference = await renderReference();
+    const flows = new Proxy({}, { get: () => () => undefined }) as never;
+    const commands = sessionSlashCommands(DEFAULT_SLASH_COMMANDS, flows);
+    const section = reference.slice(reference.indexOf('## Slash commands'), reference.indexOf('## Root options'));
+    expect(reference.indexOf('## Slash commands')).toBeLessThan(reference.indexOf('## Root options'));
+    expect(reference.split('\n').filter((line) => line.startsWith('## '))[0]).toBe('## Slash commands');
+    const rows = section.split('\n').filter((line) => line.startsWith('| `/'));
+    for (const command of commands) {
+      const usage = `/${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}`.replaceAll('|', '\\|');
+      const names = [`\`${usage}\``, ...(command.otherNames ?? []).map((name) => `\`/${name}\``)].join(', ');
+      expect(rows, command.name).toContain(`| ${names} | ${command.description.replaceAll('|', '\\|').replaceAll('<', '\\<')} |`);
+      for (const subcommand of command.subcommands ?? []) expect(section, `${command.name} ${subcommand.name}`).toContain(`| \`/${command.name} ${subcommand.name}`);
+    }
+    expect(section).toContain('`/<skill> <task>`');
+    expect(section).toContain('### /memory');
+    expect(section).toContain('| `/memory review accept <id>` | accept one memory under review |');
   });
 });
 

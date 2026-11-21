@@ -246,7 +246,7 @@ const tableRowsOfSource = (markdown: string): string[][][] => {
       current = [];
       tables.push(current);
     }
-    current.push(line.trim().replace(/^\||\|$/g, '').split('|').map((cell) => inlineText(cell)));
+    current.push(line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((cell) => inlineText(cell.replaceAll('\\|', '|'))));
   }
   return tables;
 };

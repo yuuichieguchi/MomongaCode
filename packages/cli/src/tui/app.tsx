@@ -20,8 +20,7 @@ import { createBackgroundTasks } from './background-tasks.ts';
 import type { BackgroundTasks } from './background-tasks.ts';
 import { autoNoticeDue } from './notices.ts';
 import type { AutoNoticePair } from './notices.ts';
-import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
-import { modelPickerCommand, planSlashCommands } from './commands/auth.ts';
+import { DEFAULT_SLASH_COMMANDS, sessionSlashCommands } from './commands/index.ts';
 import { createFoundServers } from './models/context.ts';
 import { notConfiguredAnyMoreText } from './models/texts.ts';
 import { createPlanFlows } from './plan-flows.ts';
@@ -275,12 +274,7 @@ export function App(props: AppProps) {
     planUseNotEnabled: (profile, account) => flows.planUseNotEnabled(profile, account),
     notEligible: (profile) => flows.notEligible(profile),
   };
-  const slash = createSlashRegistry([
-    ...baseSlash.list(),
-    modelPickerCommand(delegatingFlows),
-    ...planSlashCommands(delegatingFlows),
-    ...skillSlash,
-  ]);
+  const slash = createSlashRegistry([...sessionSlashCommands(baseSlash.list(), delegatingFlows), ...skillSlash]);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
   const [editor, setEditor] = useState<EditorState>(emptyEditor());
   const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? DEFAULT_PERMISSION_MODE);
