@@ -1,7 +1,5 @@
 import { isRecord } from '@momonga/foundation';
 
-export const BACKGROUND_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
 export type BackgroundOutcome =
   | { kind: 'up_to_date' }
   | { kind: 'installed'; version: string }

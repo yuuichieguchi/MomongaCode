@@ -14,7 +14,6 @@ export type UpdateWiring = {
   ports: UpdatePorts;
   build: BuildUpdateInputs;
   endpoints: UpdateEndpoints;
-  checkIntervalMs: number;
 };
 
 const NOT_APPLICABLE_CODES: ReadonlySet<string> = new Set(['no_update_source', 'not_single_executable', 'unsupported_platform']);
@@ -52,9 +51,6 @@ const noticeOf = (ports: UpdatePorts, state: UpdateState): string | undefined =>
   }
 };
 
-const isDue = (state: UpdateState | undefined, now: number, intervalMs: number): boolean =>
-  state === undefined || state.checkedAt > now || now - state.checkedAt >= intervalMs;
-
 const isEnabled = async (wiring: UpdateWiring): Promise<boolean> => isApplicable(wiring) && (await wiring.ports.autoUpdates());
 
 export const announceUpdate = async (wiring: UpdateWiring): Promise<string | undefined> => {
@@ -70,8 +66,7 @@ export const announceUpdate = async (wiring: UpdateWiring): Promise<string | und
 export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<void> => {
   const { ports } = wiring;
   if (!(await isEnabled(wiring))) return;
-  const state = await readState(ports);
-  if (!isDue(state, ports.clock.now(), wiring.checkIntervalMs)) return;
+  await readState(ports);
   if (await ports.lock.isHeld()) return;
   const invocation = selfInvocation(ports.self, UPDATE_CHECK_COMMAND);
   const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });

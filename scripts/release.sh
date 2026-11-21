@@ -68,7 +68,7 @@ smoke_in_linux_container() {
     run docker run --rm -i --platform "$platform" node:24-bookworm bash -c "scripts/test-linux.sh" _ "MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/$asset node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts"
     return
   fi
-  output="$(cd "$ROOT" && COPYFILE_DISABLE=1 tar --exclude=node_modules --exclude=.git -cf - . | docker run --rm -i --platform "$platform" --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined node:24-bookworm bash -c "$(cat "$ROOT/scripts/test-linux.sh")" _ "MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/$asset node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts")"
+  output="$(cd "$ROOT" && COPYFILE_DISABLE=1 tar --exclude=node_modules --exclude=.git --exclude=.claude -cf - . | docker run --rm -i --platform "$platform" --security-opt seccomp=unconfined --security-opt apparmor=unconfined --security-opt systempaths=unconfined node:24-bookworm bash -c "$(cat "$ROOT/scripts/test-linux.sh")" _ "MOMONGA_SEA_SMOKE_EXECUTABLE=dist/release/$asset node_modules/.bin/vitest run --project packaging scripts/sea-smoke.test.ts")"
   printf '%s\n' "$output"
   [ "$(tail -n 1 <<< "$output")" = "EXIT=0" ] || fail "the smoke run of $asset in a $platform container did not end with EXIT=0"
 }

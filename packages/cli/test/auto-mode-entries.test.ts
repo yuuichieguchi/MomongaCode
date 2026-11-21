@@ -43,7 +43,7 @@ const programWith = (interrupt: AbortSignal) => {
   const program = buildProgram({
     ports,
     entries: { supervise: entry, gateway: entry, runtime: entry },
-    update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
+    update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS }),
     interrupt,
     helper: NO_HELPER,
     entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,

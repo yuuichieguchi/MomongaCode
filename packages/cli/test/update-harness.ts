@@ -166,7 +166,6 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     ports,
     build: options.build ?? { repo: REPO, teamId: TEAM_ID, publicKey: PUBLIC_KEY },
     endpoints: server.endpoints,
-    checkIntervalMs: 1000,
   };
   return {
     dir,

@@ -50,7 +50,7 @@ const runCli = async (home: string, args: readonly string[], overrides: Partial<
   const program = buildProgram({
     ports,
     entries,
-    update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
+    update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS }),
     interrupt,
     helper: NO_HELPER,
     entryIo: (entryArgs) => ({ argv: [...entryArgs] }) as unknown as EntryIo,

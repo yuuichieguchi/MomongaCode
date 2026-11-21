@@ -24,20 +24,15 @@ describe('startBackgroundCheck: what the user command does', () => {
     expect(harness.stderr).toEqual([]);
   });
 
-  it('does not spawn again before the interval has passed, and does after it', async (context) => {
+  it('spawns the detached update-check on every launch, even immediately after a previous check', async (context) => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 0, outcome: { kind: 'up_to_date' }, announced: true };
 
     await startBackgroundCheck(harness.wiring);
-    expect(harness.spawned).toHaveLength(0);
-
-    await harness.ports.clock.sleep(harness.wiring.checkIntervalMs - 1);
-    await startBackgroundCheck(harness.wiring);
-    expect(harness.spawned).toHaveLength(0);
-
-    await harness.ports.clock.sleep(1);
-    await startBackgroundCheck(harness.wiring);
     expect(harness.spawned).toHaveLength(1);
+
+    await startBackgroundCheck(harness.wiring);
+    expect(harness.spawned).toHaveLength(2);
   });
 
   it('does not spawn another check while one holds the update lock, because it has not recorded anything yet', async (context) => {
@@ -65,15 +60,6 @@ describe('startBackgroundCheck: what the user command does', () => {
     expect(acquisitions).toBe(0);
   });
 
-  it('treats a check time in the future as due', async (context) => {
-    const harness = await setupUpdate(context);
-    harness.state.value = { checkedAt: 10_000_000, outcome: { kind: 'up_to_date' }, announced: true };
-
-    await startBackgroundCheck(harness.wiring);
-
-    expect(harness.spawned).toHaveLength(1);
-  });
-
   it('does nothing when autoUpdates is off', async (context) => {
     const harness = await setupUpdate(context);
     harness.control.autoUpdates = false;
@@ -89,7 +75,7 @@ describe('startBackgroundCheck: what the user command does', () => {
   const inapplicable: readonly [string, HarnessOptions][] = [
     ['a build run from source', { scripted: true }],
     ['a build without an update source', { build: { repo: undefined, teamId: undefined, publicKey: undefined } }],
-    ['a platform without a release asset', { platform: 'win32' }],
+    ['a platform without a release asset', { platform: 'win32', arch: 'arm64' }],
   ];
   for (const [label, options] of inapplicable) {
     it(`does nothing for ${label}`, async (context) => {
