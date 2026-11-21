@@ -4,6 +4,8 @@ import { systemTiming } from '@momonga/foundation';
 import { pollUntil } from '@momonga/testkit';
 import { createTerminalScreen } from '@momonga/testkit/terminal-screen';
 import { App } from '../../src/tui/app.tsx';
+import type { TuiSettingsPort } from '../../src/tui/screen/notify.ts';
+import type { ShellPort } from '../../src/tui/slash.ts';
 import { createInputParser } from '../../src/tui/terminal/parser.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import { settleAtOnce } from '../ink-helpers.ts';
@@ -20,7 +22,7 @@ export type TerminalApp = {
   close(): void;
 };
 
-export const startOnTerminal = async (size: { columns: number; rows: number }, options: FakeBackendOptions): Promise<TerminalApp> => {
+export const startOnTerminal = async (size: { columns: number; rows: number }, options: FakeBackendOptions, ports?: { shell?: ShellPort; tuiSettings?: TuiSettingsPort }): Promise<TerminalApp> => {
   const shown = createTerminalScreen(size);
   let pending: Promise<void> = Promise.resolve();
   const stdout = Object.assign(new EventEmitter(), {
@@ -35,7 +37,7 @@ export const startOnTerminal = async (size: { columns: number; rows: number }, o
   const stdin = Object.assign(new EventEmitter(), { isTTY: false, setEncoding: () => undefined, setRawMode: () => undefined, ref: () => undefined, unref: () => undefined, read: () => null, resume: () => undefined, pause: () => undefined });
   const terminal = fakeScreenTerminal(size);
   const backend = fakeBackend(options);
-  const instance = render(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} startup={{ version: '1.2.3', home: options.settingsPlace?.home ?? '/home/none' }} onExit={() => undefined} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true, onRender: () => terminal.framed() });
+  const instance = render(<App backend={backend} terminal={terminal} initialMode={undefined} now={Date.now} timers={settleAtOnce(systemTiming)} startup={{ version: '1.2.3', home: options.settingsPlace?.home ?? '/home/none' }} onExit={() => undefined} {...(ports?.shell === undefined ? {} : { shell: ports.shell })} {...(ports?.tuiSettings === undefined ? {} : { tuiSettings: ports.tuiSettings })} />, { stdout: stdout as unknown as NodeJS.WriteStream, stdin: stdin as unknown as NodeJS.ReadStream, exitOnCtrlC: false, patchConsole: false, incrementalRendering: true, onRender: () => terminal.framed() });
   const parser = createInputParser();
   const screen = (): string[] => shown.text();
   const until = async (holds: (lines: string[]) => boolean, description: string): Promise<string[]> => {

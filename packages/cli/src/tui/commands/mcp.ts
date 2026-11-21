@@ -129,6 +129,7 @@ export const mcpCommand: SlashCommand = {
   name: 'mcp',
   usage: `[${shellForm.usage ?? ''}]`,
   description: `show the MCP servers with their status, add or remove one, and enable or disable a server of the project; with words: ${shellForm.description}`,
+  ...(shellForm.subcommands === undefined ? {} : { subcommands: shellForm.subcommands }),
   needsSession: false,
   run: async (args, context) => {
     if (args !== '') {

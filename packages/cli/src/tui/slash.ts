@@ -1,5 +1,5 @@
 import type { ExternalEditorPort } from './external-editor.ts';
-import { ModelRefError, PERMISSION_MODE_DESCRIPTIONS, displayMapOf, isReasoningEffort } from '@momonga/protocol';
+import { ModelRefError, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, displayMapOf, isReasoningEffort } from '@momonga/protocol';
 import type { Mandate, MomongaModelEntry, PermissionMode, ReasoningEffort } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
@@ -71,11 +71,20 @@ export type SlashContext = ModeAvailability & {
   readonly sessions: SessionsPort;
 };
 
+export type SlashSubcommand = {
+  readonly name: string;
+  readonly description: string;
+  readonly usage?: string;
+  readonly subcommands?: readonly SlashSubcommand[];
+  readonly standalone?: true;
+};
+
 export type SlashCommand = {
   readonly name: string;
   readonly otherNames?: readonly string[];
   readonly description: string;
   readonly usage?: string;
+  readonly subcommands?: readonly SlashSubcommand[];
   readonly needsSession?: boolean;
   run(args: string, context: SlashContext): Promise<void>;
 };
@@ -190,6 +199,7 @@ const mode: SlashCommand = {
   name: 'mode',
   usage: `[mode] [${START_FLAG}]`,
   description: 'choose the permission mode from a list, or set it; with --start also start sessions in it',
+  subcommands: PERMISSION_MODES.map((candidate) => ({ name: candidate, description: PERMISSION_MODE_DESCRIPTIONS[candidate] })),
   run: async (args, context) => {
     const available = selectableModes(context);
     if (args === '') {

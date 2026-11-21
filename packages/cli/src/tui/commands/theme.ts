@@ -27,6 +27,7 @@ export const themeCommand: SlashCommand = {
   name: 'theme',
   description: 'choose the colours of the screen from the five built-in sets',
   usage: `[${THEME_IDS.join('|')}]`,
+  subcommands: THEME_IDS.map((id) => ({ name: id, description: `switch the screen colours to ${id}` })),
   needsSession: false,
   run: async (args, context) => {
     const { display } = context;

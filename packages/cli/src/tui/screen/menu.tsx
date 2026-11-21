@@ -5,7 +5,7 @@ import type { PlanProfileView } from '@momonga/protocol';
 import type { KeyTable } from '../keys/table.ts';
 import { ChoiceRow, MoreRow, spanAt, topFor } from '../select.tsx';
 import { namesOf } from '../slash.ts';
-import type { SlashCommand } from '../slash.ts';
+import type { SlashCommand, SlashSubcommand } from '../slash.ts';
 import { menuRowsCap } from './layout.ts';
 import { inertText, wrapLine } from './wrap.ts';
 
@@ -35,21 +35,32 @@ export function InvitationLine({ rows }: { rows: readonly string[] }) {
 }
 
 const COMPLETABLE = /^\/[^\s/]*$/;
+const WITH_SPACE = /^\/([^\s/]+)[ \t]+([^\r\n]*)$/;
 const MENU_FLOOR_ROWS = 3;
 
 const windowRows = (rows: number): number => Math.max(MENU_FLOOR_ROWS, rows);
 
+export type SlashMenuEntry = {
+  readonly key: string;
+  readonly label: string;
+  readonly completeText: string;
+  readonly runText: string;
+  readonly continueOnEnter: boolean;
+};
 
-export const slashMatches = (text: string, commands: readonly SlashCommand[]): SlashCommand[] | undefined => {
-  if (!COMPLETABLE.test(text)) return undefined;
-  const typed = text.slice(1).toLowerCase();
-  const rankOf = (command: SlashCommand): number => {
-    const names = namesOf(command).map((name) => name.toLowerCase());
+const rankItems = <T extends { readonly name: string }>(items: readonly T[], typed: string, namesFor: (item: T) => readonly string[]): T[] => {
+  const rankOf = (item: T): number => {
+    const names = namesFor(item).map((name) => name.toLowerCase());
     if (names.includes(typed)) return 0;
     if (names.some((name) => name.startsWith(typed))) return 1;
     return names.some((name) => name.includes(typed)) ? 2 : 3;
   };
-  return [0, 1, 2].flatMap((rank) => commands.filter((command) => rankOf(command) === rank).toSorted((left, right) => left.name.length - right.name.length));
+  return [0, 1, 2].flatMap((rank) => items.filter((item) => rankOf(item) === rank).toSorted((left, right) => left.name.length - right.name.length));
+};
+
+export const slashMatches = (text: string, commands: readonly SlashCommand[]): SlashCommand[] | undefined => {
+  if (!COMPLETABLE.test(text)) return undefined;
+  return rankItems(commands, text.slice(1).toLowerCase(), namesOf);
 };
 
 export const noCommandsMatch = (text: string): string => `No commands match "${text}"`;
@@ -57,6 +68,52 @@ export const noCommandsMatch = (text: string): string => `No commands match "${t
 const labelOf = (command: SlashCommand): string => `/${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`;
 
 const completedOf = (command: SlashCommand): string => `/${command.name} `;
+
+const subcommandEntryOf = (prefix: readonly string[], subcommand: SlashSubcommand): SlashMenuEntry => {
+  const full = `/${[...prefix, subcommand.name].join(' ')}`;
+  return {
+    key: full,
+    label: `${full}${subcommand.usage === undefined ? '' : ` ${subcommand.usage}`}  ${subcommand.description}`,
+    completeText: `${full} `,
+    runText: full,
+    continueOnEnter: (subcommand.subcommands?.length ?? 0) > 0 && subcommand.standalone !== true,
+  };
+};
+
+export const slashMenuEntries = (text: string, commands: readonly SlashCommand[]): SlashMenuEntry[] | undefined => {
+  const top = slashMatches(text, commands);
+  if (top !== undefined) {
+    return top.map((command) => ({
+      key: command.name,
+      label: labelOf(command),
+      completeText: completedOf(command),
+      runText: `/${command.name}`,
+      continueOnEnter: false,
+    }));
+  }
+  const spaced = WITH_SPACE.exec(text);
+  if (spaced === null) return undefined;
+  const head = (spaced[1] ?? '').toLowerCase();
+  const rest = spaced[2] ?? '';
+  const command = commands.find((candidate) => namesOf(candidate).some((name) => name.toLowerCase() === head));
+  if (command?.subcommands === undefined || command.subcommands.length === 0) return undefined;
+  const trailingSpace = /\s$/.test(rest);
+  const parts = rest.trim() === '' ? [] : rest.trim().split(/\s+/);
+  const completed = trailingSpace ? parts : parts.slice(0, -1);
+  const partial = trailingSpace ? '' : (parts.at(-1) ?? '').toLowerCase();
+  let nodes: readonly SlashSubcommand[] = command.subcommands;
+  const prefix: string[] = [command.name];
+  for (const word of completed) {
+    const lower = word.toLowerCase();
+    const next = nodes.find((candidate) => candidate.name.toLowerCase() === lower);
+    if (next?.subcommands === undefined || next.subcommands.length === 0) return undefined;
+    prefix.push(next.name);
+    nodes = next.subcommands;
+  }
+  if (partial.startsWith('-')) return undefined;
+  const matched = partial === '' ? [...nodes] : rankItems(nodes, partial, (item) => [item.name]);
+  return matched.length === 0 ? undefined : matched.map((subcommand) => subcommandEntryOf(prefix, subcommand));
+};
 
 export type SlashMenuAct = { readonly kind: 'handled' } | { readonly kind: 'complete'; readonly text: string } | { readonly kind: 'run'; readonly text: string };
 
@@ -68,6 +125,7 @@ export const isMenuAction = (action: string | undefined): action is MenuAction =
 
 export type SlashMenu = {
   open: boolean;
+  isOpen(text: string): boolean;
   rows: number;
   act(text: string, action: MenuAction): SlashMenuAct | undefined;
   hover(row: number, rows: number): boolean;
@@ -90,7 +148,7 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
     redraw();
   };
 
-  const matchesFor = (text: string): SlashCommand[] | undefined => (host.active && !stateFor(text).closed ? slashMatches(text, host.commands) : undefined);
+  const matchesFor = (text: string): SlashMenuEntry[] | undefined => (host.active && !stateFor(text).closed ? slashMenuEntries(text, host.commands) : undefined);
 
   if (held.current.text !== host.text) held.current = stateFor(host.text);
   const shown = matchesFor(host.text);
@@ -107,12 +165,13 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
 
   return {
     open: shown !== undefined,
+    isOpen: (text) => matchesFor(text) !== undefined,
     rows: shown === undefined ? 0 : Math.max(1, Math.min(shown.length, cap)),
     act: (text, action) => {
       const matches = matchesFor(text);
       if (matches === undefined) return undefined;
       const current = stateFor(text);
-      const command = matches[current.index];
+      const entry = matches[current.index];
       if (action === 'menu.close') {
         keep({ ...current, closed: true });
         return { kind: 'handled' };
@@ -121,8 +180,9 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
         if (matches.length > 0) moveTo(text, (current.index + (action === 'menu.up' ? matches.length - 1 : 1)) % matches.length, matches.length);
         return { kind: 'handled' };
       }
-      if (action === 'menu.complete') return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
-      return command === undefined ? undefined : { kind: 'run', text: `/${command.name}` };
+      if (action === 'menu.complete') return entry === undefined ? { kind: 'handled' } : { kind: 'complete', text: entry.completeText };
+      if (entry === undefined) return undefined;
+      return entry.continueOnEnter ? { kind: 'complete', text: entry.completeText } : { kind: 'run', text: entry.runText };
     },
     hover: (row, rows) => {
       const at = shown === undefined ? undefined : commandIndexAt(shown.length, row, rows);
@@ -133,8 +193,8 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
     press: (row, rows) => {
       if (shown === undefined) return undefined;
       const at = commandIndexAt(shown.length, row, rows);
-      const command = at === undefined ? undefined : shown[at];
-      return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
+      const entry = at === undefined ? undefined : shown[at];
+      return entry === undefined ? { kind: 'handled' } : { kind: 'complete', text: entry.completeText };
     },
     wheel: (rows) => {
       if (shown === undefined || shown.length <= cap) return;
@@ -147,8 +207,8 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
       return (
         <Box flexDirection="column">
           {span.start > 0 ? <MoreRow direction="up" count={span.start} /> : null}
-          {shown.slice(span.start, span.end).map((command, offset) => (
-            <ChoiceRow key={command.name} selected={span.start + offset === state.index} label={labelOf(command)} />
+          {shown.slice(span.start, span.end).map((entry, offset) => (
+            <ChoiceRow key={entry.key} selected={span.start + offset === state.index} label={entry.label} />
           ))}
           {span.end < shown.length ? <MoreRow direction="down" count={shown.length - span.end} /> : null}
         </Box>

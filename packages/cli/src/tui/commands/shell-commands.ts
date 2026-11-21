@@ -1,15 +1,13 @@
 import { describeFailure } from '../../failure.ts';
 import { commandWords } from '../command-words.ts';
 import { NEEDS_SESSION_NOTE } from '../slash.ts';
-import type { SlashCommand, SlashContext } from '../slash.ts';
-
-type ShellSubcommand = { readonly name: string; readonly description: string };
+import type { SlashCommand, SlashContext, SlashSubcommand } from '../slash.ts';
 
 type ShellSlash = {
   readonly name: string;
   readonly usage: string;
   readonly description: string;
-  readonly subcommands?: readonly ShellSubcommand[];
+  readonly subcommands?: readonly SlashSubcommand[];
   readonly elsewhere?: Readonly<Record<string, string>>;
   readonly sessionArgument?: true;
 };
@@ -18,32 +16,41 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   { name: 'cost', usage: '[run-id] [--session <id>] [--all] [--breakdown] [--json]', description: 'show the model cost of a run, of a session, or of the sessions of this folder' },
   { name: 'reliability', usage: '[--group-by <key>] [--days <n>] [--explain]', description: 'report the completion, recovery, duplicate, intervention, budget, time and cost indicators of the ended runs of the period' },
   { name: 'auth', usage: 'status [--json] | logout <account>', description: 'show the saved subscription accounts, or sign one out', subcommands: [
-      { name: 'status', description: 'show the saved accounts, their state, where to manage usage, and the model new sessions start with or the model named' },
-      { name: 'logout', description: 'sign out a saved account' },
+      { name: 'status', usage: '[--json]', description: 'show the saved accounts, their state, where to manage usage, and the model new sessions start with or the model named' },
+      { name: 'logout', usage: '<account>', description: 'sign out a saved account' },
     ], elsewhere: { login: 'sign in with /login' } },
   { name: 'status', usage: '[run-id] [--json]', description: 'show a run, the subagent runs under it and the approvals waiting in them' },
   { name: 'jobs', usage: '[session-id] [--json]', description: 'list the background jobs of a session, including those of its subagents', sessionArgument: true },
   { name: 'trace', usage: '[run-id] [--json]', description: 'show the model and tool spans of a run' },
   { name: 'mcp', usage: 'list [--json] | login <server> [--no-browser]', description: 'inspect and authorize the MCP servers of this folder', subcommands: [
-      { name: 'list', description: 'list the MCP servers with their transport and authorization state' },
-      { name: 'login', description: 'authorize a remote MCP server in the browser' },
+      { name: 'list', usage: '[--json]', description: 'list the MCP servers with their transport and authorization state' },
+      { name: 'login', usage: '<server> [--no-browser]', description: 'authorize a remote MCP server in the browser' },
     ] },
   {
     name: 'context',
     usage: 'improve --dataset <file> --model <model> --token-cap <n> --outcome <file> | guideline adopt <file> | guideline list | guideline rollback <version>',
     description: 'improve how the context is compacted, and inspect, adopt and roll back the compaction guideline',
     subcommands: [
-      { name: 'improve', description: 'improve how the context is compacted, from the failures a bench shows' },
-      { name: 'guideline', description: 'inspect, adopt and roll back the compaction guideline' },
+      { name: 'improve', usage: '--dataset <file> --model <model> --token-cap <n> --outcome <file>', description: 'improve how the context is compacted, from the failures a bench shows' },
+      {
+        name: 'guideline',
+        usage: 'adopt <file> | list | rollback <version>',
+        description: 'inspect, adopt and roll back the compaction guideline',
+        subcommands: [
+          { name: 'adopt', usage: '<file>', description: 'store the winner of an outcome file that context improve wrote' },
+          { name: 'list', description: 'list the adopted guidelines, oldest first' },
+          { name: 'rollback', usage: '<version>', description: 'return to the text of an earlier version, recorded as a new version' },
+        ],
+      },
     ],
   },
   { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>] [--mandate <name>]', description: 'check the permission rules of this folder', subcommands: [
-      { name: 'verify', description: 'prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect' },
+      { name: 'verify', usage: '[--json] [--mode <mode>] [--secret <path>] [--mandate <name>]', description: 'prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect' },
     ] },
-  { name: 'gateway', usage: 'probe <model> [--samples <count>] [--step-timeout <seconds>] [--yes]', description: 'measure a model and record the result for the gateway', subcommands: [{ name: 'probe', description: 'measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record what it supports' }] },
+  { name: 'gateway', usage: 'probe <model> [--samples <count>] [--step-timeout <seconds>] [--yes]', description: 'measure a model and record the result for the gateway', subcommands: [{ name: 'probe', usage: '<model> [--samples <count>] [--step-timeout <seconds>] [--yes]', description: 'measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record what it supports' }] },
 ];
 
-const subcommandLines = (entry: ShellSlash, subcommands: readonly ShellSubcommand[]): string[] => {
+const subcommandLines = (entry: ShellSlash, subcommands: readonly SlashSubcommand[]): string[] => {
   const width = Math.max(...subcommands.map((subcommand) => subcommand.name.length));
   return [...subcommands.map((subcommand) => `  /${entry.name} ${subcommand.name.padEnd(width)}  ${subcommand.description}`), `usage: /${entry.name} ${entry.usage}`];
 };
@@ -96,6 +103,7 @@ const commandOf = (entry: ShellSlash): SlashCommand => ({
   needsSession: false,
   usage: entry.usage,
   description: entry.description,
+  ...(entry.subcommands === undefined ? {} : { subcommands: entry.subcommands }),
   run: (args, context) => runShellCommand(entry.name, args, context),
 });
 

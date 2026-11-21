@@ -16,6 +16,26 @@ export const memoryCommand: SlashCommand = {
   name: 'memory',
   usage: '[list|open|show <id>|delete <id>|add <text>|history <id>|review|restore <id>|promote <id> --skill <name>]',
   description: 'list, show, add, review, restore, promote or retire the memories of this folder and of all folders',
+  subcommands: [
+    { name: 'list', description: 'list the memories of this folder and of all folders' },
+    { name: 'open', description: 'open AGENTS.md in $EDITOR' },
+    { name: 'show', usage: '<id>', description: 'show one memory' },
+    { name: 'delete', usage: '<id>', description: 'retire one memory; it stays in /memory history' },
+    { name: 'add', usage: '<text>', description: 'add a memory' },
+    { name: 'history', usage: '<id>', description: 'show the history of one memory' },
+    {
+      name: 'review',
+      usage: '[accept <id> | reject <id>]',
+      description: 'review memories',
+      standalone: true,
+      subcommands: [
+        { name: 'accept', usage: '<id>', description: 'accept one memory under review' },
+        { name: 'reject', usage: '<id>', description: 'reject one memory under review' },
+      ],
+    },
+    { name: 'restore', usage: '<id>', description: 'restore a retired memory' },
+    { name: 'promote', usage: '<id> --skill <name>', description: 'promote a memory into a skill' },
+  ],
   run: async (args, context) => {
     const first = args.split(/\s+/)[0] ?? '';
     if (SHARED_WITH_SHELL.has(first)) {

@@ -30,6 +30,10 @@ export const autoModeCommand: SlashCommand = {
   name: 'auto-mode',
   usage: '[check [<model>] [--agent <model>] | status [<model>]]',
   description: 'choose the model that judges approvals for auto mode, measure how well a model judges them, or show the stored measurement',
+  subcommands: [
+    { name: 'check', usage: '[<model>] [--agent <model>]', description: 'measure how well a model judges approvals for auto mode' },
+    { name: 'status', usage: '[<model>]', description: 'show the stored measurement' },
+  ],
   run: async (args, context) => {
     if (args.trim() === '') {
       await runClassifierFlow(context);

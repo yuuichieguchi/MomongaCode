@@ -79,6 +79,7 @@ export const networkCommand: SlashCommand = {
   needsSession: false,
   usage: '[--json] | check <url>',
   description: 'show the proxy and the trusted certificates in force with the setting or variable each comes from, or check the route to an address',
+  subcommands: [{ name: 'check', usage: '<url>', description: 'check the route to an address' }],
   run: async (args, context) => {
     const [first, second, ...rest] = args.split(/\s+/).filter((word) => word !== '');
     if (first === 'check') {

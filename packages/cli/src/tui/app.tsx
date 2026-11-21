@@ -1779,7 +1779,7 @@ export function App(props: AppProps) {
     prompt: prompts.promptStage(),
     detail: prompts.detailShown(panelFacts),
     shellDraft: editorRef.current.shell,
-    menuOpen: slashMenu.open || atMenu.open,
+    menuOpen: slashMenu.isOpen(editorRef.current.text) || atMenu.open,
     agentsChosen: listFocusRef.current !== undefined && listRows().length > 0,
     fullscreen,
   });
@@ -2072,7 +2072,7 @@ export function App(props: AppProps) {
       else backend.openUrl(url, untilNextKey(terminal.input), onFailure);
     },
     reportError,
-    keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: completionOpen, inputEmpty: editorRef.current.text === '' }),
+    keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: slashMenu.isOpen(editorRef.current.text) || atMenu.open, inputEmpty: editorRef.current.text === '' }),
     keys,
     a11y,
     timers,

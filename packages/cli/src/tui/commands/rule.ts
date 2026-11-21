@@ -10,6 +10,12 @@ export const ruleCommand: SlashCommand = {
   name: 'rule',
   usage: '[list|add <target> <text>|retire <id>|history <id>]',
   description: 'list, add, retire or show the history of the standing rules of this folder',
+  subcommands: [
+    { name: 'list', description: 'list the standing rules of this folder' },
+    { name: 'add', usage: '<target> <text>', description: 'add a standing rule to this folder' },
+    { name: 'retire', usage: '<id>', description: 'retire a standing rule' },
+    { name: 'history', usage: '<id>', description: 'show the history of a standing rule' },
+  ],
   run: async (args, context) => {
     const text = args.trim();
     if (/^add\s/.test(text) && /\s--\S/.test(text)) {

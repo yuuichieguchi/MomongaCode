@@ -8,6 +8,7 @@ export const markersCommand: SlashCommand = {
   name: 'markers',
   usage: 'ignore <marker name>',
   description: 'tell MomongaCode to stop blocking calls because of a process an earlier command left running',
+  subcommands: [{ name: 'ignore', usage: '<marker name>', description: 'ignore one marker in the guard' }],
   run: async (args, context) => {
     const ignored = IGNORE.exec(args.trim());
     if (ignored === null) {

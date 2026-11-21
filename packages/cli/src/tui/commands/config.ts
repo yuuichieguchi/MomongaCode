@@ -58,6 +58,13 @@ export const configCommand: SlashCommand = {
   name: 'config',
   description: `open the settings screen, or show or change one setting by name; ${CONFIG_ROWS.map((row) => `${row.name}: ${row.label}`).join('; ')}`,
   usage: CONFIG_ROWS.map(usageOf).join(' | '),
+  subcommands: CONFIG_ROWS.map((row) => ({
+    name: row.name,
+    usage: `[${row.values.join('|')}]`,
+    description: row.label,
+    standalone: true as const,
+    subcommands: row.values.map((value) => ({ name: value, description: `set ${row.name} to ${value}` })),
+  })),
   needsSession: false,
   run: async (args, context) => {
     if (args.trim() === '') {

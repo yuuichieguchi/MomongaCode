@@ -30,6 +30,27 @@ export const tuiCommand: SlashCommand = {
   name: 'tui',
   description: 'show or switch the screen mode (fullscreen, or scrollback: the terminal\'s own history), and turn the mouse or copy on select on or off',
   usage: `[${SCREEN_MODES.join('|')}|mouse on|off|copy-on-select on|off]`,
+  subcommands: [
+    ...SCREEN_MODES.map((mode) => ({ name: mode, description: `switch screen mode to ${mode}` })),
+    {
+      name: 'mouse',
+      usage: 'on|off',
+      description: 'turn the mouse on or off',
+      subcommands: [
+        { name: 'on', description: 'turn the mouse on' },
+        { name: 'off', description: 'turn the mouse off' },
+      ],
+    },
+    {
+      name: 'copy-on-select',
+      usage: 'on|off',
+      description: 'turn copy on select on or off',
+      subcommands: [
+        { name: 'on', description: 'turn copy on select on' },
+        { name: 'off', description: 'turn copy on select off' },
+      ],
+    },
+  ],
   needsSession: false,
   run: async (args, context) => {
     const words = args.split(/\s+/).filter((word) => word !== '');

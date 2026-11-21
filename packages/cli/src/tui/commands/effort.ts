@@ -90,6 +90,10 @@ export const effortCommand: SlashCommand = {
   name: 'effort',
   description: 'choose the reasoning effort of the model, saved for it or for this session only; reset removes the saved one',
   usage: `[${REASONING_EFFORTS.join('|')}] [${SESSION_FLAG}] | ${RESET_WORD}`,
+  subcommands: [
+    ...REASONING_EFFORTS.map((level) => ({ name: level, description: `set the reasoning effort to ${level}` })),
+    { name: RESET_WORD, description: 'remove the saved reasoning effort' },
+  ],
   run: async (args, context) => {
     const model = context.model;
     if (model === undefined) throw new Error('/effort ran without a session model');
