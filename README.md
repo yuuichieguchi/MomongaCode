@@ -22,10 +22,12 @@ Then add a model and run a first prompt, as [Getting Started](#3-getting-started
 
 ## 2. Why MomongaCode?
 
-MomongaCode focuses deeply on two engineering problems that decide whether a terminal coding agent stays accurate and affordable over long sessions:
+MomongaCode focuses deeply on four engineering problems that decide whether a terminal coding agent stays accurate, clear, and affordable over long sessions:
 
 - **Adaptive Agent Memory & Context Orchestration**
 - **Agent Token Efficiency Engineering**
+- **Capability-Aware System Prompt Architecture**
+- **Output Clarity Engineering**
 
 ### Adaptive Agent Memory & Context Orchestration
 
@@ -61,6 +63,23 @@ Every token-saving mechanism is on by default; each has a setting only so you ca
 | `momonga eval yield <dataset>` | Run paired sessions (`--model <model>`, `--report <file>`) to measure whether reflection pays for itself, comparing downstream savings against reflection cost. |
 
 All of these optimizations are on by default and can be toggled individually (see [Configuration](#6-configuration)).
+
+### Capability-Aware System Prompt Architecture
+
+MomongaCode builds its system prompt from three deterministic tiers—never hardcoded per model name—so every model gets concise, cache-friendly, capability-matched instructions.
+
+- **Three-tier modular assembly for prompt caching.** An immutable core tier comes first (preserving the longest provider cache prefix across turns and folders), followed by active tool guidelines and capability-driven execution rules, with session-specific environment and data-boundary details placed last.
+- **Explicit four-tier instruction hierarchy.** System safety and truthfulness rules come first, followed by the user's direct messages, developer instructions (closest `AGENTS.md` over parent and user `AGENTS.md`), and external data (tool outputs, attached files, user shell outputs, and MCP content—always fenced as data, never instructions).
+- **Five core behavioral principles.** Evidence first (inspect before editing; never claim unverified work), root cause first (diagnose failures and refusals instead of retrying blindly), minimal scope, verify changes, and handle uncertainty without guessing.
+- **Data-driven adaptation without model-name branches.** Parallel read guidance is injected only when `parallelToolCalls` is measured as supported; step-by-step vs. goal-focused execution guidance adapts from configured `effort`; compact phrasing activates automatically for small context windows or when `tools.conciseDescriptions` is enabled; guidelines for inactive or denied tools are omitted completely.
+- **Constraint-aware evaluation.** `packages/eval` audits the prompt matrix against explicit constraints—token budgets, four-tier precedence, zero inactive-tool leakage, capability alignment, and stable cache prefixes—so additions cannot bloat or contradict existing rules.
+
+### Output Clarity Engineering
+
+MomongaCode separates everyday terminal responses from high-stakes technical documents, optimizing everyday replies at zero extra latency while offering bounded, codebase-verified revision on demand.
+
+- **Everyday Edit Policy and `/style`.** Every response follows a built-in Edit Policy: match length to the weight of the ask, drop filler and visible-action narration, separate verified facts from inferences, cite exact file paths, and never invent facts absent from code or user input. Switch between `standard`, `concise`, and `explanatory` with `/style [standard|concise|explanatory] [--session] | reset` (stored under `output.style` unless `--session` is passed).
+- **Bounded document revision with `/polish`.** Run `/polish [<file>] [--audience <reader>]` to polish the previous assistant response or a target file for a specific reader (default: repository developers). Instead of fragile numeric scores, the workflow identifies concrete defects (`undefined_term`, `missing_context`, `logical_gap`, `vague_action`, `excessive_abstraction`), checks technical claims against the actual codebase via read-only tools, applies localized edits only to high/medium defects within a hard two-iteration cap, lists unresolvable gaps as unresolved items rather than guessing, and applies file changes through the normal confirmation flow.
 
 ## 3. Getting Started
 
@@ -143,6 +162,7 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 - **Terminal UI and headless mode.** Work interactively in the terminal, or script runs with `-p`/`--print` and `--output-format text|json|stream-json`.
 - **Models.** Connect to Ollama, OpenAI chat-completions, Open Responses, Anthropic, or managed local servers that MomongaCode starts on demand (such as Apple's `fm`). Every model is referenced by the name its server reports. Configure `models.fallback` to fail over when a server cannot answer, and run `momonga gateway probe <model>` to measure and cache a model's capabilities.
 - **Built-in tools.** Includes `Bash` (plus `BashOutput` and `KillBash` for background commands), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (with a built-in `general-purpose` subagent ready out of the box), `LoadTools`, `activate_skill`, and dedicated Git/PR/issue tools (`GitStage`, `GitCommit`, `GitPush`, and more) that clearly declare what they modify before asking for approval. See [the reference](docs/reference.md) for the full list.
+- **Output styles and bounded polish.** Switch everyday reply density with `/style [standard|concise|explanatory] [--session] | reset` (`output.style`), or run `/polish [<file>] [--audience <reader>]` for bounded, codebase-verified revision of long responses and technical docs.
 
 ### Safety, permissions & verification
 
@@ -233,7 +253,7 @@ Completion conditions are fixed when a run starts and come from the union of thr
 
 | Category | Slash commands |
 | --- | --- |
-| Session | `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/auto-mode` |
+| Session | `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/effort`, `/style`, `/polish`, `/auto-mode` |
 | Memory, policy & context | `/memory`, `/rule`, `/context`, `/policy` |
 | Runs & observability | `/status`, `/jobs`, `/trace`, `/cost`, `/report` |
 | Servers & gateway | `/mcp`, `/gateway` |
