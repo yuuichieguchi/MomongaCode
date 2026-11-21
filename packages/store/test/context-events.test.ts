@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem } from '@momonga/testkit';
-import { SNAPSHOT_STATE_VERSION, decodeEvent } from '../src/codec.ts';
+import { SNAPSHOT_STATE_VERSION, decodeEvent, decodeRunState } from '../src/codec.ts';
 import { TEST_FENCE } from '@momonga/testkit';
 
 const ENVELOPE = { id: 9, runId: 'r1', sessionId: 's1', seq: 5, step: 1, leaseToken: 1, createdAt: 10 };
@@ -50,10 +50,20 @@ describe('context events in the journal', () => {
     expect(emptied.governingLoaded).toEqual({ active: [], conflicts: [] });
   });
 
-  it('folds context.memories_loaded into the set last loaded', () => {
+  it('folds context.memories_loaded into the set last loaded and validates snapshots with optional evidence', () => {
     const [, fields] = NEW_EVENTS[1] as [string, Record<string, unknown>];
     const loaded = foldRunState(start(), { type: 'context.memories_loaded', ...fields, ...ENVELOPE } as unknown as RunEvent);
     expect(loaded.memoriesLoaded).toEqual([{ id: 'm1', status: 'verified' }]);
+    const withEvidence = foldRunState(loaded, {
+      type: 'context.memories_loaded',
+      memories: [{ id: 'm1', status: 'verified', files: ['src/a.ts'], commit: 'a1b2c3d4e5f6' }],
+      ...ENVELOPE,
+    } as unknown as RunEvent);
+    expect(withEvidence.memoriesLoaded).toEqual([{ id: 'm1', status: 'verified', files: ['src/a.ts'], commit: 'a1b2c3d4e5f6' }]);
+    expect(decodeRunState('r1', { stateVersion: SNAPSHOT_STATE_VERSION, ...loaded })?.memoriesLoaded).toEqual(loaded.memoriesLoaded);
+    expect(decodeRunState('r1', { stateVersion: SNAPSHOT_STATE_VERSION, ...withEvidence })?.memoriesLoaded).toEqual(withEvidence.memoriesLoaded);
+    expect(() => decodeRunState('r1', { stateVersion: SNAPSHOT_STATE_VERSION, ...withEvidence, memoriesLoaded: [{ id: 'm1', status: 'verified', files: 'src/a.ts' }] })).toThrow(/corrupt/);
+    expect(() => decodeRunState('r1', { stateVersion: SNAPSHOT_STATE_VERSION, ...withEvidence, memoriesLoaded: [{ id: 'm1', status: 'verified', commit: 42 }] })).toThrow(/corrupt/);
   });
 
   it('decodes and folds a context.compacted recorded before source, fidelity and guidelineVersion', () => {

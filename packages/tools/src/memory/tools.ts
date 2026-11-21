@@ -1,5 +1,5 @@
-import { DEFAULT_MEMORY_KIND, MEMORY_KINDS, MEMORY_SCOPES, describeMemoryValidity, describeValidity } from '@momonga/protocol';
-import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
+import { DEFAULT_MEMORY_KIND, MEMORY_KINDS, MEMORY_SCOPES, describeMemoryValidity, describeValidity, shortCommitSha, summarizeMemoryEvidence } from '@momonga/protocol';
+import type { MemoryKind, MemoryScope, MemoryView, StoredMemoryEvidence } from '@momonga/protocol';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { AnyTool } from '../types.ts';
 import {
@@ -22,8 +22,17 @@ const describeOrigin = (source: MemoryView['source']): string => {
   return `in run ${source.runId}${source.kind === 'tool' ? ` step ${source.step}` : ''}`;
 };
 
+const describeEvidence = (evidence: readonly StoredMemoryEvidence[]): string => {
+  const { files, commit } = summarizeMemoryEvidence(evidence);
+  const parts = [
+    ...(files.length === 0 ? [] : [`files ${files.join(', ')}`]),
+    ...(commit === undefined ? [] : [`commit ${shortCommitSha(commit)}`]),
+  ];
+  return parts.length === 0 ? '' : `, ${parts.join(', ')}`;
+};
+
 const describeMemory = (memory: MemoryView): string =>
-  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} ${describeOrigin(memory.source)}${memory.validity === undefined ? '' : `, validity ${describeValidity(memory.validity)}`}) ${memory.text}`;
+  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeEvidence(memory.evidence)}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} ${describeOrigin(memory.source)}${memory.validity === undefined ? '' : `, validity ${describeValidity(memory.validity)}`}) ${memory.text}`;
 
 const termsOf = (query: string): string[] => query.split(/\s+/).filter((term) => term !== '');
 

@@ -57,6 +57,34 @@ describe('recalled memories', () => {
     expect(text).not.toContain('last_used');
   });
 
+  it('includes file paths and short commit SHA when a note carries evidence', async () => {
+    const capabilities = capabilitiesFor(200000);
+    const { ports } = harness(capabilities);
+    const withBoth = memoryOf(1, {
+      status: 'verified',
+      evidence: [
+        { kind: 'file', project: PROJECT, path: 'src/auth.ts', sha256: 'a'.repeat(64) },
+        { kind: 'file', project: PROJECT, path: 'src/db.ts', sha256: 'b'.repeat(64) },
+        { kind: 'commit', sha: '1234567890abcdef1234567890abcdef12345678' },
+      ],
+    });
+    const commitOnly = memoryOf(3, {
+      status: 'unbound',
+      evidence: [{ kind: 'commit', sha: 'fedcba9876543210fedcba9876543210fedcba98' }],
+    });
+    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ memories: [withBoth, commitOnly] }) }), ports);
+    const text = String(memoryMessageOf(result.input)?.content);
+    expect(text).toContain('status="verified" files="src/auth.ts, src/db.ts" commit="1234567" saved=');
+    expect(text).toContain('status="unbound" commit="fedcba9" saved=');
+
+    const tricky = memoryOf(5, {
+      status: 'verified',
+      evidence: [{ kind: 'file', project: PROJECT, path: 'src/a&b"c<d.ts', sha256: 'c'.repeat(64) }],
+    });
+    const escaped = String(memoryMessageOf((await buildContext(inputFor(capabilities, { sources: sourcesWith({ memories: [tricky] }) }), ports)).input)?.content);
+    expect(escaped).toContain('files="src/a&amp;b&quot;c&lt;d.ts"');
+  });
+
   it('labels a note saved in an untrusted folder and warns about that origin', async () => {
     const capabilities = capabilitiesFor(200000);
     const { ports } = harness(capabilities);

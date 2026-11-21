@@ -1,5 +1,5 @@
-import { UNKNOWN_EFFECT_REASON, escapeTerminalLine, fallbackNoticeTextOn } from '@momonga/protocol';
-import type { ApprovalShown, PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, RunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
+import { UNKNOWN_EFFECT_REASON, escapeTerminalLine, fallbackNoticeTextOn, shortCommitSha } from '@momonga/protocol';
+import type { ApprovalShown, LoadedMemory, PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, RunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
 import { attachedRow } from './attach.ts';
 import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
@@ -66,6 +66,43 @@ export type PendingElicitation = { inputId: string; callId: string; server: stri
 export type Usage = { inputTokens: number; outputTokens: number; totalTokens: number };
 
 export const compactedText = (tokensBefore: number, tokensAfter: number): string => `Compacted: ${formatTokens(tokensBefore)} -> ${formatTokens(tokensAfter)} tokens`;
+
+const MAX_RECALLED_FILES_SHOWN = 2;
+const MAX_RECALLED_MEMORIES_SHOWN = 3;
+
+const formatRecalledFiles = (files: readonly string[]): string => {
+  const shown = files.slice(0, MAX_RECALLED_FILES_SHOWN).map(escapeTerminalLine);
+  const extra = files.length - shown.length;
+  return extra > 0 ? `${shown.join(', ')} +${extra} more` : shown.join(', ');
+};
+
+const formatRecalledEvidence = (memory: LoadedMemory): string | undefined => {
+  const files = memory.files ?? [];
+  const commit = memory.commit === undefined || memory.commit === '' ? undefined : `@ ${escapeTerminalLine(shortCommitSha(memory.commit))}`;
+  if (files.length > 0 && commit !== undefined) return `${formatRecalledFiles(files)} ${commit}`;
+  if (files.length > 0) return formatRecalledFiles(files);
+  if (commit !== undefined) return commit;
+  return memory.status === 'unbound' ? 'no file/commit' : undefined;
+};
+
+const formatRecalledItem = (memory: LoadedMemory): string => {
+  const evidence = formatRecalledEvidence(memory);
+  const details = evidence === undefined ? memory.status : `${memory.status}, ${evidence}`;
+  return `${escapeTerminalLine(memory.id)} (${details})`;
+};
+
+export const formatRecalledMemories = (memories: readonly LoadedMemory[]): string | undefined => {
+  if (memories.length === 0) return undefined;
+  const first = memories[0];
+  if (memories.length === 1 && first !== undefined) return `memory recalled: ${formatRecalledItem(first)}`;
+  const shown = memories.slice(0, MAX_RECALLED_MEMORIES_SHOWN).map((memory) => `  ${formatRecalledItem(memory)}`);
+  const extra = memories.length - shown.length;
+  return [
+    `memories recalled (${memories.length}):`,
+    ...shown,
+    ...(extra > 0 ? [`  +${extra} more; /memory list`] : []),
+  ].join('\n');
+};
 
 export type PhaseKind = 'queued' | 'model' | 'thinking' | 'responding' | 'tool' | 'classifying' | 'hook' | 'verifying' | 'compacting' | 'retry' | 'awaited';
 
@@ -397,6 +434,18 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
     case 'tool.loaded':
       appendEntry(store, { kind: 'info', text: `tools loaded: ${event.names.join(', ')}` });
       return;
+    case 'context.memories_loaded': {
+      const prior = state.recalledMemoriesRunId === event.runId ? state.shownRecalledMemories : new Set<string>();
+      const added = event.memories.filter((memory) => !prior.has(memory.id));
+      const text = formatRecalledMemories(added);
+      if (text !== undefined) appendEntry(store, { kind: 'info', text });
+      if (added.length > 0 || state.recalledMemoriesRunId !== event.runId) {
+        const next = new Set(prior);
+        for (const memory of added) next.add(memory.id);
+        store.update({ recalledMemoriesRunId: event.runId, shownRecalledMemories: next });
+      }
+      return;
+    }
     case 'attempt.failed':
       store.update({ lastFailure: event });
       return;
@@ -417,6 +466,8 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
         queuedElicitations: [],
         usage: EMPTY_USAGE,
         endedRunsTokens: sessionTokens(state),
+        recalledMemoriesRunId: undefined,
+        shownRecalledMemories: new Set(),
       });
       return;
     }

@@ -27,6 +27,8 @@ export type TranscriptState = {
   endedRunsTokens: number;
   contextTokens: number;
   subagents: readonly Subagent[];
+  recalledMemoriesRunId: string | undefined;
+  shownRecalledMemories: ReadonlySet<string>;
 };
 
 export const EMPTY_USAGE: Usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
@@ -53,9 +55,11 @@ export const initialState: Omit<TranscriptState, 'callInputs'> = {
   endedRunsTokens: 0,
   contextTokens: 0,
   subagents: [],
+  recalledMemoriesRunId: undefined,
+  shownRecalledMemories: new Set(),
 };
 
-export const freshState = (): TranscriptState => ({ ...initialState, callInputs: callInputTracker(jsonValueOrText) });
+export const freshState = (): TranscriptState => ({ ...initialState, shownRecalledMemories: new Set(), callInputs: callInputTracker(jsonValueOrText) });
 
 export type StoreListener = (entryId: number | undefined, version: number) => void;
 

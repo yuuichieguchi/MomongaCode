@@ -201,14 +201,14 @@ describe('MemorySave in a run', () => {
     env.gateway.script.push(textStep('Fine.'));
     const verified = await env.enqueue('Continue', { history: 'fresh' });
     await env.runOnce(workerFor(env, 'w-2', run));
-    expect(env.ofType(verified.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'verified' }]]);
-    expect(inputText(env, env.gateway.streams.length - 1)).toMatch(/status="verified"/);
+    expect(env.ofType(verified.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'verified', files: [FILE] }]]);
+    expect(inputText(env, env.gateway.streams.length - 1)).toMatch(/status="verified" files="src\/a\.ts"/);
 
     fs.writeFileSync(target, 'changed');
     env.gateway.script.push(textStep('Fine.'));
     const stale = await env.enqueue('Continue again', { history: 'fresh' });
     await env.runOnce(workerFor(env, 'w-3', run));
-    expect(env.ofType(stale.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'stale' }]]);
+    expect(env.ofType(stale.id, 'context.memories_loaded').map((event) => event.memories)).toEqual([[{ id: memory?.id, status: 'stale', files: [FILE] }]]);
     expect(inputText(env, env.gateway.streams.length - 1)).toContain('Do not rely on a note with status="stale"');
   });
 

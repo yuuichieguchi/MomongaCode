@@ -281,3 +281,103 @@ describe('the output a tool entry keeps (cli-tui-22)', () => {
     expect(entry.tail?.hidden).toBe(5 * 1024 * 1024 / 16 - 5);
   });
 });
+
+describe('recalled memories in the transcript', () => {
+  it('shows nothing when no memories were loaded', () => {
+    expect(apply([{ type: 'context.memories_loaded', memories: [] }]).entries).toEqual([]);
+  });
+
+  it('shows file path, short commit SHA and status for a single recalled memory', () => {
+    const state = apply([
+      {
+        type: 'context.memories_loaded',
+        memories: [{ id: 'm1', status: 'verified', files: ['src/auth.ts'], commit: 'a1b2c3d4e5f67890' }],
+      },
+    ]);
+    expect(state.entries).toEqual([{ kind: 'info', text: 'memory recalled: m1 (verified, src/auth.ts @ a1b2c3d)' }]);
+  });
+
+  it('caps files at two, handles commit-only, no evidence, stale and legacy events without evidence', () => {
+    const one = (memory: Record<string, unknown>) => apply([{ type: 'context.memories_loaded', memories: [memory] }]).entries;
+    expect(one({ id: 'm1', status: 'verified', files: ['src/a.ts', 'src/b.ts', 'src/c.ts'], commit: 'a1b2c3d4e5f6' })).toEqual([
+      { kind: 'info', text: 'memory recalled: m1 (verified, src/a.ts, src/b.ts +1 more @ a1b2c3d)' },
+    ]);
+    expect(one({ id: 'm2', status: 'unbound', commit: 'a1b2c3d4e5f6' })).toEqual([
+      { kind: 'info', text: 'memory recalled: m2 (unbound, @ a1b2c3d)' },
+    ]);
+    expect(one({ id: 'm3', status: 'unbound' })).toEqual([
+      { kind: 'info', text: 'memory recalled: m3 (unbound, no file/commit)' },
+    ]);
+    expect(one({ id: 'm4', status: 'stale', files: ['src/auth.ts'], commit: 'a1b2c3d4e5f6' })).toEqual([
+      { kind: 'info', text: 'memory recalled: m4 (stale, src/auth.ts @ a1b2c3d)' },
+    ]);
+    expect(one({ id: 'm5', status: 'verified' })).toEqual([
+      { kind: 'info', text: 'memory recalled: m5 (verified)' },
+    ]);
+  });
+
+  it('lists up to three recalled memories and summarizes the rest', () => {
+    const state = apply([
+      {
+        type: 'context.memories_loaded',
+        memories: [
+          { id: 'm1', status: 'verified', files: ['src/auth.ts'], commit: 'a1b2c3d4e5f6' },
+          { id: 'm2', status: 'stale', files: ['src/db.ts'], commit: 'a1b2c3d4e5f6' },
+          { id: 'm3', status: 'unbound' },
+          { id: 'm4', status: 'verified', files: ['src/cli.ts'] },
+        ],
+      },
+    ]);
+    expect(state.entries).toEqual([
+      {
+        kind: 'info',
+        text: [
+          'memories recalled (4):',
+          '  m1 (verified, src/auth.ts @ a1b2c3d)',
+          '  m2 (stale, src/db.ts @ a1b2c3d)',
+          '  m3 (unbound, no file/commit)',
+          '  +1 more; /memory list',
+        ].join('\n'),
+      },
+    ]);
+  });
+
+  it('shows only newly added memories within a run, and shows them again in the next run', () => {
+    const m1 = { id: 'm1', status: 'verified', files: ['src/a.ts'], commit: 'a1b2c3d4e5f6' };
+    const m2 = { id: 'm2', status: 'stale', files: ['src/b.ts'] };
+    const state = apply([
+      { runId: 'r1', type: 'context.memories_loaded', memories: [m1] },
+      { runId: 'r1', type: 'context.memories_loaded', memories: [m1] },
+      { runId: 'r1', type: 'context.memories_loaded', memories: [m1, m2] },
+      { runId: 'r1', type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+      { runId: 'r2', type: 'context.memories_loaded', memories: [m1] },
+    ]);
+    expect(state.entries).toEqual([
+      { kind: 'info', text: 'memory recalled: m1 (verified, src/a.ts @ a1b2c3d)' },
+      { kind: 'info', text: 'memory recalled: m2 (stale, src/b.ts)' },
+      { kind: 'info', text: 'memory recalled: m1 (verified, src/a.ts @ a1b2c3d)' },
+    ]);
+  });
+
+  it('resets recall deduplication when runId changes even without a terminal run.status', () => {
+    const m1 = { id: 'm1', status: 'verified', files: ['src/a.ts'] };
+    const state = apply([
+      { runId: 'r1', type: 'context.memories_loaded', memories: [m1] },
+      { runId: 'r2', type: 'context.memories_loaded', memories: [m1] },
+    ]);
+    expect(state.entries).toEqual([
+      { kind: 'info', text: 'memory recalled: m1 (verified, src/a.ts)' },
+      { kind: 'info', text: 'memory recalled: m1 (verified, src/a.ts)' },
+    ]);
+  });
+
+  it('escapes terminal control sequences in recalled evidence and ignores an empty commit string', () => {
+    const state = apply([
+      {
+        type: 'context.memories_loaded',
+        memories: [{ id: 'm1\x1b[31m', status: 'verified', files: ['src/\x1b[31ma\nb.ts'], commit: '' }],
+      },
+    ]);
+    expect(state.entries).toEqual([{ kind: 'info', text: 'memory recalled: m1\\u001b[31m (verified, src/\\u001b[31ma\\u000ab.ts)' }]);
+  });
+});

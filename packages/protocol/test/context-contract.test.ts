@@ -173,15 +173,19 @@ describe('public context.governing_loaded', () => {
 describe('public context.memories_loaded', () => {
   const event = { ...ENVELOPE, type: 'context.memories_loaded', memories: [{ id: 'm1', status: 'stale' }] };
 
-  it('accepts recalled memories with their status, and none', () => {
+  it('accepts recalled memories with their status and optional evidence, and none', () => {
     expect(acceptsEvent(event)).toBe(true);
+    expect(acceptsEvent({ ...event, memories: [{ id: 'm1', status: 'verified', files: ['src/a.ts'], commit: 'a1b2c3d4e5f6' }] })).toBe(true);
     expect(acceptsEvent({ ...event, memories: [] })).toBe(true);
   });
 
-  it('rejects an unknown status, a missing status and a missing list', () => {
+  it('rejects an unknown status, a missing status, invalid evidence fields and a missing list', () => {
     expect(acceptsEvent(event)).toBe(true);
     expect(acceptsEvent({ ...event, memories: [{ id: 'm1', status: 'fresh' }] })).toBe(false);
     expect(acceptsEvent({ ...event, memories: [{ id: 'm1' }] })).toBe(false);
+    expect(acceptsEvent({ ...event, memories: [{ id: 'm1', status: 'verified', files: 'src/a.ts' }] })).toBe(false);
+    expect(acceptsEvent({ ...event, memories: [{ id: 'm1', status: 'verified', files: [123] }] })).toBe(false);
+    expect(acceptsEvent({ ...event, memories: [{ id: 'm1', status: 'verified', commit: 123 }] })).toBe(false);
     const { memories: _memories, ...withoutMemories } = event;
     expect(acceptsEvent(withoutMemories)).toBe(false);
   });

@@ -513,7 +513,12 @@ const isGoverningLoaded = (value: unknown): boolean =>
   Array.isArray(value['conflicts']) &&
   value['conflicts'].every((entry) => isRecord(entry) && typeof entry['target'] === 'string' && Array.isArray(entry['ids']) && entry['ids'].every((id) => typeof id === 'string'));
 
-const isMemoryLoaded = (value: unknown): boolean => isRecord(value) && typeof value['id'] === 'string' && MEMORY_STATUSES.some((status) => status === value['status']);
+const isMemoryLoaded = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value['id'] === 'string' &&
+  MEMORY_STATUSES.some((status) => status === value['status']) &&
+  (value['files'] === undefined || (Array.isArray(value['files']) && value['files'].every((file) => typeof file === 'string'))) &&
+  (value['commit'] === undefined || typeof value['commit'] === 'string');
 
 const isActivatedSkill = (value: unknown): boolean =>
   isRecord(value) && typeof value['name'] === 'string' && typeof value['content'] === 'string' && Number.isInteger(value['seq']);

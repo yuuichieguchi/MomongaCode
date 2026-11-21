@@ -25,7 +25,7 @@ import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/f
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
-import { BUDGET_EXCEEDED_CODE, sessionFenceOf, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, includedShellTexts, userMessageContent } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, sessionFenceOf, DETERMINISTIC_SUMMARY_TEXT, LOWEST_REASONING_EFFORT, marginFloorFor, outputTokensFor, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, includedShellTexts, userMessageContent, summarizeMemoryEvidence } from '@momonga/protocol';
 import { billedDetailOf } from './model-stream.ts';
 import type { Capabilities, CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
@@ -576,7 +576,13 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
   const loadedMemories = built.loadedMemoryIds.map((id) => {
     const memory = ctx.recalled.ranked().find((candidate) => candidate.id === id);
     if (memory === undefined) throw new Error(`the context loaded memory ${id}, which the run did not recall`);
-    return { id, status: memory.status };
+    const { files, commit } = summarizeMemoryEvidence(memory.evidence);
+    return {
+      id,
+      status: memory.status,
+      ...(files.length === 0 ? {} : { files }),
+      ...(commit === undefined ? {} : { commit }),
+    };
   });
   const firstRanking = ctx.token.cachePrefix && memoriesLoaded === undefined;
   if (firstRanking || canonicalJson(loadedMemories) !== canonicalJson(memoriesLoaded ?? [])) payloads.push({ type: 'context.memories_loaded', memories: loadedMemories });

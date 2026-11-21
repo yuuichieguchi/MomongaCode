@@ -534,11 +534,15 @@ export {
   REFLECTION_DROP_CAUSES,
   REFLECTION_JOB_STATES,
   VALIDITY_CLOSERS,
+  shortCommitSha,
+  summarizeMemoryEvidence,
 } from './memory.ts';
 export type {
   AddMemoryRequest,
+  LoadedMemory,
   MemoriesResponse,
   MemoryEvidence,
+  MemoryEvidenceSummary,
   StoredMemoryEvidence,
   ModelCallCheckEvidence,
   StoredMemorySource,
