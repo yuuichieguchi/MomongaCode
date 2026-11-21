@@ -75,7 +75,7 @@ const makeServe = (context: Setup, overrides: Partial<ServeOptions> = {}): Manag
     inspector: testProcessInspector(), random: systemRandom, fileSystem: nodeFileSystemSync,
     launch: TEST_UNPROTECTED_LAUNCH,
     lock: testKernelLock(),
-    description: FM_SERVER,
+    description: NO_RESTART_FM,
     target: 'fm',
     lockPath: `${context.socketPath}.lock`,
     readyTimeoutMs: 15_000,
