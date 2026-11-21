@@ -1,12 +1,10 @@
 import {
-  buildSystemPrompt,
-  buildSystemPromptSections,
   COMPACT_CONTEXT_WINDOW_THRESHOLD,
   ESTIMATED_CHARACTERS_PER_TOKEN,
   OUTPUT_STYLES,
   TOOL_OUTPUT_TAG,
 } from '@momonga/protocol';
-import type { OutputStyle, ReasoningEffort, SystemPromptContext } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, SystemPromptContext, SystemPromptSections } from '@momonga/protocol';
 
 export type PromptConstraintViolation = {
   readonly code: string;
@@ -24,9 +22,11 @@ export const MAX_COMPACT_SYSTEM_PROMPT_TOKENS = 550;
 
 export const estimatePromptTokens = (text: string): number => Math.ceil(text.length / ESTIMATED_CHARACTERS_PER_TOKEN);
 
-export const auditSystemPrompt = (context: SystemPromptContext): SystemPromptAudit => {
-  const sections = buildSystemPromptSections(context);
-  const full = buildSystemPrompt(context);
+export const auditSystemPrompt = (
+  context: SystemPromptContext,
+  sections: SystemPromptSections,
+): SystemPromptAudit => {
+  const full = [sections.stable, sections.toolsAndAdaptation, sections.environment].filter((section) => section !== '').join('\n\n');
   const estimatedTokens = estimatePromptTokens(full);
   const stableTokens = estimatePromptTokens(sections.stable);
   const violations: PromptConstraintViolation[] = [];

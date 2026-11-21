@@ -1,7 +1,7 @@
 export { UNKNOWN_VALUE } from './stored-value.ts';
 export { DEFAULT_OUTPUT_STYLE, OUTPUT_STYLES, isOutputStyle } from './output-style.ts';
 export type { OutputStyle } from './output-style.ts';
-export { buildSystemPrompt, buildSystemPromptSections, COMPACT_CONTEXT_WINDOW_THRESHOLD } from './system-prompt.ts';
+export { COMPACT_CONTEXT_WINDOW_THRESHOLD } from './system-prompt.ts';
 export type { SystemPromptContext, SystemPromptSections } from './system-prompt.ts';
 export {
   actionableIssueCount,
