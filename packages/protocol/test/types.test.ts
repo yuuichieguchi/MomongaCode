@@ -54,12 +54,12 @@ describe('protocol capability types', () => {
           | { control: 'none'; headroomTokens?: number }
           | {
               control: 'reasoning_effort';
-              lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-              efforts?: readonly ('none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh')[];
-              default?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+              lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+              efforts?: readonly ('none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max')[];
+              default?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
             }
-          | { control: 'thinking'; form: 'adaptive'; efforts: readonly ('low' | 'medium' | 'high' | 'xhigh')[]; off?: 'disabled' | 'between_tools' }
-          | { control: 'thinking'; form: 'budget'; budgets: Readonly<Partial<Record<'minimal' | 'low' | 'medium' | 'high' | 'xhigh', number>>>; off?: 'disabled' | 'between_tools' };
+          | { control: 'thinking'; form: 'adaptive'; efforts: readonly ('low' | 'medium' | 'high' | 'xhigh' | 'max')[]; off?: 'disabled' | 'between_tools' }
+          | { control: 'thinking'; form: 'budget'; budgets: Readonly<Partial<Record<'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max', number>>>; off?: 'disabled' | 'between_tools' };
       } & (
         | { imageInput: false; imageTokens?: undefined }
         | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number; minTokens: number } }
@@ -110,7 +110,7 @@ describe('protocol capability types', () => {
       stopSequences: boolean;
       outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'none';
       parallelToolCalls?: { accepted: boolean; multiCallRate: number };
-      reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
+      reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' };
       maxConcurrency?: { value: number; evidence: 'refused' };
       imageInputAccepted: boolean;
       imageTokens?: { pixelsPerToken: number; maxTokens: number; minTokens: number };

@@ -270,14 +270,18 @@ const resolvePlan = (target: PlanOpenResponsesTarget, provider: string, { connec
     if (target[key] !== undefined) throw new ConfigError(`${where}: plan cannot be combined with ${key}; a plan connection takes its credential from the signed-in account`);
   }
   if (target.socketPath !== undefined) {
-    throw new ConfigError(`${where}: plan cannot be combined with socketPath; a plan connection sends its bearer only to ${profile.oauth.resource}`);
+    throw new ConfigError(
+      `${where}: plan cannot be combined with socketPath${profile.oauth === undefined ? '' : `; a plan connection sends its bearer only to ${profile.oauth.resource}`}`,
+    );
   }
   const baseUrl = target.baseUrl ?? profile.targetDefaults.baseUrl;
   checkBaseUrl(baseUrl, where, true);
-  const resourceOrigin = new URL(profile.oauth.resource).origin;
-  const baseOrigin = new URL(baseUrl).origin;
-  if (baseOrigin !== resourceOrigin) {
-    throw new ConfigError(`${where}: baseUrl ${baseUrl} has origin ${baseOrigin}, but plan profile ${profile.id} sends its bearer only to origin ${resourceOrigin}`);
+  if (profile.oauth !== undefined) {
+    const resourceOrigin = new URL(profile.oauth.resource).origin;
+    const baseOrigin = new URL(baseUrl).origin;
+    if (baseOrigin !== resourceOrigin) {
+      throw new ConfigError(`${where}: baseUrl ${baseUrl} has origin ${baseOrigin}, but plan profile ${profile.id} sends its bearer only to origin ${resourceOrigin}`);
+    }
   }
   const declared = target.capabilities ?? {};
   checkSamplingRange(declared, entry);

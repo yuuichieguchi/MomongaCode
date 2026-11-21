@@ -66,7 +66,7 @@ export { chainOf, credentialEnvNames, outputBoundFieldOf, plainHttpWarningText, 
 export { PROJECT_MANDATE_FILE, PROJECT_MANDATE_USER_ONLY_KEYS, loadProjectMandate, parseProjectMandate, projectMandateState } from './project-mandate.ts';
 export type { ProjectMandate, ProjectMandateInput, ProjectMandateState, ProjectMandateStateInput } from './project-mandate.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
-export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileCatalogReasoning, PlanProfileCatalogUnusableRule, PlanProfileOAuth, PlanProfileOAuthClient, PlanProfileRequestWire, PlanRequestEncoding } from './plan-profiles.ts';
+export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileCatalogReasoning, PlanProfileCatalogUnusableRule, PlanProfileExternalCli, PlanProfileOAuth, PlanProfileOAuthClient, PlanProfileRequestWire, PlanRequestEncoding } from './plan-profiles.ts';
 export type { PlanProfiles, ResolveModelsOptions, ResolvedConnection, ResolvedModel, ResolvedModels } from './models.ts';
 export { firstOfferedEndpointForm, registeredIds, registeredServer, registeredServers, requireOfferedEndpointForm, serverRegistryOf } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';

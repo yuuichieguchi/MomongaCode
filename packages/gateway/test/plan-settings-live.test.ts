@@ -107,7 +107,7 @@ const remoteOAuth: Partial<PlanProfileOAuth> = {
 
 const profileWith = (oauth: Partial<PlanProfileOAuth>): PlanProfile => {
   const shipped = planProfileOf(PROFILE_ID);
-  return { ...shipped, oauth: { ...shipped.oauth, ...oauth }, targetDefaults: { ...shipped.targetDefaults, baseUrl: REMOTE_RESOURCE } };
+  return { ...shipped, oauth: { ...shipped.oauth!, ...oauth }, targetDefaults: { ...shipped.targetDefaults, baseUrl: REMOTE_RESOURCE } };
 };
 
 const pinnedTargets = (accounts: readonly string[]) =>

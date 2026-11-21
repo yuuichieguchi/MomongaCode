@@ -6,14 +6,27 @@ import {
   ERROR_FALLBACKS,
   ERROR_TYPES,
   INPUT_CONTENT_KINDS,
+  REASONING_EFFORTS,
   REQUEST_TOOL_KINDS,
   SYSTEM_ROLES,
   TOOL_PLACEMENTS,
 } from '@momonga/protocol';
-import type { CapabilitiesCore, ErrorRules, PlanProfileMessages, TargetBilling } from '@momonga/protocol';
+import type { CapabilitiesCore, ErrorRules, PlanProfileMessages, ReasoningEffort, TargetBilling } from '@momonga/protocol';
 import { describeSchemaErrors } from './schema-errors.ts';
 
-export type PlanProfileCapabilities = Partial<Pick<CapabilitiesCore, 'sampling' | 'outputBoundField' | 'systemRole' | 'toolPlacement' | 'inputKinds'>>;
+export type PlanProfileCapabilities = Partial<Pick<CapabilitiesCore, 'contextWindow' | 'maxOutputTokens' | 'reasoning' | 'sampling' | 'outputBoundField' | 'systemRole' | 'toolPlacement' | 'inputKinds'>>;
+
+export type PlanProfileExternalCli = {
+  command: string;
+  statusArgs: string[];
+  loginCommand: string;
+  installHint: string;
+  defaultContextWindow: number;
+  defaultMaxOutputTokens: number;
+  reasoningEfforts: ReasoningEffort[];
+  defaultReasoningEffort: ReasoningEffort;
+  models: Array<{ slug: string; displayName: string }>;
+};
 
 export type PlanProfileOAuthClient =
   | { kind: 'dynamic_registration'; registrationClientId: string; registrationParameters: { agentNameHint: string; hostId: string } }
@@ -68,7 +81,8 @@ export type PlanProfile = {
   usageUrl: string;
   loginLabel: string;
   messages: PlanProfileMessages;
-  oauth: PlanProfileOAuth;
+  oauth?: PlanProfileOAuth;
+  externalCli?: PlanProfileExternalCli;
   targetDefaults: { baseUrl: string; billing: TargetBilling; capabilities: PlanProfileCapabilities };
   requestWire: PlanProfileRequestWire;
   errorRules: ErrorRules;
@@ -190,12 +204,36 @@ const PLAN_PROFILE_SCHEMA = {
       required: ['issuer', 'discoveryUrl', 'authorizeUrl', 'tokenUrl', 'jwksUrl', 'resource', 'sendResource', 'identityScopes', 'useScopes', 'requiredScope', 'client', 'callbackPath', 'idTokenAlgorithms'],
       additionalProperties: false,
     },
+    externalCli: object({
+      command: NON_EMPTY_STRING,
+      statusArgs: { type: 'array', items: NON_EMPTY_STRING },
+      loginCommand: NON_EMPTY_STRING,
+      installHint: NON_EMPTY_STRING,
+      defaultContextWindow: { type: 'integer', minimum: 1 },
+      defaultMaxOutputTokens: { type: 'integer', minimum: 1 },
+      reasoningEfforts: { type: 'array', items: { enum: [...REASONING_EFFORTS] }, minItems: 1, uniqueItems: true },
+      defaultReasoningEffort: { enum: [...REASONING_EFFORTS] },
+      models: { type: 'array', items: object({ slug: NON_EMPTY_STRING, displayName: NON_EMPTY_STRING }), minItems: 1 },
+    }),
     targetDefaults: object({
       baseUrl: TRANSPORT_URL,
       billing: { const: 'plan' },
       capabilities: {
         type: 'object',
         properties: {
+          contextWindow: { type: 'integer', minimum: 1 },
+          maxOutputTokens: { type: 'integer', minimum: 1 },
+          reasoning: {
+            type: 'object',
+            properties: {
+              control: { const: 'reasoning_effort' },
+              lowest: { enum: [...REASONING_EFFORTS] },
+              efforts: { type: 'array', items: { enum: [...REASONING_EFFORTS] }, minItems: 1, uniqueItems: true },
+              default: { enum: [...REASONING_EFFORTS] },
+            },
+            required: ['control', 'lowest'],
+            additionalProperties: false,
+          },
           sampling: SAMPLING_NONE_SCHEMA,
           outputBoundField: { enum: ['max_output_tokens', 'none'] },
           systemRole: { enum: [...SYSTEM_ROLES] },
@@ -225,7 +263,7 @@ const PLAN_PROFILE_SCHEMA = {
       reasoning: object({ effortsPath: NON_EMPTY_STRINGS, defaultPath: NON_EMPTY_STRINGS }),
     }),
   },
-  required: ['id', 'adapter', 'displayName', 'usageUrl', 'loginLabel', 'messages', 'oauth', 'targetDefaults', 'requestWire', 'errorRules', 'catalog'],
+  required: ['id', 'adapter', 'displayName', 'usageUrl', 'loginLabel', 'messages', 'targetDefaults', 'requestWire', 'errorRules', 'catalog'],
   additionalProperties: false,
 } as const;
 
@@ -234,14 +272,21 @@ const validatePlanProfile: ProductValidator<PlanProfile> = defineProductSchema('
 export const assertPlanProfile = (value: unknown, source: string): PlanProfile => {
   const verdict = validatePlanProfile(value);
   if (!verdict.valid) throw new Error(`${source}: invalid plan profile at ${describeSchemaErrors(verdict.errors)}`);
-  const { oauth, targetDefaults } = verdict.value;
+  const { oauth, externalCli, targetDefaults } = verdict.value;
+  if ((oauth === undefined) === (externalCli === undefined)) {
+    throw new Error(`${source}: invalid plan profile: must define exactly one of oauth or externalCli`);
+  }
   const transports: Array<[string, string]> = [
-    ['oauth.issuer', oauth.issuer],
-    ['oauth.discoveryUrl', oauth.discoveryUrl],
-    ['oauth.authorizeUrl', oauth.authorizeUrl],
-    ['oauth.tokenUrl', oauth.tokenUrl],
-    ['oauth.jwksUrl', oauth.jwksUrl],
-    ['oauth.resource', oauth.resource],
+    ...(oauth === undefined
+      ? []
+      : ([
+          ['oauth.issuer', oauth.issuer],
+          ['oauth.discoveryUrl', oauth.discoveryUrl],
+          ['oauth.authorizeUrl', oauth.authorizeUrl],
+          ['oauth.tokenUrl', oauth.tokenUrl],
+          ['oauth.jwksUrl', oauth.jwksUrl],
+          ['oauth.resource', oauth.resource],
+        ] as Array<[string, string]>)),
     ['targetDefaults.baseUrl', targetDefaults.baseUrl],
   ];
   for (const [field, url] of transports) {
@@ -552,9 +597,124 @@ const GROK_PROFILE_DATA = {
   },
 } as const satisfies Record<string, unknown>;
 
+const CLAUDE_CODE_PROFILE_DATA = {
+  id: 'claude-code',
+  adapter: 'open-responses',
+  displayName: 'Claude Code',
+  usageUrl: 'https://claude.ai/settings/usage',
+  loginLabel: 'Use Claude Code',
+  messages: {
+    identityLabel: 'Claude Code',
+    pickerLabel: 'Anthropic (Claude Code subscription)',
+    apiKeyLabel: 'Anthropic (API key)',
+    inviteTitle: 'Use your Claude Code plan in this app.',
+    description: 'Complete eligible AI requests in this app through your local Claude Code CLI login.',
+    planInUseLabel: 'Using Claude Code plan',
+    manageUsageLabel: 'Manage usage',
+    usageLimitMessage: 'Usage limit reached — Review your plan or usage in Claude settings.',
+    signInExpiredMessage: 'Claude Code sign-in required',
+    signInRequiredMessage: 'Not signed in to Claude Code',
+    planNotEnabledMessage: "Claude Code plan use isn't enabled",
+    notEligibleMessage: 'Claude Code plan usage is unavailable for the selected account or subscription tier.',
+    firstSignIn: {
+      title: "You're using your Claude Code plan",
+      body: 'Eligible usage in this app runs through your local Claude Code CLI login. Manage usage in your Claude settings.',
+      action: 'Got it',
+    },
+  },
+  externalCli: {
+    command: 'claude',
+    statusArgs: ['auth', 'status'],
+    loginCommand: 'claude auth login',
+    installHint: 'Install Claude Code (https://code.claude.com/docs) and run claude auth login',
+    defaultContextWindow: 200000,
+    defaultMaxOutputTokens: 16384,
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultReasoningEffort: 'medium',
+    models: [
+      { slug: 'haiku', displayName: 'Claude Haiku' },
+      { slug: 'sonnet', displayName: 'Claude Sonnet' },
+      { slug: 'opus', displayName: 'Claude Opus' },
+      { slug: 'fable', displayName: 'Claude Fable' },
+    ],
+  },
+  targetDefaults: {
+    baseUrl: 'https://api.anthropic.com/v1',
+    billing: 'plan',
+    capabilities: {
+      contextWindow: 200000,
+      maxOutputTokens: 16384,
+      outputBoundField: 'none',
+      systemRole: 'developer',
+      toolPlacement: 'top_level',
+      inputKinds: { content: [], tools: ['function'] },
+      reasoning: {
+        control: 'reasoning_effort',
+        lowest: 'low',
+        efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+        default: 'medium',
+      },
+    },
+  },
+  requestWire: { encoding: 'identity', sessionHeaders: [] },
+  errorRules: [
+    {
+      match: { kind: 'status', status: 401 },
+      type: 'invalid_request',
+      code: 'plan_credential_rejected',
+      retryable: false,
+      verdict: 'failure',
+      fallback: 'stop',
+      credential: 'rejected',
+      message: 'The sign-in of this account has expired',
+      cause: 'Claude Code CLI reported an authentication failure; run claude auth login',
+    },
+    {
+      match: { kind: 'status', status: 403 },
+      type: 'invalid_request',
+      code: 'plan_not_eligible',
+      retryable: false,
+      verdict: 'failure',
+      fallback: 'stop',
+      credential: 'keep',
+      message: 'This account cannot use its plan here. Sign in with another account, or use a model with an API key',
+    },
+    {
+      match: { kind: 'status', status: 429 },
+      type: 'too_many_requests',
+      code: 'plan_usage_limit',
+      retryable: false,
+      verdict: 'neutral',
+      fallback: 'stop',
+      credential: 'pause',
+      message: 'This account has reached the usage its plan allows for now. Wait for the usage to reset, or manage the usage in the Claude settings',
+    },
+    {
+      match: { kind: 'status', status: 503 },
+      type: 'server_error',
+      code: 'plan_route_unavailable',
+      retryable: true,
+      verdict: 'failure',
+      fallback: 'next',
+      credential: 'keep',
+      message: 'Try again later',
+    },
+  ],
+  catalog: {
+    path: '/models',
+    listKey: 'data',
+    filter: { field: 'object', equals: 'model' },
+    unusableWhen: { field: 'disabled', equals: true, reason: 'unavailable' },
+    idKey: 'id',
+    labelKey: 'display_name',
+    reasoning: { effortsPath: ['reasoning_efforts'], defaultPath: ['default_reasoning_effort'] },
+  },
+} as const satisfies Record<string, unknown>;
+
 const SHIPPED_PROFILES: readonly PlanProfile[] = [
   assertPlanProfile(structuredClone(CHATGPT_PROFILE_DATA), 'shipped plan profile chatgpt'),
   assertPlanProfile(structuredClone(GROK_PROFILE_DATA), 'shipped plan profile grok'),
+  assertPlanProfile(structuredClone(CLAUDE_CODE_PROFILE_DATA), 'shipped plan profile claude-code'),
 ];
 
 export const PLAN_PROFILES: Readonly<Record<string, PlanProfile>> = Object.fromEntries(SHIPPED_PROFILES.map((profile) => [profile.id, profile]));

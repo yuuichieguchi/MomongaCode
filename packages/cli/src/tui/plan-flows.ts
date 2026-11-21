@@ -443,6 +443,18 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const providerFlowOf = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<Acted> => {
     for (const problem of listed.listProblems ?? []) ports.info(listProblemLine(problem));
+    if (profile.externalCli !== undefined) {
+      const account = accountsOf(profile.id, listed.accounts)[0];
+      ports.closeScreen();
+      if (account?.state === 'active') {
+        ports.info(`${profile.messages.planInUseLabel}${account.email === undefined ? '' : ` · ${account.email}`}. Run /model to add or switch a model.`);
+        ports.info(`${profile.messages.manageUsageLabel}: ${profile.usageUrl}`);
+      } else {
+        ports.info(account?.cause ?? `${profile.messages.signInRequiredMessage}. Run ${profile.externalCli.loginCommand}`);
+        ports.info(profile.externalCli.installHint);
+      }
+      return undefined;
+    }
     if (accountsOf(profile.id, listed.accounts).length === 0) return signInFlow(profile, nextAccountLabel(profile.id, listed.accounts), false);
     await accountPicker(profile, listed);
     return undefined;

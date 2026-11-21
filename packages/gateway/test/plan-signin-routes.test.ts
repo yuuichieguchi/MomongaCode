@@ -32,18 +32,18 @@ describe('sign-in begin builds the authorization URL from the profile (P5b, 5.1,
     const begun = await begin(gateway);
     expect(begun.status).toBe(200);
     const url = new URL(begun.body.authorizationUrl);
-    expect(`${url.origin}${url.pathname}`).toBe(gateway.profile.oauth.authorizeUrl);
+    expect(`${url.origin}${url.pathname}`).toBe(gateway.profile.oauth!.authorizeUrl);
     const params = Object.fromEntries(url.searchParams);
     expect(params).toMatchObject({
       client_id: 'dynamic_agent_client',
       agent_name_hint: 'MomongaCode',
       response_type: 'code',
       redirect_uri: `http://127.0.0.1:${CALLBACK_PORT}/auth/callback`,
-      resource: gateway.profile.oauth.resource,
+      resource: gateway.profile.oauth!.resource,
       code_challenge_method: 'S256',
       state: begun.body.state,
     });
-    expect(params['scope']?.split(' ').sort()).toEqual([...gateway.profile.oauth.identityScopes, ...gateway.profile.oauth.useScopes].sort());
+    expect(params['scope']?.split(' ').sort()).toEqual([...gateway.profile.oauth!.identityScopes, ...gateway.profile.oauth!.useScopes].sort());
     expect(params['nonce']).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(params['state']).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(params['code_challenge']).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -220,7 +220,7 @@ describe('every way complete ends other than signed_in, plan_disabled and retry 
 
   it('plan_disabled: installs and reports it when the required scope was not granted', async () => {
     const gateway = await startPlanGateway();
-    gateway.auth.withheldScopes.push(gateway.profile.oauth.requiredScope);
+    gateway.auth.withheldScopes.push(gateway.profile.oauth!.requiredScope);
     const { completed } = await signIn(gateway);
     expect(completed.status).toBe(200);
     expect(completed.body).toMatchObject({ outcome: 'plan_disabled', account: { label: ACCOUNT, state: 'plan_disabled' } });

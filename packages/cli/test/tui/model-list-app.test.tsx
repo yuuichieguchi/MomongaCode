@@ -253,7 +253,7 @@ describe('the rows of the /model list', () => {
 
 const SOL = 'chatgpt/gpt-6.2-sol';
 const EFFORT_HINT = 'up/down to move · enter to choose · tab: this session only · esc: go back';
-const EFFORT_BLOCK = ['Reasoning effort', '  1. low', '› 2. medium  in use', '  3. high', '  4. xhigh', EFFORT_HINT].join('\n');
+const EFFORT_BLOCK = ['Reasoning effort', '  1. low', '› 2. medium  in use', '  3. high', '  4. xhigh', '  5. max', EFFORT_HINT].join('\n');
 const LOADING_BLOCK = 'Loading models…';
 const UNAVAILABLE_MESSAGE = 'the model gpt-6-luna cannot be used yet: the settings give no context window and output limit for it';
 const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up through its Model settings… row.';
@@ -933,7 +933,7 @@ describe('a server model whose reasoning control comes from the listing and whos
       await openList(app);
       app.stdin.write(`${KEYS.down}${KEYS.enter}`);
       const picker = await untilFrame(app, pickerShown);
-      expect(listBlock(picker, 'Reasoning effort')).toBe(['Reasoning effort', '  1. none', '  2. minimal', '  3. low', '› 4. medium  in use', '  5. high', '  6. xhigh', EFFORT_HINT].join('\n'));
+      expect(listBlock(picker, 'Reasoning effort')).toBe(['Reasoning effort', '  1. none', '  2. minimal', '  3. low', '› 4. medium  in use', '  5. high', '  6. xhigh', '  7. max', EFFORT_HINT].join('\n'));
       await settled();
       app.stdin.write(`${moves}${KEYS.enter}`);
       await untilOutput(app, `model: ollama-127.0.0.1-18477/think-c (effort: ${level}); applies from the next run`);

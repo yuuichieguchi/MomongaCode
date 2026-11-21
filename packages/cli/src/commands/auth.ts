@@ -168,6 +168,23 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   }
   const profile = await chosenProfile(ports, listed, options.provider);
   if (profile === undefined) return EXIT_USAGE;
+  if (profile.externalCli !== undefined) {
+    const account = savedUnder(listed, profile.id, profile.id);
+    if (account?.state === 'active') {
+      const inUse = account.pinnedBy.length > 0;
+      print(ports.stdout, [
+        signedInLine(account),
+        ...(inUse ? [] : [messageOf('accountWithoutModel', 'cli', { provider: profile.id, account: account.label })]),
+        `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`,
+      ]);
+      return EXIT_OK;
+    }
+    print(ports.stderr, [
+      account?.cause ?? `${profile.messages.signInRequiredMessage}. Run ${profile.externalCli.loginCommand}`,
+      profile.externalCli.installHint,
+    ]);
+    return EXIT_FAILURE;
+  }
   const account = options.account ?? nextAccountLabel(profile.id, listed.accounts);
   const saved = savedUnder(listed, profile.id, account);
   const savedAction = saved === undefined ? undefined : savedAccountAction(saved);

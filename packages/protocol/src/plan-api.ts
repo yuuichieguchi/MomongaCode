@@ -123,7 +123,9 @@ export type PlanAccountView = {
   cause?: string;
 };
 
-export type PlanProfileView = { id: string; usageUrl: string; messages: PlanProfileMessages; loginLabel: string; usesHostIdentity?: boolean };
+export type PlanExternalCliView = { command: string; loginCommand: string; installHint: string };
+
+export type PlanProfileView = { id: string; usageUrl: string; messages: PlanProfileMessages; loginLabel: string; usesHostIdentity?: boolean; externalCli?: PlanExternalCliView };
 
 export type PlanListProblem = { file: string; cause: string };
 

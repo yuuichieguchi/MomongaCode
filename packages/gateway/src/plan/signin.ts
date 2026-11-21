@@ -21,7 +21,7 @@ import { revokeRefreshToken } from './revoke.ts';
 import type { PlanFetch, PlanSleep, RefreshTokens } from './refresh.ts';
 import { createSerial } from './serial.ts';
 import { OAUTH_ACCESS_DENIED, OAUTH_INVALID_GRANT } from './oauth-wire.ts';
-import { planProfileNamed } from './profiles.ts';
+import { planProfileNamed, requireOAuth } from './profiles.ts';
 import type { PlanSessions, Registration } from './session.ts';
 
 export type SignInSaved = { outcome: typeof SIGNED_IN_OUTCOME | typeof PLAN_DISABLED_STATE; ref: NamedPlanAccountRef; firstSignIn: boolean };
@@ -148,7 +148,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const verifierOf = (profile: PlanProfile): IdTokenVerifier => {
     const existing = verifiers.get(profile.id);
     if (existing !== undefined) return existing;
-    const created = createIdTokenVerifier({ jwksUrl: profile.oauth.jwksUrl, outbound: options.outbound, lifetime: options.lifetime, sleep: options.sleep, clock: options.clock });
+    const created = createIdTokenVerifier({ jwksUrl: requireOAuth(profile).jwksUrl, outbound: options.outbound, lifetime: options.lifetime, sleep: options.sleep, clock: options.clock });
     verifiers.set(profile.id, created);
     return created;
   };
@@ -228,7 +228,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
       state: randomToken(PLAN_SIGN_IN_DEFAULTS.randomStateBytes),
       nonce: randomToken(PLAN_SIGN_IN_DEFAULTS.randomStateBytes),
       verifier: randomToken(PLAN_SIGN_IN_DEFAULTS.verifierBytes),
-      redirectUri: `http://127.0.0.1:${request.port}${profile.oauth.callbackPath}`,
+      redirectUri: `http://127.0.0.1:${request.port}${requireOAuth(profile).callbackPath}`,
       port: request.port,
       startedAt: options.clock.now(),
       expiresAt: options.clock.now() + PLAN_SIGN_IN_DEFAULTS.attemptTtlMs,
@@ -253,7 +253,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     if (!Number.isInteger(request.port) || request.port < MIN_PORT || request.port > MAX_PORT) throw invalidRequest('invalid_port', `the port must be an integer from ${MIN_PORT} to ${MAX_PORT}`, 'port');
     const attempt = await hostGate.run(() => beginAttempt(profile, request, signal));
     const { saved, hostId } = attempt;
-    const oauth = profile.oauth;
+    const oauth = requireOAuth(profile);
     const url = new URL(oauth.authorizeUrl);
     const clientParams: Array<[string, string]> =
       oauth.client.kind === 'dynamic_registration'
@@ -281,17 +281,18 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const exchange = async (fetch: PlanFetch, attempt: Attempt, clientId: string, code: string, progress: Progress): Promise<RefreshTokens | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON }> => {
     const { profile } = attempt;
+    const oauth = requireOAuth(profile);
     const form: Record<string, string> = {
       grant_type: 'authorization_code',
       client_id: clientId,
       code,
       code_verifier: attempt.verifier,
       redirect_uri: attempt.redirectUri,
-      ...(profile.oauth.sendResource ? { resource: profile.oauth.resource } : {}),
+      ...(oauth.sendResource ? { resource: oauth.resource } : {}),
     };
     const answer = await boundedSend(
       { fetch, sleep: options.sleep },
-      profile.oauth.tokenUrl,
+      oauth.tokenUrl,
       { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(form).toString() },
       PLAN_SIGN_IN_DEFAULTS.exchangeTimeoutMs,
       PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
@@ -432,13 +433,14 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     if (error !== null || code === null) throw signInFailure(PLAN_SIGN_IN_FAILURE.authorizationFailed, profile, { error: shownOAuthError(error ?? undefined) });
     progress.endStep = STEP_REGISTRATION;
     const returned = query.get('client_id');
+    const oauth = requireOAuth(profile);
     let clientId: string;
-    if (profile.oauth.client.kind === 'dynamic_registration') {
+    if (oauth.client.kind === 'dynamic_registration') {
       if (attempt.saved === undefined && returned === null) throw signInFailure(PLAN_SIGN_IN_FAILURE.registrationIncomplete, profile);
       if (attempt.saved !== undefined && returned !== null && returned !== attempt.saved.clientId) throw signInFailure(PLAN_SIGN_IN_FAILURE.clientMismatch, profile);
       clientId = attempt.saved?.clientId ?? returned ?? '';
     } else {
-      const expectedClientId = attempt.saved?.clientId ?? profile.oauth.client.clientId;
+      const expectedClientId = attempt.saved?.clientId ?? oauth.client.clientId;
       if (returned !== null && returned !== expectedClientId) throw signInFailure(PLAN_SIGN_IN_FAILURE.clientMismatch, profile);
       clientId = expectedClientId;
     }
@@ -455,7 +457,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     if (idToken === undefined) throw signInFailure(PLAN_SIGN_IN_FAILURE.tokenResponseInvalid, profile, { reason: NO_ID_TOKEN_REASON });
     progress.facts = idTokenFacts(idToken);
     progress.endStep = STEP_ID_TOKEN;
-    const verdict = await verifierOf(profile)(idToken, { issuer: profile.oauth.issuer, clientId, nonce: attempt.nonce, algorithms: profile.oauth.idTokenAlgorithms });
+    const verdict = await verifierOf(profile)(idToken, { issuer: oauth.issuer, clientId, nonce: attempt.nonce, algorithms: oauth.idTokenAlgorithms });
     if (verdict.kind === 'keys_unavailable') throw signInFailure(PLAN_SIGN_IN_FAILURE.jwksUnavailable, profile);
     if (verdict.kind === 'invalid') throw signInFailure(PLAN_SIGN_IN_FAILURE.idTokenInvalid, profile, { check: verdict.check });
     progress.endStep = STEP_IDENTITY;

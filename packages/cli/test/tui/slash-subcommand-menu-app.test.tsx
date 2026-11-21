@@ -41,6 +41,7 @@ describe('slashMenuEntries after a space', () => {
       '/effort medium',
       '/effort high',
       '/effort xhigh',
+      '/effort max',
       '/effort reset',
     ]);
     expect(slashMenuEntries('/context guideline l', DEFAULT_SLASH_COMMANDS)?.map((entry) => entry.key)).toEqual(['/context guideline list', '/context guideline rollback']);

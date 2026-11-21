@@ -232,13 +232,17 @@ const isProfileMessages = (value: unknown): boolean =>
   isRecord(value['firstSignIn']) &&
   ['title', 'body', 'action'].every((key) => isRecord(value['firstSignIn']) && isString(value['firstSignIn'][key]));
 
+const isExternalCliView = (value: unknown): boolean =>
+  isRecord(value) && isString(value['command']) && isString(value['loginCommand']) && isString(value['installHint']);
+
 const isProfileView = (value: unknown): value is PlanProfileView =>
   isRecord(value) &&
   isString(value['id']) &&
   isString(value['usageUrl']) &&
   isString(value['loginLabel']) &&
   isProfileMessages(value['messages']) &&
-  (value['usesHostIdentity'] === undefined || typeof value['usesHostIdentity'] === 'boolean');
+  (value['usesHostIdentity'] === undefined || typeof value['usesHostIdentity'] === 'boolean') &&
+  (value['externalCli'] === undefined || isExternalCliView(value['externalCli']));
 
 const isAccountView = (value: unknown): value is PlanAccountView =>
   isRecord(value) &&

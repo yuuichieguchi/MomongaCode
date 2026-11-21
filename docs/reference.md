@@ -15,7 +15,7 @@ momonga [options] [prompt]
 | `--output-format <format>` | output format of --print and attach; values: `text`, `json`, `stream-json`; default: `"text"` |
 | `--permission-mode <mode>` | permission mode of the session; values: `manual`, `acceptEdits`, `plan`, `auto`, `bypassPermissions` |
 | `--model <model>` | the model of the session, for example devstral-small-2 (momonga models lists them; /model switches it in an interactive session) |
-| `--effort <level>` | the reasoning effort the session asks of its model, sent only to a model that declares a reasoning control and moved to the nearest level it accepts (/effort changes it in an interactive session); values: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
+| `--effort <level>` | the reasoning effort the session asks of its model, sent only to a model that declares a reasoning control and moved to the nearest level it accepts (/effort changes it in an interactive session); values: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `--dangerously-skip-permissions` | run in bypassPermissions mode |
 | `--sandbox-network <setting>` | the network of a sandboxed command in this session: deny, ask or allow; wins over the setting sandboxNetwork; values: `deny`, `ask`, `allow` |
 | `--skill <name>` | run the prompt with this skill activated |
@@ -686,7 +686,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `models` | object |  |  | user |
 | `models.connections` | array of object or object or object or object or any value or any value or object |  |  | user |
 | `models.start` | string (not empty) |  |  | user |
-| `models.effort` | `"none"` or `"minimal"` or `"low"` or `"medium"` or `"high"` or `"xhigh"` |  |  | user |
+| `models.effort` | `"none"` or `"minimal"` or `"low"` or `"medium"` or `"high"` or `"xhigh"` or `"max"` |  |  | user |
 | `models.fallback` | array of string (not empty) |  |  | user |
 | `models.servers` | map of object |  |  | user |
 | `models.servers.<name>.command` | string (not empty) |  |  | user |

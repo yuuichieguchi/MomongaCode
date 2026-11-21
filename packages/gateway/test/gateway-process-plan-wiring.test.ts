@@ -63,7 +63,7 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
     const auth = await startFakeSiwcAuth({ resource: loopback });
     registerCleanup(() => auth.close());
     const shipped = profileFor(auth);
-    const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
+    const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth!, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
     fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
     const store = createEncryptedCredentialStore({
       lock: testKernelLock(),
@@ -88,7 +88,7 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
       redact: () => undefined,
       warn: () => undefined,
     });
-    const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth.resource });
+    const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth!.resource });
     installed.add(signIn.tokens.access_token);
     await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
     await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens }, new AbortController().signal);

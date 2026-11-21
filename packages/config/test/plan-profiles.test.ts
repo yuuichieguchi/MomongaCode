@@ -14,9 +14,10 @@ describe('the shipped plan profiles', () => {
   });
 
   it('holds the shipped profiles keyed by their ids', () => {
-    expect(Object.keys(PLAN_PROFILES)).toEqual(['chatgpt', 'grok']);
+    expect(Object.keys(PLAN_PROFILES)).toEqual(['chatgpt', 'grok', 'claude-code']);
     expect(profile().id).toBe('chatgpt');
     expect(planProfileOf('grok').id).toBe('grok');
+    expect(planProfileOf('claude-code').id).toBe('claude-code');
   });
 
   it('names the adapter that carries the route for every shipped profile', () => {
@@ -55,13 +56,13 @@ describe('the OAuth data of the ChatGPT profile', () => {
   });
 
   it('keeps every OAuth endpoint on the issuer origin', () => {
-    const { oauth } = profile();
+    const oauth = profile().oauth!;
     const origin = new URL(oauth.issuer).origin;
     for (const url of [oauth.discoveryUrl, oauth.authorizeUrl, oauth.tokenUrl, oauth.jwksUrl]) expect(new URL(url).origin).toBe(origin);
   });
 
   it('requires the use scope among the requested scopes', () => {
-    const { oauth } = profile();
+    const oauth = profile().oauth!;
     expect(oauth.useScopes).toContain(oauth.requiredScope);
   });
 });
@@ -88,7 +89,8 @@ describe('what the route cannot carry, as data', () => {
   });
 
   it('binds the default base URL to the resource origin', () => {
-    const { targetDefaults, oauth } = profile();
+    const { targetDefaults } = profile();
+    const oauth = profile().oauth!;
     expect(new URL(targetDefaults.baseUrl).origin).toBe(new URL(oauth.resource).origin);
   });
 });
@@ -265,11 +267,12 @@ describe('the Grok profile', () => {
       callbackPort: 56121,
       idTokenAlgorithms: ['ES256'],
     });
-    const origin = new URL(grok().oauth.issuer).origin;
-    for (const url of [grok().oauth.discoveryUrl, grok().oauth.authorizeUrl, grok().oauth.tokenUrl, grok().oauth.jwksUrl]) {
+    const grokOAuth = grok().oauth!;
+    const origin = new URL(grokOAuth.issuer).origin;
+    for (const url of [grokOAuth.discoveryUrl, grokOAuth.authorizeUrl, grokOAuth.tokenUrl, grokOAuth.jwksUrl]) {
       expect(new URL(url).origin).toBe(origin);
     }
-    expect(grok().oauth.useScopes).toContain(grok().oauth.requiredScope);
+    expect(grokOAuth.useScopes).toContain(grokOAuth.requiredScope);
   });
 
   it('states the target defaults, plain identity request wire, and catalog shape', () => {
@@ -293,7 +296,7 @@ describe('the Grok profile', () => {
       labelKey: 'id',
       reasoning: { effortsPath: ['capabilities', 'reasoning_effort'], defaultPath: ['capabilities', 'default_reasoning_effort'] },
     });
-    expect(new URL(grok().targetDefaults.baseUrl).origin).toBe(new URL(grok().oauth.resource).origin);
+    expect(new URL(grok().targetDefaults.baseUrl).origin).toBe(new URL(grok().oauth!.resource).origin);
   });
 
   it('states user-facing labels, usage URL, and status error rules', () => {
@@ -312,5 +315,37 @@ describe('the Grok profile', () => {
     expect(statusRule(403)).toMatchObject({ type: 'invalid_request', code: 'plan_not_eligible', retryable: false, verdict: 'failure', fallback: 'stop', credential: 'keep' });
     expect(statusRule(429)).toMatchObject({ type: 'too_many_requests', code: 'plan_usage_limit', retryable: false, verdict: 'neutral', fallback: 'stop', credential: 'pause' });
     expect(statusRule(503)).toMatchObject({ type: 'server_error', code: 'plan_route_unavailable', retryable: true, verdict: 'failure', fallback: 'next', credential: 'keep' });
+  });
+});
+
+describe('the Claude Code external CLI profile', () => {
+  const claude = (): PlanProfile => planProfileOf('claude-code');
+
+  it('uses externalCli with haiku, sonnet, opus, fable and low..max reasoning efforts', () => {
+    expect(claude().oauth).toBeUndefined();
+    expect(claude().externalCli).toEqual({
+      command: 'claude',
+      statusArgs: ['auth', 'status'],
+      loginCommand: 'claude auth login',
+      installHint: 'Install Claude Code (https://code.claude.com/docs) and run claude auth login',
+      defaultContextWindow: 200000,
+      defaultMaxOutputTokens: 16384,
+      reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      defaultReasoningEffort: 'medium',
+      models: [
+        { slug: 'haiku', displayName: 'Claude Haiku' },
+        { slug: 'sonnet', displayName: 'Claude Sonnet' },
+        { slug: 'opus', displayName: 'Claude Opus' },
+        { slug: 'fable', displayName: 'Claude Fable' },
+      ],
+    });
+    expect(claude().targetDefaults.capabilities.reasoning).toEqual({
+      control: 'reasoning_effort',
+      lowest: 'low',
+      efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+      default: 'medium',
+    });
+    expect(claude().usageUrl).toBe('https://claude.ai/settings/usage');
+    expect(claude().messages.pickerLabel).toBe('Anthropic (Claude Code subscription)');
   });
 });

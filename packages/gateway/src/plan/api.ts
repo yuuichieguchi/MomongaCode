@@ -26,12 +26,15 @@ import { PLAN_OPERATION_LIMIT, limitFailureOf, withinRequestLimit } from './requ
 import type { AccountView } from './auth-source.ts';
 import { unusableReasonOf } from './catalog.ts';
 import { CONFLICT_STATUS, INVALID_REQUEST_STATUS, RETRYABLE_STATUS } from './http-status.ts';
-import { planProfileNamed } from './profiles.ts';
+import { planProfileNamed, requireOAuth } from './profiles.ts';
 import type { PlanCatalog } from './catalog.ts';
 import { ownEntry } from './own-entry.ts';
 import { PlanAccountNotSelectableError } from './session.ts';
 import type { PlanSessions } from './session.ts';
 import type { PlanSignIn } from './signin.ts';
+import { checkExternalCliStatus } from '../adapters/cli-subprocess/status.ts';
+import type { ExternalCliStatusExec } from '../adapters/cli-subprocess/status.ts';
+import { createExternalCliStatusExec } from '../process-ports.ts';
 
 export type PlanTargetRef = PlanAccountRef & { name: string };
 
@@ -58,6 +61,7 @@ export type PlanApiOptions = {
   home: string;
   settingsFile: string;
   lock: KernelLockMechanism;
+  externalCliStatusExec?: ExternalCliStatusExec;
 };
 
 const stringField = (body: unknown, name: string): string => {
@@ -165,6 +169,24 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     await Promise.all(referenced.map((ref) => sessions.load(ref, signal)));
     const known = await sessions.known(signal);
     const listProblems = sessions.listProblems();
+    const statusExec = options.externalCliStatusExec ?? createExternalCliStatusExec();
+    const externalAccounts = await Promise.all(
+      Object.values(options.profiles)
+        .filter((profile) => profile.externalCli !== undefined)
+        .map(async (profile): Promise<PlanAccountView> => {
+          const status = await checkExternalCliStatus(profile.externalCli!, signal, statusExec);
+          const pinned = targets.filter((target) => target.profile === profile.id && (target.account === undefined || target.account === profile.id)).map((target) => target.name);
+          return {
+            profile: profile.id,
+            label: profile.id,
+            ...(status.state === 'active' && status.email !== undefined ? { email: status.email } : {}),
+            state: status.state === 'active' ? 'active' : 'needs_sign_in',
+            active: true,
+            pinnedBy: pinned,
+            ...(status.state === 'active' ? {} : { cause: status.cause }),
+          };
+        }),
+    );
     return {
       ...(listProblems.length === 0 ? {} : { listProblems }),
       profiles: Object.values(options.profiles).map((profile) => ({
@@ -172,13 +194,25 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
         usageUrl: profile.usageUrl,
         messages: profile.messages,
         loginLabel: profile.loginLabel,
-        usesHostIdentity: profile.oauth.client.kind === 'dynamic_registration',
+        usesHostIdentity: profile.oauth?.client.kind === 'dynamic_registration',
+        ...(profile.externalCli === undefined
+          ? {}
+          : {
+              externalCli: {
+                command: profile.externalCli.command,
+                loginCommand: profile.externalCli.loginCommand,
+                installHint: profile.externalCli.installHint,
+              },
+            }),
       })),
-      accounts: known.flatMap((entry) => {
+      accounts: [
+        ...known.flatMap((entry) => {
         const ref = { profile: entry.profile, account: entry.account };
         const view = accountViewOf(ref, entry.view, active.get(entry.profile) === entry.account, pinnedBy(ref, targets), options.clock.now());
         return view === undefined ? [] : [view];
       }),
+        ...externalAccounts,
+      ],
     };
   };
 
@@ -186,6 +220,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     const account = accountLabelOf(label);
     if (profile === undefined || profile === '') throw invalidRequest('invalid_query', 'the profile query parameter is required', 'profile');
     const chosen = profileOf(profile);
+    if (chosen.externalCli !== undefined) return { profile: chosen, account };
     const ref = { profile: chosen.id, account };
     if ((await sessions.registration(ref, signal)) === undefined) throw accountNotFound(ref);
     return { profile: chosen, account };
@@ -201,6 +236,19 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
   const models = (account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse> =>
     translated(async () => {
       const ref = await signedInRef(query.profile, account, signal);
+      if (ref.profile.externalCli !== undefined) {
+        const cli = ref.profile.externalCli;
+        return {
+          readAt: new Date(options.clock.now()).toISOString(),
+          models: cli.models.map((entry) => ({
+            slug: entry.slug,
+            displayName: entry.displayName,
+            usable: true as const,
+            contextWindow: cli.defaultContextWindow,
+            maxOutputTokens: cli.defaultMaxOutputTokens,
+          })),
+        };
+      }
       return options.catalog.read({ ...ref, refresh: query.refresh === '1', auth: sessions.authSource({ profile: ref.profile.id, account }), signal });
     });
 
@@ -208,6 +256,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     translated(async () => {
       const ref = await signedInRef(stringField(body, 'profile'), account, signal);
       const slug = stringField(body, 'slug');
+      if (ref.profile.externalCli !== undefined) return { model: await addedModelOf(ref.profile.id, slug, signal) };
       const record = await options.catalog.record(ref.profile.id, account, signal);
       const entry = record === undefined ? undefined : ownEntry(record.models, slug);
       if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models catalog lists them`, 'slug');
@@ -222,14 +271,16 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     setActive: (body, signal) =>
       translated(async () => {
         const ref = accountRefOf(body);
-        profileOf(ref.profile);
+        requireOAuth(profileOf(ref.profile));
         await sessions.selectActive(ref, signal);
         return { active: ref };
       }),
     begin: (body, signal) =>
       translated(async () => {
+        const ref = accountRefOf(body);
+        requireOAuth(profileOf(ref.profile));
         const reconsent = optionalBoolean(body, 'reconsent');
-        return options.signIn.begin({ ...accountRefOf(body), port: portOf(body), ...(reconsent === undefined ? {} : { reconsent }) }, signal);
+        return options.signIn.begin({ ...ref, port: portOf(body), ...(reconsent === undefined ? {} : { reconsent }) }, signal);
       }),
     complete: (body, targets, signal) =>
       translated(async () => {

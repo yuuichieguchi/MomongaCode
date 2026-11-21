@@ -254,7 +254,7 @@ const WRITING: readonly WritingCase[] = [
     confirm: 'Run the models with no reasoning effort saved at high?',
     summaries: ['Set Reasoning effort of a model with none saved to high.'],
     written: (document) => expect(document.models['effort']).toBe('high'),
-    refused: { input: input(['huge']), sentence: 'huge is not a reasoning effort; the levels are none, minimal, low, medium, high, xhigh.\n' },
+    refused: { input: input(['huge']), sentence: 'huge is not a reasoning effort; the levels are none, minimal, low, medium, high, xhigh, max.\n' },
   },
   {
     form: 'dialects set',

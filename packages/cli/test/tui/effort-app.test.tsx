@@ -213,7 +213,7 @@ describe('/model and the effort', () => {
     expect(list.filter((line) => /\d\. /.test(line)).join('\n')).not.toContain('effort');
     await app.type(`${KEYS.down}${KEYS.enter}`, shows('Reasoning effort'), 'the effort picker opens');
     const picker = await app.type('', shows('tab: this session only'), 'the effort picker is drawn');
-    expect(listBlockOf(picker, 'Reasoning effort')).toBe(['Reasoning effort', '› 1. low  in use', '  2. medium', '  3. high', '  4. xhigh', 'up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n'));
+    expect(listBlockOf(picker, 'Reasoning effort')).toBe(['Reasoning effort', '› 1. low  in use', '  2. medium', '  3. high', '  4. xhigh', '  5. max', 'up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n'));
     expect(app.backend.calls.filter((call) => call.startsWith('model:'))).toEqual([]);
     expect(outputOf(app)).not.toContain('model: other-model (');
     await app.type(`${KEYS.down}${KEYS.down}${KEYS.enter}`, shows('model: other-model (effort: high);'), 'the level is saved and the model line follows');

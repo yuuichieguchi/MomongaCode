@@ -114,7 +114,7 @@ const startGrokGateway = async (options: {
   const profile: PlanProfile = {
     ...shipped,
     oauth: {
-      ...shipped.oauth,
+      ...shipped.oauth!,
       issuer: auth.issuer,
       discoveryUrl: auth.discoveryUrl,
       authorizeUrl: auth.authorizeUrl,

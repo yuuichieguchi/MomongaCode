@@ -36,7 +36,8 @@ describe('open-responses request: the reasoning capability', () => {
   describe('control reasoning_effort', () => {
     it.for(REASONING_EFFORTS.map((effort) => [effort] as const))('renders the effort %s in the reasoning field as a value the schema accepts, with the visible cap unchanged', ([effort]) => {
       const body = bodyOf({ control: 'reasoning_effort', lowest: 'none' }, effort);
-      expect(body.reasoning).toEqual({ effort: effort === 'minimal' ? 'low' : effort });
+      const expected = effort === 'minimal' ? 'low' : effort === 'max' ? 'xhigh' : effort;
+      expect(body.reasoning).toEqual({ effort: expected });
       expect(body.max_output_tokens).toBe(VISIBLE_CAP);
       expectSpecValid(body);
     });

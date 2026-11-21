@@ -109,12 +109,14 @@ Configure a model using one of the three options below, then run your first prom
 
 ### A subscription account
 
-1. Sign in via your browser. Built-in providers are `chatgpt` and `grok`:
+1. Sign in via your browser (or via your local `claude` CLI login for Claude Code). Built-in providers are `chatgpt`, `grok`, and `claude-code`:
 
    ```sh
    momonga auth login chatgpt
    # or
    momonga auth login grok
+   # or (uses your local `claude auth login` session)
+   momonga auth login claude-code
    ```
 
    Running `momonga auth login` without an argument lets you choose interactively in a terminal. A newly linked account has no model configured yet; the login flow prints the next step, and `momonga auth status` shows all saved accounts and their status.

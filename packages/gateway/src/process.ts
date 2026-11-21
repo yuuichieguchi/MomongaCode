@@ -126,6 +126,9 @@ import { reachableEndpoint } from './adapters/shared/http-client.ts';
 import type { UpstreamLiveness } from './adapters/shared/http-client.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
+import { createCliSubprocessAdapter } from './adapters/cli-subprocess/adapter.ts';
+import type { SpawnCliProcess } from './adapters/cli-subprocess/adapter.ts';
+import type { ExternalCliStatusExec } from './adapters/cli-subprocess/status.ts';
 import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
 import { keyAuthSource, unauthenticatedSource } from './adapters/shared/auth.ts';
@@ -177,6 +180,7 @@ import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
 import { createRedactor } from './core/redaction.ts';
 import type { Redactor } from './core/redaction.ts';
 import type { GatewayEpoch, GatewayEpochs } from './core/services.ts';
+import { createCliProcessSpawner, createExternalCliStatusExec } from './process-ports.ts';
 import type { ProcessFilePorts, ProcessPorts } from './process-ports.ts';
 import type { GatewayConfig, GatewayEpochsShared, GatewayTimers } from './types.ts';
 
@@ -805,7 +809,7 @@ const healthResultOf = (health: PlanHealth): HealthResult => ({
   ...(health.remediation === undefined ? {} : { remediation: health.remediation }),
 });
 
-type PlanAdapterWiring = { clock: Clock; userDialects: UserDialects; liveness: UpstreamLiveness; network: OutboundNetwork };
+type PlanAdapterWiring = { clock: Clock; userDialects: UserDialects; liveness: UpstreamLiveness; network: OutboundNetwork; externalCliStatusExec: ExternalCliStatusExec; spawnCliProcess: SpawnCliProcess };
 
 type PlanNumbers = { contextWindow: number; maxOutputTokens: number };
 
@@ -847,6 +851,17 @@ const planHealthOf = (target: PlanTarget, auth: AuthSource, reported: PlanReport
 const createPlanAdapter = (target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, reported: PlanReported, wiring: PlanAdapterWiring): ProviderAdapter => {
   const profile = profiles[target.plan.profile];
   if (profile === undefined) throw new Error(`the plan model ${target.canon} names the unknown plan profile ${JSON.stringify(target.plan.profile)}`);
+  if (profile.externalCli !== undefined) {
+    return createCliSubprocessAdapter({
+      profile,
+      cli: profile.externalCli,
+      capabilities: async () => planCapabilitiesOf(target, reported),
+      clock: wiring.clock,
+      timers: wiring.liveness.timers,
+      spawnProcess: wiring.spawnCliProcess,
+      statusExec: wiring.externalCliStatusExec,
+    });
+  }
   return createOpenResponsesAdapter({
     resolveEndpoint: async () => reachableEndpoint(upstreamEndpointOf(target), wiring.network),
     capabilities: async () => planCapabilitiesOf(target, reported),
@@ -1209,6 +1224,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     }));
     cleanups.push(() => sessions.close());
     const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog, { lock: kernelLock }), clock, outbound: withOutboundNetwork, sleep: planSleep, events: planEvents });
+    const externalCliStatusExec = createExternalCliStatusExec(options.env, timers);
+    const spawnCliProcess = createCliProcessSpawner(options.env);
     const planApi = createPlanApi({
       catalog,
       home: options.home,
@@ -1216,6 +1233,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       lock: kernelLock,
       profiles: planProfiles,
       sessions,
+      externalCliStatusExec,
       signIn: createPlanSignIn({
         profiles: planProfiles,
         sessions,
@@ -1443,6 +1461,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         userDialects: current.models.dialects,
         liveness: { headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs, timers },
         network: outbound,
+        externalCliStatusExec,
+        spawnCliProcess,
       });
       return unmanagedPart(key, adapter, targetCounterOf({ target, codeDigest, served, ...(reported === undefined ? {} : { reported }) }));
     };

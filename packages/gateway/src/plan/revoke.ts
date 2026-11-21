@@ -32,7 +32,7 @@ const parsed = (text: string): unknown => {
 };
 
 const revocationEndpointOf = (profile: PlanProfile, outcome: SendOutcome): string | undefined => {
-  if (outcome.kind !== 'answered' || outcome.status !== SUCCESS_STATUS || outcome.truncated) return undefined;
+  if (outcome.kind !== 'answered' || outcome.status !== SUCCESS_STATUS || outcome.truncated || profile.oauth === undefined) return undefined;
   const document = parsed(outcome.body);
   if (!isRecord(document) || document['issuer'] !== profile.oauth.issuer) return undefined;
   const endpoint = document['revocation_endpoint'];
@@ -46,6 +46,7 @@ const mayResend = (outcome: SendOutcome): boolean => outcome.kind === 'unanswere
 
 export const revokeRefreshToken = async (request: RevokeRequest): Promise<PlanRevocationAnswer> => {
   request.signal.throwIfAborted();
+  if (request.profile.oauth === undefined) return PLAN_REVOCATION_UNCONFIRMED;
   const discovery = await boundedSend(request.ports, request.profile.oauth.discoveryUrl, { method: 'GET', headers: { accept: 'application/json' } }, request.attemptTimeoutMs, request.maxBodyBytes);
   const endpoint = revocationEndpointOf(request.profile, discovery);
   if (endpoint === undefined) return PLAN_REVOCATION_UNCONFIRMED;

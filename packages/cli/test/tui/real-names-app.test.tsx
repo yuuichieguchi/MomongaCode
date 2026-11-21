@@ -33,7 +33,7 @@ const LIST_ROWS = [
   "  11. ollama-127.0.0.1-18477/india-i            local",
   "  12. Model settings…"
 ];
-const PICKER = ['Reasoning effort', '  1. none', '  2. minimal', '  3. low', '› 4. medium  in use', '  5. high', '  6. xhigh', 'up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n');
+const PICKER = ['Reasoning effort', '  1. none', '  2. minimal', '  3. low', '› 4. medium  in use', '  5. high', '  6. xhigh', '  7. max', 'up/down to move · enter to choose · tab: this session only · esc: go back'].join('\n');
 const FOOTER_START: Readonly<Record<number, string>> = {
   80: 'mode: manual (shift+tab) · tokens: 0 · context: 0% · effort: medium',
   120: 'mode: manual (shift+tab) · tokens: 0 · context: 0% · ollama-127.0.0.1-18477/think-c (effort: medium)    ctrl+j: new line',

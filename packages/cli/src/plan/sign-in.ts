@@ -112,9 +112,9 @@ export class SignInRefusedError extends SignInNotFinishedError {
 
 const ATTEMPT_NOT_FOUND = PLAN_SIGN_IN_FAILURE.attemptNotFound;
 
-export const callbackPathOf = (profile: string): string => planProfileOf(profile).oauth.callbackPath;
+export const callbackPathOf = (profile: string): string => planProfileOf(profile).oauth?.callbackPath ?? '/callback';
 
-export const callbackPortOf = (profile: string): number | undefined => planProfileOf(profile).oauth.callbackPort;
+export const callbackPortOf = (profile: string): number | undefined => planProfileOf(profile).oauth?.callbackPort;
 
 const firstValue = async (sources: readonly ((signal: AbortSignal) => Promise<string>)[], signal: AbortSignal): Promise<string> => {
   const losers = new AbortController();

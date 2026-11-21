@@ -130,7 +130,7 @@ const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) =
   const auth = await startFakeSiwcAuth({ resource: loopback });
   registerCleanup(() => auth.close());
   const shipped = profileFor(auth);
-  const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
+  const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth!, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
   fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
   const store = createEncryptedCredentialStore({
     lock: testKernelLock(),
@@ -158,7 +158,7 @@ const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) =
     redact: () => undefined,
     warn: () => undefined,
   });
-  const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth.resource });
+  const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth!.resource });
   await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
   await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens }, new AbortController().signal);
   await sessions.close();

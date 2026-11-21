@@ -20,6 +20,7 @@ import type { PlanEvents } from './events.ts';
 import type { PlanOutbound } from './outbound.ts';
 import { SUCCESS_STATUS } from './http-status.ts';
 import { ownEntry } from './own-entry.ts';
+import { requireOAuth } from './profiles.ts';
 import { parsePlanJson } from './plan-json.ts';
 import { endedByOperation, recordAccess } from './record-io.ts';
 import { responseBytes } from './refresh.ts';
@@ -186,7 +187,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
   };
 
   const fetchList = async (fetch: PlanFetch, request: CatalogRead): Promise<ListAnswer> => {
-    const url = `${request.profile.oauth.resource}${request.profile.catalog.path}`;
+    const url = `${requireOAuth(request.profile).resource}${request.profile.catalog.path}`;
     const bound = new AbortController();
     const elapsed = options.sleep(PLAN_SIGN_IN_DEFAULTS.catalogTimeoutMs, bound.signal).then(
       () => bound.abort(new Error(`the model list did not answer within ${PLAN_SIGN_IN_DEFAULTS.catalogTimeoutMs} ms`)),

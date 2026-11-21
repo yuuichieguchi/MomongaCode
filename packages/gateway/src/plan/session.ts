@@ -30,7 +30,7 @@ import type { PlanOutbound } from './outbound.ts';
 import { ownEntry } from './own-entry.ts';
 import { isDateTime } from './pause-end.ts';
 import { parsePlanJson } from './plan-json.ts';
-import { planProfileNamed } from './profiles.ts';
+import { planProfileNamed, requireOAuth } from './profiles.ts';
 import { endedByOperation, isTransientStoreFailure, recordAccess, refusedEntry, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
 import type { RecordLockRefusal } from './record-io.ts';
 import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
@@ -780,7 +780,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const next: PlanRecord = {
       ...withoutAnswerFacts(record),
       ...(intentKept ? optional('pendingRefresh', record.pendingRefresh) : {}),
-      state: grantsScope(scope, account.profile.oauth.requiredScope) ? 'active' : PLAN_DISABLED_STATE,
+      state: grantsScope(scope, requireOAuth(account.profile).requiredScope) ? 'active' : PLAN_DISABLED_STATE,
       access_token: tokens.access_token,
       ...optional('refresh_token', tokens.refresh_token ?? record.refresh_token),
       ...optional('id_token', tokens.id_token ?? record.id_token),
@@ -840,15 +840,16 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       let attempts = 0;
       let finished: { end: RefreshEnd; interrupted: boolean };
       try {
+        const oauth = requireOAuth(account.profile);
         const end = await sendRefresh({
           ports: { fetch, sleep: options.sleep },
           clock,
-          tokenUrl: account.profile.oauth.tokenUrl,
+          tokenUrl: oauth.tokenUrl,
           form: {
             grant_type: 'refresh_token',
             client_id: record.client_id,
             refresh_token: refreshToken,
-            ...(account.profile.oauth.sendResource ? { resource: account.profile.oauth.resource } : {}),
+            ...(oauth.sendResource ? { resource: oauth.resource } : {}),
           },
           attempts: retry.maxAttempts,
           attemptTimeoutMs: defaults.attemptTimeoutMs,
@@ -1160,7 +1161,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         if (existing === undefined || existing.client_id !== input.clientId || (existing.subject !== undefined && existing.subject !== input.subject)) {
           return { outcome: 'rejected' as const, reason: PLAN_SIGN_IN_FAILURE.registrationSuperseded };
         }
-        const state: RecordState = grantsScope(tokens.scope, account.profile.oauth.requiredScope) ? 'active' : PLAN_DISABLED_STATE;
+        const state: RecordState = grantsScope(tokens.scope, requireOAuth(account.profile).requiredScope) ? 'active' : PLAN_DISABLED_STATE;
         const firstSignIn = state === 'active' && !existing.welcomeShown;
         const lifetimeMs = tokens.expires_in * 1000;
         const record: PlanRecord = {

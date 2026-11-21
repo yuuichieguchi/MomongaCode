@@ -1,7 +1,11 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EntryUsageError, createPathResolver, nodeFileSystem, systemTiming } from '@momonga/foundation';
-import type { Clock, PathResolver } from '@momonga/foundation';
+import type { Clock, PathResolver, Timing } from '@momonga/foundation';
+import type { CliChildProcess, SpawnCliProcess } from './adapters/cli-subprocess/adapter.ts';
+import type { ExternalCliExecResult, ExternalCliStatusExec } from './adapters/cli-subprocess/status.ts';
+import { PLAN_SIGN_IN_DEFAULTS } from './defaults.ts';
 import type { GatewayTimers } from './types.ts';
 
 export type ProcessFilePorts = {
@@ -97,3 +101,65 @@ export const systemProcessPorts: ProcessPorts = {
   files: systemProcessFiles,
   pid: process.pid,
 };
+
+export const createCliProcessSpawner = (env: NodeJS.ProcessEnv = process.env): SpawnCliProcess => (command, args) =>
+  spawn(command, [...args], { stdio: ['pipe', 'pipe', 'pipe'], env }) as unknown as CliChildProcess;
+
+export const createExternalCliStatusExec =
+  (env: NodeJS.ProcessEnv = process.env, timers: Pick<Timing, 'setTimeout' | 'clearTimeout'> = realTimers): ExternalCliStatusExec =>
+  (command, args, signal) =>
+    new Promise<ExternalCliExecResult>((resolve) => {
+      let settled = false;
+      const finish = (result: ExternalCliExecResult): void => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      let child: ReturnType<typeof spawn>;
+      try {
+        child = spawn(command, [...args], { stdio: ['ignore', 'pipe', 'pipe'], env });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') finish({ kind: 'missing' });
+        else finish({ kind: 'exited', code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      child.stdout?.on('data', (chunk: Buffer) => {
+        if (stdoutBytes < PLAN_SIGN_IN_DEFAULTS.authBodyBytes) {
+          stdoutChunks.push(chunk);
+          stdoutBytes += chunk.byteLength;
+        }
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        if (stderrBytes < PLAN_SIGN_IN_DEFAULTS.authBodyBytes) {
+          stderrChunks.push(chunk);
+          stderrBytes += chunk.byteLength;
+        }
+      });
+      const onAbort = (): void => {
+        child.kill('SIGTERM');
+      };
+      const timer = timers.setTimeout(() => {
+        child.kill('SIGTERM');
+      }, PLAN_SIGN_IN_DEFAULTS.keysTimeoutMs);
+      signal.addEventListener('abort', onAbort, { once: true });
+      child.on('error', (error: NodeJS.ErrnoException) => {
+        timers.clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+        if (error.code === 'ENOENT') finish({ kind: 'missing' });
+        else finish({ kind: 'exited', code: 1, stdout: '', stderr: error.message });
+      });
+      child.on('close', (code) => {
+        timers.clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+        finish({
+          kind: 'exited',
+          code,
+          stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+          stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        });
+      });
+    });

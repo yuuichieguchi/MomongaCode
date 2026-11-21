@@ -304,6 +304,7 @@ export type {
   PlanCatalogEntry,
   PlanModelsResponse,
   PlanProfileMessages,
+  PlanExternalCliView,
   PlanProfileView,
   PlanResumeRequest,
   PlanSignInBeginRequest,

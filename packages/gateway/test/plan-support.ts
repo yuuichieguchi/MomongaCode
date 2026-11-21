@@ -187,7 +187,7 @@ export const profileFor = (auth: SiwcAuth): PlanProfile => {
   const shipped = planProfileOf(PROFILE_ID);
   return {
     ...shipped,
-    oauth: { ...shipped.oauth, issuer: auth.issuer, discoveryUrl: auth.discoveryUrl, authorizeUrl: auth.authorizeUrl, tokenUrl: auth.tokenUrl, jwksUrl: auth.jwksUrl },
+    oauth: { ...shipped.oauth!, issuer: auth.issuer, discoveryUrl: auth.discoveryUrl, authorizeUrl: auth.authorizeUrl, tokenUrl: auth.tokenUrl, jwksUrl: auth.jwksUrl },
   };
 };
 

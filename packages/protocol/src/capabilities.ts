@@ -89,7 +89,7 @@ export type RequestToolKind = (typeof REQUEST_TOOL_KINDS)[number];
 
 export type InputKinds = { content: readonly InputContentKind[]; tools: readonly RequestToolKind[] };
 
-export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export const LOWEST_REASONING_EFFORT: ReasoningEffort = 'none';

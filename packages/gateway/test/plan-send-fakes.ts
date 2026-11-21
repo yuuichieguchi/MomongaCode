@@ -14,7 +14,7 @@ export const WAIT_POLICY = { totalWaitMs: 60_000, baseMs: 100, maxMs: 1000, rand
 
 export const sendProfile = (): PlanProfile => {
   const shipped = planProfileOf('chatgpt');
-  return { ...shipped, oauth: { ...shipped.oauth, issuer: ISSUER, discoveryUrl: DISCOVERY_URL, tokenUrl: TOKEN_URL } };
+  return { ...shipped, oauth: { ...shipped.oauth!, issuer: ISSUER, discoveryUrl: DISCOVERY_URL, tokenUrl: TOKEN_URL } };
 };
 
 export const sendClock = () => createFakeClock(START_MS);

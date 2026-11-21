@@ -100,7 +100,7 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
   const shipped = profileFor(auth);
   const profile: PlanProfile = {
     ...shipped,
-    oauth: { ...shipped.oauth, resource: loopback },
+    oauth: { ...shipped.oauth!, resource: loopback },
     targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback },
     ...(options.catalogListKey === undefined ? {} : { catalog: { ...shipped.catalog, listKey: options.catalogListKey } }),
   };

@@ -38,11 +38,11 @@ describe('one clamping rule for every reasoning control', () => {
 
 describe('the levels each reasoning control accepts', () => {
   it('a reasoning_effort control accepts its lowest level and every level above it', () => {
-    expect(acceptedReasoningEfforts({ control: 'reasoning_effort', lowest: 'low' })).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(acceptedReasoningEfforts({ control: 'reasoning_effort', lowest: 'low' })).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
   });
 
   it('a reasoning_effort control whose lowest level is none keeps accepting none', () => {
-    expect(acceptedReasoningEfforts({ control: 'reasoning_effort', lowest: 'none' })).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+    expect(acceptedReasoningEfforts({ control: 'reasoning_effort', lowest: 'none' })).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
   });
 
   it('a thinking form accepts none only when it declares how to turn thinking off', () => {

@@ -235,8 +235,8 @@
         "profile": 3
       },
       "packages/config/src/plan-profiles.ts": {
-        "limit": 2,
-        "profile": 6
+        "limit": 3,
+        "profile": 8
       },
       "packages/config/src/project-mandate.ts": {
         "project": 2

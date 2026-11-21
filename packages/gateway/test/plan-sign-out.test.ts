@@ -150,7 +150,7 @@ describe('sign-out (F11, I-C10)', () => {
 
   it('a discovery document whose issuer differs from the profile issuer is a discovery failure: no revocation is sent', async () => {
     const discoveryUrl = await discoveryServer(() => ({ issuer: 'https://attacker.invalid', revocation_endpoint: 'https://attacker.invalid/revoke' }));
-    const h = await harness({ profile: (auth) => ({ ...profileFor(auth), oauth: { ...profileFor(auth).oauth, discoveryUrl } }) });
+    const h = await harness({ profile: (auth) => ({ ...profileFor(auth), oauth: { ...profileFor(auth).oauth!, discoveryUrl } }) });
     const signIn = await signedIn(h, 'work');
     const report = await signOut(h);
     expect(report.revocation).toBe('unconfirmed');
@@ -168,7 +168,7 @@ describe('sign-out (F11, I-C10)', () => {
       profile: (auth) => {
         issuer = auth.issuer;
         revokeUrl = auth.revokeUrl;
-        return { ...profileFor(auth), oauth: { ...profileFor(auth).oauth, discoveryUrl } };
+        return { ...profileFor(auth), oauth: { ...profileFor(auth).oauth!, discoveryUrl } };
       },
     });
     await signedIn(h, 'work');
@@ -183,7 +183,7 @@ describe('sign-out (F11, I-C10)', () => {
     const h = await harness({
       profile: (auth) => {
         fakeIssuer = auth.issuer;
-        return { ...profileFor(auth), oauth: { ...profileFor(auth).oauth, discoveryUrl } };
+        return { ...profileFor(auth), oauth: { ...profileFor(auth).oauth!, discoveryUrl } };
       },
     });
     await signedIn(h, 'work');
