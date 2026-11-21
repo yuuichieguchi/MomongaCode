@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { startMcpHttpFixture } from '@momonga/testkit';
+import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, SECRETS_FILE_NAME, runCli } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
@@ -74,7 +75,7 @@ describe('the startup screen through a pty', () => {
     const banner = shown.filter((line) => line.startsWith('│'));
     const screen = shown.join('\n');
     expect(banner.some((line) => line.includes('(•ᴥ•)')), screen).toBe(true);
-    expect(banner.some((line) => line.includes('MomongaCode v0.0.0')), screen).toBe(true);
+    expect(banner.some((line) => line.includes(`MomongaCode v${cliPackage.version}`)), screen).toBe(true);
     const modelLines = banner.filter((line) => /model: \S/.test(line));
     expect(modelLines, screen).toHaveLength(1);
     expect(modelLines[0], screen).not.toMatch(/model: default|→/);

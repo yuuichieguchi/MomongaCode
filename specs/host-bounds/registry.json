@@ -233,6 +233,7 @@
       {"name":"EXIT_ARM_MS","file":"packages/cli/src/tui/app.tsx","lacks":["kind","row"]},
       {"name":"KEY_FILE_MAX_BYTES","file":"packages/cli/src/tui/keys/bindings.ts","lacks":["row"]},
       {"name":"KEY_FILE_STAT_MS","file":"packages/cli/src/tui/keys/store.ts","lacks":["kind","row"]},
+      {"name":"MODEL_LIST_REREAD_BOUND_MS","file":"packages/cli/src/tui/plan-flows.ts","lacks":["kind","row"]},
       {"name":"CLIPBOARD_READ_MS","file":"packages/cli/src/tui/screen/constants.ts","lacks":["kind","row"]},
       {"name":"COPY_MAX_BYTES","file":"packages/cli/src/tui/screen/constants.ts","lacks":["row"]},
       {"name":"DOUBLE_CLICK_MS","file":"packages/cli/src/tui/screen/constants.ts","lacks":["kind","row"]},

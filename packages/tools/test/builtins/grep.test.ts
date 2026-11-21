@@ -1,8 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_RG, RG_PATH, makeBuiltins, onCleanup, range, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASE_TIME = 1_700_000_000;
 

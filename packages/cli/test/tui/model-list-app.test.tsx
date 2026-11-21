@@ -11,7 +11,7 @@ import { FRAME_BOUND_MS, KEYS, TUI_TEST_TIMEOUT_MS, renderObservable, settleAtOn
 import { manualClock } from './screen-clock.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { systemTiming } from '@momonga/foundation';
-import { pollUntil } from '@momonga/testkit';
+import { afterMicrotasks, pollUntil } from '@momonga/testkit';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 import { freshPlace, stored, writeSettings } from './settings-harness.tsx';
 import type { Place } from './settings-harness.tsx';
@@ -695,7 +695,6 @@ describe('the effort step after a plan model that is not configured is chosen', 
 describe('the /model flow with the timing of the real program', () => {
   const STEP_MS = 5;
   const LISTING_MS = 30;
-  const yieldTurn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
   const listOpenAtRealTiming = async () => {
     const clock = manualClock(1_000_000);
@@ -703,7 +702,7 @@ describe('the /model flow with the timing of the real program', () => {
     const pause = async (ms: number): Promise<void> => {
       for (let passed = 0; passed < ms; passed += STEP_MS) {
         clock.advance(Math.min(STEP_MS, ms - passed));
-        await yieldTurn();
+        await afterMicrotasks();
       }
     };
     const until = async (holds: (frame: string) => boolean, description: string): Promise<string> => {

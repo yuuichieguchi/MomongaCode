@@ -85,7 +85,7 @@ describe('acp: momonga acp', () => {
     const initialized = await acp.initialize();
     expect(initialized).toMatchObject({
       protocolVersion: 1,
-      agentInfo: { name: 'momonga', version: '0.0.0' },
+      agentInfo: { name: 'momonga', version: cliPackage.version },
       agentCapabilities: { loadSession: true, mcpCapabilities: { http: true, sse: false }, promptCapabilities: { embeddedContext: true } },
     });
     const created = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });

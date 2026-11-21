@@ -1,4 +1,4 @@
-import { pollUntil } from '@momonga/testkit';
+import { afterMicrotasks, pollUntil } from '@momonga/testkit';
 import { App } from '../../src/tui/app.tsx';
 import type { AppProps, TuiOutcome } from '../../src/tui/app.tsx';
 import type { TuiBackend } from '../../src/tui/backend.ts';
@@ -12,8 +12,6 @@ import { manualClock } from './screen-clock.ts';
 
 const STEP_MS = 5;
 const KITTY_ESCAPE = '\u001b[27u';
-
-const yieldTurn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export type Held = { release(): void; calls(): number };
 
@@ -49,7 +47,7 @@ export const startAtRealTiming = async (given: FakePlanOptions | StartGiven = {}
   const pause = async (ms: number): Promise<void> => {
     for (let passed = 0; passed < ms; passed += STEP_MS) {
       clock.advance(Math.min(STEP_MS, ms - passed));
-      await yieldTurn();
+      await afterMicrotasks();
     }
   };
   const frameNow = (): string => app.lastFrame() ?? '';

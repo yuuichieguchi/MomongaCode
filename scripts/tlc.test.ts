@@ -128,6 +128,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
     for (const name of fs.readdirSync(`${repoRoot}scripts/support`).filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts')))
       fs.copyFileSync(`${repoRoot}scripts/support/${name}`, path.join(root, 'sandbox', 'scripts', 'support', name));
     fs.symlinkSync(`${repoRoot}node_modules`, path.join(root, 'sandbox', 'node_modules'));
+    fs.symlinkSync(`${repoRoot}packages`, path.join(root, 'sandbox', 'packages'));
     fs.symlinkSync(`${repoRoot}.cache/tla/tla2tools.jar`, path.join(root, 'sandbox', '.cache', 'tla', 'tla2tools.jar'));
     fs.writeFileSync(path.join(root, 'sandbox', 'specs', 'tla', 'Stub.tla'), '');
     fs.writeFileSync(path.join(root, 'sandbox', 'specs', 'tla', 'Stub.cfg'), '');

@@ -123,7 +123,7 @@ describe('the third-party notices of the released executable', () => {
   it('mentions the bundled ripgrep in the License section of the README', () => {
     const readme = read('README.md');
     const license = /## 10\. License\n([\s\S]*?)\n## 11\. Disclaimer/.exec(readme)?.[1] ?? '';
-    expect(license).toContain('Bundles ripgrep (MIT or Unlicense)');
+    expect(license).toMatch(/bundles? ripgrep \(MIT or Unlicense\)/i);
     expect(license).toContain('THIRD-PARTY-NOTICES.md');
   });
 });

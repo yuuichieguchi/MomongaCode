@@ -7,7 +7,7 @@ import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/g
 import type { ChatWire } from '@momonga/gateway';
 import { COMPACT_AT, EVICT_LOW_WATER, ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, floorRatio, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CountTokensResult, CreateResponseBody, FunctionCallItem, InputItem, RunEvent } from '@momonga/protocol';
-import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistoryPort, createMemoryPort } from '@momonga/runtime';
+import { RUNTIME_DEFAULTS, buildSystemPrompt, createChildRuns, createGatewayClient, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
@@ -15,7 +15,7 @@ import { TEST_BUILTIN_TOOL_OFFER, usageOf, TEST_CHILD_UNPROTECTED, standInEnv } 
 import { createBuiltinTools, harnessOutputToolsOf } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
-import { makeEnv, unavailableEvidenceRun } from '../../packages/runtime/test/worker/harness.ts';
+import { diskAgentCatalog, makeEnv, unavailableEvidenceRun } from '../../packages/runtime/test/worker/harness.ts';
 import type { ScriptStep } from '../../packages/runtime/test/worker/fake-gateway.ts';
 import { outputStep, textStep } from '../../packages/runtime/test/worker/scripts.ts';
 import { HAYSTACK_LINE_COUNT, HAYSTACK_READ_BACK_LINE, NEEDLE, writeFiller } from './haystack.ts';
@@ -520,6 +520,10 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
         redactor: createRedactor({ credentials: [] }),
         enforcement: () => 'exact-paths',
       }),
+      agents: {
+        ...diskAgentCatalog(plan.home.home, () => false),
+        runs: createChildRuns({ store: env.store, listing: () => client.listing({ signal: AbortSignal.timeout(30_000) }) }),
+      },
       tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ protection: TEST_CHILD_UNPROTECTED, platform: process.platform })) },
       onContextOverflow: (error: ContextOverflowError) => {
         overflows.push({ inputTokens: error.inputTokens, inputBudget: error.inputBudget, level: error.level });

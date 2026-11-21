@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { spawnSync } from '@momonga/testkit/child-process';
 import { createTempDir, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,7 +40,7 @@ afterEach(() => {
 describe('a missing prerequisite refuses the run with its own text', () => {
   it.each(['e2e', 'packaging', 'unit'] as const)('%s: prints the refusal line verbatim and exits non-zero', (project) => {
     const run = spawnSync(process.execPath, [VITEST, 'run', '--root', root, '--project', project], { cwd: root, encoding: 'utf8', env: { ...process.env, MOMONGA_RUN_LOCK: undefined } });
-    const printed = `${run.stdout}${run.stderr}`;
+    const printed = stripVTControlCharacters(`${run.stdout}${run.stderr}`);
     expect(printed).not.toContain('charCodeAt');
     const tool = project === 'packaging' ? 'zig' : 'bwrap';
     expect(printed).toMatch(new RegExp(`^(?:Error: )?${tool} is required on linux and is missing or unusable at .+; run: .+$`, 'm'));

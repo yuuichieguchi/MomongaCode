@@ -251,7 +251,7 @@ export function App(props: AppProps) {
   const answerMark = useRef<{ readonly arrival: number; sync: boolean } | undefined>(undefined);
   const followingKeys = useRef<Array<{ readonly event: KeyEvent; readonly pressed: KeyTable; readonly arrival: number }>>([]);
   const drainingKeys = useRef(false);
-  const drainImmediate = useRef<ReturnType<typeof setImmediate> | undefined>(undefined);
+  const unmounted = useRef(false);
   const activeKeyArrival = useRef<number | undefined>(undefined);
   const pendingQueue = useRef<{ readonly arrival: number; cancel(): void } | undefined>(undefined);
   const cancelPendingRun = useRef(false);
@@ -1913,17 +1913,20 @@ export function App(props: AppProps) {
     if (drainingKeys.current) return;
     drainingKeys.current = true;
     const step = (): void => {
-      drainImmediate.current = undefined;
+      if (unmounted.current) {
+        drainingKeys.current = false;
+        return;
+      }
       const next = followingKeys.current.shift();
       if (next === undefined) {
         drainingKeys.current = false;
         return;
       }
       deliverFollowing(next);
-      if (followingKeys.current.length > 0) drainImmediate.current = setImmediate(step);
+      if (followingKeys.current.length > 0) void waitUntilRenderFlush().then(step);
       else drainingKeys.current = false;
     };
-    drainImmediate.current = setImmediate(step);
+    void waitUntilRenderFlush().then(step);
   };
 
   const onKey = (event: KeyEvent, pressed: KeyTable): void => {
@@ -2207,10 +2210,9 @@ export function App(props: AppProps) {
   }
   useEffect(
     () => () => {
+      unmounted.current = true;
       frameWatch.current?.stop();
       frameWatch.current = undefined;
-      if (drainImmediate.current !== undefined) clearImmediate(drainImmediate.current);
-      drainImmediate.current = undefined;
       followingKeys.current = [];
       drainingKeys.current = false;
     },

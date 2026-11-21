@@ -73,6 +73,7 @@ const SERVER_KINDS_SCHEMA = {
           },
           window: { type: 'string' },
           ceiling: { type: 'string' },
+          lengthIsMaximum: { const: true },
           tools: { const: 'unknown' },
           details: {
             type: 'object',

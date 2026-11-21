@@ -8,7 +8,7 @@ import { createTempDir, firstGeneration, registerCleanup, spawnTracked, startLoc
 import { KEPT_HOME_FILE_NAME, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
 import type { E2eTestOutcome } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
-import { E2E_RUN_ENV, currentIdentity, e2eTmpRoot, privateRootName, sharedTempBase } from './run-env.ts';
+import { CLAIM_FILE_SUFFIX, E2E_RUN_ENV, PIDS_FILE_SUFFIX, currentIdentity, e2eTmpRoot, privateRootName, sharedTempBase } from './run-env.ts';
 
 const realTmp = e2eTmpRoot;
 
@@ -104,7 +104,9 @@ describe('the homes of one run beside each other', () => {
     const second = await createE2eHome();
     const entries = entriesWithPrefix(realTmp(), `mme-${runToken()}-`).map((entry) => path.join(realTmp(), entry));
     expect(entries).toEqual(expect.arrayContaining([first.root, second.root]));
-    expect(entries.filter((entry) => !fs.statSync(entry).isDirectory())).toEqual(entries.filter((entry) => entry.endsWith('-pids')));
+    expect(entries.filter((entry) => !fs.statSync(entry).isDirectory())).toEqual(
+      entries.filter((entry) => entry.endsWith(`-${PIDS_FILE_SUFFIX}`) || entry.endsWith(`-${CLAIM_FILE_SUFFIX}`)),
+    );
     await disposeAll(passed('two homes of one run'));
   });
 });

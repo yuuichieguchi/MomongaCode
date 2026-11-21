@@ -1,6 +1,6 @@
 # MomongaCode
 
-MomongaCode is a coding agent for the terminal. It works with local and hosted models, keeps its own memory of your projects, and runs tool calls under a permission system and an operating-system sandbox. The command is `momonga`.
+MomongaCode is a coding agent for the terminal. It works with local and hosted models, keeps its own memory of your repositories, and runs tool calls under a permission system and an operating-system sandbox. The command is `momonga`.
 
 ![MomongaCode demo](docs/assets/momongacode-demo.gif)
 
@@ -22,7 +22,7 @@ Then add a model and run a first prompt, as [Getting Started](#3-getting-started
 
 ## 2. Why MomongaCode?
 
-MomongaCode focuses deeply on two engineering problems that decide whether a terminal coding agent stays accurate and affordable over long projects:
+MomongaCode focuses deeply on two engineering problems that decide whether a terminal coding agent stays accurate and affordable over long sessions:
 
 - **Adaptive Agent Memory & Context Orchestration**
 - **Agent Token Efficiency Engineering**
@@ -34,7 +34,7 @@ In MomongaCode, memory and context are built by the runtime from recorded events
 - **Structured, evidence-backed memories.** Every memory has a kind (`fact`, `episode`, or `procedure`), a scope (`user` or `project`), and a lifecycle state (`active`, `candidate`, `archived`, `duplicate`, or `rejected`). You can attach evidence—a file with its SHA-256 hash, a commit, or a check—and any memory bound to a file is automatically flagged as stale when that file changes.
 - **Human review and automatic decay.** Memories proposed by the agent sit in a review queue until you accept or reject them. Duplicates are flagged, replaced notes keep their full history, and active memories with stale file evidence or no bound file are archived after `memory.forgetAfterDays` without being kept or used (default: `90`).
 - **Adaptive memory budget.** Every 20 runs in a folder, MomongaCode adjusts how much of the context budget goes to memories based on actual usage: halved if fewer than 25% of injected memories were used, doubled if more than 75% were used and memories had to be dropped (clamped between 1/16 and 1/2 of the budget, starting at 1/4). On by default; turn off with `context.adaptiveBudget: false`.
-- **Budgeted context and searchable history.** Each model request is assembled under an explicit token budget from instruction files, rules, memories, active skills, and conversation history. When older history is compacted, the summary is checked against the content it replaces, and the agent can still look up earlier turns via `HistorySearch` and `HistoryRead`.
+- **Budgeted context and searchable history.** Each model request is assembled under an explicit token budget from instruction files, rules, memories, active skills, and session history. When older history is compacted, the summary is checked against the content it replaces, and the agent can still look up earlier turns via `HistorySearch` and `HistoryRead`.
 - **Enforced standing rules.** Standing rules (`momonga rule`) apply to a single folder or globally. Rules added with `--deny` or `--ask` are enforced by the permission system—not just pasted into the prompt.
 - **Benchmarked compaction improvements.** `momonga context improve` generates candidate compaction guidelines, benchmarks them against your current guideline, and writes the results to a file. Nothing takes effect until you explicitly adopt a winner with `momonga context guideline adopt`.
 
@@ -46,7 +46,7 @@ Every token-saving mechanism is on by default; each has a setting only so you ca
 | --- | --- | --- | --- |
 | **Prompt cache** | On | `context.cachePrefix: false` | Keeps the leading request prefix stable across turns so provider prompt caches hit reliably, and reports a notice if fewer leading items are preserved than expected. |
 | **Tool deferral** | On | `tools.deferral: false` | After 20 runs in a folder, replaces tools never called in the last 20 runs with a one-line catalog and `LoadTools`; full schemas are sent only when loaded. |
-| **Concise tool descriptions** | On | `tools.conciseDescriptions: false` | Sends compact tool descriptions to reduce fixed per-turn token overhead. |
+| **Concise tool descriptions** | On | `tools.conciseDescriptions: false` | Sends concise tool descriptions to reduce fixed per-turn token overhead. |
 | **Output formatters** | On | `context.outputFormatters` | Built-in formatters (`log`, `json`, `grep`, `identicalOutput`) trim noisy tool output before it enters context. List a subset to narrow, or `[]` to disable all. |
 | **Loop guidance** | On | `context.loopGuidance: false` | Detects repeated identical tool calls and warns the model—showing the repeated call and prior failing commands—before halting the run. |
 | **Observed capacity** | On | `context.observedCapacity: false` | Tracks effective context capacity from real responses. |
@@ -173,8 +173,8 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 
 - **Observability.** Inspect model and tool spans with `momonga trace`, review token spend with `momonga cost`, or export traces to an OTLP endpoint via `telemetry.otlp`.
 - **Background jobs and runs.** Monitor and control active work with `momonga status`, `momonga jobs`, `momonga attach`, and `momonga cancel`.
-- **Delegated work.** Hand off bounded tasks using named mandates via `momonga -p --mandate <name>` or `/delegate <mandate> <request>` in the interactive UI (see [Usage](#5-usage)).
-- **Measured reliability.** Track completion and failure rates with `momonga reliability`, run reproducible benchmarks with `momonga eval bench <folder>`, and audit past approval decisions with `momonga permissions review` (see [Usage](#5-usage)).
+- **Delegated work.** Hand off bounded runs using named mandates via `momonga -p --mandate <name>` or `/delegate <mandate> <request>` in the interactive UI (see [Usage](#5-usage)).
+- **Measured reliability.** Track completion and failure rates with `momonga reliability`, run reproducible bench suites with `momonga eval bench <folder>`, and audit past approval decisions with `momonga permissions review` (see [Usage](#5-usage)).
 
 ## 5. Usage
 
@@ -196,14 +196,14 @@ momonga [options] [prompt]
 - **Mandates.** A mandate is a named grant in your user settings under `mandates` (never read from project settings). It specifies extra permission rules (`allow`, `ask`, `deny`), completion conditions (`until`, `require`), and hard budgets (`steps`, `tokens`, `costUsd`, `timeMs`, `retries`). Start a mandated run with `momonga -p --mandate <name> "<request>"` or `/delegate <mandate> <request>`. When a run is created, the daemon verifies the combined folder and mandate rules and refuses the run if any allow rule circumvents a deny rule. Calls requiring approval pause only that call while independent work continues; `onQuiescent` controls whether the run waits for approval (`wait`) or finishes with a report (`report`).
 - **Forges and Git operations.** Remote Git, pull request, and issue tools (`GitPush`, `GitFetch`, and PR/issue tools) only talk to forges explicitly declared under `forges` (each defining `id`, `descriptor`, `hosts`, `apiBaseUrl`, and `credential.env` or `credential.secret`). SSH remotes on a declared forge are routed over that forge's HTTPS URL using its credential, and undeclared remotes are refused with instructions on what to add. Git processes started for these tools never load hooks, credential helpers, or proxy programs from the repository.
 - **Issue automation.** Run `momonga -p --issue <address> --mandate <name>` to resolve a single issue on a declared forge, open a closing pull request, and post a comment on the issue. For continuous polling, configure `issues.watch` in user settings: every 5 minutes, MomongaCode checks each declared forge for open issues matching the entry's `labels` and `authorAssociation` filters and starts one run per new issue in its `folder` under its `mandate`. Entries with neither filter match nothing, and pull requests are never picked up.
-- **Run budgets.** Every run is bounded. Without a custom budget, runs stop at 50 steps or 1,000,000 tokens. Set a spend cap with `--max-cost-usd <usd>` on `momonga -p` or `limits.maxCostUsd` in user settings to halt before any model call that would exceed the limit; mandates enforce their own budgets.
+- **Run budgets.** Every run is bounded. Without a custom budget, runs stop at 50 steps or 1,000,000 tokens. Set a spend budget with `--max-cost-usd <usd>` on `momonga -p` or `limits.maxCostUsd` in user settings to halt before any model call that would exceed the limit; mandates enforce their own budgets.
 
 ### Verification and reports
 
 | Command | What it does |
 | --- | --- |
 | `momonga reliability` | Summarize run outcomes over a period (completed, recovered, repeated work, human interventions, budget hits, time, and cost) grouped by model, mode, agent, origin, or period (`--json`, `--out <file>`). |
-| `momonga eval bench <folder>` | Execute every benchmark case in `<folder>` against one model in fresh repo copies and score each with its oracle. Compare reports with `momonga eval compare <baseline> <candidate> --gate reliability`. |
+| `momonga eval bench <folder>` | Execute every bench case in `<folder>` against one model in fresh repo copies and score each with its oracle. Compare reports with `momonga eval compare <baseline> <candidate> --gate reliability`. |
 | `momonga permissions review` | Sample recorded tool calls (auto-allowed and prompted) and record your audit label (`--label correct`, `unneeded_ask`, or `missed_ask`). |
 
 If a run fails its completion conditions, it stops (`STOPPED`) rather than silently escalating to a stronger model.
@@ -212,7 +212,7 @@ If a run fails its completion conditions, it stops (`STOPPED`) rather than silen
 
 Completion conditions are fixed when a run starts and come from the union of three sources:
 
-1. **The request:** `--until` and `--require` flags on `momonga -p`, or a mandate passed by an ACP client or benchmark task.
+1. **The request:** `--until` and `--require` flags on `momonga -p`, or a mandate passed by an ACP client or bench task.
 2. **The agent definition:** `conditions` and `requirements` in a custom agent's front matter (set `inherit: false` on a request or agent to use only its own conditions).
 3. **Settings and project checks:** Commands listed in `verification.commands` plus any folder check you accepted. These apply only when a run edits the workspace—read-only questions do not trigger test suites. By default, `verification.commands` is empty.
 
@@ -359,7 +359,7 @@ PATH is updated only if the install directory is not already on it (`install.sh`
 
 - `install.sh` adds one marked block to your shell config—`.zshrc` (under `ZDOTDIR` if set) for zsh; the first existing of `.bashrc`, `.bash_profile`, or `.profile` (otherwise `.bashrc`) for bash; `~/.config/fish/config.fish` (using `fish_add_path`) for fish; or `~/.profile` for other shells. Re-running updates that block in place. If the directory is already on PATH, nothing is modified.
 - `install.ps1` appends the install directory to the user PATH.
-- With `MOMONGA_MODIFY_PATH=0`, neither installer edits your profile and both print the command to run in your current shell instead.
+- With `MOMONGA_MODIFY_PATH=0`, neither installer edits your shell config and both print the command to run in your current shell instead.
 
 ## 7. Architecture
 
@@ -372,7 +372,7 @@ MomongaCode is organized as an npm workspace under `packages/`. The `momonga` CL
 | Runtime | `packages/runtime` | Drives sessions, runs, and the model/tool loop—combining context, policy, tools, sandbox, and persistence. |
 | Gateway | `packages/gateway` | Centralizes model traffic across Ollama, chat-completions, Open Responses, and Anthropic adapters (plus routing, retries, admission, probing, and managed servers like Apple's `fm`). |
 | Store | `packages/store` | Persists runs, events, approvals, memories, rules, and jobs in databases under `~/.momonga/state`. |
-| Context | `packages/context` | Builds budgeted prompts, compacts conversation history, and formats tool outputs. |
+| Context | `packages/context` | Builds budgeted prompts, compacts session history, and formats tool outputs. |
 | Memory | `packages/memory` | Handles memory validity checks, recall ranking, deduplication, forgetting, and adaptive budget sizing. |
 | Tools & extensions | `packages/tools`, `packages/skills`, `packages/agents`, `packages/mcp` | Built-in tool execution, skill/agent loading, and MCP server connections. |
 | Policy | `packages/policy` | Evaluates tool calls against permission rules, parsed shell commands, and affected paths. |

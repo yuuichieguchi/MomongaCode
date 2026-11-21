@@ -287,7 +287,7 @@ describe('cli: momonga -p', () => {
     expect((await runCli(home, ['-p', 'one'])).stdout).toBe('first\n');
     const running = await runCli(home, ['daemon', 'status']);
     expect(running.code).toBe(0);
-    expect(running.stdout).toMatch(/momonga daemon running: pid \d+, version 0\.0\.0, phase running/);
+    expect(running.stdout).toMatch(new RegExp(`momonga daemon running: pid \\d+, version ${cliPackage.version.replaceAll('.', '\\.')}, phase running`));
     const pid = Number(/pid (\d+)/.exec(running.stdout)?.[1]);
 
     expect(await stopDaemonCli(home, [pid])).toEqual({ stdout: 'momonga daemon stopped\n', code: 0 });
@@ -467,7 +467,7 @@ describe('cli: gateway probe of a chat-completions target', () => {
 
       expect(probed.stderr).toBe('');
       expect(probed.code).toBe(0);
-      expect(probed.stdout).toMatch(/^probed upstream-model: model upstream-model at unix:/m);
+      expect(probed.stdout).toMatch(/^probed fake\/upstream-model: model upstream-model at unix:/m);
       expect(probed.stdout).toContain('tool calling: native');
       expect(probed.stdout).toContain('parallel tool calls: true');
       expect(probed.stdout).toContain('reasoning: cannot be controlled, leaves room for 90 tokens');
@@ -488,7 +488,7 @@ describe('cli: gateway probe', () => {
 
     expect(probed.stderr).toBe('');
     expect(probed.code).toBe(0);
-    expect(probed.stdout).toMatch(/^probed system: model .+, context window \d+/m);
+    expect(probed.stdout).toMatch(/^probed fm\/system: model .+, context window \d+/m);
     expect(probed.stdout).toMatch(/tool calling: (native|constrained|none)/);
     const recordFile = /^ {2}recorded in (.+)$/m.exec(probed.stdout)?.[1] ?? '';
     expect(path.dirname(recordFile)).toBe(home.paths.probe);
@@ -504,7 +504,7 @@ describe('cli: gateway probe', () => {
     writeSettingsFile(home, settingsWithBinary(fakeFm.binaryPath));
     const unknown = await runCli(home, ['gateway', 'probe', 'nope']);
     expect(unknown.code).toBe(1);
-    expect(unknown.stderr).toContain('The model "nope" is not configured. Configured models: system.');
+    expect(unknown.stderr).toContain('The model "nope" is not configured. Configured models: fm/system.');
   });
 });
 

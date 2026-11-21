@@ -14,8 +14,6 @@ describe('the sandbox-off dialog of a sign-in, reached through a runtime whose s
     await answerTrust(pty, 'trust');
     await pty.waitFor({ shows: 'mode: manual', in: 'footer' });
     await pty.type('/login chatgpt');
-    await pty.key('enter', { until: 'Continue with ChatGPT' });
-    await pty.waitForPrompt('Continue with ChatGPT');
     await pty.key('enter', { until: 'The sandbox is off' });
     const dialog = await pty.waitForPrompt('The sandbox is off');
     expect(dialog.rows.join('\n')).toContain('› 2. Cancel');

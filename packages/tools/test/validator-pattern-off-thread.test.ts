@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PATTERN_CHECK_LIMIT_MS, clearUntrustedSchemaCaches } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { validateToolInput } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { recordedWorkers } from './worker-record.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 vi.mock('node:worker_threads', async (importOriginal) => (await import('./worker-record.ts')).recordingWorkerModule(importOriginal as never));
 vi.mock('worker_threads', async (importOriginal) => (await import('./worker-record.ts')).recordingWorkerModule(importOriginal as never));

@@ -99,9 +99,8 @@ describe('real-length server model names at real widths', () => {
       await listOf(app);
       app.stdin.write(`${KEYS.down}${KEYS.enter}`);
       const frame = await untilOutput(app, (now) => rowsOf(now).some((line) => line.startsWith('model: ')));
-      await pollUntil(() => footerOf(app.lastFrame() ?? '').length > 0, { description: 'footer', boundMs: 3000 });
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      expect([lineOf(frame, columns), footerOf(app.lastFrame() ?? '')]).toEqual([LINE_PLAIN[columns], FOOTER_PLAIN[columns]]);
+      const settled = await untilFrame(app, (now) => footerOf(now) === FOOTER_PLAIN[columns]);
+      expect([lineOf(frame, columns), footerOf(settled)]).toEqual([LINE_PLAIN[columns], FOOTER_PLAIN[columns]]);
       app.unmount();
     });
 
@@ -110,11 +109,10 @@ describe('real-length server model names at real widths', () => {
       await listOf(app);
       app.stdin.write(`${KEYS.enter}`);
       const picker = blockOf(await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('up/down to move')), 'Reasoning effort', 'up/down to move');
-      await new Promise((resolve) => setTimeout(resolve, 300));
       app.stdin.write(KEYS.tab);
       const frame = await untilOutput(app, (now) => rowsOf(now).some((line) => line.startsWith('model: ')));
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      expect([picker, lineOf(frame, columns), footerOf(app.lastFrame() ?? '')]).toEqual([PICKER, LINE_THINK[columns], FOOTER_START[columns]]);
+      const settled = await untilFrame(app, (now) => footerOf(now) === FOOTER_START[columns]);
+      expect([picker, lineOf(frame, columns), footerOf(settled)]).toEqual([PICKER, LINE_THINK[columns], FOOTER_START[columns]]);
       app.unmount();
     });
   }
@@ -128,17 +126,15 @@ describe('real-length server model names at real widths', () => {
   for (const columns of [120, 80, 60]) {
     it(`the footer names the session model with its effort, alone without a reasoning control, and alone while its capabilities are not read, ${columns} columns`, async () => {
       const shown: string[] = [];
-      for (const session of [THINK, PLAIN]) {
+      for (const [index, session] of ([THINK, PLAIN] as const).entries()) {
         const { app } = await started(columns, { session });
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        shown.push(footerOf(app.lastFrame() ?? ''));
+        const expected = FOOTERS[columns]?.[index] ?? '';
+        shown.push(footerOf(await untilFrame(app, (frame) => footerOf(frame) === expected)));
         app.unmount();
       }
       const pending = Promise.withResolvers<void>();
       const { app } = await startPlan({ session: { model: THINK }, models: MODELS, billing: Object.fromEntries(MODELS.map((model) => [model, 'local' as const])), reasoning: { [THINK]: REASONING }, listedProbing: true, modelPending: pending.promise }, {}, { columns, rows: 40 });
-      await untilFrame(app, 'mode: manual');
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      shown.push(footerOf(app.lastFrame() ?? ''));
+      shown.push(footerOf(await untilFrame(app, 'context: unknown')));
       pending.resolve();
       app.unmount();
       expect(shown).toEqual(FOOTERS[columns]);
@@ -152,7 +148,6 @@ describe('real-length server model names at real widths', () => {
     await listOf(app);
     app.stdin.write(KEYS.enter);
     await untilFrame(app, (frame) => frame.includes('Reasoning effort') && frame.includes('up/down to move'));
-    await new Promise((resolve) => setTimeout(resolve, 300));
     app.stdin.write(KEYS.tab);
     const frame = await untilOutput(app, (now) => rowsOf(now).some((line) => line.startsWith('model: ')));
     const lines = rowsOf(frame);

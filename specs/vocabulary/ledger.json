@@ -5,8 +5,16 @@
   "uses": {
     "otherMeaning": {
       "README.md": {
+        "benchmark": 2,
         "ceiling": 1,
-        "limit": 2
+        "directory": 5,
+        "endpoint": 1,
+        "evaluation": 1,
+        "gateway": 7,
+        "job": 5,
+        "limit": 2,
+        "project": 17,
+        "task": 1
       },
       "packages/cli/src/commands/jobs.ts": {
         "job": 1
@@ -61,16 +69,7 @@
     },
     "burnDown": {
       "README.md": {
-        "benchmark": 2,
-        "directory": 4,
-        "endpoint": 1,
-        "evaluation": 1,
-        "gateway": 7,
-        "job": 4,
-        "profile": 1,
-        "project": 10,
-        "target": 2,
-        "task": 1
+        "profile": 1
       },
       "packages/agents/src/pin.ts": {
         "task": 1
