@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import { isReasoningEffort, MAX_TOOL_PARAMETERS_BYTES, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
+import { MAX_TOOL_PARAMETERS_BYTES, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 import { refuseStoredResponses } from './input.ts';
@@ -408,8 +408,8 @@ export const createRequestValidator = (): RequestValidator => {
     let stubbed: unknown = isRecord(body) && Array.isArray(body['input']) ? { ...body, input: [] } : body;
     if (isRecord(stubbed) && isRecord(stubbed['reasoning'])) {
       const effort = stubbed['reasoning']['effort'];
-      if (isReasoningEffort(effort) && (effort === 'minimal' || effort === 'max')) {
-        stubbed = { ...stubbed, reasoning: { ...stubbed['reasoning'], effort: effort === 'max' ? 'xhigh' : 'low' } };
+      if (effort === 'max') {
+        stubbed = { ...stubbed, reasoning: { ...stubbed['reasoning'], effort: 'xhigh' } };
       }
     }
     const verdict = schema(stubbed);

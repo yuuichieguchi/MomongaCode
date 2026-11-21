@@ -163,10 +163,10 @@ describe('K14: Esc stops one foreground operation at a time', () => {
 });
 
 describe('K15: /login account operations close the list on confirm and Esc stops the pending operation', () => {
-  it('switch active account (even with no pinned models) closes the account list at once and Esc stops following up', async () => {
+  it('switch active account (with a configured model) closes the account list at once and Esc stops following up', async () => {
     const driver = await startAtRealTiming({
       ...SIGNED_IN,
-      accounts: [account({ pinnedBy: [] }), account({ label: 'work', active: false, pinnedBy: [] })],
+      accounts: [account({ pinnedBy: [] }), account({ label: 'work', active: false, pinnedBy: ['work/gpt-5.1'] })],
       catalogs: { work: GPT },
     });
     await driver.submit('/login chatgpt');
@@ -185,7 +185,31 @@ describe('K15: /login account operations close the list on confirm and Esc stops
     await driver.pause(50);
     held.release();
     await driver.pause(300);
-    expect(driver.frameNow()).not.toContain('gpt-5.1');
+    expect(driver.frameNow()).not.toContain('ChatGPT account in use: work');
+    driver.app.unmount();
+  });
+
+  it('switch active account with no pinned models opens the model picker before activating and Esc cancels cleanly', async () => {
+    const driver = await startAtRealTiming({
+      ...SIGNED_IN,
+      accounts: [account({ pinnedBy: [] }), account({ label: 'work', active: false, pinnedBy: [] })],
+      catalogs: { work: GPT },
+    });
+    await driver.submit('/login chatgpt');
+    await driver.untilShown(PICKER);
+    await driver.settled();
+    await toRow(driver, 'work');
+    const held = hold(driver.backend.plan, 'setActive');
+    driver.app.stdin.write(KEYS.enter);
+    await driver.untilShown((frame) => frame.includes('Choose a model of work'));
+    expect(held.calls()).toBe(0);
+    driver.app.stdin.write(KEYS.escape);
+    await driver.untilShown((frame) => !frame.includes('Choose a model of work'));
+    await driver.pause(50);
+    expect(held.calls()).toBe(0);
+    driver.app.stdin.write(PROBE);
+    await driver.pause(30);
+    expect(inputLineOf(driver.frameNow()).trimEnd()).toBe(`> ${PROBE}`);
     driver.app.unmount();
   });
 

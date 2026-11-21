@@ -7,7 +7,7 @@ import { HARNESS_INPUTS, testReusePlan } from './test/support/test-reuse.ts';
 
 const CALIBRATION_TESTS = 'packages/*/test/calibration/**/*.test.ts';
 
-const REPORTERS = ['default', './test/support/skip-ledger.ts', './test/support/reuse-reporter.ts'];
+const REPORTERS = ['default', './test/support/skip-ledger.ts', './test/support/reuse-reporter.ts', './test/support/error-log-reporter.ts'];
 
 const RECORDED_SETUP_FILES = ['test/support/reuse-recorder.ts', 'test/support/child-process-guard.ts', 'test/support/temp-entry-recorder.ts'];
 

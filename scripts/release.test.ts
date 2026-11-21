@@ -9,7 +9,8 @@ import { HAS_POSIX_SHELL } from './support/host.ts';
 import { createTempDir } from '@momonga/testkit';
 
 const STUB_SOURCES: Record<string, string> = {
-  npm: `case " $* " in *" \${STUB_NPM_FAIL:-no-such-script} "*) exit 1 ;; esac
+  npm: `if [ -n "\${MOMONGA_TEST_ERROR_LOG:-}" ]; then printf '%s\\n' "$MOMONGA_TEST_ERROR_LOG" > "$(dirname "$STUB_LOG")/npm-error-log-env.txt"; fi
+case " $* " in *" \${STUB_NPM_FAIL:-no-such-script} "*) exit 1 ;; esac
 output=""
 target="darwin-arm64"
 while [ "$#" -gt 0 ]; do
@@ -992,8 +993,26 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
   it('rejects an unknown option before running any command', () => {
     const result = release({}, ['--bogus']);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toBe("release.sh: unknown option '--bogus' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke, --notes-file <path>)\n");
+    expect(result.stderr).toBe("release.sh: unknown option '--bogus' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke, --notes-file <path>, --error-log <path>)\n");
     expect(loggedCalls()).toEqual([]);
+  });
+
+  it('--error-log passes MOMONGA_TEST_ERROR_LOG as an absolute path to npm test, supports DRY_RUN, and rejects a missing path', () => {
+    const missing = release({}, ['--error-log']);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toBe('release.sh: --error-log requires a path\n');
+    expect(loggedCalls()).toEqual([]);
+
+    const dryTarget = path.join(root, 'dry-error-dir', 'error.log');
+    const dry = release({ DRY_RUN: '1' }, ['--error-log', dryTarget]);
+    expect(dry.status, dry.stderr).toBe(0);
+    expect(dry.stdout).toContain(`DRY_RUN: env MOMONGA_TEST_ERROR_LOG=${dryTarget} npm test\n`);
+    expect(fs.existsSync(dryTarget)).toBe(false);
+
+    const ok = release({}, ['--error-log', 'logs/error.log']);
+    expect(ok.status, ok.stderr).toBe(0);
+    const recorded = fs.readFileSync(path.join(path.dirname(log), 'npm-error-log-env.txt'), 'utf8').trim();
+    expect(recorded).toBe(path.join(work, 'logs/error.log'));
   });
 
   it.each(['typecheck', 'test'])('stops before building when %s fails', (script) => {

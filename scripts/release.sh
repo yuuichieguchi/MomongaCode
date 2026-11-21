@@ -26,6 +26,7 @@ SKIP_TEST_SUITE=0
 SKIP_MACOS_SMOKE=0
 SKIP_LINUX_SMOKE=0
 NOTES_FILE_ARG=""
+ERROR_LOG_ARG=""
 binary_cdhash=""
 readonly RELEASE_BRANCH="${MOMONGA_RELEASE_BRANCH:-main}"
 readonly PUSH_BOUND_SECONDS=120
@@ -186,7 +187,12 @@ while [ "$#" -gt 0 ]; do
       NOTES_FILE_ARG="$2"
       shift
       ;;
-    *) fail "unknown option '$1' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke, --notes-file <path>)" ;;
+    --error-log)
+      [ "$#" -ge 2 ] || fail "--error-log requires a path"
+      ERROR_LOG_ARG="$2"
+      shift
+      ;;
+    *) fail "unknown option '$1' (supported: --skip-test-suite, --skip-linux-smoke, --skip-smoke, --notes-file <path>, --error-log <path>)" ;;
   esac
   shift
 done
@@ -194,7 +200,10 @@ if [ -n "$NOTES_FILE_ARG" ]; then
   [ -f "$NOTES_FILE_ARG" ] || fail "notes file '$NOTES_FILE_ARG' does not exist"
   NOTES_FILE_ARG="$(cd "$(dirname "$NOTES_FILE_ARG")" && pwd)/$(basename "$NOTES_FILE_ARG")"
 fi
-readonly SKIP_TEST_SUITE SKIP_MACOS_SMOKE SKIP_LINUX_SMOKE NOTES_FILE_ARG
+if [ -n "$ERROR_LOG_ARG" ]; then
+  ERROR_LOG_ARG="$(node -e 'process.stdout.write(require("node:path").resolve(process.argv[1]))' "$ERROR_LOG_ARG")"
+fi
+readonly SKIP_TEST_SUITE SKIP_MACOS_SMOKE SKIP_LINUX_SMOKE NOTES_FILE_ARG ERROR_LOG_ARG
 
 case "$DRY_RUN" in
   0 | 1) ;;
@@ -296,7 +305,11 @@ if [ "$SKIP_TEST_SUITE" = "1" ]; then
 else
   step "typecheck and every test project"
   run npm run typecheck
-  run npm test
+  if [ -n "$ERROR_LOG_ARG" ]; then
+    run env MOMONGA_TEST_ERROR_LOG="$ERROR_LOG_ARG" npm test
+  else
+    run npm test
+  fi
 fi
 
 step "build single executable"
