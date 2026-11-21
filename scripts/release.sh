@@ -23,6 +23,7 @@ readonly OTHER_ASSETS=(momonga-linux-x64 momonga-linux-arm64 momonga-win-x64.exe
 
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_TESTS=0
+binary_cdhash=""
 readonly RELEASE_BRANCH="${MOMONGA_RELEASE_BRANCH:-main}"
 readonly PUSH_BOUND_SECONDS=120
 readonly FETCH_BOUND_SECONDS=120
@@ -86,6 +87,45 @@ verify_team_id() {
   local display
   display="$(codesign --display --verbose=4 "$BINARY" 2>&1)" || fail "codesign --display failed: $display"
   grep -Fxq "TeamIdentifier=$MOMONGA_TEAM_ID" <<< "$display" || fail "the signed binary does not carry TeamIdentifier=$MOMONGA_TEAM_ID"
+  binary_cdhash="$(node -e '
+    for (const line of require("node:fs").readFileSync(0, "utf8").split(/\r?\n/)) {
+      if (line.startsWith("CDHash=")) {
+        process.stdout.write(line.slice("CDHash=".length).trim());
+        break;
+      }
+    }
+  ' <<< "$display")"
+  [ -n "$binary_cdhash" ] || fail "codesign --display did not report a CDHash for $BINARY"
+}
+
+verify_notarization_ticket() {
+  if [ "$DRY_RUN" = "1" ]; then
+    run xcrun notarytool log "<submission-id>" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER"
+    return
+  fi
+  local submission_id notary_log status=0
+  submission_id="$(node -e '
+    const raw = require("node:fs").readFileSync(0, "utf8").trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { parsed = JSON.parse(raw.split("\n")[0]); }
+    if (parsed && typeof parsed.id === "string" && parsed.id.length > 0) process.stdout.write(parsed.id);
+  ' <<< "$submission")" || fail "notarization output did not report a submission id"
+  [ -n "$submission_id" ] || fail "notarization output did not report a submission id"
+  notary_log="$(run xcrun notarytool log "$submission_id" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")"
+  node -e '
+    const expected = process.argv[1].toLowerCase();
+    const log = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+    if (log.status !== "Accepted") process.exit(2);
+    const contents = Array.isArray(log.ticketContents) ? log.ticketContents : [];
+    const found = contents.some((entry) => typeof entry?.cdhash === "string" && entry.cdhash.toLowerCase() === expected);
+    if (!found) process.exit(3);
+  ' "$binary_cdhash" <<< "$notary_log" || status=$?
+  case "$status" in
+    0) ;;
+    2) fail "notarization log status is not Accepted" ;;
+    3) fail "notarization ticket does not include CDHash $binary_cdhash of $BINARY" ;;
+    *) fail "notarization log could not be parsed" ;;
+  esac
 }
 
 assert_executable_format() {
@@ -217,8 +257,8 @@ if [ "$DRY_RUN" = "0" ]; then
   grep -Eq '"status"[[:space:]]*:[[:space:]]*"Accepted"' <<< "$submission" || fail "notarization was not accepted"
 fi
 
-step "assess with Gatekeeper"
-run spctl --assess --type execute --verbose=4 "$BINARY"
+step "verify notarization ticket"
+verify_notarization_ticket
 
 step "start the signed macOS executable on this host"
 smoke_here "$BINARY"

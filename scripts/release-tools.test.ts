@@ -9,7 +9,7 @@ import { createTempDir } from '@momonga/testkit';
 
 const TOOLS_SCRIPT = `${repoRoot}scripts/release-tools.sh`;
 const RELEASE_SCRIPT = `${repoRoot}scripts/release.sh`;
-const RELEASE_TOOLS = ['git', 'node', 'npm', 'gh', 'zig', 'codesign', 'xcrun', 'spctl', 'ditto', 'ssh-keygen', 'shasum', 'curl'];
+const RELEASE_TOOLS = ['git', 'node', 'npm', 'gh', 'zig', 'codesign', 'xcrun', 'ditto', 'ssh-keygen', 'shasum', 'curl'];
 
 describe.skipIf(!HAS_POSIX_SHELL)('the tools a release needs', () => {
   let root = '';

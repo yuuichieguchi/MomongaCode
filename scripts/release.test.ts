@@ -30,13 +30,18 @@ if [ -n "$output" ]; then
 fi`,
   ditto: `for last; do :; done
 : > "$last"`,
-  xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"; i=0; while [ "$i" -lt "\${STUB_NOTARY_PADDING_LINES:-0}" ]; do echo 'padding line of a long notary log'; i=$((i + 1)); done`,
-  spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
+  xcrun: `if [ "$1" = "notarytool" ] && [ "$2" = "log" ]; then
+  if [ "\${STUB_NOTARY_LOG_EXIT:-0}" != "0" ]; then exit "\${STUB_NOTARY_LOG_EXIT}"; fi
+  printf '{"status":"%s","ticketContents":[{"path":"momonga-darwin-arm64.zip/release/momonga-darwin-arm64","digestAlgorithm":"SHA-256","cdhash":"%s","arch":"arm64"}]}\\n' "\${STUB_NOTARY_LOG_STATUS:-Accepted}" "\${STUB_NOTARY_CDHASH:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
+else
+  printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"
+  i=0; while [ "$i" -lt "\${STUB_NOTARY_PADDING_LINES:-0}" ]; do echo 'padding line of a long notary log'; i=$((i + 1)); done
+fi`,
   zig: '',
   npx: `exit "\${STUB_SMOKE_EXIT:-0}"`,
   docker: `cat > /dev/null
 echo "EXIT=\${STUB_CONTAINER_SMOKE_EXIT:-0}"`,
-  codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-PQQBSRKD72}" >&2; i=0; while [ "$i" -lt "\${STUB_DISPLAY_PADDING_LINES:-0}" ]; do echo 'padding line of a long codesign display' >&2; i=$((i + 1)); done; fi`,
+  codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\nCDHash=%s\\n' "\${STUB_TEAM_ID:-PQQBSRKD72}" "\${STUB_CDHASH:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}" >&2; i=0; while [ "$i" -lt "\${STUB_DISPLAY_PADDING_LINES:-0}" ]; do echo 'padding line of a long codesign display' >&2; i=$((i + 1)); done; fi`,
   'ssh-keygen': `case " $* " in *" verify "*)
   signers=''
   while [ $# -gt 0 ]; do if [ "$1" = -f ]; then signers=$2; fi; shift; done
@@ -296,7 +301,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'rm -f',
       'ditto -c',
       'xcrun notarytool',
-      'spctl --assess',
+      'xcrun notarytool',
       `env MOMONGA_SEA_SMOKE_EXECUTABLE=${work}/dist/release/momonga-darwin-arm64`,
       'npm run',
       'npm run',
@@ -353,7 +358,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'codesign --display',
       'ditto -c',
       'xcrun notarytool',
-      'spctl --assess',
+      'xcrun notarytool',
       'npx vitest',
       'npm run',
       'npm run',
@@ -378,7 +383,9 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(calls[7]).toBe(
       `xcrun notarytool submit ${binary}.zip --key ${keyFile} --key-id FAKEKEYID1 --issuer 00000000-0000-0000-0000-000000000000 --wait --output-format json `,
     );
-    expect(calls[8]).toBe(`spctl --assess --type execute --verbose=4 ${binary} `);
+    expect(calls[8]).toBe(
+      `xcrun notarytool log fake-submission --key ${keyFile} --key-id FAKEKEYID1 --issuer 00000000-0000-0000-0000-000000000000 `,
+    );
     expect(calls[9]).toBe('npx vitest run --project packaging scripts/sea-smoke.test.ts ');
     const out = `${work}/dist/release`;
     expect(calls.slice(10, 13)).toEqual(
@@ -506,13 +513,32 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(loggedNames()).not.toContain('gh');
   });
 
-  it('stops at a failed Gatekeeper assessment before publishing', () => {
+  it('stops before publishing when the notarization log command fails', () => {
     commit('second change');
-    const result = release({ STUB_SPCTL_EXIT: '1' });
+    const result = release({ STUB_NOTARY_LOG_EXIT: '1' });
     expect(result.status).not.toBe(0);
-    expect(loggedNames()).toEqual([...BUILT, 'codesign', 'codesign', 'codesign', 'ditto', 'xcrun', 'spctl']);
+    expect(loggedNames()).toEqual([...BUILT, 'codesign', 'codesign', 'codesign', 'ditto', 'xcrun', 'xcrun']);
     expect(originTags()).toBe('');
     expect(fs.existsSync(`${work}/dist/release/SHA256SUMS`)).toBe(false);
+  });
+
+  it('stops before publishing when the notarization ticket does not include the binary CDHash', () => {
+    commit('second change');
+    const result = release({ STUB_NOTARY_CDHASH: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('notarization ticket does not include CDHash aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(loggedNames()).toEqual([...BUILT, 'codesign', 'codesign', 'codesign', 'ditto', 'xcrun', 'xcrun']);
+    expect(originTags()).toBe('');
+    expect(fs.existsSync(`${work}/dist/release/SHA256SUMS`)).toBe(false);
+  });
+
+  it('stops before publishing when the notarization log status is not Accepted', () => {
+    commit('second change');
+    const result = release({ STUB_NOTARY_LOG_STATUS: 'Invalid' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toBe('release.sh: notarization log status is not Accepted\n');
+    expect(loggedNames()).toEqual([...BUILT, 'codesign', 'codesign', 'codesign', 'ditto', 'xcrun', 'xcrun']);
+    expect(originTags()).toBe('');
   });
 
   it('stops when notarization is not accepted', () => {
