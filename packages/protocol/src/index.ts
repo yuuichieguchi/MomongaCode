@@ -1,4 +1,6 @@
 export { UNKNOWN_VALUE } from './stored-value.ts';
+export { DEFAULT_OUTPUT_STYLE, OUTPUT_STYLES, isOutputStyle } from './output-style.ts';
+export type { OutputStyle } from './output-style.ts';
 export { enforcedBehaviorOf } from './governance.ts';
 export type { EnforcedBehavior } from './governance.ts';
 export type { Stored } from './stored-value.ts';

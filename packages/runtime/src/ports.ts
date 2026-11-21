@@ -1,4 +1,4 @@
-import type { Lease, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { Lease, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedOutputSettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement, SandboxNetworkSetting, UnixSocketPolicy, VerdictSubject } from '@momonga/foundation';
 import type {
   Capabilities,
@@ -55,6 +55,7 @@ export type SettingsPort = {
   memory(target: Pick<Session, 'cwd'>, signal: AbortSignal): Promise<ResolvedMemorySettings>;
   context(session: Session, signal: AbortSignal): Promise<ResolvedContextSettings>;
   tools(session: Session, signal: AbortSignal): Promise<ResolvedToolsSettings>;
+  output?(session: Session, signal: AbortSignal): Promise<ResolvedOutputSettings>;
   autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
   trusted(session: Session, signal: AbortSignal): Promise<boolean>;

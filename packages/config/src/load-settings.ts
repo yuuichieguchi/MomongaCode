@@ -24,6 +24,8 @@ import {
   withCompletionConditions,
 } from './context-settings.ts';
 import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
+import { defaultOutputSettings, mergeOutputSettings } from './output-settings.ts';
+import type { ResolvedOutputSettings } from './output-settings.ts';
 import { keyStoreOf, layoutOf } from './layout.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
@@ -83,6 +85,7 @@ export type ResolvedSettings = {
   verification: ResolvedVerificationSettings;
   context: ResolvedContextSettings;
   tools: ResolvedToolsSettings;
+  output: ResolvedOutputSettings;
 };
 
 export type PendingHookGroup = { event: keyof HooksSettings; group: HookGroups[number]; digest: string; source: string };
@@ -258,6 +261,7 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
     verification: defaultVerificationSettings(),
     context: defaultContextSettings(),
     tools: defaultToolsSettings(),
+    output: defaultOutputSettings(),
   };
   let unixSockets: { source: string; allow: string[] } | undefined;
   let declaredCommands: string[] | undefined;
@@ -306,12 +310,14 @@ export function* mergingLayers(layers: Layer[], models: ResolvedModels, home: st
       verification,
       context,
       tools,
+      output,
     } = layer.settings;
     merged.memory = mergeMemorySettings(merged.memory, memory);
     merged.verification = mergeVerificationSettings(merged.verification, verification);
     declaredCommands = verification?.commands ?? declaredCommands;
     merged.context = mergeContextSettings(merged.context, context);
     merged.tools = mergeToolsSettings(merged.tools, tools);
+    merged.output = mergeOutputSettings(merged.output, output);
     if (permissions?.defaultMode !== undefined) {
       merged.permissions.defaultMode = permissions.defaultMode;
       merged.permissions.defaultModeOrigin = layer.origin;

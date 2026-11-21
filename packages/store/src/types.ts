@@ -6,7 +6,7 @@ import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type { UnaskedCommands } from './inherit.ts';
-import type { ReasoningEffort } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort } from '@momonga/protocol';
 import type {
   ApprovalShown,
   CallFootprint,
@@ -69,6 +69,7 @@ export type Session = {
   permissionMode: Stored<PermissionMode>;
   model: string;
   effort: Stored<ReasoningEffort> | null;
+  outputStyle: Stored<OutputStyle> | null;
   bypassAllowed: boolean;
   sandboxNetwork: SandboxNetworkSetting | null;
   additionalDirectories: readonly string[];
@@ -89,6 +90,7 @@ export type CreateSessionInput = {
   permissionMode: PermissionMode;
   model: string;
   effort?: ReasoningEffort;
+  outputStyle?: OutputStyle;
   bypassAllowed?: boolean;
   sandboxNetwork?: SandboxNetworkSetting;
   additionalDirectories?: readonly string[];
@@ -207,6 +209,7 @@ export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: b
 
 export type SetModelResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 export type SetEffortResult = { kind: 'ok'; session: Session } | NotFound;
+export type SetOutputStyleResult = { kind: 'ok'; session: Session } | NotFound;
 export type SetSessionMcpServersResult = { kind: 'ok'; session: Session } | NotFound;
 export type ResolveApprovalResult =
   | { kind: 'ok'; approval: Approval; run: Run }
@@ -669,6 +672,7 @@ export type RuntimeStore = {
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
   setModel(sessionId: string, model: string): SetModelResult;
   setEffort(sessionId: string, effort: ReasoningEffort | null): SetEffortResult;
+  setOutputStyle(sessionId: string, outputStyle: OutputStyle | null): SetOutputStyleResult;
   setSessionMcpServers(sessionId: string, servers: SessionMcpServers): SetSessionMcpServersResult;
   listRuns(sessionId: string, statuses?: readonly RunStatus[]): Run[];
   appendAsService(

@@ -239,6 +239,12 @@ export const fakeRuntime = (): FakeRuntime => {
       runtime.session = effort === null ? rest : { ...rest, effort };
       return runtime.session;
     },
+    setOutputStyle: async (id, outputStyle) => {
+      record(`setOutputStyle ${id} ${String(outputStyle)}`);
+      const { outputStyle: _dropped, ...rest } = runtime.session;
+      runtime.session = outputStyle === null ? rest : { ...rest, outputStyle };
+      return runtime.session;
+    },
     setModel: async (id, model) => {
       record(`setModel ${id} ${model}`);
       const failure = runtime.failures.get('setModel');

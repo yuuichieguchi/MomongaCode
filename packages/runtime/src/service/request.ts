@@ -1,7 +1,7 @@
 import { JsonDepthError, defineProductSchema, parseOutsideJson } from '@momonga/foundation';
 import type { ProductValidator, SandboxNetworkSetting, UntrustedError } from '@momonga/foundation';
 import { PATTERN_RULES, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
-import type { ImageAttachment, InboxDelivery, JsonSchema, PermissionMode, Mandate, ReasoningEffort } from '@momonga/protocol';
+import type { ImageAttachment, InboxDelivery, JsonSchema, OutputStyle, PermissionMode, Mandate, ReasoningEffort } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
 
 export type CreateSessionBody = {
@@ -14,9 +14,10 @@ export type CreateSessionBody = {
   mcpServers?: Record<string, Record<string, unknown>>;
   terminalUi?: boolean;
   effort?: ReasoningEffort;
+  outputStyle?: OutputStyle;
 };
 
-export type PatchSessionBody = { permissionMode?: PermissionMode; model?: string; mcpServers?: Record<string, Record<string, unknown>>; effort?: ReasoningEffort | null };
+export type PatchSessionBody = { permissionMode?: PermissionMode; model?: string; mcpServers?: Record<string, Record<string, unknown>>; effort?: ReasoningEffort | null; outputStyle?: OutputStyle | null };
 
 export type CreateRunBody = {
   input: string;

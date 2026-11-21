@@ -1,5 +1,25 @@
 export { ConfigError } from '@momonga/config';
-export { buildSystemPrompt } from './system-prompt.ts';
+export { buildSystemPrompt, buildSystemPromptSections, COMPACT_CONTEXT_WINDOW_THRESHOLD } from './system-prompt.ts';
+export type { SystemPromptSections } from './system-prompt.ts';
+export {
+  actionableIssueCount,
+  buildPolishPrompt,
+  DEFAULT_POLISH_AUDIENCE,
+  MAX_POLISH_ITERATIONS,
+  parseClarityEvaluation,
+  POLISH_ISSUE_TYPES,
+  POLISH_SEVERITIES,
+  shouldStopPolish,
+} from './polish.ts';
+export type {
+  PolishEvaluationResult,
+  PolishIssue,
+  PolishIssueType,
+  PolishRequest,
+  PolishSeverity,
+  PolishStopDecision,
+  PolishTarget,
+} from './polish.ts';
 export { INIT_INSTRUCTION } from './prompts/init.ts';
 export { checkProposalOf } from './worker/check-proposal.ts';
 export type { CheckProposal } from './worker/check-proposal.ts';

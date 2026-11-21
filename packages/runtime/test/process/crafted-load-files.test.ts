@@ -43,6 +43,7 @@ const sessionAt = (cwd: string): Session => ({
   permissionMode: 'manual',
   model: 'model',
   effort: null,
+  outputStyle: null,
   bypassAllowed: false,
   sandboxNetwork: null,
   additionalDirectories: [],

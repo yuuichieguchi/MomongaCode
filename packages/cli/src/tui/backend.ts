@@ -3,7 +3,7 @@ import { createOutboundDispatcher, findOutboundError, findProgramOnPath, hostPat
 import { withOutboundNetwork } from '../network.ts';
 import type { NetworkCheck, NetworkView } from './commands/network.ts';
 import type { FileCandidates } from '@momonga/foundation';
-import type { ReasoningEffort, TrustItemsView } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, TrustItemsView } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
@@ -91,6 +91,7 @@ export type TuiBackend = {
   models(): Promise<readonly MomongaModelEntry[]>;
   setModel(model: string, effort?: ReasoningEffort): Promise<SessionView>;
   setEffort(effort: ReasoningEffort | null): Promise<SessionView>;
+  setOutputStyle?(outputStyle: OutputStyle | null): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
   startRun(text: string, options?: StartRunOptions): Promise<RunView>;
   compact(instructions?: string): Promise<RunView>;
@@ -310,6 +311,10 @@ export const createTuiBackend = (
     },
     setEffort: async (effort) => {
       session = await runtime().setEffort(current().id, effort);
+      return session;
+    },
+    setOutputStyle: async (outputStyle) => {
+      session = await runtime().setOutputStyle(current().id, outputStyle);
       return session;
     },
     autoModeAvailable: () => autoModeConfigured(ports, closing.signal),

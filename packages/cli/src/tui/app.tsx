@@ -3,7 +3,7 @@ import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
 import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, escapeTerminalLine, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
-import type { ReasoningEffort, ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
@@ -290,6 +290,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
   const [sessionModel, setSessionModel] = useState<string | undefined>(undefined);
   const [sessionEffort, setSessionEffort] = useState<ReasoningEffort | undefined>(undefined);
+  const [sessionOutputStyle, setSessionOutputStyle] = useState<OutputStyle | undefined>(undefined);
   const entriesRef = useRef<readonly MomongaModelEntry[]>([]);
   const sessionEffortRef = useRef<ReasoningEffort | undefined>(undefined);
   const effortNotedRef = useRef(false);
@@ -557,6 +558,13 @@ export function App(props: AppProps) {
     rereadModel();
   };
 
+  const applyOutputStyle = async (chosen: OutputStyle | null): Promise<void> => {
+    overlayPorts.closeScreen();
+    if (backend.setOutputStyle === undefined) return;
+    const session = await runCancellable(() => backend.setOutputStyle!(chosen));
+    setSessionOutputStyle(session.outputStyle);
+  };
+
   const bannerModelIn = (kind: Phase['kind'], model: string | undefined, effort: ReasoningEffort | undefined): BannerModel =>
     kind === 'trust' ? { kind: 'unread' } : model === undefined ? { kind: 'not-connected', login: kind === 'unconnected' } : connectedModel(model, effort);
 
@@ -631,6 +639,7 @@ export function App(props: AppProps) {
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
     setSessionEffort(session.effort);
+    setSessionOutputStyle(session.outputStyle);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
     const configured = (await readDisplays()).has(session.model);
@@ -1330,8 +1339,10 @@ export function App(props: AppProps) {
       mode,
       model: sessionModel,
       effort: sessionEffort,
+      outputStyle: sessionOutputStyle,
       shownModel,
       setEffort: applyEffort,
+      setOutputStyle: applyOutputStyle,
       found,
       wait: waitFor,
       toast: (text) => view.showToast(text),
