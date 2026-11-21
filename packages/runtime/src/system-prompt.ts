@@ -95,14 +95,14 @@ const toolStableSection = (style: OutputStyle, compact: boolean): string => {
         '- Evidence first: inspect code first; never claim unverified reads, runs, or edits.',
         '- Root cause first: on failure or refusal, diagnose and change approach; never repeat blindly.',
         '- Minimal scope: keep edits within the request; no unrequested files.',
-        '- Verify changes: run project checks when present; note any check not run.',
+        '- Verify changes: run repository checks when present; note any check not run.',
         '- Handle uncertainty: do not guess; state missing info or decisions.',
       ]
     : [
         '- Evidence first: inspect code before changing it; never claim unverified reads, runs, or edits.',
         '- Root cause first: on failure or user refusal, diagnose the cause and change approach instead of repeating the same call.',
         '- Minimal scope: keep changes within the request; avoid unrequested files or unrelated edits.',
-        '- Verify changes: run project checks when they exist and state clearly when any check was not run.',
+        '- Verify changes: run repository checks when they exist and state clearly when any check was not run.',
         '- Handle uncertainty: on ambiguous requirements or decisions, do not guess—state what is missing or needs a decision.',
       ];
 

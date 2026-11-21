@@ -53,11 +53,11 @@ export const parseClarityEvaluation = (raw: string): PolishEvaluationResult => {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { ok: false, reason: 'clarity evaluation output is not valid JSON' };
+    return { ok: false, reason: 'clarity review output is not valid JSON' };
   }
   const list = Array.isArray(parsed) ? parsed : isRecord(parsed) && Array.isArray(parsed['issues']) ? parsed['issues'] : undefined;
   if (list === undefined) {
-    return { ok: false, reason: 'clarity evaluation must be a JSON array or an object with an "issues" array' };
+    return { ok: false, reason: 'clarity review must be a JSON array or an object with an "issues" array' };
   }
   const issues: PolishIssue[] = [];
   for (let index = 0; index < list.length; index += 1) {
@@ -111,25 +111,25 @@ export const buildPolishPrompt = (request: PolishRequest): string => {
   const audience = request.audience?.trim() || DEFAULT_POLISH_AUDIENCE;
   const targetBlock =
     request.target.kind === 'file'
-      ? `Target file: ${request.target.path}\nRead this file first before evaluating.`
-      : `Target text (previous assistant response):\n---\n${request.target.text}\n---`;
+      ? `File to polish: ${request.target.path}\nRead this file first before reviewing.`
+      : `Text to polish (previous assistant response):\n---\n${request.target.text}\n---`;
 
   const outputRule =
     request.target.kind === 'file'
-      ? 'Output: present the localized diff and any unresolved items, then apply edits to the target file through the normal file-edit tool (subject to user confirmation).'
+      ? 'Output: present the localized diff and any unresolved items, then apply edits to the file through the normal file-edit tool (subject to user confirmation).'
       : 'Output: present the polished text directly in your response, followed by any unresolved items (if any).';
 
   return [
-    'Run the bounded clarity-and-factuality polish workflow on the target below.',
-    `Target audience: ${audience}`,
+    'Run the bounded clarity-and-factuality polish workflow on the material below.',
+    `Intended audience: ${audience}`,
     '',
     targetBlock,
     '',
     'Workflow (maximum 2 iterations):',
-    `1. Clarity Evaluator: Do NOT assign numeric scores. Identify concrete defects for the target audience using issue types (${POLISH_ISSUE_TYPES.join(', ')}), severity (low/medium/high), exact span, evidence, revision instruction, and whether a codebase source check is required.`,
+    `1. Clarity Evaluator: Do NOT assign numeric scores. Identify concrete defects for the intended audience using issue types (${POLISH_ISSUE_TYPES.join(', ')}), severity (low/medium/high), exact span, evidence, revision instruction, and whether a codebase source check is required.`,
     '2. Semantic Validator: Verify technical claims, symbol names, file paths, and behavior against the actual codebase using read-only tools. Flag any contradiction or dropped specification.',
     '3. Editor (localized revision): Revise ONLY the spans with high or medium severity defects while preserving all verified facts and constraints. Never invent facts absent from the source text or codebase; list any unresolvable gaps under "Unresolved items".',
-    `4. Stopping rule: Stop immediately when no high/medium defects remain, when an iteration fails to reduce high/medium defects, or after ${MAX_POLISH_ITERATIONS} iterations. If evaluation or codebase verification cannot be completed, stop safely and report the last valid draft along with what verification remains incomplete.`,
+    `4. Stopping rule: Stop immediately when no high/medium defects remain, when an iteration fails to reduce high/medium defects, or after ${MAX_POLISH_ITERATIONS} iterations. If review or codebase verification cannot be completed, stop safely and report the last valid draft along with what verification remains incomplete.`,
     '',
     outputRule,
   ].join('\n');

@@ -16,7 +16,7 @@ afterEach(async () => {
 const makeContext = async (options: { current?: OutputStyle; choice?: { index: number; alt?: boolean } }) => {
   const home = await mkdtemp(path.join(os.tmpdir(), 'momonga-style-cmd-'));
   dirs.push(home);
-  const settingsFile = path.join(home, 'settings.json');
+  const settingsFile = path.join(home, '.momonga', 'settings.json');
   const infos: string[] = [];
   const applied: Array<OutputStyle | null> = [];
   let pickerRequest: unknown;

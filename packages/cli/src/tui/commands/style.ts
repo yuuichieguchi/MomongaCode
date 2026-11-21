@@ -1,6 +1,4 @@
-import { readFile } from 'node:fs/promises';
-import { writeOutputStyleSetting } from '@momonga/config';
-import { isRecord } from '@momonga/foundation';
+import { loadUserSettings, writeOutputStyleSetting } from '@momonga/config';
 import { DEFAULT_OUTPUT_STYLE, OUTPUT_STYLES, isOutputStyle } from '@momonga/protocol';
 import type { OutputStyle } from '@momonga/protocol';
 import type { SlashCommand, SlashContext } from '../slash.ts';
@@ -76,11 +74,10 @@ export const chooseStyle = async (overlays: Pick<OverlayPorts, 'choose'>, inForc
   return { style, scope: choice.alt ? 'session' : 'saved' };
 };
 
-const savedOutputStyleOf = async (settingsFile: string): Promise<OutputStyle | undefined> => {
+const savedOutputStyleOf = async (home: string, signal: AbortSignal): Promise<OutputStyle | undefined> => {
   try {
-    const parsed: unknown = JSON.parse(await readFile(settingsFile, 'utf8'));
-    if (!isRecord(parsed) || !isRecord(parsed['output'])) return undefined;
-    const style = parsed['output']['style'];
+    const loaded = await loadUserSettings({ home, env: {}, signal });
+    const style = loaded.settings.output?.style;
     return isOutputStyle(style) ? style : undefined;
   } catch {
     return undefined;
@@ -110,9 +107,10 @@ export const styleCommand: SlashCommand = {
       await applyStyle(context, word, typed.session ? 'session' : 'saved');
       return;
     }
+    const signal = new AbortController().signal;
     const inForce =
       context.outputStyle ??
-      (await savedOutputStyleOf(context.backend.modelsHost(new AbortController().signal, context.info).settingsFile)) ??
+      (await savedOutputStyleOf(context.backend.modelsHost(signal, context.info).home, signal)) ??
       DEFAULT_OUTPUT_STYLE;
     const chosen = await chooseStyle(context.overlays, inForce);
     if (chosen === undefined) return;
