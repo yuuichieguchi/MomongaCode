@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import { MAX_TOOL_PARAMETERS_BYTES, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
+import { isReasoningEffort, MAX_TOOL_PARAMETERS_BYTES, MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 import { refuseStoredResponses } from './input.ts';
@@ -405,7 +405,13 @@ export const createRequestValidator = (): RequestValidator => {
   };
 
   const validateWithItems = (schema: ComponentValidator, body: unknown): void => {
-    const stubbed = isRecord(body) && Array.isArray(body['input']) ? { ...body, input: [] } : body;
+    let stubbed: unknown = isRecord(body) && Array.isArray(body['input']) ? { ...body, input: [] } : body;
+    if (isRecord(stubbed) && isRecord(stubbed['reasoning'])) {
+      const effort = stubbed['reasoning']['effort'];
+      if (isReasoningEffort(effort) && (effort === 'minimal' || effort === 'max')) {
+        stubbed = { ...stubbed, reasoning: { ...stubbed['reasoning'], effort: effort === 'max' ? 'xhigh' : 'low' } };
+      }
+    }
     const verdict = schema(stubbed);
     if (!verdict.valid) throwIssue(issueOf(verdict.errors, []));
     if (isRecord(body) && Array.isArray(body['input'])) validateItems(body['input']);

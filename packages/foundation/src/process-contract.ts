@@ -36,6 +36,7 @@ export const MINIMAL_CHILD_ENV_NAMES = ['PATH', 'HOME', 'LANG', 'TMPDIR'] as con
 export const MINIMAL_CHILD_ENV_LC_PREFIX = 'LC_';
 export const CREDENTIAL_CAPABILITY_ENV = 'MOMONGA_CREDENTIAL_CAPABILITY';
 export const CREDENTIAL_CAPABILITY_HEADER = 'momonga-credential-capability';
+export const EXTERNAL_CLI_PATH_ENV = 'MOMONGA_EXTERNAL_CLI_PATH';
 
 export const KILL_CONFIRM_MS = 5000;
 export const ABORT_SETTLE_LIMIT_MS = 2000;

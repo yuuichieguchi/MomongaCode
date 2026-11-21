@@ -14,6 +14,7 @@ import {
   runtimeAbortStopBudgetMs,
   runtimeStopBudgetMs,
   CREDENTIAL_CAPABILITY_ENV,
+  EXTERNAL_CLI_PATH_ENV,
   SETTINGS_APPLIED_ENV,
   generationLayout,
 } from '@momonga/foundation';
@@ -408,11 +409,18 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     });
     if (role === 'gateway') reportSkippedNames(skippedNames);
     const spawnCapability = role === 'gateway' ? randomBytes(CAPABILITY_BYTES).toString('hex') : undefined;
+    const externalCliPath = role === 'gateway' && typeof options.env['PATH'] === 'string' && options.env['PATH'] !== '' ? options.env['PATH'] : undefined;
     const marker = openDaemonMarker(options.paths.markers.daemons, role, options.markerPorts?.files);
     try {
       const handle = await options.spawn(resolved.command, resolved.args, {
         cwd: options.home,
-        env: { ...resolved.env, [SETTINGS_APPLIED_ENV]: generationLayout(options.home, options.generation).settingsApplied, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
+        env: {
+          ...resolved.env,
+          [SETTINGS_APPLIED_ENV]: generationLayout(options.home, options.generation).settingsApplied,
+          ...(handoff === undefined ? {} : handoff.env),
+          ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }),
+          ...(externalCliPath === undefined ? {} : { [EXTERNAL_CLI_PATH_ENV]: externalCliPath }),
+        },
         markerFile: marker.path,
         stdio: childStdio(marker.fd, handoff?.descriptor),
       });

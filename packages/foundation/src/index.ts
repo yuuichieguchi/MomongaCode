@@ -419,7 +419,7 @@ export { defineProductSchema, productErrorsText, productSchemas } from './produc
 export type { ProductSchema, ProductValidator } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
-export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
+export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, EXTERNAL_CLI_PATH_ENV } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
 export { replaceExecutable } from './platform/replace-executable.ts';
 export type { BundledExecutableManifest } from './platform/bundled-executable.ts';

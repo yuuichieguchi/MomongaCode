@@ -2,11 +2,14 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { planProfileOf } from '@momonga/config';
+import { CREDENTIAL_CAPABILITY_ENV, EXTERNAL_CLI_PATH_ENV } from '@momonga/foundation';
 import { TEST_FENCE, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { AdapterContext, AdapterRequest, StreamEvent } from '@momonga/protocol';
 import { buildCliArgs, classifyCliError, createCliSubprocessAdapter } from '../src/adapters/cli-subprocess/adapter.ts';
 import type { CliChildProcess } from '../src/adapters/cli-subprocess/adapter.ts';
 import { parseExternalCliStatus } from '../src/adapters/cli-subprocess/status.ts';
+import { createRequestValidator } from '../src/core/validation.ts';
+import { externalCliEnv } from '../src/process-ports.ts';
 
 const CLAUDE_PROFILE = planProfileOf('claude-code');
 const CLAUDE_CLI = CLAUDE_PROFILE.externalCli!;
@@ -97,6 +100,12 @@ describe('external CLI status parsing', () => {
 });
 
 describe('CLI subprocess adapter', () => {
+  it('accepts reasoning.effort = max in the gateway create request validator', () => {
+    const validator = createRequestValidator();
+    const parsed = validator.parseCreate({ model: 'claude-code/fable', input: 'hello', reasoning: { effort: 'max' } });
+    expect(parsed.reasoning?.effort).toBe('max');
+  });
+
   it('builds stateless, no-tools CLI args with exact effort levels including xhigh and max', () => {
     const args = buildCliArgs(CLAUDE_CLI, 'fable', 'max', 'Be concise');
     expect(args).toEqual([
@@ -207,5 +216,23 @@ describe('CLI subprocess adapter', () => {
     controller.abort(new Error('cancelled'));
     await expect(pending).rejects.toThrow(/cancelled/);
     expect(spawned?.killedSignals).toContain('SIGTERM');
+  });
+
+  it('builds a clean external CLI env with the user PATH while stripping gateway credentials', () => {
+    const built = externalCliEnv({
+      PATH: '/usr/bin:/bin',
+      HOME: '/Users/alice',
+      LANG: 'en_US.UTF-8',
+      HTTPS_PROXY: 'http://proxy:3128',
+      [EXTERNAL_CLI_PATH_ENV]: '/Users/alice/.local/bin:/opt/homebrew/bin:/usr/bin:/bin',
+      [CREDENTIAL_CAPABILITY_ENV]: 'secret-cap',
+      ANTHROPIC_API_KEY: 'sk-ant-should-not-leak',
+    });
+    expect(built['PATH']).toBe('/Users/alice/.local/bin:/opt/homebrew/bin:/usr/bin:/bin');
+    expect(built['HOME']).toBe('/Users/alice');
+    expect(built['HTTPS_PROXY']).toBe('http://proxy:3128');
+    expect(built[EXTERNAL_CLI_PATH_ENV]).toBeUndefined();
+    expect(built[CREDENTIAL_CAPABILITY_ENV]).toBeUndefined();
+    expect(built['ANTHROPIC_API_KEY']).toBeUndefined();
   });
 });

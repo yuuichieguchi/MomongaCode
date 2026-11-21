@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { EntryUsageError, createPathResolver, nodeFileSystem, systemTiming } from '@momonga/foundation';
+import { EXTERNAL_CLI_PATH_ENV, EntryUsageError, NETWORK_ENV_NAMES, createPathResolver, minimalChildEnv, nodeFileSystem, systemTiming } from '@momonga/foundation';
 import type { Clock, PathResolver, Timing } from '@momonga/foundation';
 import type { CliChildProcess, SpawnCliProcess } from './adapters/cli-subprocess/adapter.ts';
 import type { ExternalCliExecResult, ExternalCliStatusExec } from './adapters/cli-subprocess/status.ts';
@@ -102,12 +102,28 @@ export const systemProcessPorts: ProcessPorts = {
   pid: process.pid,
 };
 
-export const createCliProcessSpawner = (env: NodeJS.ProcessEnv = process.env): SpawnCliProcess => (command, args) =>
-  spawn(command, [...args], { stdio: ['pipe', 'pipe', 'pipe'], env }) as unknown as CliChildProcess;
+export const externalCliEnv = (env: NodeJS.ProcessEnv = process.env): Record<string, string> => {
+  const result: Record<string, string> = { ...minimalChildEnv(env) };
+  for (const name of NETWORK_ENV_NAMES) {
+    const value = env[name];
+    if (value !== undefined) result[name] = value;
+  }
+  const cliPath = env[EXTERNAL_CLI_PATH_ENV] ?? env['PATH'];
+  if (cliPath !== undefined && cliPath !== '') result['PATH'] = cliPath;
+  return result;
+};
 
-export const createExternalCliStatusExec =
-  (env: NodeJS.ProcessEnv = process.env, timers: Pick<Timing, 'setTimeout' | 'clearTimeout'> = realTimers): ExternalCliStatusExec =>
-  (command, args, signal) =>
+export const createCliProcessSpawner = (env: NodeJS.ProcessEnv = process.env): SpawnCliProcess => {
+  const childEnv = externalCliEnv(env);
+  return (command, args) => spawn(command, [...args], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv }) as unknown as CliChildProcess;
+};
+
+export const createExternalCliStatusExec = (
+  env: NodeJS.ProcessEnv = process.env,
+  timers: Pick<Timing, 'setTimeout' | 'clearTimeout'> = realTimers,
+): ExternalCliStatusExec => {
+  const childEnv = externalCliEnv(env);
+  return (command, args, signal) =>
     new Promise<ExternalCliExecResult>((resolve) => {
       let settled = false;
       const finish = (result: ExternalCliExecResult): void => {
@@ -117,7 +133,7 @@ export const createExternalCliStatusExec =
       };
       let child: ReturnType<typeof spawn>;
       try {
-        child = spawn(command, [...args], { stdio: ['ignore', 'pipe', 'pipe'], env });
+        child = spawn(command, [...args], { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
       } catch (error) {
         if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') finish({ kind: 'missing' });
         else finish({ kind: 'exited', code: 1, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
@@ -163,3 +179,4 @@ export const createExternalCliStatusExec =
         });
       });
     });
+};
