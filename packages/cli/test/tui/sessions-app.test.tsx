@@ -232,6 +232,7 @@ describe('/clear (9.4)', () => {
     await untilFrame(app, 'mode: acceptEdits');
     await enter(app, '/model qwen3.8:27b');
     await backend.called(`model:${QWEN}`);
+    await untilOutput(app, 'applies from the next run');
     await runStarted(backend, app, 'first task');
     backend.finish(runView());
     await untilFrame(app, IDLE);

@@ -39,7 +39,7 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
         subcommands: [
           { name: 'adopt', usage: '<file>', description: 'store the winner of an outcome file that context improve wrote' },
           { name: 'list', description: 'list the adopted guidelines, oldest first' },
-          { name: 'rollback', usage: '<version>', description: 'return to the text of an earlier version, recorded as a new version' },
+          { name: 'rollback', usage: '<version>', description: 'roll back to an earlier version, recorded as a new version' },
         ],
       },
     ],
