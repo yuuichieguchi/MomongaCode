@@ -832,6 +832,8 @@ The layer column names the settings files that may set the key: the user file `~
 | `projectChecks` | map of object or object |  |  | user |
 | `retention` | object |  |  | user |
 | `retention.days` | integer (at least 1, at most 36500) | `30` | days | user |
+| `output` | object |  |  | user, project, local |
+| `output.style` | `"standard"` or `"concise"` or `"explanatory"` | `"standard"` |  | user, project, local |
 
 ## Environment variables
 
