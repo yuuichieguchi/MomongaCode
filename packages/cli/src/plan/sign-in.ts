@@ -14,14 +14,14 @@ export type SignInListener = {
   close(): Promise<void>;
 };
 
-export type StartSignInListener = (path: string) => Promise<SignInListener>;
+export type StartSignInListener = (path: string, port?: number) => Promise<SignInListener>;
 
 export type SandboxKind = 'seatbelt' | 'bubblewrap' | 'none';
 
 export const loopbackSignInListener =
   (timers: LoopbackRedirectOptions['timers'], signal: AbortSignal): StartSignInListener =>
-  async (path) => {
-    const redirect = await startLoopbackRedirect({ port: 0, path, timers });
+  async (path, port = 0) => {
+    const redirect = await startLoopbackRedirect({ port, path, timers });
     return {
       port: Number(new URL(redirect.redirectUrl).port),
       redirectUrl: redirect.redirectUrl,
@@ -114,6 +114,8 @@ const ATTEMPT_NOT_FOUND = PLAN_SIGN_IN_FAILURE.attemptNotFound;
 
 export const callbackPathOf = (profile: string): string => planProfileOf(profile).oauth.callbackPath;
 
+export const callbackPortOf = (profile: string): number | undefined => planProfileOf(profile).oauth.callbackPort;
+
 const firstValue = async (sources: readonly ((signal: AbortSignal) => Promise<string>)[], signal: AbortSignal): Promise<string> => {
   const losers = new AbortController();
   const both = AbortSignal.any([signal, losers.signal]);
@@ -166,7 +168,7 @@ const afterConfirmation = async (ports: SignInPorts, waitingAnswer: PlanSignInId
 export const signIn = async (ports: SignInPorts, request: SignInRequest): Promise<PlanSignInCompleteResponse> => {
   let listener: SignInListener;
   try {
-    listener = await ports.startListener(callbackPathOf(request.profile));
+    listener = await ports.startListener(callbackPathOf(request.profile), callbackPortOf(request.profile));
   } catch (error) {
     throw new SignInListenerError(error);
   }

@@ -15,6 +15,10 @@ import { describeSchemaErrors } from './schema-errors.ts';
 
 export type PlanProfileCapabilities = Partial<Pick<CapabilitiesCore, 'sampling' | 'outputBoundField' | 'systemRole' | 'toolPlacement' | 'inputKinds'>>;
 
+export type PlanProfileOAuthClient =
+  | { kind: 'dynamic_registration'; registrationClientId: string; registrationParameters: { agentNameHint: string; hostId: string } }
+  | { kind: 'public'; clientId: string };
+
 export type PlanProfileOAuth = {
   issuer: string;
   discoveryUrl: string;
@@ -22,22 +26,33 @@ export type PlanProfileOAuth = {
   tokenUrl: string;
   jwksUrl: string;
   resource: string;
+  sendResource: boolean;
   identityScopes: string[];
   useScopes: string[];
   requiredScope: string;
-  registrationClientId: string;
+  client: PlanProfileOAuthClient;
   callbackPath: string;
-  registrationParameters: { agentNameHint: string; hostId: string };
+  callbackPort?: number;
   idTokenAlgorithms: string[];
+};
+
+export type PlanProfileCatalogUnusableRule =
+  | { field: string; equals: boolean; reason: string }
+  | { field: string; absent: true; reason: string };
+
+export type PlanProfileCatalogReasoning = {
+  effortsPath: string[];
+  defaultPath: string[];
 };
 
 export type PlanProfileCatalog = {
   path: string;
   listKey: string;
   filter: { field: string; equals: string };
-  unusableWhen: { field: string; equals: boolean; reason: string };
+  unusableWhen: PlanProfileCatalogUnusableRule;
   idKey: string;
   labelKey: string;
+  reasoning: PlanProfileCatalogReasoning;
 };
 
 export const PLAN_REQUEST_ENCODINGS = ['identity', 'zstd'] as const;
@@ -145,21 +160,36 @@ const PLAN_PROFILE_SCHEMA = {
       ],
       additionalProperties: false,
     },
-    oauth: object({
-      issuer: TRANSPORT_URL,
-      discoveryUrl: TRANSPORT_URL,
-      authorizeUrl: TRANSPORT_URL,
-      tokenUrl: TRANSPORT_URL,
-      jwksUrl: TRANSPORT_URL,
-      resource: TRANSPORT_URL,
-      identityScopes: NON_EMPTY_STRINGS,
-      useScopes: NON_EMPTY_STRINGS,
-      requiredScope: NON_EMPTY_STRING,
-      registrationClientId: NON_EMPTY_STRING,
-      callbackPath: { type: 'string', pattern: '^/[^\\s]*$' },
-      registrationParameters: object({ agentNameHint: NON_EMPTY_STRING, hostId: NON_EMPTY_STRING }),
-      idTokenAlgorithms: { type: 'array', items: { enum: ['RS256'] }, minItems: 1, uniqueItems: true },
-    }),
+    oauth: {
+      type: 'object',
+      properties: {
+        issuer: TRANSPORT_URL,
+        discoveryUrl: TRANSPORT_URL,
+        authorizeUrl: TRANSPORT_URL,
+        tokenUrl: TRANSPORT_URL,
+        jwksUrl: TRANSPORT_URL,
+        resource: TRANSPORT_URL,
+        sendResource: { type: 'boolean' },
+        identityScopes: NON_EMPTY_STRINGS,
+        useScopes: NON_EMPTY_STRINGS,
+        requiredScope: NON_EMPTY_STRING,
+        client: {
+          oneOf: [
+            object({
+              kind: { const: 'dynamic_registration' },
+              registrationClientId: NON_EMPTY_STRING,
+              registrationParameters: object({ agentNameHint: NON_EMPTY_STRING, hostId: NON_EMPTY_STRING }),
+            }),
+            object({ kind: { const: 'public' }, clientId: NON_EMPTY_STRING }),
+          ],
+        },
+        callbackPath: { type: 'string', pattern: '^/[^\\s]*$' },
+        callbackPort: { type: 'integer', minimum: 1, maximum: 65535 },
+        idTokenAlgorithms: { type: 'array', items: { enum: ['RS256'] }, minItems: 1, uniqueItems: true },
+      },
+      required: ['issuer', 'discoveryUrl', 'authorizeUrl', 'tokenUrl', 'jwksUrl', 'resource', 'sendResource', 'identityScopes', 'useScopes', 'requiredScope', 'client', 'callbackPath', 'idTokenAlgorithms'],
+      additionalProperties: false,
+    },
     targetDefaults: object({
       baseUrl: TRANSPORT_URL,
       billing: { const: 'plan' },
@@ -184,9 +214,15 @@ const PLAN_PROFILE_SCHEMA = {
       path: { type: 'string', pattern: '^/[^\\s]*$' },
       listKey: NON_EMPTY_STRING,
       filter: object({ field: NON_EMPTY_STRING, equals: NON_EMPTY_STRING }),
-      unusableWhen: object({ field: NON_EMPTY_STRING, equals: { type: 'boolean' }, reason: NON_EMPTY_STRING }),
+      unusableWhen: {
+        oneOf: [
+          object({ field: NON_EMPTY_STRING, equals: { type: 'boolean' }, reason: NON_EMPTY_STRING }),
+          object({ field: NON_EMPTY_STRING, absent: { const: true }, reason: NON_EMPTY_STRING }),
+        ],
+      },
       idKey: NON_EMPTY_STRING,
       labelKey: NON_EMPTY_STRING,
+      reasoning: object({ effortsPath: NON_EMPTY_STRINGS, defaultPath: NON_EMPTY_STRINGS }),
     }),
   },
   required: ['id', 'adapter', 'displayName', 'usageUrl', 'loginLabel', 'messages', 'oauth', 'targetDefaults', 'requestWire', 'errorRules', 'catalog'],
@@ -247,12 +283,16 @@ const CHATGPT_PROFILE_DATA = {
     tokenUrl: 'https://auth.openai.com/api/accounts/oauth/token',
     jwksUrl: 'https://auth.openai.com/.well-known/jwks.json',
     resource: 'https://api.openai.com/v1',
+    sendResource: true,
     identityScopes: ['openid', 'profile', 'email'],
     useScopes: ['offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
     requiredScope: 'chatgpt.tokens.use.direct',
-    registrationClientId: 'dynamic_agent_client',
+    client: {
+      kind: 'dynamic_registration',
+      registrationClientId: 'dynamic_agent_client',
+      registrationParameters: { agentNameHint: 'agent_name_hint', hostId: 'ext_agent_host_id' },
+    },
     callbackPath: '/auth/callback',
-    registrationParameters: { agentNameHint: 'agent_name_hint', hostId: 'ext_agent_host_id' },
     idTokenAlgorithms: ['RS256'],
   },
   targetDefaults: {
@@ -395,10 +435,127 @@ const CHATGPT_PROFILE_DATA = {
       message: 'Try again later',
     },
   ],
-  catalog: { path: '/models', listKey: 'models', filter: { field: 'visibility', equals: 'list' }, unusableWhen: { field: 'supported_in_api', equals: false, reason: 'not available through the API' }, idKey: 'slug', labelKey: 'display_name' },
+  catalog: {
+    path: '/models',
+    listKey: 'models',
+    filter: { field: 'visibility', equals: 'list' },
+    unusableWhen: { field: 'supported_in_api', equals: false, reason: 'not available through the API' },
+    idKey: 'slug',
+    labelKey: 'display_name',
+    reasoning: { effortsPath: ['supported_reasoning_levels'], defaultPath: ['default_reasoning_level'] },
+  },
 } as const satisfies Record<string, unknown>;
 
-const SHIPPED_PROFILES: readonly PlanProfile[] = [assertPlanProfile(structuredClone(CHATGPT_PROFILE_DATA), 'shipped plan profile chatgpt')];
+const GROK_PROFILE_DATA = {
+  id: 'grok',
+  adapter: 'open-responses',
+  displayName: 'Grok',
+  usageUrl: 'https://grok.com/?_s=usage',
+  loginLabel: 'Continue with Grok',
+  messages: {
+    identityLabel: 'Grok',
+    pickerLabel: 'xAI (Grok subscription)',
+    apiKeyLabel: 'xAI (API key)',
+    inviteTitle: 'Use your Grok plan in this app.',
+    description: 'Complete eligible AI requests in this app with usage included in your Grok plan.',
+    planInUseLabel: 'Using Grok plan',
+    manageUsageLabel: 'Manage usage',
+    usageLimitMessage: 'Usage limit reached — Review your plan or usage in Grok settings.',
+    signInExpiredMessage: 'Grok sign-in expired',
+    signInRequiredMessage: 'Not signed in to Grok',
+    planNotEnabledMessage: "Grok plan use isn't enabled",
+    notEligibleMessage: 'Grok plan usage is unavailable for the selected account or subscription tier.',
+    firstSignIn: {
+      title: "You're using your Grok plan",
+      body: 'Eligible usage in this app uses your Grok plan. Manage usage in your Grok settings.',
+      action: 'Got it',
+    },
+  },
+  oauth: {
+    issuer: 'https://auth.x.ai',
+    discoveryUrl: 'https://auth.x.ai/.well-known/openid-configuration',
+    authorizeUrl: 'https://auth.x.ai/oauth2/authorize',
+    tokenUrl: 'https://auth.x.ai/oauth2/token',
+    jwksUrl: 'https://auth.x.ai/.well-known/jwks.json',
+    resource: 'https://api.x.ai/v1',
+    sendResource: false,
+    identityScopes: ['openid', 'profile', 'email'],
+    useScopes: ['offline_access', 'grok-cli:access', 'api:access'],
+    requiredScope: 'api:access',
+    client: { kind: 'public', clientId: 'b1a00492-073a-47ea-816f-4c329264a828' },
+    callbackPath: '/callback',
+    callbackPort: 56121,
+    idTokenAlgorithms: ['RS256'],
+  },
+  targetDefaults: {
+    baseUrl: 'https://api.x.ai/v1',
+    billing: 'plan',
+    capabilities: {
+      outputBoundField: 'max_output_tokens',
+      systemRole: 'developer',
+      toolPlacement: 'top_level',
+      inputKinds: { content: [], tools: ['function'] },
+    },
+  },
+  requestWire: { encoding: 'identity', sessionHeaders: [] },
+  errorRules: [
+    {
+      match: { kind: 'status', status: 401 },
+      type: 'invalid_request',
+      code: 'plan_credential_rejected',
+      retryable: false,
+      verdict: 'failure',
+      fallback: 'stop',
+      credential: 'rejected',
+      message: 'The sign-in of this account has expired',
+      cause: 'The upstream refused the credential after a forced refresh',
+    },
+    {
+      match: { kind: 'status', status: 403 },
+      type: 'invalid_request',
+      code: 'plan_not_eligible',
+      retryable: false,
+      verdict: 'failure',
+      fallback: 'stop',
+      credential: 'keep',
+      message: 'This account cannot use its plan here. Sign in with another account, or use a model with an API key',
+    },
+    {
+      match: { kind: 'status', status: 429 },
+      type: 'too_many_requests',
+      code: 'plan_usage_limit',
+      retryable: false,
+      verdict: 'neutral',
+      fallback: 'stop',
+      credential: 'pause',
+      message: 'This account has reached the usage its plan allows for now. Wait for the usage to reset, or manage the usage in the Grok settings',
+    },
+    {
+      match: { kind: 'status', status: 503 },
+      type: 'server_error',
+      code: 'plan_route_unavailable',
+      retryable: true,
+      verdict: 'failure',
+      fallback: 'next',
+      credential: 'keep',
+      message: 'Try again later',
+    },
+  ],
+  catalog: {
+    path: '/models',
+    listKey: 'data',
+    filter: { field: 'object', equals: 'model' },
+    unusableWhen: { field: 'completion_text_token_price', absent: true, reason: 'not a text generation model' },
+    idKey: 'id',
+    labelKey: 'id',
+    reasoning: { effortsPath: ['capabilities', 'reasoning_effort'], defaultPath: ['capabilities', 'default_reasoning_effort'] },
+  },
+} as const satisfies Record<string, unknown>;
+
+const SHIPPED_PROFILES: readonly PlanProfile[] = [
+  assertPlanProfile(structuredClone(CHATGPT_PROFILE_DATA), 'shipped plan profile chatgpt'),
+  assertPlanProfile(structuredClone(GROK_PROFILE_DATA), 'shipped plan profile grok'),
+];
 
 export const PLAN_PROFILES: Readonly<Record<string, PlanProfile>> = Object.fromEntries(SHIPPED_PROFILES.map((profile) => [profile.id, profile]));
 

@@ -255,14 +255,20 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     const { saved, hostId } = attempt;
     const oauth = profile.oauth;
     const url = new URL(oauth.authorizeUrl);
+    const clientParams: Array<[string, string]> =
+      oauth.client.kind === 'dynamic_registration'
+        ? [
+            ['client_id', saved?.clientId ?? oauth.client.registrationClientId],
+            ...(saved === undefined ? [[oauth.client.registrationParameters.agentNameHint, CLIENT_NAME] as [string, string]] : []),
+            [oauth.client.registrationParameters.hostId, hostId],
+          ]
+        : [['client_id', saved?.clientId ?? oauth.client.clientId]];
     const params: Array<[string, string]> = [
-      ['client_id', saved?.clientId ?? oauth.registrationClientId],
-      ...(saved === undefined ? [[oauth.registrationParameters.agentNameHint, CLIENT_NAME] as [string, string]] : []),
-      [oauth.registrationParameters.hostId, hostId],
+      ...clientParams,
       ['response_type', 'code'],
       ['redirect_uri', attempt.redirectUri],
       ['scope', [...oauth.identityScopes, ...oauth.useScopes].join(' ')],
-      ['resource', oauth.resource],
+      ...(oauth.sendResource ? [['resource', oauth.resource] as [string, string]] : []),
       ['state', attempt.state],
       ['nonce', attempt.nonce],
       ['code_challenge_method', 'S256'],
@@ -275,7 +281,14 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const exchange = async (fetch: PlanFetch, attempt: Attempt, clientId: string, code: string, progress: Progress): Promise<RefreshTokens | { outcome: typeof RETRY_OUTCOME; reason: typeof INVALID_GRANT_REASON }> => {
     const { profile } = attempt;
-    const form = { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: attempt.verifier, redirect_uri: attempt.redirectUri, resource: profile.oauth.resource };
+    const form: Record<string, string> = {
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      code,
+      code_verifier: attempt.verifier,
+      redirect_uri: attempt.redirectUri,
+      ...(profile.oauth.sendResource ? { resource: profile.oauth.resource } : {}),
+    };
     const answer = await boundedSend(
       { fetch, sleep: options.sleep },
       profile.oauth.tokenUrl,
@@ -419,9 +432,16 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     if (error !== null || code === null) throw signInFailure(PLAN_SIGN_IN_FAILURE.authorizationFailed, profile, { error: shownOAuthError(error ?? undefined) });
     progress.endStep = STEP_REGISTRATION;
     const returned = query.get('client_id');
-    if (attempt.saved === undefined && returned === null) throw signInFailure(PLAN_SIGN_IN_FAILURE.registrationIncomplete, profile);
-    if (attempt.saved !== undefined && returned !== null && returned !== attempt.saved.clientId) throw signInFailure(PLAN_SIGN_IN_FAILURE.clientMismatch, profile);
-    const clientId = attempt.saved?.clientId ?? returned ?? '';
+    let clientId: string;
+    if (profile.oauth.client.kind === 'dynamic_registration') {
+      if (attempt.saved === undefined && returned === null) throw signInFailure(PLAN_SIGN_IN_FAILURE.registrationIncomplete, profile);
+      if (attempt.saved !== undefined && returned !== null && returned !== attempt.saved.clientId) throw signInFailure(PLAN_SIGN_IN_FAILURE.clientMismatch, profile);
+      clientId = attempt.saved?.clientId ?? returned ?? '';
+    } else {
+      const expectedClientId = attempt.saved?.clientId ?? profile.oauth.client.clientId;
+      if (returned !== null && returned !== expectedClientId) throw signInFailure(PLAN_SIGN_IN_FAILURE.clientMismatch, profile);
+      clientId = expectedClientId;
+    }
     const ref = { profile: profile.id, account: attempt.account };
     progress.endStep = STEP_REGISTER;
     const registered = await options.sessions.register({ ...ref, clientId, hostId: attempt.hostId }, signal);

@@ -167,7 +167,13 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     const listProblems = sessions.listProblems();
     return {
       ...(listProblems.length === 0 ? {} : { listProblems }),
-      profiles: Object.values(options.profiles).map((profile) => ({ id: profile.id, usageUrl: profile.usageUrl, messages: profile.messages, loginLabel: profile.loginLabel })),
+      profiles: Object.values(options.profiles).map((profile) => ({
+        id: profile.id,
+        usageUrl: profile.usageUrl,
+        messages: profile.messages,
+        loginLabel: profile.loginLabel,
+        usesHostIdentity: profile.oauth.client.kind === 'dynamic_registration',
+      })),
       accounts: known.flatMap((entry) => {
         const ref = { profile: entry.profile, account: entry.account };
         const view = accountViewOf(ref, entry.view, active.get(entry.profile) === entry.account, pinnedBy(ref, targets), options.clock.now());

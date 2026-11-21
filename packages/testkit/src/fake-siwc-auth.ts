@@ -106,7 +106,15 @@ export type SiwcAccessTokenForm = 'jwt' | 'opaque';
 
 export type SiwcEarliestRefreshAtForm = 'number' | 'string' | 'null' | 'absent';
 
-export type SiwcAuthOptions = { now?: () => number; resource?: string; accessTokenForm?: SiwcAccessTokenForm; earliestRefreshAtForm?: SiwcEarliestRefreshAtForm };
+export type SiwcAuthOptions = {
+  now?: () => number;
+  resource?: string;
+  accessTokenForm?: SiwcAccessTokenForm;
+  earliestRefreshAtForm?: SiwcEarliestRefreshAtForm;
+  publicClientId?: string;
+  callbackPath?: string;
+  requireResource?: boolean;
+};
 
 type SigningKey = { kid: string; privateKey: KeyObject; jwk: SiwcJwk };
 
@@ -154,9 +162,9 @@ export const siwcBrowse = async (authorizeUrl: string): Promise<{ status: number
   return { status: response.status, body: text === '' ? undefined : (JSON.parse(text) as unknown) };
 };
 
-const isLoopbackCallback = (redirectUri: string): boolean => {
+const isLoopbackCallback = (redirectUri: string, callbackPath: string): boolean => {
   const url = new URL(redirectUri);
-  return url.protocol === 'http:' && url.hostname === '127.0.0.1' && url.port !== '' && url.pathname === SIWC_CALLBACK_PATH;
+  return url.protocol === 'http:' && url.hostname === '127.0.0.1' && url.port !== '' && url.pathname === callbackPath;
 };
 
 export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<SiwcAuth> => {
@@ -164,6 +172,9 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
   const resource = options.resource ?? SIWC_RESOURCE;
   const accessTokenForm = options.accessTokenForm ?? 'jwt';
   const earliestRefreshAtForm = options.earliestRefreshAtForm ?? 'number';
+  const publicClientId = options.publicClientId;
+  const callbackPath = options.callbackPath ?? SIWC_CALLBACK_PATH;
+  const requireResource = options.requireResource ?? true;
   const keys = await sharedKeyPair();
   const published: SigningKey[] = [keys.signing];
   let signing: SigningKey = keys.signing;
@@ -354,7 +365,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
       grant.clientId !== form['client_id'] ||
       grant.redirectUri !== form['redirect_uri'] ||
       grant.challenge !== sha256Base64Url(form['code_verifier'] ?? '') ||
-      grant.resource !== form['resource']
+      (requireResource ? grant.resource !== form['resource'] : form['resource'] !== undefined)
     ) {
       return oauthError('invalid_grant');
     }
@@ -374,7 +385,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     const presented = form['refresh_token'] ?? '';
     const grant = refreshGrants.get(presented);
     if (grant === undefined || grant.clientId !== form['client_id']) return oauthError('invalid_grant');
-    if (grant.resource !== form['resource']) return oauthError('invalid_target');
+    if (requireResource ? grant.resource !== form['resource'] : form['resource'] !== undefined) return oauthError('invalid_target');
     if (grant.family.revoked) return oauthError('refresh_token_invalidated');
     if (grant.state === 'consumed') {
       if (fixture.familyRevocationOnReuse) grant.family.revoked = true;
@@ -467,18 +478,30 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     calls.authorize += 1;
     const refuse = (reason: string): void => sendJson(res, 400, { error: 'invalid_request', error_description: reason });
     const redirectUri = query['redirect_uri'] ?? '';
-    if (redirectUri === '' || !isLoopbackCallback(redirectUri)) return refuse('redirect_uri must be http://127.0.0.1:<port>/auth/callback');
+    if (redirectUri === '' || !isLoopbackCallback(redirectUri, callbackPath)) return refuse(`redirect_uri must be http://127.0.0.1:<port>${callbackPath}`);
     if (query['response_type'] !== 'code') return refuse('response_type must be code');
     if (query['code_challenge_method'] !== 'S256' || (query['code_challenge'] ?? '') === '') return refuse('PKCE S256 is required');
-    for (const name of ['state', 'nonce', 'ext_agent_host_id']) if ((query[name] ?? '') === '') return refuse(`${name} is required`);
-    if (query['resource'] !== resource) return refuse('resource must be the Responses API');
-    const hostId = query['ext_agent_host_id'] as string;
+    const requiredParams = publicClientId === undefined ? ['state', 'nonce', 'ext_agent_host_id'] : ['state', 'nonce'];
+    for (const name of requiredParams) if ((query[name] ?? '') === '') return refuse(`${name} is required`);
+    if (requireResource ? query['resource'] !== resource : query['resource'] !== undefined) return refuse('resource must be the Responses API');
     const presented = query['client_id'] ?? '';
-    const dynamic = presented === SIWC_DYNAMIC_CLIENT_ID;
-    if (dynamic && (query['agent_name_hint'] ?? '') === '') return refuse('agent_name_hint is required for a registration');
-    const known = registrationsById.get(presented);
-    if (!dynamic && known === undefined) return refuse('unknown client_id');
-    if (known !== undefined && (query['agent_name_hint'] !== undefined || known.hostId !== hostId)) return refuse('a returning sign-in omits agent_name_hint and keeps the host id');
+    let clientId: string;
+    if (publicClientId !== undefined) {
+      if (presented !== publicClientId) return refuse('unknown client_id');
+      if (query['agent_name_hint'] !== undefined || query['ext_agent_host_id'] !== undefined) return refuse('a public client sends no registration parameters');
+      clientId = publicClientId;
+    } else {
+      const hostId = query['ext_agent_host_id'] as string;
+      const dynamic = presented === SIWC_DYNAMIC_CLIENT_ID;
+      if (dynamic && (query['agent_name_hint'] ?? '') === '') return refuse('agent_name_hint is required for a registration');
+      const known = registrationsById.get(presented);
+      if (!dynamic && known === undefined) return refuse('unknown client_id');
+      if (known !== undefined && (query['agent_name_hint'] !== undefined || known.hostId !== hostId)) return refuse('a returning sign-in omits agent_name_hint and keeps the host id');
+      clientId = known?.clientId ?? `oaiapp_${randomBytes(12).toString('hex')}`;
+      if (known === undefined) {
+        registrationsById.set(clientId, { clientId, hostId, agentName: query['agent_name_hint'] as string, sub: fixture.identity.sub });
+      }
+    }
     const target = new URL(redirectUri);
     const state = query['state'] as string;
     target.searchParams.set('state', fixture.authorizeMode === 'wrong_state' ? `${state}-tampered` : state);
@@ -495,17 +518,13 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
       res.end();
       return;
     }
-    const clientId = known?.clientId ?? `oaiapp_${randomBytes(12).toString('hex')}`;
-    if (known === undefined) {
-      registrationsById.set(clientId, { clientId, hostId, agentName: query['agent_name_hint'] as string, sub: fixture.identity.sub });
-    }
     const scope = grantedScope(query['scope'] ?? '');
     const code = remember(createCanary('code'));
     codes.set(code, { clientId, redirectUri, challenge: query['code_challenge'] as string, resource, scope, nonce: query['nonce'] as string });
     target.searchParams.set('code', code);
     target.searchParams.set('scope', scope);
     if (fixture.authorizeMode === 'foreign_client_id') target.searchParams.set('client_id', `oaiapp_${randomBytes(12).toString('hex')}`);
-    else if (fixture.authorizeMode !== 'omit_client_id') target.searchParams.set('client_id', clientId);
+    else if (publicClientId === undefined && fixture.authorizeMode !== 'omit_client_id') target.searchParams.set('client_id', clientId);
     res.writeHead(302, { location: target.toString() });
     res.end();
   };

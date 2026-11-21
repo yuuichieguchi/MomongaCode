@@ -111,23 +111,35 @@ type Reasonings = ReadonlyMap<string, ReportedReasoning>;
 
 type Listed = { models: PlanCatalogEntry[]; entryKeys: string[]; reasonings: Reasonings };
 
+const valueAtPath = (entry: Record<string, unknown>, segments: readonly string[]): unknown => {
+  let current: unknown = entry;
+  for (const segment of segments) {
+    if (!isRecord(current)) return undefined;
+    current = ownEntry(current, segment);
+  }
+  return current;
+};
+
+const isUnusable = (entry: Record<string, unknown>, rule: PlanProfile['catalog']['unusableWhen']): boolean =>
+  'absent' in rule ? ownEntry(entry, rule.field) === undefined : ownEntry(entry, rule.field) === rule.equals;
+
 const listedOf = (profile: PlanProfile, body: unknown): Listed | undefined => {
-  const { listKey, filter, unusableWhen, idKey, labelKey } = profile.catalog;
+  const { listKey, filter, unusableWhen, idKey, labelKey, reasoning: reasoningPaths } = profile.catalog;
   const listed = isRecord(body) ? body[listKey] : undefined;
   if (!Array.isArray(listed)) return undefined;
   const entryKeys = new Set<string>();
   const reasonings = new Map<string, ReportedReasoning>();
   const models = listed.flatMap((entry: unknown): PlanCatalogEntry[] => {
-    if (!isRecord(entry) || entry[filter.field] !== filter.equals) return [];
-    const slug = entry[idKey];
+    if (!isRecord(entry) || ownEntry(entry, filter.field) !== filter.equals) return [];
+    const slug = ownEntry(entry, idKey);
     if (typeof slug !== 'string' || slug === '') return [];
     for (const key of Object.keys(entry)) entryKeys.add(key);
-    const label = entry[labelKey];
+    const label = ownEntry(entry, labelKey);
     const displayName = typeof label === 'string' && label !== '' ? label : slug;
-    if (entry[unusableWhen.field] === unusableWhen.equals) return [{ slug, displayName, usable: false, reason: unusableWhen.reason }];
+    if (isUnusable(entry, unusableWhen)) return [{ slug, displayName, usable: false, reason: unusableWhen.reason }];
     const contextWindow = reportedContextWindow(entry);
     if (contextWindow === undefined) return [{ slug, displayName, usable: false, reason: NO_REPORTED_WINDOW }];
-    const reasoning = reportedReasoningOf(entry['supported_reasoning_levels'], entry['default_reasoning_level']);
+    const reasoning = reportedReasoningOf(valueAtPath(entry, reasoningPaths.effortsPath), valueAtPath(entry, reasoningPaths.defaultPath));
     if (reasoning !== undefined) reasonings.set(slug, reasoning);
     return [{ slug, displayName, usable: true, contextWindow, maxOutputTokens: maxOutputTokensFor(contextWindow) }];
   });

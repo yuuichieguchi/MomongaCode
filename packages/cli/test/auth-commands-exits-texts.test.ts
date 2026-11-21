@@ -66,11 +66,13 @@ describe('the auth commands take their texts and exit codes from one source (gat
     expect(out.text()).not.toContain('ChatGPT');
   });
 
-  it('auth reset-host names every provider when there are several', async () => {
+  it('auth reset-host names every provider that uses host identity and omits public-client providers', async () => {
     const out = writer();
-    const backend = fakePlanBackend({ accounts: [], profiles: [CHATGPT, OTHER] });
+    const publicProvider: PlanProfileView = { ...CHATGPT, id: 'grok', usesHostIdentity: false, messages: { ...CHATGPT.messages, identityLabel: 'Grok' } };
+    const backend = fakePlanBackend({ accounts: [], profiles: [CHATGPT, OTHER, publicProvider] });
     await authResetHost({ stdout: out, stderr: writer(), plan: backend.plan, isTerminal: false }, { yes: true });
     expect(out.text()).toContain('registered as a new host with ChatGPT and Other. Saved accounts keep their records; whether ChatGPT and Other accept them under the new host is not documented');
+    expect(out.text()).not.toContain('Grok');
   });
 
   it('auth login with no provider to sign in to asks nothing and says so: exit 1', async () => {

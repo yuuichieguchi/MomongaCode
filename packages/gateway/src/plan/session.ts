@@ -844,7 +844,12 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
           ports: { fetch, sleep: options.sleep },
           clock,
           tokenUrl: account.profile.oauth.tokenUrl,
-          form: { grant_type: 'refresh_token', client_id: record.client_id, refresh_token: refreshToken, resource: account.profile.oauth.resource },
+          form: {
+            grant_type: 'refresh_token',
+            client_id: record.client_id,
+            refresh_token: refreshToken,
+            ...(account.profile.oauth.sendResource ? { resource: account.profile.oauth.resource } : {}),
+          },
           attempts: retry.maxAttempts,
           attemptTimeoutMs: defaults.attemptTimeoutMs,
           waitPolicy,

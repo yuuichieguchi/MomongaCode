@@ -233,7 +233,12 @@ const isProfileMessages = (value: unknown): boolean =>
   ['title', 'body', 'action'].every((key) => isRecord(value['firstSignIn']) && isString(value['firstSignIn'][key]));
 
 const isProfileView = (value: unknown): value is PlanProfileView =>
-  isRecord(value) && isString(value['id']) && isString(value['usageUrl']) && isString(value['loginLabel']) && isProfileMessages(value['messages']);
+  isRecord(value) &&
+  isString(value['id']) &&
+  isString(value['usageUrl']) &&
+  isString(value['loginLabel']) &&
+  isProfileMessages(value['messages']) &&
+  (value['usesHostIdentity'] === undefined || typeof value['usesHostIdentity'] === 'boolean');
 
 const isAccountView = (value: unknown): value is PlanAccountView =>
   isRecord(value) &&

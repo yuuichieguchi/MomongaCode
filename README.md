@@ -109,19 +109,21 @@ Configure a model using one of the three options below, then run your first prom
 
 ### A subscription account
 
-1. Sign in via your browser. This release ships with `chatgpt` as the built-in provider, so no provider argument is needed:
+1. Sign in via your browser. Built-in providers are `chatgpt` and `grok`:
 
    ```sh
-   momonga auth login
+   momonga auth login chatgpt
+   # or
+   momonga auth login grok
    ```
 
-   A newly linked account has no model configured yet; the login flow prints the next step, and `momonga auth status` shows all saved accounts and their status.
+   Running `momonga auth login` without an argument lets you choose interactively in a terminal. A newly linked account has no model configured yet; the login flow prints the next step, and `momonga auth status` shows all saved accounts and their status.
 
 2. List the models available on the account and add one by its own name:
 
    ```sh
    momonga models catalog <account>
-   momonga models add --plan chatgpt --account <account> --model <own name> --yes
+   momonga models add --plan <provider> --account <account> --model <own name> --yes
    ```
 
 Inside an interactive session, use `/login` to sign in and `/model` to switch models. Sign-in is never triggered automatically while typing on the start screen—only when you explicitly run `/login` or `momonga auth login`.

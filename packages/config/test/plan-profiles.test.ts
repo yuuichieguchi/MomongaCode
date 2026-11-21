@@ -13,21 +13,21 @@ describe('the shipped plan profiles', () => {
     for (const rule of rejected) expect(rule.message).toBe('The sign-in of this account has expired');
   });
 
-  it('holds exactly one profile, keyed by its id', () => {
-    expect(Object.keys(PLAN_PROFILES)).toEqual(['chatgpt']);
+  it('holds the shipped profiles keyed by their ids', () => {
+    expect(Object.keys(PLAN_PROFILES)).toEqual(['chatgpt', 'grok']);
     expect(profile().id).toBe('chatgpt');
+    expect(planProfileOf('grok').id).toBe('grok');
   });
 
-  it('names the adapter that carries the route', () => {
-    expect(profile().adapter).toBe('open-responses');
+  it('names the adapter that carries the route for every shipped profile', () => {
+    for (const shipped of Object.values(PLAN_PROFILES)) {
+      expect(shipped.adapter).toBe('open-responses');
+      expect(assertPlanProfile(structuredClone(shipped), 'test')).toEqual(shipped);
+    }
   });
 
   it('refuses an unknown profile id', () => {
     expect(() => planProfileOf('nowhere')).toThrow(/nowhere/);
-  });
-
-  it('is valid against the profile schema', () => {
-    expect(assertPlanProfile(structuredClone(profile()), 'test')).toEqual(profile());
   });
 });
 
@@ -40,12 +40,16 @@ describe('the OAuth data of the ChatGPT profile', () => {
       tokenUrl: 'https://auth.openai.com/api/accounts/oauth/token',
       jwksUrl: 'https://auth.openai.com/.well-known/jwks.json',
       resource: 'https://api.openai.com/v1',
+      sendResource: true,
       identityScopes: ['openid', 'profile', 'email'],
       useScopes: ['offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
       requiredScope: 'chatgpt.tokens.use.direct',
-      registrationClientId: 'dynamic_agent_client',
+      client: {
+        kind: 'dynamic_registration',
+        registrationClientId: 'dynamic_agent_client',
+        registrationParameters: { agentNameHint: 'agent_name_hint', hostId: 'ext_agent_host_id' },
+      },
       callbackPath: '/auth/callback',
-      registrationParameters: { agentNameHint: 'agent_name_hint', hostId: 'ext_agent_host_id' },
       idTokenAlgorithms: ['RS256'],
     });
   });
@@ -90,8 +94,16 @@ describe('what the route cannot carry, as data', () => {
 });
 
 describe('the model list shape', () => {
-  it('names where the list and the ids are and nothing about a capability', () => {
-    expect(profile().catalog).toEqual({ path: '/models', listKey: 'models', filter: { field: 'visibility', equals: 'list' }, unusableWhen: { field: 'supported_in_api', equals: false, reason: 'not available through the API' }, idKey: 'slug', labelKey: 'display_name' });
+  it('names where the list, the ids and the reasoning fields are', () => {
+    expect(profile().catalog).toEqual({
+      path: '/models',
+      listKey: 'models',
+      filter: { field: 'visibility', equals: 'list' },
+      unusableWhen: { field: 'supported_in_api', equals: false, reason: 'not available through the API' },
+      idKey: 'slug',
+      labelKey: 'display_name',
+      reasoning: { effortsPath: ['supported_reasoning_levels'], defaultPath: ['default_reasoning_level'] },
+    });
   });
 });
 
@@ -208,5 +220,97 @@ describe('the profile schema', () => {
     rules[0] = { ...rules[0], credential: 'clear' };
     broken['errorRules'] = rules;
     expect(() => assertPlanProfile(broken, 'broken')).toThrow(/credential/);
+  });
+
+  it('refuses an out-of-range callbackPort or invalid client kind', () => {
+    const badPort = clone();
+    badPort['oauth'] = { ...(badPort['oauth'] as Record<string, unknown>), callbackPort: 0 };
+    expect(() => assertPlanProfile(badPort, 'broken')).toThrow(/callbackPort/);
+
+    const badClient = clone();
+    badClient['oauth'] = { ...(badClient['oauth'] as Record<string, unknown>), client: { kind: 'public' } };
+    expect(() => assertPlanProfile(badClient, 'broken')).toThrow(/client/);
+  });
+
+  it('refuses a catalog without reasoning paths or with an invalid unusableWhen rule', () => {
+    const noReasoning = clone();
+    const catalog = { ...(noReasoning['catalog'] as Record<string, unknown>) };
+    delete catalog['reasoning'];
+    noReasoning['catalog'] = catalog;
+    expect(() => assertPlanProfile(noReasoning, 'broken')).toThrow(/reasoning/);
+
+    const badUnusable = clone();
+    badUnusable['catalog'] = { ...(badUnusable['catalog'] as Record<string, unknown>), unusableWhen: { field: 'x', absent: false, reason: 'bad' } };
+    expect(() => assertPlanProfile(badUnusable, 'broken')).toThrow(/unusableWhen/);
+  });
+});
+
+describe('the Grok profile', () => {
+  const grok = (): PlanProfile => planProfileOf('grok');
+
+  it('holds the public OAuth endpoints, scopes, fixed callback port and sendResource: false', () => {
+    expect(grok().oauth).toEqual({
+      issuer: 'https://auth.x.ai',
+      discoveryUrl: 'https://auth.x.ai/.well-known/openid-configuration',
+      authorizeUrl: 'https://auth.x.ai/oauth2/authorize',
+      tokenUrl: 'https://auth.x.ai/oauth2/token',
+      jwksUrl: 'https://auth.x.ai/.well-known/jwks.json',
+      resource: 'https://api.x.ai/v1',
+      sendResource: false,
+      identityScopes: ['openid', 'profile', 'email'],
+      useScopes: ['offline_access', 'grok-cli:access', 'api:access'],
+      requiredScope: 'api:access',
+      client: { kind: 'public', clientId: 'b1a00492-073a-47ea-816f-4c329264a828' },
+      callbackPath: '/callback',
+      callbackPort: 56121,
+      idTokenAlgorithms: ['RS256'],
+    });
+    const origin = new URL(grok().oauth.issuer).origin;
+    for (const url of [grok().oauth.discoveryUrl, grok().oauth.authorizeUrl, grok().oauth.tokenUrl, grok().oauth.jwksUrl]) {
+      expect(new URL(url).origin).toBe(origin);
+    }
+    expect(grok().oauth.useScopes).toContain(grok().oauth.requiredScope);
+  });
+
+  it('states the target defaults, plain identity request wire, and catalog shape', () => {
+    expect(grok().targetDefaults).toEqual({
+      baseUrl: 'https://api.x.ai/v1',
+      billing: 'plan',
+      capabilities: {
+        outputBoundField: 'max_output_tokens',
+        systemRole: 'developer',
+        toolPlacement: 'top_level',
+        inputKinds: { content: [], tools: ['function'] },
+      },
+    });
+    expect(grok().requestWire).toEqual({ encoding: 'identity', sessionHeaders: [] });
+    expect(grok().catalog).toEqual({
+      path: '/models',
+      listKey: 'data',
+      filter: { field: 'object', equals: 'model' },
+      unusableWhen: { field: 'completion_text_token_price', absent: true, reason: 'not a text generation model' },
+      idKey: 'id',
+      labelKey: 'id',
+      reasoning: { effortsPath: ['capabilities', 'reasoning_effort'], defaultPath: ['capabilities', 'default_reasoning_effort'] },
+    });
+    expect(new URL(grok().targetDefaults.baseUrl).origin).toBe(new URL(grok().oauth.resource).origin);
+  });
+
+  it('states user-facing labels, usage URL, and status error rules', () => {
+    expect(grok().displayName).toBe('Grok');
+    expect(grok().loginLabel).toBe('Continue with Grok');
+    expect(grok().usageUrl).toBe('https://grok.com/?_s=usage');
+    expect(grok().messages).toMatchObject({
+      identityLabel: 'Grok',
+      pickerLabel: 'xAI (Grok subscription)',
+      apiKeyLabel: 'xAI (API key)',
+      signInExpiredMessage: 'Grok sign-in expired',
+      signInRequiredMessage: 'Not signed in to Grok',
+    });
+    const statusRule = (status: number) => grok().errorRules.find((entry) => entry.match.kind === 'status' && entry.match.status === status);
+    expect(statusRule(401)).toMatchObject({ type: 'invalid_request', code: 'plan_credential_rejected', retryable: false, verdict: 'failure', fallback: 'stop', credential: 'rejected' });
+    expect(statusRule(403)).toMatchObject({ type: 'invalid_request', code: 'plan_not_eligible', retryable: false, verdict: 'failure', fallback: 'stop', credential: 'keep' });
+    expect(statusRule(429)).toMatchObject({ type: 'too_many_requests', code: 'plan_usage_limit', retryable: false, verdict: 'neutral', fallback: 'stop', credential: 'pause' });
+    expect(statusRule(503)).toMatchObject({ type: 'server_error', code: 'plan_route_unavailable', retryable: true, verdict: 'failure', fallback: 'next', credential: 'keep' });
   });
 });

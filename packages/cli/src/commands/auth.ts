@@ -293,7 +293,8 @@ export const authResetHost = async (ports: AuthResetHostPorts, options: { yes: b
     print(ports.stderr, [NO_PROVIDER_TEXT]);
     return EXIT_FAILURE;
   }
-  print(ports.stdout, [resetHostWarning(profiles)]);
+  const hostProfiles = profiles.filter((profile) => profile.usesHostIdentity !== false);
+  if (hostProfiles.length > 0) print(ports.stdout, [resetHostWarning(hostProfiles)]);
   if (!options.yes && ports.isTerminal) {
     const chosen = await ports.choose('Reset the host identity?', RESET_HOST_CHOICES);
     if (chosen === undefined || RESET_HOST_CHOICES[chosen] !== RESET_HOST_CONFIRM) return EXIT_USAGE;
