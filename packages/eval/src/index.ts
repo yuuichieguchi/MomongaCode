@@ -4,7 +4,7 @@ export { grade } from './graders.ts';
 export type { DecisionObservation, GradeOutcome, Graded } from './graders.ts';
 export { callsOf, finalTextOf } from './observe.ts';
 export type { ObservedCall } from './observe.ts';
-export { AUTO_MODE_DATASET_TEXT } from '@momonga/config';
+export { AUTO_MODE_DATASET_TEXT, CONTEXT_DATASET_TEXT } from '@momonga/config';
 export { autoGateRecordOf } from './auto-gate-record.ts';
 export type { AutoGateMeta } from './auto-gate-record.ts';
 export { buildReport, formatReport } from './report.ts';
@@ -103,7 +103,7 @@ export type {
   GuidelineCompletionRequest,
   GuidelineRootCause,
 } from './guideline-prompts.ts';
-export { GUIDELINE_CAP_REASON, GUIDELINE_NO_CANDIDATE_REASON, formatGuidelineText, formatImproveOutcome, guidelineDiff, improveGuideline } from './context-improve.ts';
+export { DEFAULT_CONTEXT_IMPROVE_CANDIDATES, GUIDELINE_CAP_REASON, GUIDELINE_NO_CANDIDATE_REASON, formatGuidelineText, formatImproveOutcome, guidelineDiff, improveGuideline } from './context-improve.ts';
 export { GUIDELINE_OUTCOME_FORMAT, adoptionOf, encodeOutcomeFile, outcomeFileOf, parseOutcomeFile } from './guideline-outcome.ts';
 export type { GuidelineAdoption, GuidelineOutcomeBody, GuidelineOutcomeFile, OutcomeCandidate } from './guideline-outcome.ts';
 export type {

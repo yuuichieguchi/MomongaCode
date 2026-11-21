@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as evaluation from '@momonga/eval';
-import { CONTEXT_DATASET_FORMAT, GUIDELINE_OUTCOME_FORMAT, buildContextReport, encodeOutcomeFile, improveGuideline, outcomeFileOf, parseContextDataset, parseOutcomeFile } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, CONTEXT_DATASET_TEXT, DEFAULT_CONTEXT_IMPROVE_CANDIDATES, GUIDELINE_OUTCOME_FORMAT, buildContextReport, encodeOutcomeFile, formatImproveOutcome, improveGuideline, outcomeFileOf, parseContextDataset, parseOutcomeFile } from '@momonga/eval';
 import type { GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
 import { REAL_TARGET, answeredBy } from './answered-fixtures.ts';
 import { bash, contextCase, fidelity, read, recorded, summarized } from './context-fixtures.ts';
@@ -41,10 +41,10 @@ const analysis = (): string =>
     reliability_score: 0.8,
   });
 
-const improve = async (tokenCap: number) => {
+const improveWith = async (overrides: Partial<Pick<ImproveInput, 'candidates' | 'tokenCap'>>) => {
   const requests: GuidelineCompletionRequest[] = [];
   const benchmarked: (string | undefined)[] = [];
-  const input = { seed: 42, bootstrapSeed: 1, analysisModel: 'opus', tokenCap, current: undefined } as unknown as ImproveInput;
+  const input: ImproveInput = { seed: 42, bootstrapSeed: 1, analysisModel: 'opus', current: undefined, ...overrides };
   const outcome = await improveGuideline(input, {
     benchmark: async (guideline) => {
       benchmarked.push(guideline);
@@ -59,6 +59,8 @@ const improve = async (tokenCap: number) => {
   });
   return { outcome, requests, benchmarked };
 };
+
+const improve = (tokenCap: number) => improveWith({ tokenCap });
 
 const candidateRequests = (requests: readonly GuidelineCompletionRequest[]) => requests.filter((request) => request.purpose !== 'analysis');
 
@@ -133,5 +135,43 @@ describe('no constant K remains', () => {
   it('the cap is no longer derived from K', () => {
     const command = readFileSync(path.join(PACKAGES, 'cli/src/commands/context.ts'), 'utf8');
     expect(command).not.toMatch(/datasetTokens \* \(1 \+/);
+  });
+});
+
+describe('candidate count mode without an artificial token cap', () => {
+  it('defaults to 1 candidate and completes without stopping when tokenCap is omitted', async () => {
+    expect(DEFAULT_CONTEXT_IMPROVE_CANDIDATES).toBe(1);
+    const { outcome, requests, benchmarked } = await improveWith({});
+    expect(outcome.tokenCap).toBeNull();
+    expect(outcome.candidateCount).toBe(1);
+    expect(candidateRequests(requests)).toHaveLength(1);
+    expect(benchmarked).toHaveLength(2);
+    expect(outcome.status).not.toBe('stopped');
+    expect(formatImproveOutcome(outcome)).toContain('no token budget, K=1 distinct candidates');
+    const file = parseOutcomeFile(encodeOutcomeFile(outcomeFileOf(outcome, { name: 'improve', digest: 'e'.repeat(64) })));
+    expect(file).toMatchObject({ tokenCap: null, candidateCount: 1 });
+  });
+
+  it('runs the requested number of candidates to completion when candidates is specified', async () => {
+    const { outcome, requests, benchmarked } = await improveWith({ candidates: 3 });
+    expect(outcome.tokenCap).toBeNull();
+    expect(outcome.candidateCount).toBe(3);
+    expect(candidateRequests(requests)).toHaveLength(3);
+    expect(benchmarked).toHaveLength(4);
+  });
+
+  it('caps the candidate count when both candidates and tokenCap are provided', async () => {
+    const { outcome, requests, benchmarked } = await improveWith({ candidates: 2, tokenCap: 7 * BENCHMARK_TOKENS });
+    expect(outcome.tokenCap).toBe(700);
+    expect(outcome.candidateCount).toBe(2);
+    expect(candidateRequests(requests)).toHaveLength(2);
+    expect(benchmarked).toHaveLength(3);
+  });
+
+  it('ships the bundled context-starter dataset text parseable as momonga-eval-context/1', () => {
+    const bundled = parseContextDataset(CONTEXT_DATASET_TEXT, 'context.json');
+    expect(bundled.format).toBe(CONTEXT_DATASET_FORMAT);
+    expect(bundled.name).toBe('context-starter');
+    expect(bundled.cases.length).toBeGreaterThan(0);
   });
 });

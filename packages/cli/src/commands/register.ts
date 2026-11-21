@@ -496,7 +496,7 @@ const versionArgument = (text: string): number => {
   return value;
 };
 
-const tokenCapArgument = (text: string): number => {
+const positiveIntegerArgument = (text: string): number => {
   const value = Number(text);
   if (!Number.isInteger(value) || value < 1) throw new InvalidArgumentError('expected an integer of at least 1');
   return value;
@@ -509,19 +509,23 @@ const registerContext: CommandGroup = (program, deps) => {
     .description(
       'analyse the scenarios that pass without compaction and fail with it, sample candidate guidelines for the compaction summary, benchmark each against the guideline in force, print the winner and its full text, and write the outcome to a file; nothing is stored',
     )
-    .requiredOption('--dataset <file>', 'the context dataset to benchmark')
-    .requiredOption('--model <model>', 'the model of the benchmark sessions and of the analysis and candidate calls')
-    .requiredOption('--token-cap <n>', 'the most tokens the command may spend on benchmark runs and model calls together; the number of candidates is what this cap affords after the baseline and the analyses', tokenCapArgument)
+    .option('--dataset <file>', 'the context dataset JSON (momonga-eval-context/1); uses the bundled context-starter dataset when omitted')
+    .option('--model <model>', 'the model of the benchmark sessions and of the analysis and candidate calls; uses the configured starting model when omitted')
+    .option('--candidates <n>', 'how many candidate guidelines to sample and benchmark; 1 when omitted (or derived from --token-cap when only --token-cap is set)', positiveIntegerArgument)
+    .option('--token-cap <n>', 'optional maximum total tokens across benchmark runs and model calls', positiveIntegerArgument)
     .option('--seed <n>', 'the seed of the noise turns and of the candidate draws; 0 when omitted', seedArgument)
-    .requiredOption('--outcome <file>', 'the file the outcome is written to: the candidates, the text of the winner, its report, the dataset digest, the parent version and a digest of the whole')
-    .action(async (options: { dataset: string; model: string; tokenCap: number; seed?: number; outcome: string }) => {
+    .option('--outcome <file>', 'the file the outcome is written to; stored under ~/.momonga/state/context-outcomes when omitted')
+    .option('--yes', 'start without asking for confirmation')
+    .action(async (options: { dataset?: string; model?: string; candidates?: number; tokenCap?: number; seed?: number; outcome?: string; yes?: true }) => {
       deps.complete(
         await contextImprove(deps.ports, await pathsOf(deps.ports), {
-          dataset: options.dataset,
-          model: options.model,
-          tokenCap: options.tokenCap,
+          ...(options.dataset === undefined ? {} : { dataset: options.dataset }),
+          ...(options.model === undefined ? {} : { model: options.model }),
+          ...(options.candidates === undefined ? {} : { candidates: options.candidates }),
+          ...(options.tokenCap === undefined ? {} : { tokenCap: options.tokenCap }),
           seed: options.seed ?? DEFAULT_DATASET_SEED,
-          outcome: options.outcome,
+          ...(options.outcome === undefined ? {} : { outcome: options.outcome }),
+          ...(options.yes === true ? { yes: true } : {}),
           interrupt: deps.interrupt,
         }),
       );

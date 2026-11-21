@@ -24,7 +24,7 @@ export type GuidelineOutcomeBody = {
   analysisModel: string;
   seed: number;
   candidateCount: number;
-  tokenCap: number;
+  tokenCap: number | null;
   derivation?: CandidateDerivation;
   dataset: { name: string; digest: string };
   parent: number | null;
@@ -173,7 +173,7 @@ const OUTCOME_FILE_SCHEMA = {
         analysisModel: { type: 'string' },
         seed: { type: 'integer' },
         candidateCount: count,
-        tokenCap: count,
+        tokenCap: { anyOf: [count, { type: 'null' }] },
         derivation: {
           type: 'object',
           properties: { baselineTokens: count, analysisTokens: count, candidateRunTokens: count, affordable: count },

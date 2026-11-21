@@ -8,6 +8,7 @@ import { analysisRequestOf, candidateRequestOf, parseGuidelineAnalysis, parseGui
 import type { GuidelineAnalysis, GuidelineCompletion, GuidelineCompletionRequest } from './guideline-prompts.ts';
 import type { Transcript } from './transcript.ts';
 
+export const DEFAULT_CONTEXT_IMPROVE_CANDIDATES = 1;
 export const GUIDELINE_CAP_REASON = 'the command reached its token cap, counting the benchmark runs and the model calls together';
 export const GUIDELINE_NO_CANDIDATE_REASON = 'the token cap leaves less than one candidate run after the baseline benchmark and the analyses';
 
@@ -17,7 +18,8 @@ export type ImproveInput = {
   seed: number;
   bootstrapSeed: number;
   analysisModel: string;
-  tokenCap: number;
+  candidates?: number;
+  tokenCap?: number;
   current: AdoptedGuideline | undefined;
   recordChars?: number;
 };
@@ -55,7 +57,7 @@ export type ImproveOutcome = {
   analysisModel: string;
   seed: number;
   candidateCount: number;
-  tokenCap: number;
+  tokenCap: number | null;
   derivation?: CandidateDerivation;
   current: AdoptedGuideline | undefined;
   baseline: { contrastiveFailures: number; compactedScenarios: number; tokens: number };
@@ -84,7 +86,8 @@ const bestWinner = (candidates: readonly ImproveCandidate[], parent: number | nu
 
 export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts): Promise<ImproveOutcome> => {
   const tokens = { benchmark: 0, charged: 0 };
-  const reached = (): boolean => tokens.benchmark + tokens.charged >= input.tokenCap;
+  const cap = input.tokenCap;
+  const reached = (): boolean => cap !== undefined && tokens.benchmark + tokens.charged >= cap;
   const skipped: SkippedScenario[] = [];
   const candidates: ImproveCandidate[] = [];
   let analysed = 0;
@@ -100,7 +103,7 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
     analysisModel: input.analysisModel,
     seed: input.seed,
     candidateCount: new Set(candidates.flatMap((candidate) => (candidate.text === undefined ? [] : [candidate.text]))).size,
-    tokenCap: input.tokenCap,
+    tokenCap: cap ?? null,
     ...(derivation === undefined ? {} : { derivation }),
     current: input.current,
     baseline,
@@ -164,20 +167,26 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
   if (analyses.length === 0) return outcome('no_analysis');
 
   if (reached()) return stopped();
-  const analysisTokens = tokens.charged;
-  const candidateRunTokens = first.tokens + Math.ceil(analysisTokens / analysed);
-  const affordable = Math.floor((input.tokenCap - first.tokens - analysisTokens) / candidateRunTokens);
-  derivation = { baselineTokens: first.tokens, analysisTokens, candidateRunTokens, affordable };
-  if (affordable < 1) return outcome('stopped', { reason: GUIDELINE_NO_CANDIDATE_REASON });
+  let targetCandidates: number;
+  if (cap !== undefined) {
+    const analysisTokens = tokens.charged;
+    const candidateRunTokens = first.tokens + Math.ceil(analysisTokens / analysed);
+    const affordable = Math.floor((cap - first.tokens - analysisTokens) / candidateRunTokens);
+    derivation = { baselineTokens: first.tokens, analysisTokens, candidateRunTokens, affordable };
+    if (affordable < 1) return outcome('stopped', { reason: GUIDELINE_NO_CANDIDATE_REASON });
+    targetCandidates = input.candidates === undefined ? affordable : Math.min(input.candidates, affordable);
+  } else {
+    targetCandidates = input.candidates ?? DEFAULT_CONTEXT_IMPROVE_CANDIDATES;
+  }
 
-  for (let index = 0; index < affordable; index += 1) {
+  for (let index = 0; index < targetCandidates; index += 1) {
     if (reached()) return stopped();
     const completion = await spend(
       candidateRequestOf({
         analyses,
         guideline: input.current?.text,
         index,
-        count: affordable,
+        count: targetCandidates,
         seed: input.seed,
         ...(input.recordChars === undefined ? {} : { analysisChars: input.recordChars }),
       }),
@@ -298,7 +307,9 @@ export const formatImproveOutcome = (outcome: ImproveOutcome): string => {
   const lines = [
     `model: ${outcome.model} (derived from the pinned provenance of the models that answered the benchmark; the analysis and candidate calls used the model ${outcome.analysisModel})`,
     ...(outcome.model === 'fake' ? ['a fake model proves only that the machinery works, so no candidate can pass the gate'] : []),
-    `seed ${outcome.seed}, token cap ${outcome.tokenCap}, K=${outcome.candidateCount} distinct candidates${outcome.derivation === undefined ? '' : ` (the cap affords ${outcome.derivation.affordable}: (${outcome.tokenCap} - ${outcome.derivation.baselineTokens} baseline - ${outcome.derivation.analysisTokens} analyses) / ${outcome.derivation.candidateRunTokens} per candidate run)`}`,
+    outcome.tokenCap === null
+      ? `seed ${outcome.seed}, no token budget, K=${outcome.candidateCount} distinct candidates`
+      : `seed ${outcome.seed}, token cap ${outcome.tokenCap}, K=${outcome.candidateCount} distinct candidates${outcome.derivation === undefined ? '' : ` (the cap affords ${outcome.derivation.affordable}: (${outcome.tokenCap} - ${outcome.derivation.baselineTokens} baseline - ${outcome.derivation.analysisTokens} analyses) / ${outcome.derivation.candidateRunTokens} per candidate run)`}`,
     `baseline: ${outcome.current === undefined ? 'no guideline in force' : `guideline version ${outcome.current.version}`}, contrastiveFailures ${baseline.contrastiveFailures} of ${baseline.compactedScenarios} scenarios, ${baseline.tokens} benchmark tokens`,
     `contrastive set: ${outcome.contrastive.length === 0 ? 'none' : outcome.contrastive.join(', ')}`,
     ...outcome.skipped.map((entry) => `skipped ${entry.scenario}: ${entry.reason}`),

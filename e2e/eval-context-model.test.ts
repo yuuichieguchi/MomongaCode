@@ -84,7 +84,7 @@ describe('eval context and context improve with models by their own names', () =
     const dataset = writeDataset(home);
     const outcomeFile = path.join(home.root, 'outcome.json');
 
-    const improved = await runCli(home, ['context', 'improve', '--dataset', dataset, '--model', UPSTREAM_MODEL_REF, '--token-cap', '1', '--seed', '7', '--outcome', outcomeFile], { boundMs: CLI_BOUND_MS });
+    const improved = await runCli(home, ['context', 'improve', '--dataset', dataset, '--model', UPSTREAM_MODEL_REF, '--token-cap', '1', '--seed', '7', '--outcome', outcomeFile, '--yes'], { boundMs: CLI_BOUND_MS });
 
     expect(improved.stderr).toBe('');
     expect(improved.stdout).toContain(`model: fake (derived from the pinned provenance of the models that answered the benchmark; the analysis and candidate calls used the model ${ANALYSIS_MODEL})`);

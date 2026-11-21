@@ -412,11 +412,13 @@ momonga [options] [prompt]
 
 | Option | Meaning |
 | --- | --- |
-| `--dataset <file>` | the context dataset to benchmark |
-| `--model <model>` | the model of the benchmark sessions and of the analysis and candidate calls |
-| `--token-cap <n>` | the most tokens the command may spend on benchmark runs and model calls together; the number of candidates is what this cap affords after the baseline and the analyses |
+| `--dataset <file>` | the context dataset JSON (`momonga-eval-context/1`); uses the bundled `context-starter` dataset when omitted |
+| `--model <model>` | the model of the benchmark sessions and of the analysis and candidate calls; uses the configured starting model when omitted |
+| `--candidates <n>` | how many candidate guidelines to sample and benchmark; `1` when omitted (or derived from `--token-cap` when only `--token-cap` is set) |
+| `--token-cap <n>` | optional maximum total tokens across benchmark runs and model calls |
 | `--seed <n>` | the seed of the noise turns and of the candidate draws; 0 when omitted |
-| `--outcome <file>` | the file the outcome is written to: the candidates, the text of the winner, its report, the dataset digest, the parent version and a digest of the whole |
+| `--outcome <file>` | the file the outcome is written to; stored under `~/.momonga/state/context-outcomes` when omitted |
+| `--yes` | start without asking for confirmation |
 | `-h, --help` | display help for the command |
 
 ### momonga models

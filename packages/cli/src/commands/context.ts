@@ -1,6 +1,8 @@
 import path from 'node:path';
 import type { ModelRoles } from '@momonga/config';
 import {
+  CONTEXT_DATASET_TEXT,
+  DEFAULT_CONTEXT_IMPROVE_CANDIDATES,
   adoptionOf,
   buildContextReport,
   datasetDigestOf,
@@ -11,13 +13,14 @@ import {
   improveGuideline,
   loadContextDataset,
   outcomeFileOf,
+  parseContextDataset,
   parseOutcomeFile,
   refuseExistingOutput,
 } from '@momonga/eval';
-import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, ImproveOutcome, Transcript } from '@momonga/eval';
-import { codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
+import type { BenchmarkResult, ContextDataset, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, ImproveOutcome, Transcript } from '@momonga/eval';
+import { EXIT_USAGE, codeDigestOfRunningProcess, currentSocketResolver, resolveLayoutLocks } from '@momonga/foundation';
 import type { MomongaPaths, KernelLockMechanism } from '@momonga/foundation';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, displayMapOf, isNotListedCapabilities, jsonReplyOf, messageOf, notListedMessage, summaryTokenCapFor } from '@momonga/protocol';
 import type { ChainCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, ResponseResource, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
@@ -26,9 +29,9 @@ import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { pinnedModelOf, runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
+import { terminalChoice } from '../plan/terminal-choice.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
 import { shellModelsOf } from '../plain-http.ts';
 
 export class ContextImproveError extends Error {
@@ -39,12 +42,56 @@ export class ContextImproveError extends Error {
 }
 
 export type ContextImproveOptions = {
-  dataset: string;
-  model: string;
-  tokenCap: number;
+  dataset?: string;
+  model?: string;
+  candidates?: number;
+  tokenCap?: number;
   seed: number;
-  outcome: string;
+  outcome?: string;
+  yes?: boolean;
   interrupt: AbortSignal;
+};
+
+export type ContextImprovePlanSummary = {
+  readonly model: string;
+  readonly dataset: string;
+  readonly candidates?: number;
+  readonly tokenCap?: number;
+  readonly outcome: string;
+};
+
+export const CONTEXT_IMPROVE_TOKEN_NOTICE = 'This runs bench sessions and model calls and spends tokens.';
+
+export const contextImprovePlanLines = (plan: ContextImprovePlanSummary): string[] => [
+  `Model: ${plan.model}`,
+  `Dataset: ${plan.dataset}`,
+  `Candidates: ${plan.candidates !== undefined ? String(plan.candidates) : `derived from token budget ${plan.tokenCap}`}`,
+  `Token budget: ${plan.tokenCap === undefined ? 'none' : String(plan.tokenCap)}`,
+  `Outcome: ${plan.outcome}`,
+  `Notice: ${CONTEXT_IMPROVE_TOKEN_NOTICE}`,
+];
+
+export const CONTEXT_OUTCOMES_DIRNAME = 'context-outcomes';
+
+export const defaultOutcomePathOf = (paths: Pick<MomongaPaths, 'state'>, nowMs: number, uuid: string): string => {
+  const stamp = new Date(nowMs).toISOString().replace(/[:.]/g, '-');
+  return path.join(paths.state, CONTEXT_OUTCOMES_DIRNAME, `${stamp}-${uuid.slice(0, 8)}.json`);
+};
+
+export const datasetSummaryOf = (dataset: Pick<ContextDataset, 'name' | 'cases'>, explicitPath: string | undefined): string => {
+  const runs = dataset.cases.reduce((total, entry) => total + entry.runs, 0);
+  const source = explicitPath === undefined ? `bundled ${dataset.name}` : explicitPath;
+  return `${source} (${dataset.cases.length} cases, ${runs} runs per pass)`;
+};
+
+let cachedBundledDatasetSummary: string | undefined;
+
+export const bundledContextDatasetSummary = (): string => {
+  if (cachedBundledDatasetSummary === undefined) {
+    const parsed = parseContextDataset(CONTEXT_DATASET_TEXT, 'context.json');
+    cachedBundledDatasetSummary = datasetSummaryOf(parsed, undefined);
+  }
+  return cachedBundledDatasetSummary;
 };
 
 const RECORD_WINDOW_SHARE = 4;
@@ -123,18 +170,24 @@ export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ mod
 export type ImproveInputSource = {
   seed: number;
   analysis: { model: string; capabilities: ChainCapabilities };
-  tokenCap: number;
+  candidates?: number;
+  tokenCap?: number;
   current: ImproveInput['current'];
 };
 
-export const improveInputFor = ({ seed, analysis, tokenCap, current }: ImproveInputSource): ImproveInput => ({
+export const improveInputFor = ({ seed, analysis, candidates, tokenCap, current }: ImproveInputSource): ImproveInput => ({
   seed,
   bootstrapSeed: CONTEXT_BOOTSTRAP_SEED,
   analysisModel: analysis.model,
-  tokenCap,
+  ...(candidates === undefined ? {} : { candidates }),
+  ...(tokenCap === undefined ? {} : { tokenCap }),
   current,
   recordChars: recordCharsFor(analysis.capabilities),
 });
+
+const CONFIRM_START = 'Start';
+const CONFIRM_CANCEL = 'Cancel';
+const CONFIRM_CHOICES = [CONFIRM_START, CONFIRM_CANCEL] as const;
 
 export const contextImprove = async (
   ports: CliPorts,
@@ -142,9 +195,34 @@ export const contextImprove = async (
   options: ContextImproveOptions,
   hostEffects: (ports: CliPorts, lock: KernelLockMechanism) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
-  const outcomeFile = path.resolve(ports.cwd, options.outcome);
-  await refuseExistingOutput(ports.files, outcomeFile);
-  const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
+  const outcomeFile = options.outcome === undefined ? defaultOutcomePathOf(paths, ports.clock.now(), ports.uuid()) : path.resolve(ports.cwd, options.outcome);
+  if (options.outcome !== undefined) await refuseExistingOutput(ports.files, outcomeFile);
+  const explicitDataset = options.dataset === undefined ? undefined : path.resolve(ports.cwd, options.dataset);
+  const dataset = explicitDataset === undefined ? parseContextDataset(CONTEXT_DATASET_TEXT, 'context.json') : await loadContextDataset(ports.files, explicitDataset);
+  const models = await shellModelsOf(ports, options.interrupt);
+  const pinned = options.model !== undefined ? pinnedModelOf(models, options.model) : models.resolved.start;
+  if (pinned === undefined) throw new ContextImproveError(messageOf('noModelConnected', 'cli'));
+  const effectiveCandidates = options.candidates ?? (options.tokenCap === undefined ? DEFAULT_CONTEXT_IMPROVE_CANDIDATES : undefined);
+  if (options.yes !== true) {
+    const shownModel = displayMapOf(models.resolved.views).get(pinned) ?? pinned;
+    const summaryLines = contextImprovePlanLines({
+      model: shownModel,
+      dataset: datasetSummaryOf(dataset, explicitDataset),
+      ...(effectiveCandidates === undefined ? {} : { candidates: effectiveCandidates }),
+      ...(options.tokenCap === undefined ? {} : { tokenCap: options.tokenCap }),
+      outcome: outcomeFile,
+    });
+    if (ports.terminal === undefined) {
+      ports.stderr.write(`${summaryLines.join('\n')}\nmomonga context improve needs confirmation in an interactive terminal, or --yes to start without asking\n`);
+      return EXIT_USAGE;
+    }
+    ports.stdout.write(`${summaryLines.join('\n')}\n`);
+    const chosen = await terminalChoice(ports.terminal, options.interrupt)('Start context improve?', CONFIRM_CHOICES, options.interrupt);
+    if (chosen === undefined || CONFIRM_CHOICES[chosen] !== CONFIRM_START) {
+      ports.stdout.write('cancelled; nothing was run\n');
+      return EXIT_USAGE;
+    }
+  }
   await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(ports, paths);
   const gatewayInfo = createCliGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
@@ -153,8 +231,6 @@ export const contextImprove = async (
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
     const reflection = { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS };
     const codeDigest = await codeDigestOfRunningProcess();
-    const models = await shellModelsOf(ports, options.interrupt);
-    const pinned = pinnedModelOf(models, options.model);
     const analysis = await analysisModelFor({ roles: models.resolved.roles, model: pinned, capabilitiesOf: async (model) => {
         const capabilities = await gatewayInfo.capabilitiesOf(model);
         if (isNotListedCapabilities(capabilities)) throw new Error(notListedMessage(capabilities));
@@ -166,7 +242,13 @@ export const contextImprove = async (
     const completer = await completerFor(ports, paths, analysis.model, analysis.capabilities, options.interrupt);
     try {
       const outcome = await improveGuideline(
-        improveInputFor({ seed: options.seed, analysis, tokenCap: options.tokenCap, current }),
+        improveInputFor({
+          seed: options.seed,
+          analysis,
+          ...(effectiveCandidates === undefined ? {} : { candidates: effectiveCandidates }),
+          ...(options.tokenCap === undefined ? {} : { tokenCap: options.tokenCap }),
+          current,
+        }),
         {
           benchmark: async (guideline): Promise<BenchmarkResult> => {
             const transcripts = await runContextLive(hostEffects(ports, resolveLayoutLocks(paths).mechanism), {
@@ -193,6 +275,7 @@ export const contextImprove = async (
         },
       );
       ports.stdout.write(`${formatImproveOutcome(outcome)}\n`);
+      if (options.outcome === undefined) await ports.files.mkdirPrivate(path.dirname(outcomeFile));
       await ports.files.writeText(outcomeFile, encodeOutcomeFile(outcomeFileOf(outcome, { name: dataset.name, digest: datasetDigestOf(dataset, options.seed) })));
       ports.stdout.write(`the outcome was written to ${outcomeFile}\n`);
       ports.stdout.write(

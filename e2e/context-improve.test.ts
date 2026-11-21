@@ -285,7 +285,7 @@ describe('momonga context improve', () => {
     const baselineOutcome = path.join(home.root, 'baseline-outcome.json');
     const analysisOutcome = path.join(home.root, 'analysis-outcome.json');
     const realOutcome = path.join(home.root, 'real-outcome.json');
-    const improveArgs = (tokenCap: number, outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--model', UPSTREAM_MODEL_REF, '--token-cap', String(tokenCap), '--seed', '7', '--outcome', outcome];
+    const improveArgs = (tokenCap: number, outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--model', UPSTREAM_MODEL_REF, '--token-cap', String(tokenCap), '--seed', '7', '--outcome', outcome, '--yes'];
     type WrittenOutcome = {
       digest: string;
       status: string;

@@ -17,6 +17,7 @@ describe('the single-file bundle', () => {
       await bundle({ entry: defaultEntry, outfile });
       const text = fs.readFileSync(outfile, 'utf8');
       expect(text).toContain('packages/ata-validator/lib/validator-core.js');
+      expect(text).toContain('context-starter');
       expect(text).not.toContain('@ata-validator/native');
       expect(text).not.toContain('packages/ata-validator/lib/native-load.js');
       expect(text).not.toContain('packages/ata-validator/lib/compile-fn.js');

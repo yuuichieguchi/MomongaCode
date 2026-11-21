@@ -26,7 +26,7 @@ export { appendPermissionRule, settingsLayerOfRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
 export { systemFileLockPorts } from '@momonga/foundation';
 export type { FileLockPorts } from '@momonga/foundation';
-export { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
+export { AUTO_MODE_DATASET_TEXT, CONTEXT_DATASET_TEXT } from './auto-mode-dataset.ts';
 export {
   AUTO_GATE_BOUNDS,
   autoFitDirectoryOf,

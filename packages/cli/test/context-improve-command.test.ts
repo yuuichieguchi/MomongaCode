@@ -1,15 +1,20 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import type { CommanderError } from 'commander';
 import { encodeOutcomeFile, formatImproveOutcome, outcomeFileOf, parseGuidelineCandidate } from '@momonga/eval';
 import type { ImproveOutcome } from '@momonga/eval';
+import { EXIT_USAGE, momongaLayout } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
-import { adoptOutcome, exitOfImproveOutcome, formatGuidelines } from '../src/commands/context.ts';
+import { CONTEXT_IMPROVE_TOKEN_NOTICE, adoptOutcome, contextImprove, defaultOutcomePathOf, exitOfImproveOutcome, formatGuidelines } from '../src/commands/context.ts';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { terminalPorts } from '../src/terminal-writer.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
+import { freshHome } from './fresh-home.ts';
 import { NO_HELPER } from './no-helper.ts';
 
 const program = () => {
@@ -58,32 +63,101 @@ const assertRejected = async (args: string[], pattern: RegExp) => {
 };
 
 describe('momonga context improve', () => {
-  it('guards a command with no input: --dataset is required', async () => {
-    await assertRejected(['context', 'improve', '--model', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /--dataset/);
-  });
-
   it('guards a name that is not a model: --alias is no longer an option', async () => {
     await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /unknown option '--alias'/);
   });
 
-  it('guards an unchosen analysis model: --model is required', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--token-cap', '700', '--outcome', 'o.json'], /--model/);
-  });
-
-  it('guards a cost nobody accepted: --token-cap is required and checked before the dataset is read', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--outcome', 'o.json'], /--token-cap/);
-  });
-
-  it.each(['0', '-5', '1.5', 'many'])('guards an invented cap: --token-cap %s is refused before the dataset is read', async (value) => {
+  it.each(['0', '-5', '1.5', 'many'])('guards an invalid --token-cap %s before the dataset is read', async (value) => {
     await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--outcome', 'o.json', '--token-cap', value], /--token-cap/);
+  });
+
+  it.each(['0', '-2', '1.5', 'many'])('guards an invalid --candidates %s before the dataset is read', async (value) => {
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--outcome', 'o.json', '--candidates', value], /--candidates/);
+  });
+
+  it('derives an automatic outcome file path under state/context-outcomes when --outcome is omitted', () => {
+    const paths = momongaLayout('/tmp/home', process.platform, {});
+    const target = defaultOutcomePathOf(paths, Date.UTC(2026, 10, 21, 6, 30, 0), '12345678-abcd-efgh');
+    expect(target).toContain('context-outcomes');
+    expect(target).toMatch(/2026-11-21T06-30-00-000Z-12345678\.json$/);
+  });
+
+  const homeWithStartModel = () => {
+    const home = freshHome();
+    const paths = momongaLayout(home, process.platform, {});
+    fs.mkdirSync(path.dirname(paths.settingsFile), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(
+      paths.settingsFile,
+      JSON.stringify({
+        models: {
+          connections: [{ adapter: 'ollama', provider: 'ollama', baseUrl: 'http://127.0.0.1:18477', models: [{ id: 'qwen3.8:27b' }] }],
+        },
+      }),
+      { mode: 0o600 },
+    );
+    return paths;
+  };
+
+  it('refuses non-interactive CLI runs without --yes, showing the plan and token-spending notice', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const paths = homeWithStartModel();
+    const ports = {
+      version: '9.9.9',
+      home: paths.home,
+      cwd: '/w',
+      platform: process.platform,
+      env: {},
+      terminal: undefined,
+      clock: { now: () => Date.UTC(2026, 10, 21, 6, 30, 0), sleep: async () => undefined },
+      uuid: () => 'abcdef12-0000-0000-0000-000000000000',
+      stdout: { write: (text: string) => void stdout.push(text) },
+      stderr: { write: (text: string) => void stderr.push(text) },
+      files: {},
+    } as unknown as CliPorts;
+    const code = await contextImprove(ports, paths, { seed: 0, interrupt: new AbortController().signal });
+    expect(code).toBe(EXIT_USAGE);
+    const errText = stderr.join('');
+    expect(errText).toContain('Model: ollama/qwen3.8:27b');
+    expect(errText).toContain('Dataset: bundled context-starter');
+    expect(errText).toContain('Candidates: 1');
+    expect(errText).toContain('Token budget: none');
+    expect(errText).toContain(CONTEXT_IMPROVE_TOKEN_NOTICE);
+    expect(errText).toContain('--yes');
+  });
+
+  it('asks for confirmation in an interactive terminal and cancels cleanly without starting a daemon', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const stdin = new PassThrough();
+    const termOut = new PassThrough();
+    const termWritten: string[] = [];
+    termOut.on('data', (chunk) => termWritten.push(String(chunk)));
+    const paths = homeWithStartModel();
+    const ports = {
+      version: '9.9.9',
+      home: paths.home,
+      cwd: '/w',
+      platform: process.platform,
+      env: {},
+      terminal: { stdin, stdout: termOut, colourOff: () => undefined },
+      clock: { now: () => Date.UTC(2026, 10, 21, 6, 30, 0), sleep: async () => undefined },
+      uuid: () => 'abcdef12-0000-0000-0000-000000000000',
+      stdout: { write: (text: string) => void stdout.push(text) },
+      stderr: { write: (text: string) => void stderr.push(text) },
+      files: {},
+    } as unknown as CliPorts;
+    stdin.end('2\n');
+    const code = await contextImprove(ports, paths, { seed: 0, interrupt: new AbortController().signal });
+    expect(code).toBe(EXIT_USAGE);
+    expect(stdout.join('')).toContain('Dataset: bundled context-starter');
+    expect(stdout.join('')).toContain(CONTEXT_IMPROVE_TOKEN_NOTICE);
+    expect(stdout.join('')).toContain('cancelled; nothing was run');
+    expect(termWritten.join('')).toContain('Start context improve?');
   });
 });
 
 describe('momonga context improve and adopt', () => {
-  it('guards an outcome that is never written: --outcome is required, before the dataset is read', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--token-cap', '700'], /--outcome/);
-  });
-
   it('guards a text stored unseen: improve has no --adopt', async () => {
     await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--token-cap', '700', '--outcome', 'o.json', '--adopt'], /--adopt/);
   });

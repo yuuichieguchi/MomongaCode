@@ -48,13 +48,18 @@ export const updateSourceDefines = ({ releaseRepo, teamId, releasePublicKey }: U
 };
 
 export const autoModeDatasetFile = `${repoRoot}packages/eval/datasets/auto-mode.json`;
+export const contextDatasetFile = `${repoRoot}packages/eval/datasets/context.json`;
 
 const bundlePlugins: Plugin[] = [
   {
     name: 'auto-mode-dataset-embedded',
     setup: (build) => {
       build.onLoad({ filter: /[\\/]packages[\\/]config[\\/]src[\\/]auto-mode-dataset\.ts$/ }, () => ({
-        contents: `export const AUTO_MODE_DATASET_TEXT = ${JSON.stringify(fs.readFileSync(autoModeDatasetFile, 'utf8'))};\n`,
+        contents: [
+          `export const AUTO_MODE_DATASET_TEXT = ${JSON.stringify(fs.readFileSync(autoModeDatasetFile, 'utf8'))};`,
+          `export const CONTEXT_DATASET_TEXT = ${JSON.stringify(fs.readFileSync(contextDatasetFile, 'utf8'))};`,
+          '',
+        ].join('\n'),
         loader: 'ts',
       }));
     },

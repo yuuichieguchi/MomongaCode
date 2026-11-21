@@ -111,7 +111,7 @@ const CASES: readonly Case[] = [
   { line: '/memory add use pnpm --user', spy: 'memoryAdd', args: ['use pnpm', expect.objectContaining({ user: true })], background: true },
   { line: '/memory review', spy: 'memoryReview', args: [expect.objectContaining({ json: false })], background: true },
   { line: '/rule add Bash no pushing --kind constraint --deny Bash(git:*)', spy: 'ruleAdd', args: ['Bash', 'no pushing', expect.objectContaining({ enforcement: { behavior: 'deny', rule: 'Bash(git:*)' } })], background: true },
-  { line: '/context improve --dataset d.json --model a --token-cap 5 --outcome o.json', spy: 'contextImprove', args: [expect.objectContaining({ dataset: 'd.json', model: 'a', tokenCap: 5, outcome: 'o.json' })], background: true },
+  { line: '/context improve --dataset d.json --model a --token-cap 5 --outcome o.json --yes', spy: 'contextImprove', args: [expect.objectContaining({ dataset: 'd.json', model: 'a', tokenCap: 5, outcome: 'o.json', yes: true })], background: true },
   { line: '/context guideline list', spy: 'guidelineList', args: [], background: true },
   { line: '/policy verify --json', spy: 'policyVerify', args: [expect.objectContaining({ json: true })], background: true },
   { line: '/gateway probe fm --samples 2', spy: 'probeModel', args: ['fm', expect.objectContaining({ samples: 2 })], background: true },
@@ -248,9 +248,17 @@ describe('the shell commands that have a slash form', () => {
         '/context has these subcommands:',
         '  /context improve    improve how the context is compacted, from the failures a bench shows',
         '  /context guideline  inspect, adopt and roll back the compaction guideline',
-        'usage: /context improve --dataset <file> --model <model> --token-cap <n> --outcome <file> | guideline adopt <file> | guideline list | guideline rollback <version>',
+        'usage: /context improve [--candidates <n>] [--dataset <file>] [--model <model>] [--token-cap <n>] [--outcome <file>] [--yes] | guideline adopt <file> | guideline list | guideline rollback <version>',
       ].join('\n'),
     );
+  });
+
+  it('/context improve with an invalid --seed passes through to Commander without opening a confirmation modal', async () => {
+    const { context, infos } = slashContext();
+    const choose = vi.fn();
+    await run('/context improve --seed nope', { ...context, overlays: { ...context.overlays, choose } } as unknown as SlashContext);
+    expect(choose).not.toHaveBeenCalled();
+    expect(infos.join('\n')).toContain("option '--seed <n>' argument 'nope' is invalid");
   });
 
   it('an unknown subcommand is reported as unknown with the valid ones, and runs nothing', async () => {

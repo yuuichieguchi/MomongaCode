@@ -28,10 +28,10 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
     ] },
   {
     name: 'context',
-    usage: 'improve --dataset <file> --model <model> --token-cap <n> --outcome <file> | guideline adopt <file> | guideline list | guideline rollback <version>',
+    usage: 'improve [--candidates <n>] [--dataset <file>] [--model <model>] [--token-cap <n>] [--outcome <file>] [--yes] | guideline adopt <file> | guideline list | guideline rollback <version>',
     description: 'improve how the context is compacted, and inspect, adopt and roll back the compaction guideline',
     subcommands: [
-      { name: 'improve', usage: '--dataset <file> --model <model> --token-cap <n> --outcome <file>', description: 'improve how the context is compacted, from the failures a bench shows' },
+      { name: 'improve', usage: '[--candidates <n>] [--dataset <file>] [--model <model>] [--token-cap <n>] [--outcome <file>] [--yes]', description: 'improve how the context is compacted, from the failures a bench shows' },
       {
         name: 'guideline',
         usage: 'adopt <file> | list | rollback <version>',
@@ -71,6 +71,17 @@ const argvOf = (entry: ShellSlash | undefined, name: string, words: readonly str
   return own === undefined ? undefined : [name, own, ...words];
 };
 
+export const runShellArgv = (name: string, argv: readonly string[], context: SlashContext): void => {
+  const work = async (signal: AbortSignal): Promise<void> => {
+    const code = await context.shell.run(argv, { write: (text) => context.info(text.replace(/\n$/, '')), signal });
+    if (code !== 0) context.info(`/${name} exited with code ${code}`);
+  };
+  context.background(`/${name}`, work).then(
+    () => undefined,
+    (error: unknown) => context.info(`/${name} stopped: ${describeFailure(error)}`),
+  );
+};
+
 export const runShellCommand = async (name: string, line: string, context: SlashContext): Promise<void> => {
   const parsed = commandWords(line);
   if (parsed.kind === 'refused') {
@@ -88,14 +99,7 @@ export const runShellCommand = async (name: string, line: string, context: Slash
     context.info(NEEDS_SESSION_NOTE);
     return;
   }
-  const work = async (signal: AbortSignal): Promise<void> => {
-    const code = await context.shell.run(argv, { write: (text) => context.info(text.replace(/\n$/, '')), signal });
-    if (code !== 0) context.info(`/${name} exited with code ${code}`);
-  };
-  context.background(`/${name}`, work).then(
-    () => undefined,
-    (error: unknown) => context.info(`/${name} stopped: ${describeFailure(error)}`),
-  );
+  runShellArgv(name, argv, context);
 };
 
 const commandOf = (entry: ShellSlash): SlashCommand => ({
@@ -107,7 +111,7 @@ const commandOf = (entry: ShellSlash): SlashCommand => ({
   run: (args, context) => runShellCommand(entry.name, args, context),
 });
 
-export const SCREEN_COMMAND_NAMES: readonly string[] = ['mcp'];
+export const SCREEN_COMMAND_NAMES: readonly string[] = ['mcp', 'context'];
 
 export const shellSlashCommands: readonly SlashCommand[] = SHELL_SLASH_COMMANDS.filter((entry) => !SCREEN_COMMAND_NAMES.includes(entry.name)).map(commandOf);
 
