@@ -34,7 +34,7 @@ Left out: the native addon packages (`@ata-validator/native-*`), so `lib/native-
 - `lib/interpreter-core.js` (also): `Interpreter#pattern` returns `deferredPattern` where it fell back to a native `RegExp`, and no longer sends `\p{...}` to a native `RegExp`; it requires `lib/safe-regex.js` when it loads, so that the `exec` captured there is the one from before any patching.
 - `lite.js`: exports `evaluateWithPatternAnswers` and `patternQueryKey`.
 - `lite.d.ts`: declares `PatternQuery`, `patternQueryKey` and `evaluateWithPatternAnswers`.
-- `lib/formats.js`: `hostname` runs the A-label check after its RFC 1123 walk, and `idn-hostname` is registered. The `email` check reads its domain through `hostname`, so an `xn--` label in an email domain is now checked the same way. Upstream comments removed.
+- `lib/formats.js`: `hostname` runs the A-label check after its RFC 1123 walk, and `idn-hostname` is registered. The `email` check reads its domain through `hostname`, so an `xn--` label in an email domain is now checked the same way. Duplicate `DURATION_RE` key in `module.exports` removed. Upstream comments removed.
 
 ## Upstream pull requests
 

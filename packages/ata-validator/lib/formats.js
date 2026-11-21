@@ -426,4 +426,4 @@ function formatChecks () {
   });
 }
 
-module.exports = { formatChecks, IPV4, DURATION_RE, IPV6_FULL, ipv4Range, URI_FAST, date, ipv4, dateTime, ipv6, hostname, uri, uriReference, uriWalk: _uriWalk, uuid, time, noReserved, jsonPointer, relativeJsonPointer, uriTemplate, email, duration, iri, iriReference, idnEmail, DURATION_RE, URI_TEMPLATE_EXPR };
+module.exports = { formatChecks, IPV4, DURATION_RE, IPV6_FULL, ipv4Range, URI_FAST, date, ipv4, dateTime, ipv6, hostname, uri, uriReference, uriWalk: _uriWalk, uuid, time, noReserved, jsonPointer, relativeJsonPointer, uriTemplate, email, duration, iri, iriReference, idnEmail, URI_TEMPLATE_EXPR };
