@@ -53,9 +53,9 @@ describe('the required tools of a run', () => {
     expect(namesOf('packaging', host)).toEqual([archiveNameOf(linuxNode)]);
   });
 
-  it('asks for the node archives only where the single executables are built, on an arm64 Mac', () => {
-    const noNode: ToolHost = { ...everythingPresent('linux', 'x64'), sha256Of: (file) => (file.startsWith(nodeArchiveCacheDir) ? undefined : everythingPresent('linux').sha256Of(file)) };
-    expect(namesOf('packaging', noNode)).toEqual([]);
+  it('asks for zig and the node archives only where the single executables are built, on an arm64 Mac', () => {
+    const noNodeOrZig: ToolHost = { ...everythingPresent('linux', 'x64'), onPath: (program) => program !== 'zig', sha256Of: (file) => (file.startsWith(nodeArchiveCacheDir) ? undefined : everythingPresent('linux').sha256Of(file)) };
+    expect(namesOf('packaging', noNodeOrZig)).toEqual([]);
   });
 
   it('checks each project for the tools of its platform only', () => {

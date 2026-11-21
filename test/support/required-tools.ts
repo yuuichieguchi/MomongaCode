@@ -75,7 +75,7 @@ export const REQUIRED_TOOLS: readonly RequiredTool[] = [
   { name: 'git', path: 'git on PATH', platforms: POSIX, projects: ['e2e'], setup: 'install git (apt-get install git) and put it on PATH', present: (host) => host.onPath('git') },
   file('sandbox-exec', DEFAULT_SANDBOX_EXEC_PATH, { platforms: ['darwin'], projects: ['unit', 'e2e'], setup: 'macOS ships sandbox-exec; a host without it cannot run these tests' }),
   file('tla2tools.jar', tlaJarPathOf(ROOT), { platforms: POSIX, projects: ['packaging'], setup: TEST_SETUP_COMMAND }),
-  { name: 'zig', path: 'zig on PATH', platforms: POSIX, projects: ['packaging'], setup: 'install zig (https://ziglang.org/download/) and put it on PATH', present: (host) => host.onPath('zig') },
+  { name: 'zig', path: 'zig on PATH', platforms: POSIX, projects: ['packaging'], setup: 'install zig (https://ziglang.org/download/) and put it on PATH', present: (host) => host.onPath('zig'), appliesTo: buildsSingleExecutables },
   ...Object.values(SEA_TARGETS).map((target) => pinnedArchive(archiveNameOf(target), path.join(nodeArchiveCacheDir, archiveNameOf(target)), target.archiveSha256, buildsSingleExecutables)),
   ...Object.values(RIPGREP_TARGETS).map((row) => pinnedArchive(row.archiveName, path.join(ripgrepCacheDir, row.archiveName), row.archiveSha256)),
 ];

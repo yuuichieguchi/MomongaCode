@@ -42,7 +42,7 @@ describe('a missing prerequisite refuses the run with its own text', () => {
     const run = spawnSync(process.execPath, [VITEST, 'run', '--root', root, '--project', project], { cwd: root, encoding: 'utf8', env: { ...process.env, MOMONGA_RUN_LOCK: undefined } });
     const printed = stripVTControlCharacters(`${run.stdout}${run.stderr}`);
     expect(printed).not.toContain('charCodeAt');
-    const tool = project === 'packaging' ? 'zig' : 'bwrap';
+    const tool = project === 'packaging' ? 'tla2tools\\.jar' : 'bwrap';
     expect(printed).toMatch(new RegExp(`^(?:Error: )?${tool} is required on linux and is missing or unusable at .+; run: .+$`, 'm'));
     expect(run.status).not.toBe(0);
   });

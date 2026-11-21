@@ -12,7 +12,7 @@ if [ -n "${MOMONGA_INJECT_SMALL_FS:-}" ]; then
   if [ "$(stat -c %u "$MOMONGA_INJECT_SMALL_FS")" != "$(id -u dev)" ]; then echo "SETUP_FAILED MOMONGA_INJECT_SMALL_FS=$MOMONGA_INJECT_SMALL_FS is owned by uid $(stat -c %u "$MOMONGA_INJECT_SMALL_FS"), not by dev (uid $(id -u dev)): give the tmpfs uid=$(id -u dev),gid=$(id -g dev)"; exit 1; fi
 fi
 mkdir /home/dev/src
-tar -xf - -C /home/dev/src
+tar --warning=no-unknown-keyword -xf - -C /home/dev/src
 chown -R dev:dev /home/dev/src
 node --version
 bwrap --version
