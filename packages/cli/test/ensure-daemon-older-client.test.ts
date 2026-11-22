@@ -11,6 +11,8 @@ import { SELF, setupGenerations } from './generations-harness.ts';
 const BOUNDS = { readyMs: 500, stopMs: 500 };
 const OLDER_COMMAND = 'momonga was updated to v1.2.4 while this command was running; run it again. Your tasks are not affected.';
 const REOPEN = 'momonga was updated to v1.2.4; reopen this session.';
+const STILL_OLDER = 'momonga v1.2.3 is older than the running daemon v1.2.4; update this program, then run it again.';
+const UNKNOWN_INSTALLED = 'momonga v1.2.3 is older than the running daemon v1.2.4; update or restart this program, then run it again.';
 
 const failureOf = async (pending: Promise<unknown>): Promise<unknown> =>
   pending.then(
@@ -19,8 +21,8 @@ const failureOf = async (pending: Promise<unknown>): Promise<unknown> =>
   );
 
 describe('a one-shot command older than the daemon (20.68)', () => {
-  it('fails with the run-it-again line, starts nothing and stops nothing', async (context) => {
-    const { paths, start, ports, spawned } = await setupGenerations(context, '1.2.3');
+  it('fails with the run-it-again line when the installed binary is updated, starts nothing and stops nothing', async (context) => {
+    const { paths, start, ports, spawned } = await setupGenerations(context, '1.2.3', '1.2.4');
     const serving = await start({ version: '1.2.4' });
 
     const failure = await failureOf(ensureCurrentDaemon(ports, paths, { bounds: BOUNDS }));
@@ -29,6 +31,27 @@ describe('a one-shot command older than the daemon (20.68)', () => {
     expect((failure as Error).message).toBe(OLDER_COMMAND);
     expect(spawned).toEqual([]);
     expect(serving.shutdowns).toBe(0);
+  });
+
+  it('tells the person to update when the installed binary on disk is still older than the running daemon', async (context) => {
+    const { paths, start, ports, spawned } = await setupGenerations(context, '1.2.3', '1.2.3');
+    const serving = await start({ version: '1.2.4' });
+
+    expect(((await failureOf(ensureCurrentDaemon(ports, paths, { bounds: BOUNDS }))) as Error).message).toBe(STILL_OLDER);
+    expect(((await failureOf(restartGeneration(ports, paths, { bounds: BOUNDS }))) as Error).message).toBe(STILL_OLDER);
+    expect(spawned).toEqual([]);
+    expect(serving.shutdowns).toBe(0);
+  });
+
+  it('tells the person to update or restart when the installed binary cannot be probed or reports an unorderable version', async (context) => {
+    const { paths, start, ports } = await setupGenerations(context, '1.2.3', '1.2.3');
+    await start({ version: '1.2.4' });
+    const broken = { ...ports, exec: async () => ({ exitCode: 1, stdout: '', stderr: 'gone\n' }) };
+    const unorderable = { ...ports, exec: async () => ({ exitCode: 0, stdout: 'e2e\n', stderr: '' }) };
+
+    expect(((await failureOf(ensureCurrentDaemon(broken, paths, { bounds: BOUNDS }))) as Error).message).toBe(UNKNOWN_INSTALLED);
+    expect(((await failureOf(restartGeneration(broken, paths, { bounds: BOUNDS }))) as Error).message).toBe(UNKNOWN_INSTALLED);
+    expect(((await failureOf(ensureCurrentDaemon(unorderable, paths, { bounds: BOUNDS }))) as Error).message).toBe(UNKNOWN_INSTALLED);
   });
 
   it('returns the health of a daemon of its own version', async (context) => {
@@ -40,8 +63,8 @@ describe('a one-shot command older than the daemon (20.68)', () => {
 });
 
 describe('a session client older than the daemon, before the handover exists (20.69)', () => {
-  it('is told to reopen when no live generation runs its version', async (context) => {
-    const { paths, start, ports, spawned } = await setupGenerations(context, '1.2.3');
+  it('is told to reopen when the installed binary is updated and no live generation runs its version', async (context) => {
+    const { paths, start, ports, spawned } = await setupGenerations(context, '1.2.3', '1.2.4');
     const serving = await start({ version: '1.2.4' });
 
     const failure = await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS }));
@@ -50,6 +73,29 @@ describe('a session client older than the daemon, before the handover exists (20
     expect((failure as Error).message).toBe(REOPEN);
     expect(spawned).toEqual([]);
     expect(serving.shutdowns).toBe(0);
+  });
+
+  it('is told to update when the installed binary on disk is still older than the running daemon', async (context) => {
+    const { paths, start, ports, spawned } = await setupGenerations(context, '1.2.3', '1.2.3');
+    const serving = await start({ version: '1.2.4' });
+
+    const failure = await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS }));
+
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as Error).message).toBe(STILL_OLDER);
+    expect(spawned).toEqual([]);
+    expect(serving.shutdowns).toBe(0);
+  });
+
+  it('is told to update or restart when the installed binary cannot be probed', async (context) => {
+    const { paths, start, ports } = await setupGenerations(context, '1.2.3', '1.2.3');
+    await start({ version: '1.2.4' });
+    const broken = { ...ports, exec: async () => ({ exitCode: 1, stdout: '', stderr: 'gone\n' }) };
+
+    const failure = await failureOf(ensureSessionDaemon(broken, paths, { bounds: BOUNDS }));
+
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as Error).message).toBe(UNKNOWN_INSTALLED);
   });
 
   it('keeps working while a live generation of its version exists, and dials that generation', async (context) => {

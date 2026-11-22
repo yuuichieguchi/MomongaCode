@@ -296,6 +296,12 @@ const unorderedMessage = (ports: DaemonPorts, health: SupervisorHealth): string 
 export const belowFloorMessage = (clientVersion: string, floor: string): string =>
   `momonga v${clientVersion} is older than the last daemon version v${floor}; update this program, then run it again.`;
 
+export const olderThanRunningDaemonMessage = (clientVersion: string, daemonVersion: string): string =>
+  `momonga v${clientVersion} is older than the running daemon v${daemonVersion}; update this program, then run it again.`;
+
+export const olderThanRunningDaemonUnknownInstalledMessage = (clientVersion: string, daemonVersion: string): string =>
+  `momonga v${clientVersion} is older than the running daemon v${daemonVersion}; update or restart this program, then run it again.`;
+
 export const reopenSessionMessage = (daemonVersion: string): string => `momonga was updated to v${daemonVersion}; reopen this session.`;
 
 export const moveAtQuietPointMessage = (daemonVersion: string): string => `momonga was updated to v${daemonVersion}; this session restarts into it as soon as nothing is pending on it.`;
@@ -544,9 +550,48 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   }
 };
 
+type InstalledStanding = 'updated' | 'still-older' | 'unreadable';
+
+const probeInstalledStanding = async (
+  ports: InstalledProbe & Pick<DaemonPorts, 'version'>,
+  paths: MomongaPaths,
+  daemonVersion: string,
+  signal: AbortSignal | undefined,
+): Promise<InstalledStanding> => {
+  try {
+    const installed = await installedVersionOf(ports, paths, signal);
+    const order = orderVersions(installed, daemonVersion);
+    if (order === 'same' || order === 'newer') return 'updated';
+    if (order === 'older') return 'still-older';
+    return 'unreadable';
+  } catch (error) {
+    if (signal?.aborted === true) throw error;
+    return 'unreadable';
+  }
+};
+
+const olderClientMessage = async (
+  ports: InstalledProbe & Pick<DaemonPorts, 'version'>,
+  paths: MomongaPaths,
+  daemonVersion: string,
+  whenUpdated: string,
+  signal: AbortSignal | undefined,
+): Promise<string> => {
+  const standing = await probeInstalledStanding(ports, paths, daemonVersion, signal);
+  if (standing === 'updated') return whenUpdated;
+  if (standing === 'still-older') return olderThanRunningDaemonMessage(ports.version, daemonVersion);
+  return olderThanRunningDaemonUnknownInstalledMessage(ports.version, daemonVersion);
+};
+
 export const ensureCurrentDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
   const connection = await ensureDaemon(ports, paths, options);
-  if (connection.clientIsOlder) throw new DaemonStartError(olderCommandMessage(connection.health.version), paths.logFiles.supervisor, notPointingAtLog);
+  if (connection.clientIsOlder) {
+    throw new DaemonStartError(
+      await olderClientMessage(ports, paths, connection.health.version, olderCommandMessage(connection.health.version), options.signal),
+      paths.logFiles.supervisor,
+      notPointingAtLog,
+    );
+  }
   return connection.health;
 };
 
@@ -554,12 +599,14 @@ export type NewerListener = (version: string, own: OwnGeneration) => Promise<Mov
 
 export type EnsureSessionOptions = EnsureDaemonOptions & { onNewer?: NewerListener };
 
-const newerVersionOf = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions): Promise<string | undefined> => {
+type NewerDetected = { version: string; installedUpdated: boolean };
+
+const newerVersionOf = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions): Promise<NewerDetected | undefined> => {
   try {
     const connection = await ensureDaemon(ports, paths, options);
-    return connection.clientIsOlder ? connection.health.version : undefined;
+    return connection.clientIsOlder ? { version: connection.health.version, installedUpdated: false } : undefined;
   } catch (error) {
-    if (error instanceof NewerProgramInstalledError) return error.installedVersion;
+    if (error instanceof NewerProgramInstalledError) return { version: error.installedVersion, installedUpdated: true };
     throw error;
   }
 };
@@ -569,8 +616,16 @@ export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPath
   const newer = await newerVersionOf(ports, paths, daemonOptions);
   if (newer === undefined) return;
   const own = await resolveGenerationFor(paths, ports.version, { lock: options.lock ?? resolveLayoutLocks(paths).mechanism, scope: await ports.endpointScope(paths) });
-  const standing = onNewer === undefined ? 'cannot-move' : await onNewer(newer, own === undefined ? 'gone' : 'live');
-  if (own === undefined) throw new DaemonStartError(sessionEndMessage(newer, standing), paths.logFiles.supervisor, notPointingAtLog);
+  const standing = onNewer === undefined ? 'cannot-move' : await onNewer(newer.version, own === undefined ? 'gone' : 'live');
+  if (own !== undefined) return;
+  if (standing === 'moves-at-quiet-point' || newer.installedUpdated) {
+    throw new DaemonStartError(sessionEndMessage(newer.version, standing), paths.logFiles.supervisor, notPointingAtLog);
+  }
+  throw new DaemonStartError(
+    await olderClientMessage(ports, paths, newer.version, reopenSessionMessage(newer.version), daemonOptions.signal),
+    paths.logFiles.supervisor,
+    notPointingAtLog,
+  );
 };
 
 export const restoreDaemon =
@@ -591,7 +646,13 @@ export const restartGeneration = async (ports: DaemonPorts, paths: MomongaPaths,
   const serving = await servingHealth(paths);
   if (serving === undefined) return { kind: 'nothing-serving' };
   const order = orderVersions(ports.version, serving.version);
-  if (order === 'older') throw new DaemonStartError(olderCommandMessage(serving.version), paths.logFiles.supervisor, notPointingAtLog);
+  if (order === 'older') {
+    throw new DaemonStartError(
+      await olderClientMessage(ports, paths, serving.version, olderCommandMessage(serving.version), options.signal),
+      paths.logFiles.supervisor,
+      notPointingAtLog,
+    );
+  }
   if (order === 'unordered') throw new DaemonStartError(unorderedMessage(ports, serving), paths.logFiles.supervisor);
   const connection = await ensureDaemon(ports, paths, { ...options, trigger: order === 'same' ? 'restart' : 'client' });
   return { kind: 'started', version: connection.health.version };

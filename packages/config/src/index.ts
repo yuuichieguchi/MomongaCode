@@ -70,7 +70,7 @@ export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProf
 export type { PlanProfiles, ResolveModelsOptions, ResolvedConnection, ResolvedModel, ResolvedModels } from './models.ts';
 export { firstOfferedEndpointForm, registeredIds, registeredServer, registeredServers, requireOfferedEndpointForm, serverRegistryOf } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';
-export { ConfigError, createStopValuesReader, createUserSettingsCache, emptyUserModels, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStartupStallMsOrDefault, readUserStopValues, readUserStopValuesOrDefault, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
+export { ConfigError, createStopValuesReader, createUserSettingsCache, emptyUserModels, writeAppliedRecord, loadUserModels, loadUserSettings, readUserAutoUpdates, readUserStartupStallMsOrDefault, readUserStopValues, readUserStopValuesOrDefault, readUserUpdateSettings, stopValuesOfSettings, userSettingsChangeKey, userSettingsOfText } from './user-settings.ts';
 export type { AppliedRecordPorts, LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot, UserStopValuesOptions } from './user-settings.ts';
 export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, PendingHookGroup, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers, projectMcpServersFile, serverKeyOfLabel } from './mcp-servers.ts';
@@ -113,7 +113,7 @@ export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSett
 export type { RipgrepSetting, HookApproval, MandateApproval } from './settings.ts';
 export { UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
 export type { KeptProblem, KeptRecords, KeptSettings } from './kept-settings.ts';
-export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';
+export type { KeptLayers, SectionSelection, TrustOracle, UserLayer } from './layers.ts';
 export { PROJECT_ENV_NAMES, USER_LAYER_ONLY_MODES, USER_LAYER_ONLY_PARTS, USER_LAYER_ONLY_SETTINGS } from './layers.ts';
 export type { SettingsUse } from './last-good.ts';
 export type {

@@ -164,12 +164,12 @@ describe('ensureDaemon', () => {
     expect(spawned).toEqual([]);
   });
 
-  it('tells a restored session of the old version that momonga was updated and to reopen the session (20.69)', async (context) => {
+  it('tells a restored session of the old version that momonga was updated and to reopen the session when installed is updated (20.69)', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     await start({ version: '1.2.4' });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
-    const failure = await restoreDaemon(portsWith(spawn), paths)(undefined).catch((error: unknown) => error);
+    const failure = await restoreDaemon({ ...portsWith(spawn), ...installedProgram('1.2.4').ports }, paths)(undefined).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(DaemonStartError);
     expect((failure as DaemonStartError).message).toBe('momonga was updated to v1.2.4; reopen this session.');

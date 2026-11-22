@@ -98,16 +98,20 @@ describe('gateway probe restarts by starting a generation, never by stopping one
     expect(printed).toEqual(['started a new daemon (v1.2.4) so that the gateway reads the record; work in the old one keeps running.\n']);
   });
 
-  it('a caller older than the serving daemon is refused with the one-shot text, and nothing starts', async (context) => {
+  it('a caller older than the serving daemon is refused with the update or run-it-again text depending on the installed binary, and nothing starts', async (context) => {
     const { paths, start, portsWith, printed, counter } = await setup(context);
     fs.writeFileSync(counter, '1');
     const serving = await start({ version: VERSION, generation: 1 });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
-    const failure = await restartDaemon(portsWith(spawn, '1.2.2'), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
+    const stillOld = await restartDaemon(portsWith(spawn, '1.2.2'), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
+    expect(stillOld).toBeInstanceOf(DaemonStartError);
+    expect((stillOld as Error).message).toBe(`momonga v1.2.2 is older than the running daemon v${VERSION}; update this program, then run it again.`);
 
-    expect(failure).toBeInstanceOf(DaemonStartError);
-    expect((failure as Error).message).toBe(`momonga was updated to v${VERSION} while this command was running; run it again. Your tasks are not affected.`);
+    const updated = await restartDaemon({ ...portsWith(spawn, '1.2.2'), ...installedProgram(VERSION).ports }, paths, { bounds: BOUNDS }).catch((error: unknown) => error);
+    expect(updated).toBeInstanceOf(DaemonStartError);
+    expect((updated as Error).message).toBe(`momonga was updated to v${VERSION} while this command was running; run it again. Your tasks are not affected.`);
+
     expect(serving.shutdowns).toBe(0);
     expect(spawned).toEqual([]);
     expect(printed).toEqual([]);

@@ -93,6 +93,46 @@ describe('autoUpdates', () => {
     const home = withTempDir(context, { asHome: true });
     expect(nodeUpdatePorts(cliPortsFor(home), momongaPaths(home, process.platform, process.env), testKernelLock()).env).toEqual({ PATH: '/usr/bin' });
   });
+
+  it('reads autoUpdates and performs update HTTP requests even when models.connections names an unknown plan profile', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    fs.mkdirSync(path.join(home, '.momonga'), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, '.momonga', 'settings.json'),
+      JSON.stringify({
+        models: { connections: [{ adapter: 'open-responses', model: 'future-1', plan: { profile: 'future-plan' } }] },
+        update: { stallTimeoutMs: 5_000 },
+      }),
+    );
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('ok');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    registerCleanup(context, () => new Promise<void>((resolve) => server.close(() => resolve())));
+    const { port } = server.address() as AddressInfo;
+
+    const ports = nodeUpdatePorts(
+      {
+        ...cliPortsFor(home),
+        timers: systemTiming,
+        files: {
+          exists: async () => false,
+          readFile: (file: string) => fs.promises.readFile(file, 'utf8'),
+          lstat: (file: string) => fs.promises.lstat(file),
+          realpath: (file: string) => fs.promises.realpath(file),
+        } as unknown as CliPorts['files'],
+      },
+      momongaPaths(home, process.platform, process.env),
+      testKernelLock(),
+    );
+    expect(await ports.autoUpdates()).toBe(true);
+    const response = await ports.http.get(`http://127.0.0.1:${port}/latest`, { headers: {}, signal: new AbortController().signal });
+    expect(response.status).toBe(200);
+    for await (const _chunk of response.body) {
+      // drain
+    }
+  });
 });
 
 describe('update state store', () => {

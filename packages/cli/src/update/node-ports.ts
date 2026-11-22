@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { loadUserSettings } from '@momonga/config';
+import { readUserAutoUpdates, readUserUpdateSettings } from '@momonga/config';
 import {
   ProcessLockHeldError,
   acquireProcessLock,
@@ -60,7 +60,7 @@ export const leasedUpdateHttp = (lease: NetworkLease, options: OutboundOptions, 
 
 const cliUpdateHttp = (ports: CliPorts): UpdateHttp => ({
   get: async (url, options) => {
-    const { stallTimeoutMs } = (await loadUserSettings({ env: process.env, home: ports.home, signal: options.signal })).settings.update;
+    const { stallTimeoutMs } = await readUserUpdateSettings({ env: process.env, home: ports.home, signal: options.signal });
     return leasedUpdateHttp((signal, use) => withOutboundNetwork(ports, signal, use), transferOptionsOf(stallTimeoutMs), (error) => {
       ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
     }).get(url, options);
@@ -178,7 +178,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: Kern
   lock: nodeUpdateLock(paths, lock),
   state: nodeUpdateState(paths, lock),
   daemon: nodeDaemonProbe(paths, ports, lock),
-  autoUpdates: async () => (await loadUserSettings({ env: process.env, home: ports.home, signal: ports.interrupt })).settings.autoUpdates,
+  autoUpdates: () => readUserAutoUpdates({ env: process.env, home: ports.home, signal: ports.interrupt }),
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,
 });

@@ -11,21 +11,21 @@ import { keptOrThrow } from './last-good.ts';
 import type { Kept } from './last-good.ts';
 import { layoutOf } from './layout.ts';
 import { readUserJsonFile, readUserLayer, userLayerFrom, userModelsOf, userSettingsFile } from './layers.ts';
-import type { UserLayer } from './layers.ts';
+import type { SectionSelection, UserLayer } from './layers.ts';
 import { mergingLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
 import type { SandboxSetting } from './settings.ts';
 
-export type LoadUserSettingsOptions = { home: string; env: LayoutEnvironment; signal: AbortSignal; planProfiles?: PlanProfiles; files?: FileSystem };
+export type LoadUserSettingsOptions = { home: string; env: LayoutEnvironment; signal: AbortSignal; planProfiles?: PlanProfiles; files?: FileSystem; sections?: SectionSelection };
 
 export type LoadUserSettingsResult = { settings: ResolvedSettings; warnings: string[]; files: string[] };
 
 type UserSettingsLoad = { settings: ResolvedSettings; user: UserLayer; warnings: string[] };
 
-function* userSettingsFrom(home: string, env: LayoutEnvironment, read: JsonFile, planProfiles?: PlanProfiles): PathAsking<UserSettingsLoad> {
+function* userSettingsFrom(home: string, env: LayoutEnvironment, read: JsonFile, planProfiles?: PlanProfiles, sections?: SectionSelection): PathAsking<UserSettingsLoad> {
   try {
-    const user = yield* userLayerFrom(home, read, planProfiles);
+    const user = yield* userLayerFrom(home, read, planProfiles, sections);
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
     for (const layer of layers) parseLayerRules(layer, home, home, warnings);
@@ -37,17 +37,17 @@ function* userSettingsFrom(home: string, env: LayoutEnvironment, read: JsonFile,
   }
 }
 
-const userSettingsOf = (home: string, env: LayoutEnvironment, read: JsonFile, planProfiles: PlanProfiles | undefined, { paths, signal }: Asker): Promise<UserSettingsLoad> =>
-  answeredLater(userSettingsFrom(home, env, read, planProfiles), paths, signal);
+const userSettingsOf = (home: string, env: LayoutEnvironment, read: JsonFile, planProfiles: PlanProfiles | undefined, { paths, signal }: Asker, sections?: SectionSelection): Promise<UserSettingsLoad> =>
+  answeredLater(userSettingsFrom(home, env, read, planProfiles, sections), paths, signal);
 
 export const userDocumentWarnings = async (home: string, env: LayoutEnvironment, document: unknown, asker: Asker): Promise<string[]> =>
   (await userSettingsOf(home, env, { found: true, value: document }, undefined, asker)).warnings;
 
 export const defaultUserSettings = async (home: string, env: LayoutEnvironment, asker: Asker): Promise<ResolvedSettings> => (await userSettingsOf(home, env, { found: false }, undefined, asker)).settings;
 
-export const loadUserSettings = async ({ home, env, signal, planProfiles, files }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => {
+export const loadUserSettings = async ({ home, env, signal, planProfiles, files, sections }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => {
   const asker = askerOf(signal, files);
-  const { settings, user, warnings } = await userSettingsOf(home, env, await readUserJsonFile(home, asker), planProfiles, asker);
+  const { settings, user, warnings } = await userSettingsOf(home, env, await readUserJsonFile(home, asker), planProfiles, asker, sections);
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
@@ -145,6 +145,7 @@ export type UserSettingsCacheOptions = {
   appliedRecord?: string;
   planProfiles?: PlanProfiles;
   files?: FileSystem;
+  sections?: SectionSelection;
   onLoaded?(loaded: UserSettingsLoaded): void;
 };
 
@@ -162,7 +163,7 @@ export const userSettingsChangeKey = async (home: string, signal: AbortSignal, f
 
 const READ_BEFORE_FIRST_LOAD = 'the user settings were read before their first load';
 
-export const createUserSettingsCache = ({ home, env, onWarning, keptRecords, appliedRecord, planProfiles, files, onLoaded }: UserSettingsCacheOptions): UserSettingsCache => {
+export const createUserSettingsCache = ({ home, env, onWarning, keptRecords, appliedRecord, planProfiles, files, sections, onLoaded }: UserSettingsCacheOptions): UserSettingsCache => {
   const file = userSettingsFile(home);
   const kept = createKeptSettings({ records: keptRecords, onWarning });
   const oneAtATime = createKeyedSerializer();
@@ -200,7 +201,7 @@ export const createUserSettingsCache = ({ home, env, onWarning, keptRecords, app
     if (recorded === undefined || (notedSeq !== undefined && recorded.seq <= notedSeq)) return undefined;
     let rebuilt: UserSettingsLoad;
     try {
-      rebuilt = await userSettingsOf(home, env, { found: true, value: recorded.settings }, planProfiles, asker);
+      rebuilt = await userSettingsOf(home, env, { found: true, value: recorded.settings }, planProfiles, asker, sections);
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
       reportUnreadable(appliedRecord, sha256Hex(canonicalJson(recorded.settings)), error.message);
@@ -217,7 +218,7 @@ export const createUserSettingsCache = ({ home, env, onWarning, keptRecords, app
     if (lastGood !== undefined) return lastGood;
     const recalled = await kept.recall(file, asker.signal);
     if (recalled === undefined) return undefined;
-    const rebuilt = await userSettingsOf(home, env, recalled.value, planProfiles, asker);
+    const rebuilt = await userSettingsOf(home, env, recalled.value, planProfiles, asker, sections);
     lastGood = { value: { settings: rebuilt.settings, user: rebuilt.user } };
     return lastGood;
   };
@@ -234,9 +235,9 @@ export const createUserSettingsCache = ({ home, env, onWarning, keptRecords, app
     let current: UserSettingsLoaded;
     try {
       const read = parsedJsonOf(text, file);
-      const loaded = await userSettingsOf(home, env, read, planProfiles, asker);
+      const loaded = await userSettingsOf(home, env, read, planProfiles, asker, sections);
       for (const warning of loaded.warnings) onWarning(warning);
-      await kept.remember(file, read, asker.signal);
+      if (sections === undefined) await kept.remember(file, read, asker.signal);
       await noteRecordSeq(asker);
       current = { settings: loaded.settings, user: loaded.user };
     } catch (error) {
@@ -304,8 +305,16 @@ export const stopValuesOfSettings = ({ gateway, runtime, mcp }: Pick<ResolvedSet
   mcpCloseGraceMs: mcp.closeGraceMs ?? DEFAULT_STOP_VALUES.mcpCloseGraceMs,
 });
 
+const STOP_VALUE_SECTIONS: SectionSelection = { gateway: true, runtime: ['drainTimeoutMs'], mcp: ['closeGraceMs'] };
+
+export const readUserAutoUpdates = async ({ home, env, signal, files }: Omit<LoadUserSettingsOptions, 'planProfiles' | 'sections'>): Promise<boolean> =>
+  (await loadUserSettings({ home, env, signal, ...(files === undefined ? {} : { files }), sections: { autoUpdates: true } })).settings.autoUpdates;
+
+export const readUserUpdateSettings = async ({ home, env, signal, files }: Omit<LoadUserSettingsOptions, 'planProfiles' | 'sections'>): Promise<ResolvedSettings['update']> =>
+  (await loadUserSettings({ home, env, signal, ...(files === undefined ? {} : { files }), sections: { update: true } })).settings.update;
+
 export const readUserStopValues = async (home: string, env: LayoutEnvironment, signal: AbortSignal, files?: FileSystem): Promise<StopValues> =>
-  stopValuesOfSettings((await loadUserSettings({ home, env, signal, ...(files === undefined ? {} : { files }) })).settings);
+  stopValuesOfSettings((await loadUserSettings({ home, env, signal, ...(files === undefined ? {} : { files }), sections: STOP_VALUE_SECTIONS })).settings);
 
 export type StopNoticePort = { onNotice(message: string): void };
 
@@ -328,7 +337,7 @@ export const readUserStartupStallMsOrDefault = async ({ home, env, signal, files
     const asker = askerOf(signal, files);
     const read = await readUserJsonFile(home, asker);
     if (!read.found) return STARTUP_TIMEOUT_MS;
-    return (await userSettingsOf(home, env, read, undefined, asker)).settings.daemon.startupStallMs;
+    return (await userSettingsOf(home, env, read, undefined, asker, { daemon: true })).settings.daemon.startupStallMs;
   } catch (error) {
     if (signal.aborted) throw signal.reason;
     onNotice(`the start-up stall limit could not be read from the user settings (${messageOf(error)}); the default value was used`);

@@ -358,11 +358,11 @@ describe('cli: momonga -p', () => {
 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('momonga was updated to v3.0.0; reopen this session.');
+    expect(result.stderr).toContain('momonga v2.0.0 is older than the running daemon v3.0.0; update this program, then run it again.');
     expect(result.stderr).not.toContain('pid');
     const oneShot = await runCliWithFakes(home, ['status']);
     expect(oneShot.code).toBe(1);
-    expect(oneShot.stderr).toContain('momonga was updated to v3.0.0 while this command was running; run it again. Your tasks are not affected.');
+    expect(oneShot.stderr).toContain('momonga v2.0.0 is older than the running daemon v3.0.0; update this program, then run it again.');
     const status = await runCliWithFakes(home, ['daemon', 'status']);
     expect(status.code).toBe(0);
     expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 3\.0\.0, phase running/);

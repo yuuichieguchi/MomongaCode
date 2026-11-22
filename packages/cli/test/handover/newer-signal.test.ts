@@ -43,7 +43,7 @@ describe('a session client learns that a newer generation is current (6.2, 16.8,
   });
 
   it('is told the version before the reopen text when its own generation is gone and it stayed', async (context) => {
-    const { paths, start, ports } = await setupGenerations(context, '1.2.3');
+    const { paths, start, ports } = await setupGenerations(context, '1.2.3', '1.2.4');
     await start({ version: '1.2.4' });
     const { learned, onNewer } = learner();
     const failure = await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS, onNewer }));

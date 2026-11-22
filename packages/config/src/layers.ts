@@ -224,6 +224,27 @@ export const repositoryLayerFrom = (document: unknown, file: string, origin: Rul
 
 export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warnings: string[] };
 
+export type SectionSelection = Readonly<Partial<Record<keyof Settings, true | readonly string[]>>>;
+
+export const projectSettings = (read: JsonFile, sections: SectionSelection): JsonFile => {
+  if (!read.found || !isRecord(read.value)) return read;
+  const projected: Record<string, unknown> = {};
+  for (const [key, spec] of Object.entries(sections) as Array<[string, true | readonly string[] | undefined]>) {
+    if (spec === undefined || !Object.hasOwn(read.value, key)) continue;
+    const entry = read.value[key];
+    if (spec === true || !isRecord(entry)) {
+      projected[key] = entry;
+      continue;
+    }
+    const sub: Record<string, unknown> = {};
+    for (const subKey of spec) {
+      if (Object.hasOwn(entry, subKey)) sub[subKey] = entry[subKey];
+    }
+    if (Object.keys(sub).length > 0) projected[key] = sub;
+  }
+  return { found: true, value: projected };
+};
+
 export const userSettingsFile = (home: string): string => layoutOf(home).settingsFile;
 
 export const readUserJsonFile = async (home: string, asker: Asker): Promise<JsonFile> => {
@@ -243,13 +264,17 @@ export const userModelsOf = (settings: Pick<Settings, 'models' | 'autoMode'> | u
   return resolveModels(declared, { source, warnings, servers: serverRegistryOf(declared?.servers, source), planProfiles, classifier: settings?.autoMode?.classifier, kinds });
 };
 
-export function* userLayerFrom(home: string, read: JsonFile, planProfiles?: PlanProfiles): PathAsking<UserLayer> {
+export function* userLayerFrom(home: string, read: JsonFile, planProfiles?: PlanProfiles, sections?: SectionSelection): PathAsking<UserLayer> {
   try {
     const warnings: string[] = [];
     const file = userSettingsFile(home);
-    const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
-    const models = userModelsOf(layer?.settings, { source: file, warnings, ...(planProfiles === undefined ? {} : { planProfiles }) });
-    yield* refusingOwnSockets(models, home, file);
+    const input = sections === undefined ? read : projectSettings(read, sections);
+    const layer = buildLayer(input, file, 'user', home, path.dirname(file), false, warnings);
+    const includeModels = sections === undefined || sections.models !== undefined;
+    const models = includeModels
+      ? userModelsOf(layer?.settings, { source: file, warnings, ...(planProfiles === undefined ? {} : { planProfiles }) })
+      : userModelsOf(undefined, { source: file, warnings: [] });
+    if (includeModels) yield* refusingOwnSockets(models, home, file);
     return { layer, models, warnings };
   } catch (error) {
     rethrowIfTransient(error);
