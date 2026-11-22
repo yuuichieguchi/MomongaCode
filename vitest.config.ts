@@ -82,6 +82,7 @@ export default defineConfig({
           setupFiles: SETUP.packaging.setupFiles,
           globalSetup: SETUP.packaging.globalSetup,
           maxWorkers: hostPackagingFileWorkers(),
+          sequence: { groupOrder: 2 },
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
           testTimeout: DEFAULT_TEST_TIMEOUT_MS,
         },

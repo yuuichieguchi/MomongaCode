@@ -32,10 +32,24 @@ describe('the vitest projects', () => {
     expect(e2e?.setupFiles).toContain('e2e/support/file-programs.ts');
   });
 
-  it('runs the packaging files beside each other, as many as the machine carries, each with its own fake programs', () => {
+  it('runs the packaging files beside each other, as many as the machine carries, in its own group order with its own fake programs', () => {
     const packaging = projectsOf().find((project) => project.test?.name === 'packaging')?.test;
     expect(packaging?.fileParallelism).toBeUndefined();
     expect(packaging?.maxWorkers).toBe(hostPackagingFileWorkers());
+    expect(packaging?.sequence?.groupOrder).toBe(2);
     expect(packaging?.setupFiles).toContain('e2e/support/file-programs.ts');
+  });
+
+  it('gives projects with different maxWorkers distinct sequence.groupOrder so multi-project runs start', () => {
+    const byGroup = new Map<number, Set<number | undefined>>();
+    for (const project of projectsOf()) {
+      const order = project.test?.sequence?.groupOrder ?? 0;
+      const seen = byGroup.get(order) ?? new Set<number | undefined>();
+      seen.add(project.test?.maxWorkers);
+      byGroup.set(order, seen);
+    }
+    for (const [order, workers] of byGroup) {
+      expect(workers.size, `groupOrder ${order} mixes different maxWorkers values`).toBe(1);
+    }
   });
 });
