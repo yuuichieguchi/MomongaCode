@@ -271,7 +271,7 @@ const holdsMalformedUnavailable = (capabilities: unknown): boolean => {
   return isRecord(toolCalling) && toolCalling['state'] === 'unavailable' && !isToolCallingState(toolCalling);
 };
 
-const MODEL_ROLE_NAMES = ['compaction', 'reflection', 'analysis'] as const;
+const MODEL_ROLE_NAMES = ['compaction', 'reflection', 'analysis', 'subagent'] as const;
 
 const isAnswers = (value: unknown): value is TargetAnswers => (TARGET_ANSWERS as readonly unknown[]).includes(value);
 

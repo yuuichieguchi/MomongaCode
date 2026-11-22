@@ -298,6 +298,9 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       { pick: /^Summaries/ },
       { pick: 'ollama/qwen3.8:27b' },
       YES,
+      { pick: /^Subagents/ },
+      { pick: 'lmstudio/gemma-3-4b' },
+      YES,
       { pick: /^Auto-mode classifier/ },
       { pick: 'ollama/qwen3.8:27b' },
       YES,
@@ -306,11 +309,11 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       YES,
     ]);
     await runRoleFlow(harness.context);
-    expect(harness.picks()[0]?.rows).toEqual([`Summaries (compaction)  ·  ${session}`, `Reflection  ·  ${session}`, `Analysis  ·  ${session}`, `Auto-mode classifier  ·  ${session}`]);
+    expect(harness.picks()[0]?.rows).toEqual([`Summaries (compaction)  ·  ${session}`, `Reflection  ·  ${session}`, `Analysis  ·  ${session}`, `Subagents  ·  ${session}`, `Auto-mode classifier  ·  ${session}`]);
     expect(harness.picks()[1]?.rows).toEqual(['ollama/gemma-3-4b', 'ollama/qwen3.8:27b', 'lmstudio/gemma-3-4b', "Use the session's model"]);
     const confirms = harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title);
-    expect(confirms).toEqual(['Use ollama/qwen3.8:27b for summaries?', 'Use ollama/qwen3.8:27b for the auto-mode classifier?', "Use the session's model for summaries?"]);
-    expect(writtenOf(harness).models['roles']).toBeUndefined();
+    expect(confirms).toEqual(['Use ollama/qwen3.8:27b for summaries?', 'Use lmstudio/gemma-3-4b for subagents?', 'Use ollama/qwen3.8:27b for the auto-mode classifier?', "Use the session's model for summaries?"]);
+    expect(writtenOf(harness).models['roles']).toEqual({ subagent: 'lmstudio/gemma-3-4b' });
     expect(writtenOf(harness).autoMode).toEqual({ classifier: 'ollama/qwen3.8:27b' });
   });
 

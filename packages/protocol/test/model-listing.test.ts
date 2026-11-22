@@ -71,7 +71,7 @@ describe('the models listing of the gateway names every model by its canonical r
   it('the list holds the start model, or null, and the roles', () => {
     expectTypeOf<keyof MomongaModelList>().toEqualTypeOf<'object' | 'data' | 'start' | 'roles'>();
     expectTypeOf<MomongaModelList['start']>().toEqualTypeOf<string | null>();
-    expectTypeOf<MomongaModelList['roles']>().toEqualTypeOf<{ compaction?: string; reflection?: string; analysis?: string }>();
+    expectTypeOf<MomongaModelList['roles']>().toEqualTypeOf<{ compaction?: string; reflection?: string; analysis?: string; subagent?: string }>();
     const none: MomongaModelList = { object: 'list', data: [], start: null, roles: {} };
     expect(none.start).toBeNull();
     expect(accepts('SessionView', { id: 's', cwd: '/w', permissionMode: 'manual', model: 'ollama/gemma-3-4b:latest', bypassAllowed: false, createdAt: 1, envKeys: [], activeRunId: null, activeRunAt: null, latestRunId: null, latestRunAt: null, additionalDirectories: [], lastEventId: 0 })).toBe(true);

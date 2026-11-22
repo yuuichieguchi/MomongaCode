@@ -197,7 +197,7 @@ const entriesOf = (data: readonly unknown[]): MomongaModelEntry[] =>
     return field === undefined ? (record as MomongaModelEntry) : unreadableEntryOf(record, index, field);
   });
 
-const MODEL_LIST_ROLES: Readonly<Record<keyof MomongaModelRoles, true>> = { compaction: true, reflection: true, analysis: true };
+const MODEL_LIST_ROLES: Readonly<Record<keyof MomongaModelRoles, true>> = { compaction: true, reflection: true, analysis: true, subagent: true };
 
 const isModelRoles = (value: unknown): boolean => isRecordOf(value, isString) && isRecord(value) && Object.keys(value).every((role) => Object.hasOwn(MODEL_LIST_ROLES, role));
 

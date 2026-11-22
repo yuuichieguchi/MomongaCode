@@ -4,7 +4,7 @@ import { DEFAULT_SLASH_COMMANDS } from '../packages/cli/src/tui/commands/index.t
 import { SETTINGS_LINKS, SETTINGS_REACHED_BY_LINK, SETTING_ROWS, SETTING_SECTIONS, settingLeaves } from '../packages/cli/src/tui/settings-screen.tsx';
 import { SCREEN_MODES } from '../packages/cli/src/tui/terminal/modes.ts';
 
-const EDITED_ON_THE_MODELS_SCREEN = ['autoMode.classifier', 'models.connections', 'models.start', 'models.fallback', 'models.servers', 'models.billingChanges', 'models.roles.compaction', 'models.roles.reflection', 'models.roles.analysis', 'models.headersTimeoutMs', 'models.idleTimeoutMs'];
+const EDITED_ON_THE_MODELS_SCREEN = ['autoMode.classifier', 'models.connections', 'models.start', 'models.fallback', 'models.servers', 'models.billingChanges', 'models.roles.compaction', 'models.roles.reflection', 'models.roles.analysis', 'models.roles.subagent', 'models.headersTimeoutMs', 'models.idleTimeoutMs'];
 
 const wayOf = (key: string): string[] => [...(SETTING_ROWS[key] === undefined ? [] : ['row']), ...(SETTINGS_REACHED_BY_LINK[key] === undefined ? [] : ['link'])];
 

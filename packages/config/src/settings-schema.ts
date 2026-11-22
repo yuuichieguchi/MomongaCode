@@ -3,9 +3,9 @@ import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_
 import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
 import { DEFAULT_UPDATE_STALL_TIMEOUT_MS, defaultContextSettings, defaultMemorySettings, defaultToolsSettings, defaultVerificationSettings } from './context-settings.ts';
 import { DEFAULT_AUTO_UPDATES, DEFAULT_CAPTURE_MESSAGE_CONTENT, DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS, DEFAULT_NETWORK_ENVIRONMENT, DEFAULT_PLAINTEXT_TOKEN_FILES, DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
-import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
+import type { ManagedDeclarableField } from '@momonga/protocol';
 
-export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
+export const MODEL_ROLES = ['compaction', 'reflection', 'analysis', 'subagent'] as const;
 
 export const BASH_ON_TIMEOUT = ['background', 'kill'] as const;
 

@@ -381,7 +381,7 @@ const PRINTING: readonly PrintingCase[] = [
   {
     form: 'role list',
     settings: threeModels({ roles: { compaction: 'ollama/qwen3.8:27b' } }),
-    prints: "Summaries (compaction)  ·  ollama/qwen3.8:27b\nReflection  ·  the session's model\nAnalysis  ·  the session's model\nAuto-mode classifier  ·  the session's model\n",
+    prints: "Summaries (compaction)  ·  ollama/qwen3.8:27b\nReflection  ·  the session's model\nAnalysis  ·  the session's model\nSubagents  ·  the session's model\nAuto-mode classifier  ·  the session's model\n",
   },
   { form: 'dialects show', settings: threeModels(), prints: '{}\n' },
 ];

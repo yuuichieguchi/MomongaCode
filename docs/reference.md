@@ -308,9 +308,9 @@ momonga [options] [prompt]
 | `momonga models billing list` | list the allowed billing changes |
 | `momonga models billing allow [from] [to]` | allow requests to fall from one billing kind to another |
 | `momonga models billing forbid [from] [to]` | no longer allow requests to fall from one billing kind to another |
-| `momonga models role` | the model for summaries, reflection, analysis and the auto-mode classifier |
+| `momonga models role` | the model for summaries, reflection, analysis, subagents and the auto-mode classifier |
 | `momonga models role list` | list the model of each job |
-| `momonga models role set [job] [model]` | choose the model of a job: compaction, reflection, analysis or classifier |
+| `momonga models role set [job] [model]` | choose the model of a job: compaction, reflection, analysis, subagent or classifier |
 | `momonga models role clear [job]` | let a job use the model of the session |
 | `momonga models set [model] [field] [value]` | set a field of a model, for example capabilities.contextWindow |
 | `momonga models unset [model] [field]` | clear a field of a model |
@@ -904,6 +904,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `models.roles.compaction` | string (not empty) |  |  | user |
 | `models.roles.reflection` | string (not empty) |  |  | user |
 | `models.roles.analysis` | string (not empty) |  |  | user |
+| `models.roles.subagent` | string (not empty) |  |  | user |
 | `memory` | object |  |  | user, project, local |
 | `memory.reflection` | object |  |  | user, project, local |
 | `memory.reflection.enabled` | boolean | `true` |  | user, project, local |

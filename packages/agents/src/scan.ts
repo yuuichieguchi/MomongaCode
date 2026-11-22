@@ -2,7 +2,7 @@ import path from 'node:path';
 import { homeLayout } from '@momonga/foundation';
 import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills';
 import type { SkillFileSystem } from '@momonga/skills';
-import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
+import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, SUPPORTED_FIELDS } from './constants.ts';
 import { REASONING_EFFORTS, isReasoningEffort } from '@momonga/protocol';
 import type { Mandate } from '@momonga/protocol';
 import { BUILT_IN_AGENTS } from './builtin.ts';
@@ -106,7 +106,7 @@ const agentOf = async (file: string, scope: AgentFileScope, fileSystem: SkillFil
     description: description.trim(),
     prompt: parsed.body,
     ...(toolList === undefined ? {} : { tools: toolList }),
-    ...(trimmedModel === undefined || trimmedModel === INHERIT_MODEL ? {} : { model: trimmedModel }),
+    ...(trimmedModel === undefined ? {} : { model: trimmedModel }),
     ...(effort === undefined ? {} : { effort }),
     ...(mandate === undefined ? {} : { mandate }),
     scope,

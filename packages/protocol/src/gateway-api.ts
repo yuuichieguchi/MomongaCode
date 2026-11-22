@@ -101,6 +101,6 @@ export const MODEL_ENTRY_STATES = ['available', 'degraded'] as const;
 
 export type ModelEntryState = (typeof MODEL_ENTRY_STATES)[number];
 
-export type MomongaModelRoles = { compaction?: string; reflection?: string; analysis?: string };
+export type MomongaModelRoles = { compaction?: string; reflection?: string; analysis?: string; subagent?: string };
 
 export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[]; start: string | null; roles: MomongaModelRoles };

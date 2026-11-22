@@ -646,9 +646,9 @@ const registerModels: CommandGroup = (program, deps) => {
   formOf(billing.command('list').description('list the allowed billing changes'), deps, 'billing list');
   formOf(billing.command('allow [from] [to]').description('allow requests to fall from one billing kind to another').option('--model <model>', 'only for this model').option(YES_FLAG, YES_HELP), deps, 'billing allow');
   formOf(billing.command('forbid [from] [to]').description('no longer allow requests to fall from one billing kind to another').option('--model <model>', 'only the rule for this model').option(YES_FLAG, YES_HELP), deps, 'billing forbid');
-  const role = models.command('role').description('the model for summaries, reflection, analysis and the auto-mode classifier');
+  const role = models.command('role').description('the model for summaries, reflection, analysis, subagents and the auto-mode classifier');
   formOf(role.command('list').description('list the model of each job'), deps, 'role list');
-  formOf(role.command('set [job] [model]').description('choose the model of a job: compaction, reflection, analysis or classifier').option(YES_FLAG, YES_HELP), deps, 'role set');
+  formOf(role.command('set [job] [model]').description('choose the model of a job: compaction, reflection, analysis, subagent or classifier').option(YES_FLAG, YES_HELP), deps, 'role set');
   formOf(role.command('clear [job]').description('let a job use the model of the session').option(YES_FLAG, YES_HELP), deps, 'role clear');
   formOf(models.command('set [model] [field] [value]').description('set a field of a model, for example capabilities.contextWindow').option(YES_FLAG, YES_HELP), deps, 'set');
   formOf(models.command('unset [model] [field]').description('clear a field of a model').option(YES_FLAG, YES_HELP), deps, 'unset');

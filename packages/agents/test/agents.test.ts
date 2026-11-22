@@ -56,9 +56,9 @@ describe('agent definitions', () => {
     expect(set.agents).toMatchObject([
       { name: 'general-purpose', scope: 'builtin' },
       { name: 'reviewer', description: 'Reviews code', tools: ['Read', 'Grep'], model: 'fast', prompt: 'Review carefully.', scope: 'project' },
-      { name: 'writer', tools: ['Read', 'Write'], scope: 'user' },
+      { name: 'writer', tools: ['Read', 'Write'], model: 'inherit', scope: 'user' },
     ]);
-    expect(set.agents[2]?.model).toBeUndefined();
+    expect(set.agents[0]?.model).toBeUndefined();
   });
 
   it.each([["an empty string", 'tools: ""\n'], ['a blank list', 'tools: " , "\n'], ['an empty list', 'tools: []\n']])('reads %s of tools as no tools line: the agent inherits the tools', async (_label, line) => {

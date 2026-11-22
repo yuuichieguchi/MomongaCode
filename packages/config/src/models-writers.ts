@@ -411,7 +411,7 @@ const forbidBillingChange = (document: Json, state: State, operation: Extract<Mo
   return { summary: () => `Requests may no longer fall from ${from} to ${to}${scope}.` };
 };
 
-const JOB_LABELS: Readonly<Record<ModelRole, string>> = { compaction: 'Summaries', reflection: 'Reflection', analysis: 'Analysis' };
+const JOB_LABELS: Readonly<Record<ModelRole, string>> = { compaction: 'Summaries', reflection: 'Reflection', analysis: 'Analysis', subagent: 'Subagents' };
 
 const SESSION_MODEL_TEXT = "the session's model";
 

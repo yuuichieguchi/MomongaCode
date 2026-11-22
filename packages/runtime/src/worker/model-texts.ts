@@ -1,7 +1,7 @@
 import type { ModelRole } from '@momonga/config';
 import { modelSettingsPath } from '@momonga/protocol';
 
-const ROLE_JOBS: Readonly<Record<ModelRole, string>> = { compaction: 'summaries', reflection: 'reflection', analysis: 'analysis' };
+const ROLE_JOBS: Readonly<Record<ModelRole, string>> = { compaction: 'summaries', reflection: 'reflection', analysis: 'analysis', subagent: 'subagents' };
 
 export { sessionModelNotConfiguredText } from '@momonga/protocol';
 

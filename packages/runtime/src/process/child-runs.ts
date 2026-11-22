@@ -1,4 +1,4 @@
-import { ChildRunError, pinOf } from '@momonga/agents';
+import { ChildRunError, INHERIT_MODEL, pinOf } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
 import { TERMINAL_STATUSES, acceptedReasoningEfforts, assistantTextOf, displayMapOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { InputItem, ModelViews, ReasoningCapability, ReasoningEffort, RunState } from '@momonga/protocol';
@@ -83,7 +83,12 @@ export const createChildRuns = ({ store, listing }: ChildRunsOptions): ChildRuns
       const parentPins = parentPinsOf(store, parentRunId);
       let listed: Promise<Pick<GatewayListing, 'models' | 'views'>> | undefined;
       const listedNow = (): Promise<Pick<GatewayListing, 'models' | 'views'>> => (listed ??= listing());
-      const model = agent.model === undefined ? parentPins.model : agentModelOf(agent.name, agent.model, (await listedNow()).views);
+      const model =
+        agent.model === undefined
+          ? (parentPins.roles.subagent ?? parentPins.model)
+          : agent.model === INHERIT_MODEL
+            ? parentPins.model
+            : agentModelOf(agent.name, agent.model, (await listedNow()).views);
       const delegated = parentPins.delegation;
       const inherited = model === parentPins.model ? parentPins.effort : undefined;
       const effort = requested === undefined ? (agent.effort ?? inherited) : requestedEffortOf(agent.name, requested, model, await listedNow());

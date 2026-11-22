@@ -188,6 +188,7 @@ export const SETTINGS_REACHED_BY_LINK: Readonly<Record<string, string>> = {
   'models.roles.compaction': 'models',
   'models.roles.reflection': 'models',
   'models.roles.analysis': 'models',
+  'models.roles.subagent': 'models',
   'models.headersTimeoutMs': 'models',
   'models.idleTimeoutMs': 'models',
   'output.style': 'style',

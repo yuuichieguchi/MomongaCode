@@ -407,7 +407,7 @@ export const addedDisplayOf = (edit: ModelsEdit, plan: AcceptedPlan): string => 
   return displayMapOf(viewsOfDocument(plan.document, edit.ports)).get(plan.model) ?? plan.model;
 };
 
-export const JOB_WORDS: Readonly<Record<string, string>> = { compaction: 'summaries', reflection: 'reflection', analysis: 'analysis', classifier: 'the auto-mode classifier' };
+export const JOB_WORDS: Readonly<Record<string, string>> = { compaction: 'summaries', reflection: 'reflection', analysis: 'analysis', subagent: 'subagents', classifier: 'the auto-mode classifier' };
 
 const referenceWordOf = (reference: ModelsReference): string => {
   switch (reference.kind) {
@@ -680,7 +680,7 @@ const CLASSIFIER_JOB = 'classifier';
 
 const roleOperationOf = (job: string, model: string | null): ModelsOperation => {
   if (job === CLASSIFIER_JOB) return { kind: 'setClassifier', model };
-  if (job === 'compaction' || job === 'reflection' || job === 'analysis') return { kind: 'setRole', job, model };
+  if (job === 'compaction' || job === 'reflection' || job === 'analysis' || job === 'subagent') return { kind: 'setRole', job, model };
   throw new UsageError();
 };
 
@@ -855,7 +855,7 @@ export const billingRows = (edit: ModelsEdit): string[] =>
 export const roleRows = (edit: ModelsEdit): string[] => {
   const { roles, classifier } = edit.resolved;
   const row = (label: string, model: string | undefined): string => `${label}${SEPARATOR}${model === undefined ? SESSION_MODEL_TEXT : displayIn(edit, model)}`;
-  return [row('Summaries (compaction)', roles.compaction), row('Reflection', roles.reflection), row('Analysis', roles.analysis), row('Auto-mode classifier', classifier)];
+  return [row('Summaries (compaction)', roles.compaction), row('Reflection', roles.reflection), row('Analysis', roles.analysis), row('Subagents', roles.subagent), row('Auto-mode classifier', classifier)];
 };
 
 const dialectRows = (edit: ModelsEdit): string[] => {
@@ -886,8 +886,8 @@ const FORM_SPECS: Readonly<Record<ModelsForm, FormSpec>> = {
   'billing allow': { usage: usage('billing allow', '<from> <to> [--model <model>] [--yes]'), propose: proposeBillingAllow },
   'billing forbid': { usage: usage('billing forbid', '<from> <to> [--model <model>] [--yes]'), propose: proposeBillingForbid },
   'role list': { usage: usage('role list', ''), print: roleRows },
-  'role set': { usage: usage('role set', '<compaction|reflection|analysis|classifier> <model> [--yes]'), propose: proposeRoleSet },
-  'role clear': { usage: usage('role clear', '<compaction|reflection|analysis|classifier> [--yes]'), propose: proposeRoleClear },
+  'role set': { usage: usage('role set', '<compaction|reflection|analysis|subagent|classifier> <model> [--yes]'), propose: proposeRoleSet },
+  'role clear': { usage: usage('role clear', '<compaction|reflection|analysis|subagent|classifier> [--yes]'), propose: proposeRoleClear },
   set: { usage: usage('set', '<model> <field> <value> [--yes]'), propose: proposeModelField(true) },
   unset: { usage: usage('unset', '<model> <field> [--yes]'), propose: proposeModelField(false) },
   'set-server': { usage: usage('set-server', '<server> <field> <value> [--yes]'), propose: proposeServerField(true) },

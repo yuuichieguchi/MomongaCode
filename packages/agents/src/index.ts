@@ -1,4 +1,4 @@
-export { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_TOOL_NAME } from './constants.ts';
+export { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_TOOL_NAME, INHERIT_MODEL } from './constants.ts';
 export { BUILT_IN_AGENTS, GENERAL_PURPOSE_AGENT } from './builtin.ts';
 export { createAgentLoader } from './loader.ts';
 export type { AgentLoaderOptions } from './loader.ts';

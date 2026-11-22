@@ -93,6 +93,7 @@ export const ROLE_ROWS = [
   { label: 'Summaries (compaction)', job: 'compaction' },
   { label: 'Reflection', job: 'reflection' },
   { label: 'Analysis', job: 'analysis' },
+  { label: 'Subagents', job: 'subagent' },
   { label: 'Auto-mode classifier', job: 'classifier' },
 ] as const;
 

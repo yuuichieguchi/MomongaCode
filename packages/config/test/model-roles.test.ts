@@ -14,11 +14,11 @@ const chatModel = (model: string): Record<string, unknown> => ({
 const CONNECTIONS = connectionsOf({ main: chatModel('big'), small: chatModel('little') });
 const BIG = 'main/big';
 const LITTLE = 'small/little';
-const ALL_ROLES = { compaction: 'little', reflection: LITTLE, analysis: 'big' };
+const ALL_ROLES = { compaction: 'little', reflection: LITTLE, analysis: 'big', subagent: 'little' };
 
 describe('the roles a setting can pin', () => {
-  it('are a subset of the roles of a model call', () => {
-    expect(MODEL_ROLES.every((role) => (CALL_ROLES as readonly string[]).includes(role))).toBe(true);
+  it('are either a call role or the subagent role', () => {
+    expect(MODEL_ROLES.every((role) => role === 'subagent' || (CALL_ROLES as readonly string[]).includes(role))).toBe(true);
   });
 });
 
@@ -39,7 +39,7 @@ const expectRejected = async (models: Record<string, unknown>, ...fragments: str
 describe('models.roles in user settings', () => {
   it('guards a lost choice: every role resolves to the full reference of the model the person named', async () => {
     const result = await loadWithModels(makeTree(), { connections: CONNECTIONS, roles: ALL_ROLES });
-    expect(result.settings.models.roles).toEqual({ compaction: LITTLE, reflection: LITTLE, analysis: BIG });
+    expect(result.settings.models.roles).toEqual({ compaction: LITTLE, reflection: LITTLE, analysis: BIG, subagent: LITTLE });
     expect(result.warnings).toEqual([]);
   });
 
@@ -59,7 +59,7 @@ describe('models.roles in user settings', () => {
     expect((await loadUserModels({ home: tree.home, signal: new AbortController().signal })).resolved.roles).toEqual({ analysis: LITTLE });
   });
 
-  it.each(['compaction', 'reflection', 'analysis'])('guards a call sent to nowhere: %s naming a model that is not configured is refused with the sentence of its key', async (role) => {
+  it.each(['compaction', 'reflection', 'analysis', 'subagent'])('guards a call sent to nowhere: %s naming a model that is not configured is refused with the sentence of its key', async (role) => {
     await expectRejected({ connections: CONNECTIONS, roles: { [role]: 'ghost-model' } }, `models.roles.${role}: "ghost-model" is not a configured model; configured models: big, little`);
   });
 
