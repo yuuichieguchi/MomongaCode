@@ -89,7 +89,12 @@ describe('cli: interactive TUI through a pty', () => {
 
     await pty.type('/help');
     await pty.key('enter', { until: { shows: 'click on a menu row  complete it', in: 'transcript' } });
-    const top = await pty.key('ctrlHome', { until: { shows: /^Commands[^\n]*\n  \/help  list the commands/m, in: 'transcript' } });
+    const top = await pty.key('ctrlHome', {
+      until: [
+        { shows: /^Commands[^\n]*\n  \/help  list the commands/m, in: 'transcript' },
+        { lacks: 'click on a menu row  complete it', in: 'transcript' },
+      ],
+    });
     for (const command of ['/help', '/clear', '/mode', '/exit']) expect(top.region('transcript').join('\n')).toContain(command);
     await pty.key('ctrlEnd', { until: { shows: 'click on a menu row  complete it', in: 'transcript' } });
 
