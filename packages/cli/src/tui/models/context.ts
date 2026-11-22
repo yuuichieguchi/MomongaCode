@@ -27,6 +27,7 @@ export type ModelsFlowContext = {
   readonly found: FoundServers;
   readonly model: string | undefined;
   info(text: string): void;
+  refreshConnection?(): Promise<void>;
   wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
 };
 
@@ -93,6 +94,7 @@ export const writeConfirmed = async ({ host }: Opened, context: ModelsFlowContex
   });
   if (written === undefined) return undefined;
   context.info(written.value.summaries.join('\n'));
+  await context.refreshConnection?.();
   return written.value;
 };
 

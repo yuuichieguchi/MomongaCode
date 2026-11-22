@@ -861,7 +861,6 @@ const editSetting = async (context: SlashContext, snapshot: SettingsSnapshot, le
 const openLink = async (context: SlashContext, link: SettingsLink): Promise<void> => {
   if (link.command === undefined) {
     await runModelsHub(context);
-    await context.refreshConnection();
     return;
   }
   await context.commands.find((command) => command.name === link.command)?.run('', context);

@@ -58,12 +58,13 @@ export const footerRow = (facts: FooterFacts, width: number, keys: KeyTable): st
 
 export const UNCONNECTED_FOOTER = 'no model connected · /login';
 
-export type FooterProps = { facts: FooterFacts | undefined; hint: string | undefined; unconnected: boolean; planRow: string | undefined; width: number; rows: number; keys: KeyTable };
+export type FooterProps = { facts: FooterFacts | undefined; panelModel?: FooterModel | undefined; hint: string | undefined; unconnected: boolean; planRow: string | undefined; width: number; rows: number; keys: KeyTable };
 
 export const planRowFits = (planRow: string | undefined, width: number): boolean => planRow !== undefined && displayWidth(escapeTerminalLine(planRow)) <= width;
 
-export function Footer({ facts, hint, unconnected, planRow, width, rows, keys }: FooterProps) {
-  const lone = facts === undefined ? (hint ?? (unconnected ? UNCONNECTED_FOOTER : undefined)) : undefined;
+export function Footer({ facts, panelModel, hint, unconnected, planRow, width, rows, keys }: FooterProps) {
+  const connection = panelModel === undefined ? (unconnected ? UNCONNECTED_FOOTER : undefined) : fit([{ side: 'left', forms: modelForms(panelModel) }], width);
+  const lone = facts === undefined ? (hint ?? connection) : undefined;
   return (
     <>
       {facts === undefined ? null : (

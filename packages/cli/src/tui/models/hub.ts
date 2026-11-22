@@ -72,6 +72,15 @@ export const hubRows = (facts: HubFacts): HubRow[] => {
   ];
 };
 
+const keyOfRow = (row: HubRow): string | undefined => {
+  switch (row.kind) {
+    case 'action': return `action:${row.action}`;
+    case 'model': return `model:${row.model}`;
+    case 'server': return `server:${row.provider}`;
+    default: return undefined;
+  }
+};
+
 const firstChoosableFrom = (rows: readonly HubRow[], from: number): number => {
   const found = rows.findIndex((row, index) => index >= from && row.kind !== 'heading' && row.kind !== 'warning');
   return found < 0 ? from : found;
@@ -256,8 +265,10 @@ export const checkServers = async (context: ModelsFlowContext, edit: ModelsEdit)
   (await cancellable(context, CHECKING_PHASE, (signal) => notListedOf(hostOf(context, signal), edit.resolved)))?.value;
 
 export const runModelsHub = async (context: ModelsFlowContext): Promise<void> => {
+  await context.refreshConnection?.();
   let notListed: ReadonlySet<string> = new Set();
   let at = 0;
+  let highlighted: string | undefined;
   for (;;) {
     const opened = await openEdit(context);
     const read = await cancellable(context, CHECKING_PHASE, (signal) =>
@@ -270,18 +281,22 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
     if (read === undefined) return;
     const { health, accounts, document, serverStates } = read.value;
     const rows = hubRows({ document, plainHttp: opened.edit.resolved.plainHttp, signInRequired: signInRequiredOf(document, health), keyedElsewhere: keyedElsewhereOf(opened.edit, accounts), serverStates });
+    const kept = highlighted === undefined ? -1 : rows.findIndex((row) => keyOfRow(row) === highlighted);
     const acted = await chosenThen(
       context,
       {
         title: MODELS_TITLE,
+        showModelInFooter: true,
         lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
         rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
-        initial: firstChoosableFrom(rows, Math.min(at, rows.length - 1)),
+        initial: kept === -1 ? firstChoosableFrom(rows, Math.min(at, rows.length - 1)) : kept,
       },
       async (index) => {
         at = index;
         const row = rows[index];
-        if (row !== undefined) notListed = (await hubRowAct(context, opened, row)) ?? notListed;
+        if (row === undefined) return;
+        highlighted = keyOfRow(row);
+        notListed = (await hubRowAct(context, opened, row)) ?? notListed;
       },
     );
     if (acted === undefined) return;

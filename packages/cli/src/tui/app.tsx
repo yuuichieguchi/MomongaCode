@@ -2,6 +2,7 @@ import { askTrustItems } from './project-items.ts';
 import { askProjectCheck } from './project-check.ts';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
+import { createKeyedSerializer } from '@momonga/foundation';
 import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, escapeTerminalLine, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
 import type { OutputStyle, ReasoningEffort, ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
@@ -293,6 +294,7 @@ export function App(props: AppProps) {
   const [displays, setDisplays] = useState<ReadonlyMap<string, string>>(new Map());
   const displaysRef = useRef<ReadonlyMap<string, string>>(new Map());
   const [found] = useState(createFoundServers);
+  const [modelChanges] = useState(createKeyedSerializer);
   const unconfiguredModel = useRef(false);
   const capabilities: ChainCapabilities | undefined = model === undefined || isNotListedCapabilities(model.capabilities) ? undefined : model.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
@@ -708,10 +710,14 @@ export function App(props: AppProps) {
     note(busyRef.current ? `model: ${named}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${named}; applies from the next run`);
   };
 
-  const applyModel = async (chosen: string, effort?: ReasoningEffort): Promise<void> => {
-    const previous = sessionModelRef.current;
-    await noteModelSwitch(await switchModel(chosen, effort), previous);
-  };
+  const changeSessionModel = <T,>(work: () => Promise<T>, signal = new AbortController().signal): Promise<T> =>
+    modelChanges('session model', work, signal);
+
+  const applyModel = (chosen: string, effort?: ReasoningEffort): Promise<void> =>
+    changeSessionModel(async () => {
+      const previous = sessionModelRef.current;
+      await noteModelSwitch(await switchModel(chosen, effort), previous);
+    });
 
   const rememberProfiles = (listed: PlanAccountsResponse): void => {
     setProfiles(listed.profiles);
@@ -719,24 +725,24 @@ export function App(props: AppProps) {
 
   const connectModel = async (chosen: string): Promise<void> => {
     overlayPorts.closeScreen();
-    await runCancellable(async () => {
-      if (sessionModelRef.current === undefined) {
+    await runCancellable((signal) => changeSessionModel(async () => {
+      const previous = sessionModelRef.current;
+      if (previous === undefined) {
         await openSession(chosen);
         return;
       }
-      await applyModel(chosen);
-    });
-  };
-
-  const openedWith = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {
-    await openSession(chosen, effort);
-    return chosen;
+      await noteModelSwitch(await switchModel(chosen, undefined), previous);
+    }, signal));
   };
 
   const switchModelThen = async (chosen: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void> => {
     overlayPorts.closeScreen();
-    const previous = sessionModelRef.current;
-    const model = await runCancellable(() => (previous === undefined ? openedWith(chosen, effort) : switchModel(chosen, effort)));
+    const { model, previous } = await runCancellable((signal) => changeSessionModel(async () => {
+      const previous = sessionModelRef.current;
+      if (previous !== undefined) return { model: await switchModel(chosen, effort), previous };
+      await openSession(chosen, effort);
+      return { model: chosen, previous };
+    }, signal));
     const failure = await then().then(
       () => undefined,
       (error: unknown) => ({ error }),
@@ -751,16 +757,19 @@ export function App(props: AppProps) {
     );
   };
 
-  const refreshConnection = async (): Promise<void> => {
-    rememberProfiles(await backend.plan.accounts());
-    if (sessionModelRef.current !== undefined) {
-      await readDisplays();
-      rereadModel();
-      return;
-    }
-    if ((await backend.models()).length > 0) await openSession(undefined);
-    else enterPhase({ kind: 'unconnected' });
-  };
+  const refreshConnection = (): Promise<void> =>
+    changeSessionModel(async () => {
+      rememberProfiles(await backend.plan.accounts());
+      const current = sessionModelRef.current;
+      if (current !== undefined) {
+        unconfiguredModel.current = !(await readDisplays()).has(current);
+        if (unconfiguredModel.current) endMeasuring();
+        else rereadModel();
+        return;
+      }
+      if ((await backend.models()).length > 0) await openSession(undefined);
+      else enterPhase({ kind: 'unconnected' });
+    });
 
   const setWaitingMessages = (rows: readonly InboxRowView[]): void => {
     waitingRef.current = rows;
@@ -2275,6 +2284,8 @@ export function App(props: AppProps) {
     setThoughtWindow(store, thoughtWindow);
     if (viewedLive !== store) setThoughtWindow(viewedLive, thoughtWindow);
   }, [store, viewedLive, thoughtWindow]);
+  const footerOverlay = overlay?.kind === 'kept' ? overlay.shown : overlay;
+  const panelModel = footerOverlay?.kind === 'pick' && footerOverlay.request.showModelInFooter === true && !a11y.screenReader ? footerModel() : undefined;
   const footerFacts =
     phase.kind === 'ready' && overlay === undefined && !a11y.screenReader
       ? {
@@ -2332,7 +2343,7 @@ export function App(props: AppProps) {
           input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(shownFeed.live(view.source, viewed.settledAt).length, rowRequests))} /> : null,
           footer: (
             <>
-              <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />
+              <Footer facts={footerFacts} panelModel={panelModel} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />
               {busyHintRow === undefined || busyHintRows === 0 ? null : (
                 <Text dimColor wrap="truncate">
                   {busyHintRow}

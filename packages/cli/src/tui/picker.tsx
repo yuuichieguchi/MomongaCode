@@ -13,13 +13,13 @@ export type PickRow = SelectRow;
 export type PickUpdate = Pick<SelectSpec, 'rows'> & Partial<Pick<SelectSpec, 'lines'>> & { readonly alt?: SelectSpec['alt'] | undefined; readonly highlight: number };
 
 export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm' | 'alt'> &
-  Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly onHighlight?: (index: number) => void; readonly watch?: (show: (update: PickUpdate) => void) => () => void };
+  Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly showModelInFooter?: boolean; readonly onHighlight?: (index: number) => void; readonly watch?: (show: (update: PickUpdate) => void) => () => void };
 
 const FILTER_FROM_ROWS = 10;
 const TEXT_ROWS_AROUND = 2;
 const WAITING_ROWS_AROUND = 6;
 
-export const pickerSpec = ({ onHighlight: _onHighlight, watch: _watch, ...request }: PickRequest): SelectSpec => ({
+export const pickerSpec = ({ showModelInFooter: _showModelInFooter, onHighlight: _onHighlight, watch: _watch, ...request }: PickRequest): SelectSpec => ({
   initial: 0,
   decideOn: 'immediate',
   escape: 'back',

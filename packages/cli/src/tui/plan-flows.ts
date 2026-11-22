@@ -773,11 +773,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       const acted = await chooseThen(ports.choose, request, async (choice): Promise<Acted> => {
         highlightedKey = shown.keys[choice.index];
         if (choice.index === shown.rows.length - 1) {
-          try {
-            await runModelsHub(context);
-          } finally {
-            await ports.refreshConnection();
-          }
+          await runModelsHub({ ...context, refreshConnection: ports.refreshConnection });
           return AGAIN;
         }
         const chosen = await shown.choose(choice.index, choice.alt);
