@@ -136,6 +136,7 @@ const runContextImproveInTui = async (words: readonly string[], rawArgs: string,
       context.info('context improve cancelled');
       return;
     }
+    context.overlays.closeScreen();
   }
   const argv: string[] = ['context', ...words];
   if (parsed.model === undefined) argv.push('--model', effectiveModel);

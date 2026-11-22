@@ -52,7 +52,11 @@ describe('/context improve confirmation in the terminal UI', () => {
       'confirmation panel reflects explicit --candidates',
     );
     await app.type(KEYS.up, (lines) => lines.some((line) => line.includes('› 1. Start')), 'Up moves highlight to Start');
-    await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('context improve started')), 'Enter on Start launches context improve');
+    await app.type(
+      KEYS.enter,
+      (lines) => lines.some((line) => line.includes('context improve started')) && !lines.some((line) => line.includes(CONTEXT_IMPROVE_CONFIRM_TITLE)),
+      'Enter on Start launches context improve',
+    );
     expect(ran).toEqual([['context', 'improve', '--candidates', '2', '--model', SCRIPTED_MODEL, '--yes']]);
 
     await app.type(`/context improve --yes${KEYS.enter}`, (lines) => ran.length === 2 && lines.some((line) => line.includes('context improve started')), '--yes runs directly without opening confirmation panel');
