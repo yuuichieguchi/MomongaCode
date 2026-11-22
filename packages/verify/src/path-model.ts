@@ -84,6 +84,62 @@ export const createPathModel = async (context: PathModelContext): Promise<PathMo
   }
   const aliases = [...aliasTable].map(([lexical, canonical]) => ({ lexical, canonical }));
 
+  const foldOf = async (probePath: string): Promise<boolean> => probes.volumeProbe(probePath);
+
+  const underFolded = (resolved: Seq, directory: string, fold: boolean): Bool => smt.member(resolved, subtree(directory, fold));
+
+  const under = async (resolved: Seq, directory: string): Promise<Bool> => underFolded(resolved, directory, await foldOf(directory));
+
+  type Folded = { directory: string; fold: boolean };
+
+  const folded = async (directory: string): Promise<Folded> => ({ directory, fold: await foldOf(directory) });
+
+  const isEnotdir = (resolution: PathResolution): boolean => !resolution.ok && resolution.reason.kind === 'errno' && resolution.reason.code === 'ENOTDIR';
+
+  const nonDirectoryBlockers = async (): Promise<Folded[]> => {
+    const candidates = new Set<string>([
+      ...fileRules.entries.flatMap((entry) => [entry.anchorDirectory, entry.lexicalDirectory]),
+      ...protectedSet.paths,
+      ...protectedSet.lexicalPaths,
+      ...protectedSet.literals,
+      ...protectedSet.patterns.entries.flatMap((entry) => [entry.anchorDirectory, entry.lexicalDirectory]),
+      ...roots,
+      ...secretDirectories,
+    ]);
+    const blockers = new Set<string>();
+    for (const candidate of candidates) {
+      if (candidate === '/') continue;
+      const self = await probes.canonicalise(candidate);
+      if (isEnotdir(self)) {
+        let current = path.posix.dirname(candidate);
+        while (current !== '/') {
+          const parent = await probes.canonicalise(current);
+          if (parent.ok) {
+            blockers.add(current);
+            blockers.add(parent.path);
+            break;
+          }
+          if (!isEnotdir(parent)) break;
+          current = path.posix.dirname(current);
+        }
+        continue;
+      }
+      if (!self.ok) continue;
+      const child = await probes.canonicalise(path.posix.join(candidate, '_'));
+      if (isEnotdir(child)) {
+        blockers.add(candidate);
+        blockers.add(self.path);
+      }
+    }
+    const found: Folded[] = [];
+    for (const directory of blockers) {
+      if (directory !== '/') found.push(await folded(directory));
+    }
+    return found;
+  };
+
+  const nonDirectorySubtrees = (await nonDirectoryBlockers()).map(({ directory, fold }) => smt.concat(textIn(directory, fold), rest));
+
   const variables = (name: string): PathVariables => {
     const ctx = smt.ctx;
     const base = smt.stringVariable(`${name}_path`);
@@ -98,6 +154,10 @@ export const createPathModel = async (context: PathModelContext): Promise<PathMo
       resolved = ctx.If(via, smt.stringValue(alias.canonical).concat(tail), resolved);
     });
     domain.push(smt.member(resolved, pathLanguage), smt.member(requested, pathLanguage));
+    for (const below of nonDirectorySubtrees) {
+      domain.push(ctx.Not(smt.member(resolved, below)));
+      if (aliases.length > 0) domain.push(ctx.Not(smt.member(requested, below)));
+    }
     return { requested, resolved, domain };
   };
 
@@ -106,16 +166,6 @@ export const createPathModel = async (context: PathModelContext): Promise<PathMo
     const blocks = fileRules.entries.filter((entry) => entry.ruleIndex === ruleIndex).map((entry) => entryBlocks(fileRules, entry, vars.requested, vars.resolved));
     return blocks.length === 0 ? ctx.Bool.val(false) : ctx.Or(...blocks);
   };
-
-  const foldOf = async (probePath: string): Promise<boolean> => probes.volumeProbe(probePath);
-
-  const underFolded = (resolved: Seq, directory: string, fold: boolean): Bool => smt.member(resolved, subtree(directory, fold));
-
-  const under = async (resolved: Seq, directory: string): Promise<Bool> => underFolded(resolved, directory, await foldOf(directory));
-
-  type Folded = { directory: string; fold: boolean };
-
-  const folded = async (directory: string): Promise<Folded> => ({ directory, fold: await foldOf(directory) });
 
   const canonicalFolded = async (directories: readonly string[]): Promise<Folded[]> => {
     const found: Folded[] = [];
