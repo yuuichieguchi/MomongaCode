@@ -14,7 +14,7 @@ export type PolishSeverity = (typeof POLISH_SEVERITIES)[number];
 
 export const MAX_POLISH_ITERATIONS = 2;
 
-export const DEFAULT_POLISH_AUDIENCE = 'このリポジトリの開発者';
+export const DEFAULT_POLISH_AUDIENCE = 'developers of this repository';
 
 export type PolishIssue = {
   readonly span: string;

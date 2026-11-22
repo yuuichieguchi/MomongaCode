@@ -18,7 +18,7 @@ The interactive session that `momonga` opens takes these commands at the start o
 | `/auto-mode [check [<model>] [--agent <model>] \| status [<model>]]` | choose the model that judges approvals for auto mode, measure how well a model judges them, or show the stored measurement |
 | `/effort [none\|minimal\|low\|medium\|high\|xhigh\|max] [--session] \| reset` | choose the reasoning effort of the model, saved for it or for this session only; reset removes the saved one |
 | `/style [standard\|concise\|explanatory] [--session] \| reset` | choose the output style (standard, concise, or explanatory), saved or for this session only; reset restores standard |
-| `/polish [<file>] [--audience <reader>]` | run bounded clarity and codebase-factuality revision on the last answer or a file (default audience: このリポジトリの開発者) |
+| `/polish [<file>] [--audience <reader>]` | run bounded clarity and codebase-factuality revision on the last answer or a file (default audience: developers of this repository) |
 | `/markers ignore <marker name>` | tell MomongaCode to stop blocking calls because of a process an earlier command left running |
 | `/memory [list\|open\|show <id>\|delete <id>\|add <text>\|history <id>\|review\|restore <id>\|promote <id> --skill <name>]` | list, show, add, review, restore, promote or retire the memories of this folder and of all folders |
 | `/rule [list\|add <target> <text>\|retire <id>\|history <id>]` | list, add, retire or show the history of the standing rules of this folder |
