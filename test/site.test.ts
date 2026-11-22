@@ -903,7 +903,7 @@ describe('the website', () => {
     }
   });
 
-  it('keeps a name in a table whole, scrolls a wide table inside its own frame, and keeps the frame of wrapped inline code on each line', () => {
+  it('wraps multi-token code in a table without splitting words, keeps two-column code columns balanced, scrolls a wide table inside its own frame, and keeps the frame of wrapped inline code on each line', () => {
     for (const key of pageKeys()) {
       const page = text(key);
       const tables = [...page.matchAll(/<table\b/g)].length;
@@ -913,9 +913,10 @@ describe('the website', () => {
     const css = cssText().replace(/\s+/g, ' ');
     const rule = (selector: string): string => css.match(new RegExp(`(?:^|[}\\s,])${selector.replace(/[.()>:]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
     expect(rule('.table-wrap')).toMatch(/overflow-x:\s*auto/);
-    expect(rule('td code')).toMatch(/white-space:\s*nowrap/);
+    expect(rule('td code')).toMatch(/white-space:\s*normal/);
     expect(rule('td code')).toMatch(/overflow-wrap:\s*normal/);
     expect(rule('td code')).not.toMatch(/word-break/);
+    expect(rule('table:not(:has(th:nth-child(3))) td:first-child:has(code)')).toMatch(/width:\s*\d+%/);
     expect(rule(':not(pre) > code')).not.toMatch(/overflow-wrap:\s*anywhere|word-break/);
     expect(rule(':not(pre) > code')).toMatch(/(?:^|;)\s*box-decoration-break:\s*clone/);
     expect(rule(':not(pre) > code')).toMatch(/-webkit-box-decoration-break:\s*clone/);

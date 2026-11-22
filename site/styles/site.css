@@ -505,7 +505,7 @@ tbody tr:hover td {
 }
 
 td code {
-  white-space: nowrap;
+  white-space: normal;
   overflow-wrap: normal;
   background: transparent;
   border: 0;
@@ -518,8 +518,11 @@ td:first-child code {
   font-weight: 500;
 }
 
+table:not(:has(th:nth-child(3))) td:first-child:has(code) {
+  width: 34%;
+}
+
 table:has(th:nth-child(5)) td:nth-child(n + 3) code {
-  white-space: normal;
   overflow-wrap: anywhere;
 }
 
