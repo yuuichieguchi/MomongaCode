@@ -11,7 +11,7 @@ import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
 import { groupKiller, killGroup } from './runner.ts';
 import { LIVENESS_ARGS, actionPropertyViolationOutput, cfgFor, completedOutput, endlessSpec, holdsEntry, invariantEntry, invariantViolationOutput, runOf, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
 import { describeTier } from './tier.ts';
-import { hostTlcRowsAtOnce } from './tlc-rows.ts';
+import { hostEveryRunTlcRowsAtOnce, hostTlcRowsAtOnce } from './tlc-rows.ts';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const specDir = path.join(repoRoot, 'specs', 'tla');
@@ -595,7 +595,7 @@ describe('the rows of a tier run at once', () => {
   const deepLog = path.join(root, 'deep.log');
   const everyRunLog = path.join(root, 'every-run.log');
   const deepRows = rowsOf('deep', 3);
-  const everyRunRows = rowsOf('every-run', 3);
+  const everyRunRows = rowsOf('every-run', Math.max(3, Math.min(hostEveryRunTlcRowsAtOnce(), 4)));
 
   afterAll(() => removeTempRoot(root));
 
@@ -639,8 +639,9 @@ describe('the rows of a tier run at once', () => {
       expect(mostAtOnce(deepLog)).toBe(Math.min(deepRows.length, hostTlcRowsAtOnce()));
     });
 
-    it('runs the every-run rows one at a time', () => {
-      expect(mostAtOnce(everyRunLog)).toBe(1);
+    it('runs the every-run rows as many at once as the every-run formula of the host allows', () => {
+      expect(fs.readFileSync(everyRunLog, 'utf8').split('\n').filter((line) => line.startsWith('end ')).length).toBe(everyRunRows.length);
+      expect(mostAtOnce(everyRunLog)).toBe(Math.min(everyRunRows.length, hostEveryRunTlcRowsAtOnce()));
     });
   });
 });

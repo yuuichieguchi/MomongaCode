@@ -9,6 +9,7 @@ import type { CheckOutcome, CheckRequest } from './check-entry.ts';
 import { cfgFor, completedOutput, holdsEntry, invariantEntry, invariantViolationOutput, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
 import type { ManifestEntry } from './manifest.ts';
 import { TLC_WORKERS } from './runner.ts';
+import { EVERY_RUN_TLC_WORKERS } from './tlc-rows.ts';
 import { RAN_REASONS, createJavaIdentityReader, createResultStore } from './reuse.ts';
 import type { JavaIdentity, ResultStore } from './reuse.ts';
 
@@ -199,9 +200,9 @@ describe('checking one configuration', () => {
   );
 
   it.each([
-    ['every-run, mode on, no arguments', {}, holdsEntry, ['Tiny', '-fp', '0', '-workers', String(TLC_WORKERS)]],
-    ['every-run, mode on, final liveness', {}, { ...holdsEntry, args: ['-lncheck', 'final'] }, ['Tiny', '-lncheck', 'final', '-fp', '0', '-workers', String(TLC_WORKERS)]],
-    ['mode off', { mode: 'off' }, holdsEntry, ['Tiny', '-workers', String(TLC_WORKERS)]],
+    ['every-run, mode on, no arguments', {}, holdsEntry, ['Tiny', '-fp', '0', '-workers', String(EVERY_RUN_TLC_WORKERS)]],
+    ['every-run, mode on, final liveness', {}, { ...holdsEntry, args: ['-lncheck', 'final'] }, ['Tiny', '-lncheck', 'final', '-fp', '0', '-workers', String(EVERY_RUN_TLC_WORKERS)]],
+    ['mode off', { mode: 'off' }, holdsEntry, ['Tiny', '-workers', String(EVERY_RUN_TLC_WORKERS)]],
     ['a deep row, mode on', {}, { ...holdsEntry, tier: 'deep' }, ['Tiny', '-fp', '0', '-workers', String(TLC_WORKERS)]],
   ] as const)('passes the arguments of %s', async (_label, overrides, entry, argv) => {
     await checkEntry(request({ ...(overrides as Partial<CheckRequest>), entry }));
@@ -661,8 +662,8 @@ describe('the summary under a real vitest run', () => {
       expect(run.stderr).toContain('ran (reuse off): 2: Tiny, Tiny.broken');
       const calls = callsIn(fixture.counter).slice(callsBefore);
       expect(calls.map((line) => line.split(' ')).sort()).toEqual([
-        ['Tiny', '-workers', String(TLC_WORKERS)],
-        ['Tiny.broken', '-workers', String(TLC_WORKERS)],
+        ['Tiny', '-workers', String(EVERY_RUN_TLC_WORKERS)],
+        ['Tiny.broken', '-workers', String(EVERY_RUN_TLC_WORKERS)],
       ]);
       expect(storeSnapshot(fixture.storeDir)).toEqual(storeBefore);
     },

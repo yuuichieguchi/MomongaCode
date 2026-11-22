@@ -5,7 +5,8 @@ import { distinctStatesOfRun, measurementOfRun } from './record.ts';
 import type { Measurement } from './record.ts';
 import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord, specIdentityOf } from './reuse.ts';
 import type { JavaIdentity, RanReason, ResultStore, StoredFacts } from './reuse.ts';
-import { TLC_WORKERS, runTlc } from './runner.ts';
+import { runTlc } from './runner.ts';
+import { EVERY_RUN_TLC_MAX_HEAP_MIB, tlcWorkersForTier } from './tlc-rows.ts';
 import { factsOf, problemsOf, verdictProblems } from './verdict.ts';
 
 export type CheckRequest = {
@@ -44,7 +45,16 @@ const runAndJudge = async (request: CheckRequest, args: readonly string[]): Prom
   const loadAtStart = request.loadAverage();
   const started = timing.monotonicMs();
   const deadline = started + request.limitMs;
-  const run = await (request.run ?? runTlc)({ script: request.script, config: entry.config, args, budgetCpuSeconds: entry.budgetCpuSeconds });
+  const workers = tlcWorkersForTier(entry.tier);
+  const heapEnv = entry.tier === 'every-run' && request.env['TLC_MAX_HEAP'] === undefined ? { TLC_MAX_HEAP: `${EVERY_RUN_TLC_MAX_HEAP_MIB}m` } : undefined;
+  const run = await (request.run ?? runTlc)({
+    script: request.script,
+    config: entry.config,
+    args,
+    budgetCpuSeconds: entry.budgetCpuSeconds,
+    workers,
+    ...(heapEnv === undefined ? {} : { env: heapEnv }),
+  });
   const wallSeconds = (timing.monotonicMs() - started) / 1000;
   const groupGone = await waitForGroupGone(run.pid, deadline, request.groupPort, timing);
   return { run, wallSeconds, loadAtStart, problems: [...verdictProblems(judgedEntryOf(request, run), run), ...(groupGone ? [] : [`${entry.config}: process group ${run.pid} still has members after the run`])] };
@@ -73,7 +83,7 @@ const keyOfRun = async (request: Pick<CheckRequest, 'entry' | 'repoRoot' | 'mode
   if (refusal !== undefined) return { unkeyed: refusal };
   const java = await request.java(request.limitMs);
   if (java === undefined) return { unkeyed: 'java not readable' };
-  const parts = await keyPartsOf({ repoRoot: request.repoRoot, entry: request.entry, args, workers: TLC_WORKERS, java });
+  const parts = await keyPartsOf({ repoRoot: request.repoRoot, entry: request.entry, args, workers: tlcWorkersForTier(request.entry.tier), java });
   return 'unreadable' in parts ? { unkeyed: 'input not readable' } : { key: keyOf(parts) };
 };
 
@@ -118,7 +128,10 @@ type TierReport = {
 };
 
 const groupedLines = (label: string, groups: ReadonlyMap<string, readonly string[]>, order: readonly string[]): string[] =>
-  order.filter((reason) => groups.has(reason)).map((reason) => `${label} (${reason}): ${(groups.get(reason) as readonly string[]).length}: ${(groups.get(reason) as readonly string[]).join(', ')}`);
+  order.filter((reason) => groups.has(reason)).map((reason) => {
+    const configs = [...(groups.get(reason) as readonly string[])].sort();
+    return `${label} (${reason}): ${configs.length}: ${configs.join(', ')}`;
+  });
 
 const appendTo = (groups: Map<string, string[]>, reason: string, config: string): void => {
   groups.set(reason, [...(groups.get(reason) ?? []), config]);

@@ -9,6 +9,7 @@ import { createManifestRowWriter, recordedRowOf, recordsTier } from './record.ts
 import { createJavaIdentityReader, createResultStore, reuseModeOf } from './reuse.ts';
 import type { JavaIdentity, ResultStore } from './reuse.ts';
 import { TLC_WORKERS, notProvedText } from './runner.ts';
+import { hostTlcRowsForTier } from './tlc-rows.ts';
 
 export type TierOptions = {
   tier: Tier;
@@ -41,15 +42,30 @@ type TierSession = {
 
 const titleOf = (entry: ManifestEntry): string => `${entry.config} ${entry.expect === 'holds' ? 'holds' : `violates ${entry.expect.violates}`}`;
 
+const createLimiter = (maxAtOnce: number): (<T>(work: () => Promise<T>) => Promise<T>) => {
+  const limit = Math.max(1, maxAtOnce);
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  return async <T>(work: () => Promise<T>): Promise<T> => {
+    while (active >= limit) await new Promise<void>((resolve) => waiting.push(resolve));
+    active += 1;
+    try {
+      return await work();
+    } finally {
+      active -= 1;
+      waiting.shift()?.();
+    }
+  };
+};
+
 export const describeTier = (options: TierOptions): void => {
   const { tier, manifestConfigs, script, repoRoot, env } = options;
   const loadError = options.entries instanceof Error ? options.entries : undefined;
   const entries = options.entries instanceof Error ? [] : options.entries;
   const now = options.now ?? ((): Date => new Date());
+  const withSlot = createLimiter(hostTlcRowsForTier(tier));
 
-  const suite = tier === 'deep' ? describe.concurrent : describe;
-
-  suite(`TLC over every ${tier} configuration in the manifest`, () => {
+  describe.concurrent(`TLC over every ${tier} configuration in the manifest`, () => {
     const report = createTierReport(tier);
     const writeRow = createManifestRowWriter(path.join(repoRoot, 'specs', 'tla', 'manifest.json'));
     let opened: TierSession | undefined;
@@ -88,19 +104,20 @@ export const describeTier = (options: TierOptions): void => {
       const limitMs = entry.budgetCpuSeconds * TLC_WORKERS * 1000;
       it(
         titleOf(entry),
-        async () => {
-          const { mode, store, java, record } = session();
-          const outcome = await checkEntry({ entry, script, repoRoot, mode, env, store, java, limitMs, now, record, loadAverage: () => os.loadavg()[0] as number });
-          report.add(entry.config, outcome);
-          if (outcome.outcome === 'ran' && outcome.measurement !== undefined && outcome.loadAtStart !== undefined) {
-            await writeRow(await recordedRowOf(repoRoot, entry, outcome.measurement, options.startupCpuSeconds, outcome.loadAtStart));
-            process.stderr.write(`record mode: ${entry.config} written to specs/tla/manifest.json\n`);
-          }
-          const limits = options.modules.find((module) => module.module === moduleOf(entry.config));
-          if (limits === undefined) throw new Error(`${entry.config}: the manifest has no modules entry for ${moduleOf(entry.config)}`);
-          process.stderr.write(notProvedText(entry.config, limits));
-          expect(outcome.outcome === 'ran' ? outcome.problems : []).toEqual([]);
-        },
+        () =>
+          withSlot(async () => {
+            const { mode, store, java, record } = session();
+            const outcome = await checkEntry({ entry, script, repoRoot, mode, env, store, java, limitMs, now, record, loadAverage: () => os.loadavg()[0] as number });
+            report.add(entry.config, outcome);
+            if (outcome.outcome === 'ran' && outcome.measurement !== undefined && outcome.loadAtStart !== undefined) {
+              await writeRow(await recordedRowOf(repoRoot, entry, outcome.measurement, options.startupCpuSeconds, outcome.loadAtStart));
+              process.stderr.write(`record mode: ${entry.config} written to specs/tla/manifest.json\n`);
+            }
+            const limits = options.modules.find((module) => module.module === moduleOf(entry.config));
+            if (limits === undefined) throw new Error(`${entry.config}: the manifest has no modules entry for ${moduleOf(entry.config)}`);
+            process.stderr.write(notProvedText(entry.config, limits));
+            expect(outcome.outcome === 'ran' ? outcome.problems : []).toEqual([]);
+          }),
         limitMs,
       );
     }

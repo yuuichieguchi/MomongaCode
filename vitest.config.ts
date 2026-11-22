@@ -1,7 +1,8 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/vitest-timeouts.ts';
 import { hostE2eFileWorkers } from './e2e/support/parallelism.ts';
-import { hostTlcRowsAtOnce } from './test/formal/tlc-rows.ts';
+import { hostPackagingFileWorkers } from './scripts/support/parallelism.ts';
+import { hostEveryRunTlcRowsAtOnce, hostTlcRowsAtOnce } from './test/formal/tlc-rows.ts';
 import { RUN_CLASS_KEY } from './scripts/support/run-class.ts';
 import { HARNESS_INPUTS, testReusePlan } from './test/support/test-reuse.ts';
 
@@ -21,7 +22,7 @@ const SETUP = {
     globalSetup: ['test/support/run-lock.ts', 'test/support/main-observation.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'test/support/lock-proof.ts'],
   },
   packaging: {
-    setupFiles: RECORDED_SETUP_FILES,
+    setupFiles: [...RECORDED_SETUP_FILES, 'e2e/support/file-programs.ts'],
     globalSetup: ['test/support/run-lock.ts', 'test/support/main-observation.ts', 'test/support/required-tools.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts', 'e2e/support/run-setup.ts', 'test/support/lock-proof.ts'],
   },
   e2e: {
@@ -56,7 +57,7 @@ export default defineConfig({
           globalSetup: SETUP.unit.globalSetup,
           include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx', 'test/**/*.test.ts'],
           exclude: [...configDefaults.exclude, CALIBRATION_TESTS, ...replayedIn('unit')],
-          maxConcurrency: hostTlcRowsAtOnce(),
+          maxConcurrency: Math.max(hostTlcRowsAtOnce(), hostEveryRunTlcRowsAtOnce()),
         },
       },
       {
@@ -80,7 +81,7 @@ export default defineConfig({
           exclude: [...configDefaults.exclude, ...replayedIn('packaging')],
           setupFiles: SETUP.packaging.setupFiles,
           globalSetup: SETUP.packaging.globalSetup,
-          fileParallelism: false,
+          maxWorkers: hostPackagingFileWorkers(),
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
           testTimeout: DEFAULT_TEST_TIMEOUT_MS,
         },

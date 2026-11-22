@@ -3,6 +3,7 @@ import config from '../vitest.config.ts';
 import { refusedSelection } from '../e2e/global-setup.ts';
 import { RUN_CLASS_KEY } from '../scripts/support/run-class.ts';
 import { hostE2eFileWorkers } from '../e2e/support/parallelism.ts';
+import { hostPackagingFileWorkers } from '../scripts/support/parallelism.ts';
 
 type Project = { test?: { name?: string; provide?: Record<string, unknown>; maxWorkers?: number; fileParallelism?: boolean; sequence?: { groupOrder?: number }; setupFiles?: string[] } };
 
@@ -29,5 +30,12 @@ describe('the vitest projects', () => {
     expect(e2e?.maxWorkers).toBe(hostE2eFileWorkers());
     expect(e2e?.sequence?.groupOrder).toBe(1);
     expect(e2e?.setupFiles).toContain('e2e/support/file-programs.ts');
+  });
+
+  it('runs the packaging files beside each other, as many as the machine carries, each with its own fake programs', () => {
+    const packaging = projectsOf().find((project) => project.test?.name === 'packaging')?.test;
+    expect(packaging?.fileParallelism).toBeUndefined();
+    expect(packaging?.maxWorkers).toBe(hostPackagingFileWorkers());
+    expect(packaging?.setupFiles).toContain('e2e/support/file-programs.ts');
   });
 });

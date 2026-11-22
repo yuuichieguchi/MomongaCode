@@ -55,6 +55,7 @@ export type TlcRunOptions = {
   readonly config: string;
   readonly args: readonly string[];
   readonly budgetCpuSeconds: number;
+  readonly workers?: number;
   readonly env?: Readonly<Record<string, string>>;
 };
 

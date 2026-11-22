@@ -128,9 +128,14 @@ fi
 java_tmp="$work/java-tmp"
 mkdir -p "$java_tmp"
 
-java -Djava.io.tmpdir="$java_tmp" -cp "$jar" tla2sany.SANY "$module_file"
+jvm_args=("-Djava.io.tmpdir=$java_tmp")
+if [ -n "${TLC_MAX_HEAP:-}" ]; then
+  jvm_args+=("-Xmx$TLC_MAX_HEAP")
+fi
 
-java -Djava.io.tmpdir="$java_tmp" -XX:+UseParallelGC -cp "$jar" tlc2.TLC \
+java "${jvm_args[@]}" -cp "$jar" tla2sany.SANY "$module_file"
+
+java "${jvm_args[@]}" -XX:+UseParallelGC -cp "$jar" tlc2.TLC \
   -metadir "$work" \
   -config "$spec_dir/$config.cfg" \
   "$@" \

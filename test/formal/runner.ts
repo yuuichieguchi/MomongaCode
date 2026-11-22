@@ -47,9 +47,10 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
   const metadir = createTempDir();
   const untrackDirectory = trackDirectory(metadir);
   try {
+    const workers = options.workers ?? TLC_WORKERS;
     const { child, end } = startWithinBudget({
       command: options.script,
-      args: [options.config, ...options.args, '-workers', String(TLC_WORKERS)],
+      args: [options.config, ...options.args, '-workers', String(workers)],
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, ...options.env, TLC_METADIR: metadir },
       budgetCpuSeconds: options.budgetCpuSeconds,
