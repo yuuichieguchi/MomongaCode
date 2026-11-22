@@ -223,8 +223,7 @@ export const selectKey = (spec: SelectSpec, state: SelectState, event: KeyEvent,
 export const selectClick = (spec: SelectSpec, state: SelectState, index: number): SelectStep => {
   const row = spec.rows[index];
   if (row === undefined || row.separator === true) return { state };
-  if (spec.decideOn === 'immediate') return chosen(spec, state, index, Number.POSITIVE_INFINITY);
-  return { state: { ...state, index, confirming: undefined } };
+  return chosen(spec, state, index, Number.POSITIVE_INFINITY);
 };
 
 export const selectHover = (spec: SelectSpec, state: SelectState, index: number): SelectState => (stopsOf(spec, state.filter).includes(index) ? { ...state, index, confirming: undefined } : state);

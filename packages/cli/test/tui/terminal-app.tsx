@@ -22,7 +22,7 @@ export type TerminalApp = {
   close(): void;
 };
 
-export const startOnTerminal = async (size: { columns: number; rows: number }, options: FakeBackendOptions, ports?: { shell?: ShellPort; tuiSettings?: TuiSettingsPort }): Promise<TerminalApp> => {
+export const startOnTerminal = async (size: { columns: number; rows: number }, options: FakeBackendOptions, ports?: { shell?: ShellPort; tuiSettings?: TuiSettingsPort; ready?: string }): Promise<TerminalApp> => {
   const shown = createTerminalScreen(size);
   let pending: Promise<void> = Promise.resolve();
   const stdout = Object.assign(new EventEmitter(), {
@@ -47,7 +47,7 @@ export const startOnTerminal = async (size: { columns: number; rows: number }, o
     }, { description, boundMs: SHOWN_BOUND_MS });
     return screen();
   };
-  await until((lines) => lines.some((line) => line.includes('mode: manual')), 'the app is ready');
+  await until((lines) => lines.some((line) => line.includes(ports?.ready ?? 'mode: manual')), 'the app is ready');
   return {
     screen,
     inverseAt: (row, column) => shown.inverseAt(row, column),

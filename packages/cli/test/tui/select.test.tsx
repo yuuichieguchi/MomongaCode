@@ -125,12 +125,16 @@ describe('the keys of the one selection component', () => {
     expect(shown.toLowerCase()).not.toContain('provider');
   });
 
-  it('a press on a row moves to it when only enter decides and decides it when the prompt decides at once', () => {
+  it('a press on a row decides it whether the keyboard mode is enter or immediate, and honours confirm', () => {
     const entered = spec({ decideOn: 'enter' });
-    expect(selectClick(entered, selectStart(entered), 2)).toMatchObject({ state: { index: 2 } });
-    expect(selectClick(entered, selectStart(entered), 2).outcome).toBeUndefined();
+    expect(selectClick(entered, selectStart(entered), 2).outcome).toEqual({ kind: 'decide', index: 2 });
     const immediate = spec({ decideOn: 'immediate' });
     expect(selectClick(immediate, selectStart(immediate), 2).outcome).toEqual({ kind: 'decide', index: 2 });
+    const confirmed = spec({ decideOn: 'enter', confirm: (row) => `press enter again for ${row.label}` });
+    const first = selectClick(confirmed, selectStart(confirmed), 2);
+    expect(first.state).toMatchObject({ index: 2, confirming: 2 });
+    expect(first.outcome).toBeUndefined();
+    expect(selectClick(confirmed, first.state, 2).outcome).toEqual({ kind: 'decide', index: 2 });
   });
 
   it('a disabled row and a separator are never decided, and a separator is never highlighted', () => {

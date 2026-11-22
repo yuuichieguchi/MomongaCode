@@ -72,6 +72,30 @@ describe('the row under the mouse pointer', () => {
     app.close();
   });
 
+  it('decides the hovered row on a left click in the folder trust prompt and in /config', async () => {
+    const place = freshPlace();
+    const trusted = await startOnTerminal(
+      SIZE,
+      { settingsPlace: { home: place.home, projectDir: place.project }, trust: { path: '/work/project', decision: null } },
+      { ready: 'Do you trust the files in /work/project?' },
+    );
+    const trustLines = trusted.screen();
+    const noRow = rowOf(trustLines, '2. No, continue without its project settings');
+    await trusted.type(hover(10, noRow + 1), (lines) => (lines[noRow] ?? '').includes('› '), 'hover moves to No');
+    await trusted.type(click(10, noRow + 1), (lines) => lines.some((line) => line.includes('mode: manual')), 'left click decides the trust row');
+    expect(trusted.backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
+    trusted.close();
+
+    const app = await startOnTerminal(SIZE, { settingsPlace: { home: place.home, projectDir: place.project } });
+    await app.type('/config', (lines) => lines.some((line) => line.includes('/config')), 'the command is typed');
+    await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes(SETTINGS_TITLE)), 'the settings list is shown');
+    const filtered = await app.type('Automatic', (lines) => lines.some((line) => line.includes('Automatic updates')) && lines.some((line) => line.includes('› ') && line.includes('Automatic compaction')), 'the list is filtered');
+    const second = rowOf(filtered, 'Automatic updates');
+    await app.type(hover(10, second + 1), (lines) => (lines[second] ?? '').includes('› '), 'hover moves to Automatic updates');
+    await app.type(click(10, second + 1), (lines) => lines.some((line) => line.includes('Automatic updates  off  user')), 'left click decides the hovered settings row');
+    app.close();
+  });
+
 });
 
 describe('the chosen row of the slash menu when it opens again', () => {

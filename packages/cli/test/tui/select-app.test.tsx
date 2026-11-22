@@ -72,13 +72,11 @@ describe('the folder trust prompt is the selection component and only enter deci
     app.unmount();
   });
 
-  it('a press on a row only moves the highlight', async () => {
+  it('a press on a row decides it', async () => {
     const { app, backend, terminal } = await trusting();
     expect(terminal.emit(press(screenRowOf(app, `2. ${NO_TRUST}`)))).toBe(true);
-    await untilFrame(app, `› 2. ${NO_TRUST}`);
-    expect(backend.calls).toEqual(['boot']);
-    app.stdin.write(KEYS.enter);
-    await backend.called('trust:untrusted');
+    await untilFrame(app, 'mode: manual');
+    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
     app.unmount();
   });
 });
