@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pinnedFloorFor, toolsDroppedMessage } from '@momonga/context';
-import type { Capabilities } from '@momonga/protocol';
+import type { Capabilities, Ratio } from '@momonga/protocol';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, protectionRungsOf } from '../packages/context/src/levels.ts';
 import type { HistoryShape } from '../packages/context/src/levels.ts';
 import {
@@ -16,6 +16,7 @@ import {
   ofType,
   planScript,
   seenOutputTokens,
+  sizingFor,
   summaryRoute,
   summaryTextOf,
   upstreamRepliesOf,
@@ -27,7 +28,7 @@ import type { E2eCaseId } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createGatewayCountClient } from './support/gateway-count.ts';
 import type { GatewayCountClient } from './support/gateway-count.ts';
-import { readBackOutputOf, writeHaystack, HAYSTACK_READ_BACK_LINE } from './support/haystack.ts';
+import { readBackOutputOf, writeFiller, writeHaystack, HAYSTACK_READ_BACK_LINE } from './support/haystack.ts';
 import type { Haystack } from './support/haystack.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
@@ -48,6 +49,11 @@ const FULL_LINE_CHARS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130,
 const LEAN_LINE_CHARS = [90, 80, 70, 60, 50, 40, 30, 20, 10] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const AFTER_COMPACTION = 'after compaction';
+const LOW_COMPACT_AT_PERCENT = 30;
+const LOW_COMPACT_AT: Ratio = { num: LOW_COMPACT_AT_PERCENT, den: 100 };
+const COMPACT_AT_FILLERS = 16;
+const COMPACT_AT_LINE_CHARS = 10;
+const COMPACT_AT_WINDOW = 10_240;
 
 type PlannedCase = { readonly id: E2eCaseId; readonly title: string; readonly spec: PlanCaseSpec };
 
@@ -305,5 +311,54 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const posts = chatCompletions(stack.fake);
     expect(posts).toHaveLength(1);
     expect(wireTokensOfBody(posts[0]?.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0, 0).R);
+  });
+
+  it(titleOf('a-compact-at'), { timeout: PLANNED_CASE_TIMEOUT_MS }, async () => {
+    const fillerReplies = (project: string) =>
+      upstreamRepliesOf(
+        [
+          ...Array.from({ length: COMPACT_AT_FILLERS }, (_, index) => ({ kind: 'call' as const, call: { name: 'Read', arguments: { file_path: writeFiller(project, index + 1, COMPACT_AT_LINE_CHARS) } } })),
+          { kind: 'final' as const, text: 'Done.' },
+        ],
+        'native',
+      );
+    const target = { ...acceptanceTarget('native'), capabilities: { contextWindow: COMPACT_AT_WINDOW, maxOutputTokens: ACCEPTANCE_MAX_OUTPUT } };
+    const summary = 'The user asked to read the filler files; every one was read. Next step: report the result.';
+
+    const defaultHome = await createE2eHome();
+    const defaultStack = await startStack({ home: defaultHome, model: target, script: fillerReplies(defaultHome.project), routes: [summaryRoute(summary)] });
+    const capabilities = await createGatewayCountClient(firstGeneration(defaultHome.paths).sockets.gateway).capabilities();
+    const atDefault = observe(defaultStack, await runToEnd(defaultHome));
+    expect({ status: atDefault.row.status, stopReason: atDefault.row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });
+    expect(atDefault.compacted).toEqual([]);
+    expect(ofType(atDefault.journal, 'context.truncated')).toEqual([]);
+    expect(defaultStack.routeHits).toEqual([0]);
+    const pinned = wireTokensOfBody(atDefault.modelPosts[0]?.body);
+    const peak = Math.max(...atDefault.modelPosts.map((post) => wireTokensOfBody(post.body)));
+    const defaultMark = sizingFor(capabilities, pinned).highMark;
+    const lowMark = sizingFor(capabilities, pinned, LOW_COMPACT_AT).highMark;
+    expect(peak, `the turn peaks at ${peak} tokens: above the high mark ${lowMark} at ${LOW_COMPACT_AT_PERCENT}% and at most the high mark ${defaultMark} at the default`).toBeLessThanOrEqual(defaultMark);
+    expect(peak).toBeGreaterThan(lowMark);
+
+    const home = await createE2eHome();
+    const stack = await startStack({ home, model: target, settings: { context: { compactAt: LOW_COMPACT_AT_PERCENT } }, script: fillerReplies(home.project), routes: [summaryRoute(summary)] });
+    const atLow = observe(stack, await runToEnd(home));
+    expect({ status: atLow.row.status, stopReason: atLow.row.stop_reason }, `the run ended with the error ${atLow.row.error_json}`).toEqual({ status: 'COMPLETED', stopReason: null });
+    expect(atLow.compacted).toEqual([]);
+    expect(stack.routeHits).toEqual([0]);
+    const evictions = ofType(atLow.journal, 'context.truncated');
+    expect(evictions.length).toBeGreaterThanOrEqual(1);
+    expect(atLow.modelPosts).toHaveLength(atLow.requested.length);
+    const atDefaultTokens = atDefault.modelPosts.map((post) => wireTokensOfBody(post.body));
+    const atLowTokens = atLow.modelPosts.map((post) => wireTokensOfBody(post.body));
+    expect(atLowTokens.length, 'both runs send the same number of model requests').toBe(atDefaultTokens.length);
+    const first = atLow.requested.filter((event) => event.seq < (evictions[0] as JournalEvent).seq).length;
+    expect(first, 'at least one model request is sent before the first eviction').toBeGreaterThanOrEqual(1);
+    expect(first, 'the first eviction comes before the last model request').toBeLessThan(atLowTokens.length);
+    expect(atLowTokens.slice(0, first), `the ${first} requests before the first eviction have the same size at ${LOW_COMPACT_AT_PERCENT}% as at the default`).toEqual(atDefaultTokens.slice(0, first));
+    for (const [index, count] of atLowTokens.entries()) {
+      if (index < first) continue;
+      expect(count, `request ${index + 1} at ${LOW_COMPACT_AT_PERCENT}% is smaller than the same request at the default, ${atDefaultTokens[index]} tokens`).toBeLessThan(atDefaultTokens[index] as number);
+    }
   });
 });

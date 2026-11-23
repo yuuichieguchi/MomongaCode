@@ -1833,6 +1833,21 @@
       ]
     },
     {
+      "module": "CompactAt",
+      "abstractions": [
+        "token sizes are three regions of one build: at or below the mark, above the mark but fitting, not fitting; the arithmetic of the marks is proved with Z3, not here",
+        "the mark of a claim is one of two values: strictly below the ceiling (p 1..99, a region above the mark exists) or at the ceiling (p = 100, no such region); it and autoCompact are chosen again at every claim",
+        "whether a plan exists and whether a compaction succeeds, is rejected (retry) or ends the run are nondeterministic outcomes",
+        "the state space is bounded by the constants of its configurations; the base row CompactAt sets MaxLevel = 1, MaxSteps = 2, MaxClaims = 2 and every fault flag FALSE"
+      ],
+      "notProved": [
+        "token arithmetic of the marks (Z3 proofs)",
+        "termination across an unbounded number of crashes and re-claims",
+        "behaviour beyond the constants of its configurations",
+        "that the code follows the model beyond what its tie tests check: test/compact-at-drift (test files)"
+      ]
+    },
+    {
       "module": "RequestPrefix",
       "abstractions": [
         "the history and the request are sequences of abstract items: their text, tokens and the cache of the provider are not modelled",
@@ -2636,6 +2651,122 @@
       "budgetCpuSeconds": 20,
       "note": "measured cold by formal-models-W14 (reuse off, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 5.16 at start)",
       "identity": "01ab73fe1ab30e25e128fd0de4d13164906c6b14e88546d9be4d87ff307f65b0"
+    },
+    {
+      "config": "CompactAt",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2666,
+      "measuredSeconds": 2.17,
+      "measuredCpuSeconds": 3.66,
+      "budgetCpuSeconds": 11,
+      "identity": "9f1eb741854f3c12d04e28346339734d334239517e03d97948ff4189ee66fc23",
+      "measuredReuse": "off",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 12.08 at start)"
+    },
+    {
+      "config": "CompactAt.compactWithoutAuto",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoCompactionWithoutAuto",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 57,
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.96,
+      "budgetCpuSeconds": 7,
+      "identity": "2a75c601e89868b1e40b4a6619c656b714e9d2bff7df9325209da25b9cfa2ec1",
+      "measuredReuse": "off",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.30 at start)"
+    },
+    {
+      "config": "CompactAt.sendOver",
+      "role": "evidence",
+      "expect": {
+        "violates": "SentFits",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 111,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.89,
+      "budgetCpuSeconds": 7,
+      "identity": "79e9f879c20f77c764218fdab06bfd2f3f4339e582ade496f6bef7d27b901181",
+      "measuredReuse": "off",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.30 at start)"
+    },
+    {
+      "config": "CompactAt.hintAnySize",
+      "role": "evidence",
+      "expect": {
+        "violates": "ProactiveOnlyAboveMark",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 126,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.98,
+      "budgetCpuSeconds": 7,
+      "identity": "b901d5adf77c73c3ddd18ec2c1427cc89e6f4080aa0fdeeb2a34b99fd38519ab",
+      "measuredReuse": "off",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.30 at start)"
+    },
+    {
+      "config": "CompactAt.proactiveRepeat",
+      "role": "evidence",
+      "expect": {
+        "violates": "ProactiveOncePerStep",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 367,
+      "measuredSeconds": 1.23,
+      "measuredCpuSeconds": 2.08,
+      "budgetCpuSeconds": 8,
+      "identity": "aaac2e1869cdea47bd86bb489ec6418564f9205df7659d28ec20d3e148c4af6f",
+      "measuredReuse": "off",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.79 at start)"
+    },
+    {
+      "config": "CompactAt.forgetLevel",
+      "role": "evidence",
+      "expect": {
+        "violates": "ForcedOncePerLevel",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 135,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 2,
+      "budgetCpuSeconds": 7,
+      "identity": "546cff863a5235bf8e1d88d66fb2c694404df6365d6b224dc8d0f5765a599f75",
+      "measuredReuse": "off",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.79 at start)"
+    },
+    {
+      "config": "CompactAt.forgetLevelLive",
+      "role": "evidence",
+      "expect": {
+        "violates": "LoopEnds",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 4280,
+      "measuredSeconds": 1.47,
+      "measuredCpuSeconds": 3.49,
+      "budgetCpuSeconds": 10,
+      "identity": "12059ac79d746bbe6ff8f8831f8c88e74b350168c8fd51abe55e04991992fcea",
+      "measuredReuse": "off",
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.79 at start)"
     },
     {
       "config": "RequestPrefix",

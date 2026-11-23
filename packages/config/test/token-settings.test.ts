@@ -15,7 +15,7 @@ const rejectedWith = async (settings: Record<string, unknown>, fragment: string 
   await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(fragment);
 };
 
-const DEFAULT_CONTEXT = { adaptiveBudget: true, autoCompact: true, cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
+const DEFAULT_CONTEXT = { adaptiveBudget: true, autoCompact: true, compactAt: 70, cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
 
 const ON_TOOLS = { deferral: true, conciseDescriptions: true, ripgrep: 'bundled', bash: { defaultTimeoutMs: 120_000, maxTimeoutMs: 600_000, onTimeout: 'background', backgroundTimeoutMs: 1_800_000, maxBackgroundTimeoutMs: 7_200_000, drainIdleMs: DEFAULT_BASH_DRAIN_IDLE_MS }, search: { timeoutMs: 60_000 }, operations: { timeoutMs: 120_000 } };
 
@@ -43,6 +43,7 @@ describe('token settings values', () => {
     expect(settings.context).toEqual({
       adaptiveBudget: true,
       autoCompact: true,
+      compactAt: 70,
       cachePrefix: true,
       outputFormatters: ['log', 'json', 'grep', 'identicalOutput'],
       loopGuidance: true,

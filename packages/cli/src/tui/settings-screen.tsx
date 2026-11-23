@@ -101,6 +101,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'tui.attachFileMentions': { label: 'Attach @files when sending', section: 'Display' },
   'context.adaptiveBudget': { label: 'Adaptive budget', section: 'Context' },
   'context.autoCompact': { label: 'Automatic compaction', section: 'Context' },
+  'context.compactAt': { label: 'Start compaction at (% of the room above the fixed prefix)', section: 'Context' },
   'context.cachePrefix': { label: 'Cache prefix', section: 'Context' },
   'context.outputFormatters': { label: 'Output formatters', section: 'Context' },
   'context.loopGuidance': { label: 'Loop guidance', section: 'Context' },

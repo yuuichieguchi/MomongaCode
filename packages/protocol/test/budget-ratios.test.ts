@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COMPACTION_MIN_GAIN,
   COMPACT_AT,
+  COMPACT_AT_PERCENT,
   ESTIMATED_ERROR,
   EVICT_LOW_WATER,
   ITEM_CAP,
@@ -17,6 +18,7 @@ import {
   SUMMARY_ROOM,
   SUMMARY_WINDOW,
   ceilRatio,
+  compactAtRatioOf,
   floorRatio,
   marginFloorFor,
   outputReserveFor,
@@ -85,6 +87,26 @@ const marginOf = (W: bigint): bigint => maxBig(ceilBig(MARGIN, W), big(MIN_MARGI
 const reserveOf = (W: bigint, maxOutput: bigint): bigint =>
   minBig(maxOutput, maxBig(MIN_OUTPUT_RESERVE, ceilBig(OUTPUT_RESERVE, W)), floorBig(MAX_OUTPUT_WINDOW, W));
 
+describe('the compaction mark is a whole percent', () => {
+  it('bounds the percent to 1..100 with the default 70', () => {
+    expect(COMPACT_AT_PERCENT).toEqual({ min: 1, max: 100, default: 70 });
+  });
+
+  it('turns a percent into the ratio percent over 100', () => {
+    expect(compactAtRatioOf(1)).toEqual({ num: 1, den: 100 });
+    expect(compactAtRatioOf(55)).toEqual({ num: 55, den: 100 });
+    expect(compactAtRatioOf(100)).toEqual({ num: 100, den: 100 });
+  });
+
+  it('derives COMPACT_AT from the default percent', () => {
+    expect(COMPACT_AT).toEqual(compactAtRatioOf(COMPACT_AT_PERCENT.default));
+  });
+
+  it.each([0, 1, 9, 10, 90, 91, 2487, 2 ** 33])('floors 70 percent of %i exactly as 7/10 did', (x) => {
+    expect(floorRatio(compactAtRatioOf(70), x)).toBe(floorRatio({ num: 7, den: 10 }, x));
+  });
+});
+
 describe('budget ratios are exact fractions', () => {
   it('declares every ratio of the budget as num over den', () => {
     expect(MARGIN).toEqual({ num: 1, den: 50 });
@@ -96,7 +118,7 @@ describe('budget ratios are exact fractions', () => {
     expect(SUMMARY_ACCEPT).toEqual({ num: 13, den: 10 });
     expect(ITEM_CAP).toEqual({ num: 1, den: 4 });
     expect(ITEM_ROOM).toEqual({ num: 1, den: 2 });
-    expect(COMPACT_AT).toEqual({ num: 7, den: 10 });
+    expect(COMPACT_AT).toEqual({ num: 70, den: 100 });
     expect(EVICT_LOW_WATER).toEqual({ num: 1, den: 2 });
     expect(COMPACTION_MIN_GAIN).toEqual({ num: 2, den: 1 });
   });

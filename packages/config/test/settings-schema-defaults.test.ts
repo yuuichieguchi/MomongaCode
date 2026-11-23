@@ -83,6 +83,7 @@ const DEFAULTS: readonly [string, unknown][] = [
 
 const UNITS: readonly [string, string][] = [
   ['memory.forgetAfterDays', 'days'],
+  ['context.compactAt', 'percent'],
   ['retention.days', 'days'],
   ['tools.bash.defaultTimeoutMs', 'milliseconds'],
   ['tools.bash.maxTimeoutMs', 'milliseconds'],
