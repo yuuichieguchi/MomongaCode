@@ -240,6 +240,8 @@ export const E2E_CASES = [
   { id: 'notify-pty-approval', file: 'notify-pty.test.ts', title: 'notify pty: an approval that appears while the window is unfocused writes one desktop notification with the waiting title, and the run that ends after focus came back writes none', needsBash: false },
   { id: 'notify-pty-tmux', file: 'notify-pty.test.ts', title: 'notify pty: inside tmux the desktop notification of a run that ends while the window is unfocused is wrapped in the tmux passthrough', needsBash: false },
   { id: 'notify-pty-late-focus', file: 'notify-pty.test.ts', title: 'notify pty: a focus-out that arrives after the run ended writes nothing, and the next run that ends while unfocused writes exactly one notification', needsBash: false },
+  { id: 'notify-pty-exit-idle-title', file: 'notify-pty.test.ts', title: 'notify pty: after an exit at idle the output ends with the title stack popped, with no title and no push after the last pop', needsBash: false },
+  { id: 'notify-pty-exit-working-title', file: 'notify-pty.test.ts', title: 'notify pty: after an exit while a run is working the output has no title and no push after the last pop, and as many pops as pushes', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

@@ -446,6 +446,17 @@ describe('the signal 100 ms after the title', () => {
     expect(signalsOf(started.terminal.written)).toEqual([]);
   });
 
+  it('writes no title after the screen ends while a run is working', async () => {
+    const started = await mount();
+    await started.set({ working: true });
+    await started.advance(100);
+    const before = [...started.terminal.titles];
+    started.app.unmount();
+    expect(started.clock.pending()).toBe(0);
+    started.clock.advance(1000);
+    expect(started.terminal.titles).toEqual(before);
+  });
+
   it('drops the signal of a failure when the key that clears it comes within 100 ms', async () => {
     const started = await mount();
     started.terminal.emit(focus('out'));

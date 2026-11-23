@@ -178,6 +178,8 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     for (const name of present) enabled.delete(name);
   };
 
+  const holdsTerminal = (): boolean => hooked && raw;
+
   const restore = (): void => {
     leave(inTableOrder(enabled));
     setRaw(false);
@@ -202,10 +204,14 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     },
   }));
 
+  const rewriteTitle = (): void => {
+    if (title !== undefined && enabled.has('title')) output.writeSync(titleSequence(title));
+  };
+
   const reenter = (saved: readonly TerminalModeName[]): void => {
     setRaw(true);
     enter(saved);
-    if (title !== undefined && enabled.has('title')) output.writeSync(titleSequence(title));
+    rewriteTitle();
     publish();
     request({ type: 'redraw' });
   };
@@ -406,6 +412,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     for (const name of terminal.modes) enabled.add(name);
     mouseAnswered = enabled.has('mouse');
     negotiation = negotiationFrom(state);
+    rewriteTitle();
     publish();
     releaseInk(held).catch(options.onFailure);
   };
@@ -435,8 +442,9 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     },
     setScreen,
     setTitle: (next) => {
-      const saving = !enabled.has('title');
       title = next;
+      if (!holdsTerminal()) return;
+      const saving = !enabled.has('title');
       enter(['title']);
       output.writeSync(titleSequence(next));
       if (saving) publish();

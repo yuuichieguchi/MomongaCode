@@ -17,6 +17,8 @@ const BEL = '\u0007';
 const OSC9 = `${ESC}]9;`;
 const FOCUS_REPORTING_ON = `${ESC}[?1004h`;
 const FOCUS_REPORTING_OFF = `${ESC}[?1004l`;
+const TITLE_PUSH = `${ESC}[22;2t`;
+const TITLE_POP = `${ESC}[23;2t`;
 const GHOSTTY = { TERM_PROGRAM: 'ghostty' } as const;
 
 type Split = { readonly oscs: readonly string[]; readonly plain: string };
@@ -137,6 +139,15 @@ const leave = async (pty: PtySession): Promise<string> => {
   await pty.key('ctrlD', { until: 'Press ctrl+d again to exit' });
   expect((await pty.key('ctrlD', { until: 'exit' })).status).toEqual({ code: 0, signal: null });
   return pty.written();
+};
+
+const expectNoTitleAfterLastPop = (raw: string): void => {
+  const lastPop = raw.lastIndexOf(TITLE_POP);
+  expect(lastPop, escaped(raw)).toBeGreaterThan(-1);
+  const after = raw.slice(lastPop + TITLE_POP.length);
+  expect(after.includes(TITLE_START), escaped(after)).toBe(false);
+  expect(after.includes(TITLE_PUSH), escaped(after)).toBe(false);
+  expect(countOf(raw, TITLE_POP), escaped(raw)).toBe(countOf(raw, TITLE_PUSH));
 };
 
 const expectNoSignal = (raw: string): void => {
@@ -272,5 +283,29 @@ describe('notify: attention signals through a pty', () => {
     expect(doneNotificationsIn(all, home), escaped(all)).toHaveLength(1);
     expect(countOf(all, OSC9), escaped(all)).toBe(1);
     expect(bellSignalsIn(all), escaped(all)).toBe(0);
+  });
+
+  it(titleOf('notify-pty-exit-idle-title'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home } = await prepareProduct({ script: [textReply('All finished.')] });
+    const pty = await startSession(home, GHOSTTY);
+    await submit(pty, 'finish the work');
+    await awaitRunEnd(pty, 'All finished.', home);
+    const all = await leave(pty);
+    expectNoTitleAfterLastPop(all);
+  });
+
+  it(titleOf('notify-pty-exit-working-title'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, fake } = await prepareProduct({ script: [textReply('All finished.')] });
+    const pty = await startSession(home, GHOSTTY);
+    const hold = fake.hold();
+    await submit(pty, 'finish the work');
+    await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the model request of the held run' });
+    await untilSpinnerTitle(pty, home);
+    try {
+      const all = await leave(pty);
+      expectNoTitleAfterLastPop(all);
+    } finally {
+      hold.release();
+    }
   });
 });
