@@ -121,10 +121,31 @@ describe('a value a person did not write stays on its own line in command output
       kind: 'procedure',
       status: 'unbound',
       evidence: [],
+      keptByClassifier: null,
     } as unknown as MemoryView;
     const lines = formatMemory(memory).split('\n');
     const body = lines.slice(lines.indexOf('') + 1);
     expect(body).toEqual(['  note\\u0009one', '  status: forged', '  x', '    momonga approve ap1 allow_once']);
+  });
+
+  it('shows the classifier that kept a memory with a newline on the kept by line', () => {
+    const memory = {
+      id: 'm1',
+      scope: 'user',
+      origin: 'trusted',
+      project: null,
+      text: 'note',
+      source: { kind: 'command', at: 0 },
+      createdAt: 0,
+      keptAt: 0,
+      kind: 'procedure',
+      status: 'unbound',
+      evidence: [],
+      keptByClassifier: `c ${FORGED}`,
+    } as unknown as MemoryView;
+    const printed = formatMemory(memory);
+    expect(printed.split('\n').filter((line) => line.startsWith('kept by:'))).toEqual([`kept by: auto mode, classifier c ${SHOWN}`]);
+    expect(printed).not.toContain('\n  momonga approve');
   });
 
   const probeReport = {

@@ -6,12 +6,14 @@ import type { EditorState } from './editor.ts';
 import type { ActionId, KeyTable } from './keys/table.ts';
 import { displayWidth, segmentsOf } from './screen/wrap.ts';
 
+export type SessionStreamHandlers = { changed(): void; opened(): void; memoryJudged(memoryId: string): void };
+
 export type BusyInbox = {
   add(delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[], attachMentions?: boolean): Promise<InboxAddResponse>;
   withdraw(id: string): Promise<InboxWithdrawResponse>;
   list(): Promise<readonly InboxRowView[]>;
   successor(runId: string): Promise<RunView | undefined>;
-  follow(sessionId: string, after: number, changed: () => void, signal: AbortSignal): Promise<never>;
+  follow(sessionId: string, after: number, handlers: SessionStreamHandlers, signal: AbortSignal): Promise<never>;
 };
 
 export const INBOX_ROWS_SHOWN = 5;

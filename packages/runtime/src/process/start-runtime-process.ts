@@ -68,6 +68,7 @@ import { recomputeFactsOf, startFactsSweeper } from '../service/facts-sweeper.ts
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
 import { createRunService } from '../service/service.ts';
 import { createReflector } from '../memory/reflection.ts';
+import { createMemoryJudge } from '../memory/judge.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
@@ -915,19 +916,32 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     await step('timers', async () => {
       const memoryViews = createRecordViews({ store, evidenceRun: evidenceRunFor });
+      const isIdle = (): boolean => phase === 'running' && rolePort.current() === 'serving' && !store.hasActiveRun();
       const reflector = createReflector({
         store,
         gateway: gatewayClient,
         settings: settingsComposition.settings,
         clock,
         role: rolePort,
-        isIdle: () => phase === 'running' && rolePort.current() === 'serving' && !store.hasActiveRun(),
+        isIdle,
         evidenceRun: evidenceRunFor,
         platform,
         maxAttempts: STORE_MAX_ATTEMPTS,
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         timers,
         random: Math.random,
+        defaults: RUNTIME_DEFAULTS.limits,
+      });
+      const memoryJudge = createMemoryJudge({
+        store,
+        gateway: gatewayClient,
+        settings: settingsComposition.settings,
+        clock,
+        role: rolePort,
+        isIdle,
+        openSessionIds: () => notifier.watchedSessionIds(),
+        timers,
+        attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         defaults: RUNTIME_DEFAULTS.limits,
       });
       const upkeepSchedule = createMemoryUpkeepSchedule({
@@ -968,6 +982,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                 intervalMs: SWEEP_INTERVAL_MS,
                 upkeep: (sweepSignal) => upkeepSchedule.tick(sweepSignal),
                 reflect: (sweepSignal) => reflector.runOne(sweepSignal),
+                judge: (sweepSignal) => memoryJudge.runOne(sweepSignal),
                 onError: report,
               });
               return { stop: () => sweeper.close() };

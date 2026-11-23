@@ -271,6 +271,26 @@ describe('followSession', () => {
     await expect(followSession(sessionOptions(client, seen, { signal: controller.signal, onEvent: () => controller.abort() }))).rejects.toThrow('ECONNRESET');
   });
 
+  it('tells the caller each time the session stream is connected: at the start and at every reconnect, before the events of that connection', async () => {
+    const order: string[] = [];
+    const { client } = sessionClientOf([{ frames: [8], thenThrow: errno('ECONNRESET') }, { frames: [9] }, { frames: [10], thenThrow: new Error('stop here') }]);
+
+    await expect(
+      followSession(sessionOptions(client, [], { onOpen: () => order.push('open'), onEvent: (received) => order.push(`event ${received.id}`) } as Partial<Parameters<typeof followSession>[0]>)),
+    ).rejects.toThrow('stop here');
+
+    expect(order).toEqual(['open', 'event 8', 'open', 'event 9', 'open', 'event 10']);
+  });
+
+  it('does not tell the caller of a connection that never opened', async () => {
+    const opens: number[] = [];
+    const { client } = sessionClientOf([{ frames: [], thenThrow: errno('ECONNREFUSED'), neverOpens: true }, { frames: [8], thenThrow: new Error('stop here') }]);
+
+    await expect(followSession(sessionOptions(client, [], { onOpen: () => opens.push(opens.length) } as Partial<Parameters<typeof followSession>[0]>))).rejects.toThrow('stop here');
+
+    expect(opens).toEqual([0]);
+  });
+
   it('gives up when the stream cannot be restored within the bound', async () => {
     const { client } = sessionClientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('ECONNREFUSED'), neverOpens: true as const })));
 

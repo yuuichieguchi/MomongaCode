@@ -4,6 +4,7 @@ import type { Clock, FileSystem, FileSystemSync, Random, Redactor, KernelLockMec
 import type { RetentionStore } from './retention.ts';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
+import type { MemoryJudgementsStore } from './memory-judgements.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type { UnaskedCommands } from './inherit.ts';
 import type { OutputStyle, ReasoningEffort } from '@momonga/protocol';
@@ -752,6 +753,7 @@ export type RuntimeStore = {
   memories: RuntimeMemoryStore;
   sessionTouched: SessionTouchedStore;
   reflection: ReflectionStore;
+  memoryJudgements: MemoryJudgementsStore;
   contextCharges: ContextChargeStore;
   guidelines: GuidelineStore;
   governing: GoverningFactStore;

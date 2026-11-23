@@ -30,6 +30,7 @@ const EXPECTED_TABLES = [
   'memories_index_docsize',
   'memories_index_idx',
   'memory_evidence',
+  'memory_judgements',
   'memory_observations',
   'memory_replacements',
   'meter_records',

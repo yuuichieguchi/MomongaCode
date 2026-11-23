@@ -3,7 +3,7 @@ import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { REPORT_SCHEMAS, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ReportCostPage, ReviewPage, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PolicyVerifyResponse, PromoteMemoryResponse, PublicRunEvent, PublicStreamEvent, ReflectionResponse, ReportPage, ReportRecomputePage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, ToolResultPage, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryJudgementResponse, MemoryJudgementsResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PolicyVerifyResponse, PromoteMemoryResponse, PublicRunEvent, PublicStreamEvent, ReflectionResponse, ReportPage, ReportRecomputePage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, ToolResultPage, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -41,6 +41,8 @@ export const checkMcpWarnings = guard<{ warnings: string[] }>(RUN_API_SCHEMAS.Mc
 export const checkMcpAuthorization = guard<McpAuthorizationView>(RUN_API_SCHEMAS.McpAuthorizationView);
 export const checkMemories = guard<MemoriesResponse>(RUN_API_SCHEMAS.MemoriesResponse);
 export const checkMemory = guard<MemoryResponse>(RUN_API_SCHEMAS.MemoryResponse);
+export const checkMemoryJudgements = guard<MemoryJudgementsResponse>(RUN_API_SCHEMAS.MemoryJudgementsResponse);
+export const checkMemoryJudgement = guard<MemoryJudgementResponse>(RUN_API_SCHEMAS.MemoryJudgementResponse);
 export const checkReflection = guard<ReflectionResponse>(RUN_API_SCHEMAS.ReflectionResponse);
 export const checkPromoted = guard<PromoteMemoryResponse>(RUN_API_SCHEMAS.PromoteMemoryResponse);
 export const checkRuleAdd = guard<RuleAddResponse>(RUN_API_SCHEMAS.RuleAddResponse);

@@ -1270,6 +1270,21 @@ const SESSION_REASONING_EFFORT = `
 ALTER TABLE sessions ADD COLUMN reasoning_effort TEXT;
 `;
 
+const MEMORY_JUDGEMENTS = `
+CREATE TABLE memory_judgements (
+  memory_id TEXT PRIMARY KEY REFERENCES memories (id),
+  outcome TEXT NOT NULL CHECK (outcome IN ('kept', 'left')),
+  classifier TEXT,
+  verdict TEXT CHECK (verdict IS NULL OR verdict IN ('safe', 'unsafe')),
+  confidence TEXT CHECK (confidence IS NULL OR confidence IN ('high', 'medium', 'low')),
+  failure TEXT,
+  judged_at INTEGER NOT NULL,
+  shown_at INTEGER,
+  closed_at INTEGER
+) WITHOUT ROWID;
+ALTER TABLE memories ADD COLUMN kept_by_classifier TEXT;
+`;
+
 const SESSION_OUTPUT_STYLE = `
 ALTER TABLE sessions ADD COLUMN output_style TEXT;
 `;
@@ -1608,5 +1623,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 57,
     name: 'keep on a session the output style chosen for it, which its runs apply to the system prompt Edit Policy; a session made before keeps NULL, read as no session override',
     sql: SESSION_OUTPUT_STYLE,
+  },
+  {
+    version: 58,
+    name: 'record what auto mode judged of a memory candidate in memory_judgements, one row per memory with the time a terminal showed it and the time a person closed it, and keep on a memory the classifier that kept it; and record that this build writes the session event type memory.judged and the charge purpose memory_classifier, so that a build without this migration reads them with tolerance',
+    sql: MEMORY_JUDGEMENTS,
   },
 ];

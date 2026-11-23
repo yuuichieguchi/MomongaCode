@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { INBOX_FULL_CODE, INBOX_MAX_PENDING, inboxFullMessage, parseCanon, imageCapability } from '@momonga/protocol';
 import { SCRIPTED_MODEL, SCRIPTED_PROVIDER, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
-import type { Capabilities, CapabilityOverride, LocalServerDetection, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, LocalServerDetection, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryJudgementView, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
@@ -97,7 +97,12 @@ export type FakeBackend = TuiBackend & {
   addFromAnotherClient(text: string): void;
   readonly inboxFollowers: { sessionId: string; after: number }[];
   succeed(runId: string, next: RunView): void;
+  readonly judgements: Map<string, MemoryJudgementView>;
+  connectSessionStream(): void;
+  judgeMemory(memoryId: string): void;
 };
+
+export type SessionStreamHandlers = { changed(): void; opened(): void; memoryJudged(memoryId: string): void };
 
 export type FakeBackendOptions = {
   answerTimers?: { setTimeout(run: () => void, ms: number): unknown };
@@ -146,6 +151,12 @@ export type FakeBackendOptions = {
   shell?: UserInputBackend['shell'];
   pendingShell?: readonly UserShellRecord[];
   mcpServers?: readonly McpServerView[];
+  memoryJudgements?: readonly MemoryJudgementView[];
+  owedReadFailure?: Error;
+  owedReadHeld?: Promise<void>;
+  markShownFailure?: Error;
+  markShownHeld?: Promise<void>;
+  sessionStreamHeld?: boolean;
 };
 
 const OLLAMA_DEFAULT_TAG = 'latest';
@@ -349,6 +360,19 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const inboxRows: InboxRowView[] = [];
   const inboxFollowers: { sessionId: string; after: number }[] = [];
   const inboxListeners = new Set<() => void>();
+  const sessionStreams: { sessionId: string; handlers: SessionStreamHandlers | undefined }[] = [];
+  const judgements = new Map<string, MemoryJudgementView>((options.memoryJudgements ?? []).map((judgement) => [judgement.memoryId, judgement]));
+  const latestSessionStream = (): SessionStreamHandlers => {
+    const handlers = sessionStreams.at(-1)?.handlers;
+    if (handlers === undefined) throw new Error('the app follows no session stream with handlers for its connection and for memory.judged');
+    return handlers;
+  };
+  const connectSessionStream = (): void => {
+    const latest = sessionStreams.at(-1);
+    const handlers = latestSessionStream();
+    record(`session-stream-open:${latest?.sessionId ?? ''}`);
+    handlers.opened();
+  };
   const pendingRowOf = (delivery: InboxRowView['delivery'], text: string, images: readonly ImageAttachment[]): InboxRowView => ({
     id: `row-${inboxRows.length + 1}`,
     sessionId: session.id,
@@ -537,6 +561,29 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       for (const listener of inboxListeners) listener();
     },
     succeed: (runId, next) => void successors.set(runId, next),
+    judgements,
+    connectSessionStream,
+    judgeMemory: (memoryId) => latestSessionStream().memoryJudged(memoryId),
+    memoryJudgement: async (memoryId: string) => {
+      record(`memory-judgement:${memoryId}`);
+      await answerLater();
+      const found = judgements.get(memoryId);
+      if (found === undefined) throw new Error(`memory ${memoryId} has no judgement`);
+      return found;
+    },
+    memoryJudgements: async (project: string) => {
+      record(`memory-judgements:${project}`);
+      await answerLater();
+      await options.owedReadHeld;
+      if (options.owedReadFailure !== undefined) throw options.owedReadFailure;
+      return [...judgements.values()].filter((judgement) => judgement.owed);
+    },
+    markMemoryJudgementsShown: async (memoryIds: readonly string[]) => {
+      record(`memory-judgements-shown:${memoryIds.join(',')}`);
+      await answerLater();
+      await options.markShownHeld;
+      if (options.markShownFailure !== undefined) throw options.markShownFailure;
+    },
     userInput: {
       fileCandidates: async () => ({ entries: [...(options.files ?? [])], truncated: false }),
       shell: async (command, include, io) => {
@@ -570,12 +617,20 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       },
       list: async () => pendingInbox(),
       successor: async (runId) => successors.get(runId),
-      follow: (sessionId, after, changed, signal) => {
+      follow: (sessionId: string, after: number, given: (() => void) | SessionStreamHandlers, signal: AbortSignal) => {
         inboxFollowers.push({ sessionId, after });
+        const handlers = typeof given === 'function' ? undefined : given;
+        const changed = typeof given === 'function' ? given : () => given.changed();
+        const stream = { sessionId, handlers };
+        sessionStreams.push(stream);
         inboxListeners.add(changed);
+        if (handlers !== undefined && options.sessionStreamHeld !== true) queueMicrotask(() => {
+          if (!signal.aborted) connectSessionStream();
+        });
         return new Promise<never>((_resolve, reject) => {
           signal.addEventListener('abort', () => {
             inboxListeners.delete(changed);
+            stream.handlers = undefined;
             reject(signal.reason);
           });
         });

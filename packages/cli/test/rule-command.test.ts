@@ -41,6 +41,7 @@ const MEMORY: MemoryView = {
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'stale',
 };
 

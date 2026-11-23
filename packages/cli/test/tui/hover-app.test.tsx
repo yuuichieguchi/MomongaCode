@@ -83,7 +83,7 @@ describe('the row under the mouse pointer', () => {
     const noRow = rowOf(trustLines, '2. No, continue without its project settings');
     await trusted.type(hover(10, noRow + 1), (lines) => (lines[noRow] ?? '').includes('› '), 'hover moves to No');
     await trusted.type(click(10, noRow + 1), (lines) => lines.some((line) => line.includes('mode: manual')), 'left click decides the trust row');
-    expect(trusted.backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
+    expect(trusted.backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     trusted.close();
 
     const app = await startOnTerminal(SIZE, { settingsPlace: { home: place.home, projectDir: place.project } });

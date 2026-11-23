@@ -38,6 +38,7 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
   ...overrides,
 });
@@ -233,6 +234,39 @@ describe('momonga memory review', () => {
     expect(await command('memoryReject')(ports, paths, 'm1')).toBe(0);
     expect(requests(seen)).toEqual(['POST /v1/memories/m1/reject']);
     expect(out.join('')).toContain('rejected memory m1');
+  });
+});
+
+describe('auto mode in the shell memory commands', () => {
+  const JUDGEMENT_ROUTE = /\/v1\/memory-judgements/;
+
+  it('memory show names auto mode and the classifier of a memory auto mode kept, directly after the kept line', async (context) => {
+    const kept = memory('m1', { state: 'active', keptAt: 1000, keptByClassifier: 'openai/gpt-5-mini' });
+    const { paths, ports, seen, out } = await setup(context, () => ({ status: 200, body: { memory: kept } }));
+    expect(await command('memoryShow')(ports, paths, 'm1', false)).toBe(0);
+    expect(requests(seen)).toEqual(['GET /v1/memories/m1']);
+    const lines = out.join('').split('\n');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto mode, classifier openai/gpt-5-mini');
+  });
+
+  it('memory show prints no kept by line for a memory a person kept', async (context) => {
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memory: memory('m1', { state: 'active' }) } }));
+    await command('memoryShow')(ports, paths, 'm1', false);
+    expect(out.join('')).not.toContain('kept by:');
+  });
+
+  it('memory review neither prints the lines of judged memories nor asks for or marks them', async (context) => {
+    const { paths, ports, project, seen, out } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1'), memory('m2')] } }));
+    expect(await command('memoryReview')(ports, paths, { json: false })).toBe(0);
+    expect(requests(seen)).toEqual([`GET /v1/memories?state=candidate&project=${encodeURIComponent(project)}`]);
+    expect(seen.some((entry) => JUDGEMENT_ROUTE.test(entry.url))).toBe(false);
+    expect(out.join('')).not.toContain('auto mode');
+  });
+
+  it('memory review accept does not mark any judgement shown', async (context) => {
+    const { paths, ports, seen } = await setup(context, () => ({ status: 200, body: { memory: memory('m1', { state: 'active' }) } }));
+    await command('memoryAccept')(ports, paths, 'm1');
+    expect(requests(seen)).toEqual(['POST /v1/memories/m1/accept']);
   });
 });
 

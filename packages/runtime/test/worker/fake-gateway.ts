@@ -132,7 +132,8 @@ const abortedPromise = (signal: AbortSignal): Promise<never> =>
     else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
   });
 
-export type FakeGateway = GatewayPort & {
+export type FakeGateway = Omit<GatewayPort, 'listing'> & {
+  listing(options?: { signal: AbortSignal }): Promise<GatewayListing>;
   script: ScriptStep[];
   streams: RecordedStream[];
   compacts: RecordedCompact[];

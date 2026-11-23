@@ -169,6 +169,7 @@ const memory = (id: string, status: MemoryView['status']): MemoryView => ({
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status,
 });
 

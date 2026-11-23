@@ -1,4 +1,5 @@
 import type { Stored, UNKNOWN_VALUE } from './stored-value.ts';
+import type { ClassifierVerdict } from './auto-mode.ts';
 export const MEMORY_SCOPES = ['user', 'project'] as const;
 
 export type MemoryScope = (typeof MEMORY_SCOPES)[number];
@@ -59,6 +60,7 @@ export type MemoryRecord = {
   evidence: StoredMemoryEvidence[];
   contributedAt: number | null;
   observedStatus: Stored<MemoryStatus> | null;
+  keptByClassifier: string | null;
 };
 
 export const VALIDITY_CLOSERS = ['observation', 'successor', 'retirement'] as const;
@@ -127,6 +129,38 @@ export type AddMemoryRequest = {
   kind?: MemoryKind;
   paths?: string[];
 };
+
+export const MEMORY_JUDGEMENT_OUTCOMES = ['kept', 'left'] as const;
+
+export type MemoryJudgementOutcome = (typeof MEMORY_JUDGEMENT_OUTCOMES)[number];
+
+export type MemoryJudgement = {
+  memoryId: string;
+  outcome: MemoryJudgementOutcome;
+  classifier?: string;
+  verdict?: ClassifierVerdict['verdict'];
+  confidence?: ClassifierVerdict['confidence'];
+  failure?: string;
+  judgedAt: number;
+};
+
+export type MemoryJudgementView = {
+  memoryId: string;
+  outcome: Stored<MemoryJudgementOutcome>;
+  classifier?: string;
+  verdict?: Stored<ClassifierVerdict['verdict']>;
+  confidence?: Stored<ClassifierVerdict['confidence']>;
+  failure?: string;
+  judgedAt: number;
+  owed: boolean;
+  closed: boolean;
+};
+
+export type MemoryJudgementsResponse = { judgements: MemoryJudgementView[] };
+
+export type MemoryJudgementResponse = { judgement: MemoryJudgementView };
+
+export type MarkMemoryJudgementsShownRequest = { memoryIds: string[] };
 
 export const REFLECTION_DROP_CAUSES = ['text_rule', 'duplicate', 'evidence'] as const;
 

@@ -22,6 +22,7 @@ const record = (id: string, project: string, sha = SHA): MemoryRecord => ({
   retiredAt: null,
   evidence: [{ kind: 'commit', sha }],
   contributedAt: null,
+  keptByClassifier: null,
   observedStatus: null,
 });
 

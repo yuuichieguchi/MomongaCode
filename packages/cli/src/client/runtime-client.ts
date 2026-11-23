@@ -3,7 +3,7 @@ import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, SURFACE_HEADER, WORDS, messageOf } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, ToolResultPage, Mandate } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryJudgementView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, ToolResultPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -28,6 +28,8 @@ import {
   checkMcpWarnings,
   checkMemories,
   checkMemory,
+  checkMemoryJudgement,
+  checkMemoryJudgements,
   checkPolicyGovernance,
   checkPolicyVerify,
   checkPromoted,
@@ -215,6 +217,9 @@ export type RuntimeClient = {
   rejectMemory(id: string): Promise<MemoryView>;
   restoreMemory(id: string): Promise<MemoryView>;
   promoteMemory(id: string, skill: string): Promise<string>;
+  memoryJudgements(project: string): Promise<MemoryJudgementView[]>;
+  memoryJudgement(memoryId: string): Promise<MemoryJudgementView>;
+  markMemoryJudgementsShown(memoryIds: readonly string[]): Promise<void>;
   rules(project: string): Promise<GoverningFactView[]>;
   addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
   retireRule(id: string): Promise<GoverningFactView>;
@@ -725,6 +730,22 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkPromoted(body, `POST ${path}`).path;
   };
 
+  const memoryJudgements = async (project: string): Promise<MemoryJudgementView[]> => {
+    const path = `/v1/memory-judgements?project=${encodeURIComponent(project)}`;
+    const { body } = await send('GET', path, [200]);
+    return checkMemoryJudgements(body, `GET ${path}`).judgements;
+  };
+
+  const memoryJudgement = async (memoryId: string): Promise<MemoryJudgementView> => {
+    const path = `/v1/memory-judgements/${pathSegment(memoryId)}`;
+    const { body } = await send('GET', path, [200]);
+    return checkMemoryJudgement(body, `GET ${path}`).judgement;
+  };
+
+  const markMemoryJudgementsShown = async (memoryIds: readonly string[]): Promise<void> => {
+    await send('POST', '/v1/memory-judgements/shown', [204], { body: { memoryIds } });
+  };
+
   const rules = async (project: string): Promise<GoverningFactView[]> => {
     const path = `/v1/rules?project=${encodeURIComponent(project)}`;
     const { body } = await send('GET', path, [200]);
@@ -969,6 +990,9 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     rejectMemory: changeMemory('reject'),
     restoreMemory: changeMemory('restore'),
     promoteMemory,
+    memoryJudgements,
+    memoryJudgement,
+    markMemoryJudgementsShown,
     rules,
     addRule,
     retireRule,

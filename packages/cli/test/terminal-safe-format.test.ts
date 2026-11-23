@@ -31,6 +31,7 @@ const memory = (overrides: Partial<MemoryView> = {}): MemoryView => ({
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
   ...overrides,
 });

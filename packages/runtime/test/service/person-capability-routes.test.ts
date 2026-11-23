@@ -19,6 +19,7 @@ const PERSON_ROUTES: readonly PersonRoute[] = [
   { method: 'POST', target: () => '/v1/memories/m1/reject', body: () => ({}) },
   { method: 'POST', target: () => '/v1/memories/m1/promote', body: () => ({}) },
   { method: 'POST', target: () => '/v1/memories/m1/restore', body: () => ({}) },
+  { method: 'POST', target: () => '/v1/memory-judgements/shown', body: () => ({ memoryIds: [] }) },
   { method: 'POST', target: () => '/v1/guidelines', body: () => ({}) },
   { method: 'POST', target: () => '/v1/guidelines/1/rollback', body: () => ({}) },
   { method: 'POST', target: () => '/v1/sessions/s1/user-shell', body: () => ({}) },

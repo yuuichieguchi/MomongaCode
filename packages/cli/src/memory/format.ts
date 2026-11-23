@@ -1,5 +1,5 @@
 import { describeMemoryValidity, describeValidity, escapeTerminalLine } from '@momonga/protocol';
-import type { MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
+import type { MemoryJudgementView, MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
 
 const firstLine = (text: string): string => escapeTerminalLine(text.split('\n')[0] ?? '');
 
@@ -74,9 +74,26 @@ export const formatMemory = (memory: MemoryView): string =>
     ...(memory.project === null ? [] : [`project: ${escapeTerminalLine(memory.project)}`]),
     `created: ${iso(memory.createdAt)}`,
     `kept: ${iso(memory.keptAt)}`,
+    ...(memory.keptByClassifier === null ? [] : [`kept by: auto mode, classifier ${escapeTerminalLine(memory.keptByClassifier)}`]),
     ...(memory.validity === undefined ? [] : [`validity: ${describeValidity(memory.validity)}`]),
     sourceLine(memory.source),
     ...memory.evidence.map(evidenceLine),
     '',
     ...memory.text.split('\n').map((line) => `  ${escapeTerminalLine(line)}`),
   ].join('\n');
+
+const judgedLine = (judgement: MemoryJudgementView): string => {
+  if (judgement.failure !== undefined) return escapeTerminalLine(judgement.failure);
+  const { classifier, verdict, confidence } = judgement;
+  if (classifier === undefined || verdict === undefined || confidence === undefined) throw new Error(`the judgement of memory ${judgement.memoryId} names neither a failure nor a classifier answer`);
+  const judged = `classifier ${escapeTerminalLine(classifier)} judged it`;
+  if (verdict === 'safe') return `${judged} safe ${confidence === 'high' ? 'with' : 'without'} high confidence`;
+  return `${judged} ${verdict}`;
+};
+
+export const formatMemoryJudgement = (judgement: MemoryJudgementView): string =>
+  judgement.outcome === 'kept'
+    ? `auto mode kept memory ${judgement.memoryId}; ${judgedLine(judgement)}`
+    : `auto mode left memory ${judgement.memoryId} waiting; ${judgedLine(judgement)}`;
+
+export const memoryJudgementLevel = (judgement: MemoryJudgementView): 'info' | 'warning' => (judgement.failure === undefined ? 'info' : 'warning');

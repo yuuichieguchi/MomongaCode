@@ -330,6 +330,86 @@ describe('the token anatomy endpoints', () => {
   });
 });
 
+describe('the judgements of auto mode on memories', () => {
+  type JudgementClient = RuntimeClient & {
+    memoryJudgements(project: string): Promise<unknown[]>;
+    memoryJudgement(memoryId: string): Promise<unknown>;
+    markMemoryJudgementsShown(memoryIds: readonly string[]): Promise<void>;
+  };
+
+  const judging = (client: RuntimeClient): JudgementClient => client as JudgementClient;
+
+  const KEPT = { memoryId: 'mem-1', outcome: 'kept', classifier: 'openai/gpt-5-mini', verdict: 'safe', confidence: 'high', judgedAt: 5, owed: true, closed: false };
+
+  const FAILED = { memoryId: 'mem-2', outcome: 'left', failure: 'the classifier stream ended without a terminal event', judgedAt: 6, owed: true, closed: false };
+
+  it('reads the owed judgements of a folder by GET with the folder in the query, in the order the API gives them', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { judgements: [KEPT, FAILED] }));
+
+    expect(await judging(client).memoryJudgements('/work/my project')).toEqual([KEPT, FAILED]);
+
+    expect(seen.map((entry) => `${entry.method} ${entry.url}`)).toEqual([`GET /v1/memory-judgements?project=${encodeURIComponent('/work/my project')}`]);
+  });
+
+  it('refuses a list of judgements that is not the contract', async (context) => {
+    const { client } = await serve(context, () => json(200, { judgements: [{ ...KEPT, outcome: 7 }] }));
+
+    await expect(judging(client).memoryJudgements('/work')).rejects.toBeInstanceOf(ContractViolation);
+  });
+
+  it('refuses judgements without closed beside owed', async (context) => {
+    const { closed: _closed, ...withoutClosed } = KEPT;
+    const list = await serve(context, () => json(200, { judgements: [withoutClosed] }));
+    await expect(judging(list.client).memoryJudgements('/work')).rejects.toBeInstanceOf(ContractViolation);
+    const one = await serve(context, () => json(200, { judgement: withoutClosed }));
+    await expect(judging(one.client).memoryJudgement('mem-1')).rejects.toBeInstanceOf(ContractViolation);
+  });
+
+  it('returns a closed record of one memory as read', async (context) => {
+    const { client } = await serve(context, () => json(200, { judgement: { ...FAILED, owed: false, closed: true } }));
+    expect(await judging(client).memoryJudgement('mem-2')).toEqual({ ...FAILED, owed: false, closed: true });
+  });
+
+  it('reads the judgement of one memory by GET and returns the record', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { judgement: { ...FAILED, owed: false } }));
+
+    expect(await judging(client).memoryJudgement('mem-2')).toEqual({ ...FAILED, owed: false });
+
+    expect(seen.map((entry) => `${entry.method} ${entry.url}`)).toEqual(['GET /v1/memory-judgements/mem-2']);
+  });
+
+  it('refuses a judgement of one memory that is not the contract', async (context) => {
+    const { client } = await serve(context, () => json(200, { judgement: { memoryId: 'mem-1' } }));
+
+    await expect(judging(client).memoryJudgement('mem-1')).rejects.toBeInstanceOf(ContractViolation);
+  });
+
+  it('keeps the 404 of a memory without a judgement as a Run API error, as the read of one memory does', async (context) => {
+    const { client } = await serve(context, () => json(404, { error: { type: 'invalid_request_error', code: 'not_found', message: 'memory mem-9 has no judgement' } }));
+
+    const failure = await judging(client).memoryJudgement('mem-9').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(RunApiError);
+    expect(failure).toMatchObject({ status: 404, code: 'not_found' });
+  });
+
+  it('marks judgements shown by POST with the memory ids in the body and expects 204', async (context) => {
+    const { client, seen } = await serve(context, () => ({ status: 204, body: '' }));
+
+    await expect(judging(client).markMemoryJudgementsShown(['mem-1', 'mem-2'])).resolves.toBeUndefined();
+
+    expect(seen.map((entry) => `${entry.method} ${entry.url}`)).toEqual(['POST /v1/memory-judgements/shown']);
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ memoryIds: ['mem-1', 'mem-2'] });
+    expect(seen[0]?.headers['content-type']).toContain('application/json');
+  });
+
+  it('refuses another answer than 204 to marking judgements shown', async (context) => {
+    const { client } = await serve(context, () => json(200, {}));
+
+    await expect(judging(client).markMemoryJudgementsShown(['mem-1'])).rejects.toBeInstanceOf(Error);
+  });
+});
+
 describe('streamEvents', () => {
   const event = (id: number, extra: Record<string, unknown> = {}): string =>
     `id: ${id}\nevent: agent.message.delta\ndata: ${JSON.stringify({ id, runId: 'run-1', sessionId: 'session-1', seq: id, step: 1, createdAt: 1, type: 'agent.message.delta', attempt: 0, itemId: 'm', text: String(id), ...extra })}\n\n`;

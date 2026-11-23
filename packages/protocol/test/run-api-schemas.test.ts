@@ -670,6 +670,7 @@ describe('memory schemas', () => {
     evidence: [],
     status: 'unbound',
     contributedAt: null,
+    keptByClassifier: null,
   };
 
   it('accepts a project and a user memory and rejects missing provenance, an unknown scope and extras', () => {

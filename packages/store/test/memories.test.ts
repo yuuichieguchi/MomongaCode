@@ -39,6 +39,7 @@ describe('memory store', () => {
       retiredAt: null,
       contributedAt: null,
       observedStatus: 'unbound',
+      keptByClassifier: null,
       evidence: [],
     });
     expect(store.memories.get(memory.id)).toEqual(memory);

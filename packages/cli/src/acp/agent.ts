@@ -5,6 +5,7 @@ import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness, SkillsRes
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
+import { formatMemoryJudgement, memoryJudgementLevel } from '../memory/format.ts';
 import { DAEMON_STOPPING_TEXT, isTerminalStatus } from '../run/follow.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { availableCommandsOf } from './commands.ts';
@@ -127,6 +128,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
   const initialized = Promise.withResolvers<void>();
   const lastSeq = new Map<string, number>();
   const activityListeners = new Set<() => void>();
+  const shownJudgements = new Set<string>();
 
   const active = (): void => {
     for (const listener of [...activityListeners]) listener();
@@ -155,6 +157,22 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   const send = (session: BridgeSession, update: SessionUpdate): void => {
     session.queue.enqueue(() => peer().notify('session/update', { sessionId: session.id, update }));
+  };
+
+  const showJudgement = async (session: BridgeSession, memoryId: string): Promise<void> => {
+    const judgement = await deps.runtime.memoryJudgement(memoryId);
+    session.lifetime.signal.throwIfAborted();
+    if (judgement.closed || shownJudgements.has(memoryId)) return;
+    const update = noticeUpdate(clientFeatures(), `${session.id}/memory-judgement/${memoryId}`, memoryJudgementLevel(judgement), formatMemoryJudgement(judgement));
+    shownJudgements.add(memoryId);
+    await session.queue.deliver(() => peer().notify('session/update', { sessionId: session.id, update }));
+    await deps.runtime.markMemoryJudgementsShown([memoryId]);
+  };
+
+  const judged = (session: BridgeSession, memoryId: string): void => {
+    showJudgement(session, memoryId).catch((error: unknown) => {
+      if (!session.lifetime.signal.aborted) deps.report(`session ${session.id}: ${describeFailure(error)}`);
+    });
   };
 
   const contextWindowOf = async (session: BridgeSession): Promise<number> => {
@@ -403,6 +421,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
           signal: lifetime.signal,
           onEvent: (frame) => {
             if (frame.data.type === 'mode.changed' || frame.data.type === 'model.changed') handleFrame(session, frame, 0);
+            if (!isOpaqueEvent(frame.data) && frame.data.type === 'memory.judged') judged(session, frame.data.memoryId);
           },
         });
       } catch (error) {

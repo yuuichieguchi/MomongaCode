@@ -211,6 +211,7 @@ const MEMORY: MemoryView = {
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
 };
 
@@ -346,6 +347,15 @@ describe('/memory', () => {
     expect(backend.calls).toContain('memory-delete:mem-1');
     await memory?.run('list', context);
     expect(infos.at(-1)).toBe('no memories');
+  });
+
+  it('shows which classifier kept a memory auto mode kept, directly after the kept line, and nothing of the kind for a memory a person kept', async () => {
+    const { context, infos } = contextWith({ memories: [{ ...MEMORY, keptByClassifier: 'openai/gpt-5-mini' }, { ...MEMORY, id: 'mem-2' }] });
+    await memory?.run('show mem-1', context);
+    const lines = (infos.at(-1) ?? '').split('\n');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto mode, classifier openai/gpt-5-mini');
+    await memory?.run('show mem-2', context);
+    expect(infos.at(-1)).not.toContain('kept by:');
   });
 
   it('prints its usage for anything else', async () => {

@@ -33,7 +33,8 @@ const versionFortyWithOldCheck = async () => {
   const db = new DatabaseSync(dbPath);
   migrate(db, MIGRATIONS.filter((migration) => migration.version <= 40));
   db.exec(`ATTACH DATABASE '${source.dbPath}' AS head`);
-  db.exec('INSERT INTO memories SELECT * FROM head.memories ORDER BY created_at, id');
+  const columns = db.prepare('PRAGMA table_info(memories)').all().map((column) => String(column['name'])).join(', ');
+  db.exec(`INSERT INTO memories (${columns}) SELECT ${columns} FROM head.memories ORDER BY created_at, id`);
   db.prepare(
     `INSERT INTO memory_evidence (${OLD_COLUMNS}) VALUES (?, 0, 'check', NULL, NULL, NULL, NULL, 'r0', 'model-call-7', 2, 'npm run lint', 1)`,
   ).run(source.memory.id);
