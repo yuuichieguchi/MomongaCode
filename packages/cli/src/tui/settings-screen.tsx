@@ -97,7 +97,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'tui.theme': { label: 'Theme', section: 'Display' },
   'tui.screenReader': { label: 'Screen-reader display', section: 'Display' },
   'tui.reducedMotion': { label: 'Reduced motion', section: 'Display' },
-  'tui.notify': { label: 'Ring the terminal bell when a run ends or needs you', section: 'Display' },
+  'tui.notify': { label: 'Notify when a run ends or needs you', section: 'Display' },
   'tui.attachFileMentions': { label: 'Attach @files when sending', section: 'Display' },
   'context.adaptiveBudget': { label: 'Adaptive budget', section: 'Context' },
   'context.autoCompact': { label: 'Automatic compaction', section: 'Context' },

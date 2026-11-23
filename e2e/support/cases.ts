@@ -26,6 +26,7 @@ export type E2eCaseFile =
   | 'cli.test.ts'
   | 'cli-pty.test.ts'
   | 'tui-negotiation-pty.test.ts'
+  | 'notify-pty.test.ts'
   | 'product-cli.test.ts'
   | 'product-pty.test.ts'
   | 'memory.test.ts'
@@ -232,6 +233,13 @@ export const E2E_CASES = [
   { id: 'sandbox-off-dialog', file: 'sandbox-off-dialog.test.ts', title: 'asks before a sign-in when the runtime runs with sandbox none, starts on Cancel, and escape starts no sign-in and opens no browser', needsBash: false },
   { id: 'trace-content', file: 'trace-content.test.ts', title: 'momonga trace --content reads the message bodies of a run that the gateway stored, through GET /v1/momonga/content', needsBash: false },
   { id: 'user-input-daemon', file: 'user-input-daemon.test.ts', title: 'a ! command runs in the session folder through the runtime and its output reaches the next run; an @ mention in a trusted folder reaches the model as the file contents', needsBash: true },
+  { id: 'notify-pty-osc9', file: 'notify-pty.test.ts', title: 'notify pty: in a terminal named ghostty focus reporting is on while the session runs, and a run that ends while the window is unfocused writes one desktop notification with the done title', needsBash: false },
+  { id: 'notify-pty-bell', file: 'notify-pty.test.ts', title: 'notify pty: in a terminal that names no notifying program a run that ends while the window is unfocused rings one bell and writes no desktop notification', needsBash: false },
+  { id: 'notify-pty-no-report', file: 'notify-pty.test.ts', title: 'notify pty: with no focus report from the terminal a run that ends writes no notification and no bell', needsBash: false },
+  { id: 'notify-pty-focus-back', file: 'notify-pty.test.ts', title: 'notify pty: when the window was unfocused and focused again before the run, the run that ends writes no notification and no bell', needsBash: false },
+  { id: 'notify-pty-approval', file: 'notify-pty.test.ts', title: 'notify pty: an approval that appears while the window is unfocused writes one desktop notification with the waiting title, and the run that ends after focus came back writes none', needsBash: false },
+  { id: 'notify-pty-tmux', file: 'notify-pty.test.ts', title: 'notify pty: inside tmux the desktop notification of a run that ends while the window is unfocused is wrapped in the tmux passthrough', needsBash: false },
+  { id: 'notify-pty-late-focus', file: 'notify-pty.test.ts', title: 'notify pty: a focus-out that arrives after the run ended writes nothing, and the next run that ends while unfocused writes exactly one notification', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

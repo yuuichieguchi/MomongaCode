@@ -34,3 +34,27 @@ export const titleOf = (cwd: string, state: TitleState): string => {
 };
 
 export const titleSequence = (title: string): string => `${ESC}]2;${title}${ESC}\\`;
+
+export const NOTIFICATION_MAX_BYTES = 255;
+
+const ELLIPSIS = '…';
+
+const bytesOf = (text: string): number => Buffer.byteLength(text, 'utf8');
+
+const cappedToBytes = (text: string, limit: number): string => {
+  if (bytesOf(text) <= limit) return text;
+  const room = limit - bytesOf(ELLIPSIS);
+  let kept = '';
+  let used = 0;
+  for (const character of text) {
+    const size = bytesOf(character);
+    if (used + size > room) break;
+    kept += character;
+    used += size;
+  }
+  return `${kept}${ELLIPSIS}`;
+};
+
+export const notificationSequence = (text: string): string => `${ESC}]9;${cappedToBytes(withoutControls(text), NOTIFICATION_MAX_BYTES)}${BEL}`;
+
+export const tmuxPassthrough = (sequence: string): string => `${ESC}Ptmux;${sequence.replaceAll(ESC, `${ESC}${ESC}`)}${ESC}\\`;

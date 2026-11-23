@@ -62,7 +62,7 @@ const startOnLayer = (options: FakeBackendOptions = {}) => {
   const outcomes: TuiOutcome[] = [];
   const instance = render(
     <TerminalFrame layer={layer}>
-      <App backend={fakeBackend(options)} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} now={Date.now} timers={systemTiming} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
+      <App backend={fakeBackend(options)} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, desktopNotification: layer.desktopNotification, enable: layer.enable, disable: layer.disable, input }} now={Date.now} timers={systemTiming} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
     </TerminalFrame>,
     { stdin: inkStdin.stream, stdout: stdout as unknown as NodeJS.WriteStream, exitOnCtrlC: false, patchConsole: false, onRender: () => input.framed() },
   );
@@ -105,6 +105,14 @@ describe('the existing screen on top of the terminal layer', () => {
     app.layer.close();
     expect(app.outcomes).toEqual([{}]);
     expect(app.control.at(-1)).toBe(`${ESC}[?2004l${ESC}[<u${ESC}[23;2t`);
+  });
+});
+
+describe('focus reporting on the terminal layer', () => {
+  it('is turned on at the start with the default notification setting', async () => {
+    const app = startOnLayer();
+    await app.shows('mode: manual');
+    await vi.waitFor(() => expect(app.control.join('')).toContain(`${ESC}[?1004h`), { timeout: 3000 });
   });
 });
 

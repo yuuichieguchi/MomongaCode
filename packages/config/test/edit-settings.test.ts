@@ -177,7 +177,7 @@ describe('readSettingsSnapshot', () => {
     ]);
     expect(snapshot.targets).toEqual(['user', 'project', 'local']);
     expect(snapshot.defaults.autoUpdates).toBe(true);
-    expect(snapshot.defaults.tui).toEqual({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
+    expect(snapshot.defaults.tui).toEqual({ theme: 'auto', notify: 'auto', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
     expect(snapshot.mcpFile).toBe(mcpJsonPath(tree));
   });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultTuiSettings } from '@momonga/config';
+import { configCommand } from '../../src/tui/commands/config.ts';
 import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
 import { slashMenuEntries } from '../../src/tui/screen/menu.tsx';
 import { KEYS, TUI_TEST_TIMEOUT_MS } from '../ink-helpers.ts';
@@ -9,6 +10,13 @@ import { startOnTerminal } from './terminal-app.tsx';
 vi.setConfig({ testTimeout: TUI_TEST_TIMEOUT_MS });
 
 const SIZE = { columns: 100, rows: 30 };
+
+describe('the /config notify row', () => {
+  it('is named for a run that ends or needs you, with the three values in order', () => {
+    expect(configCommand.subcommands?.find((row) => row.name === 'notify')).toMatchObject({ usage: '[auto|bell|off]', description: 'notify when a run ends or needs you' });
+    expect(configCommand.description).toContain('notify: notify when a run ends or needs you');
+  });
+});
 
 describe('slashMenuEntries after a space', () => {
   it('offers first-level subcommands after a trailing space and filters by prefix', () => {
@@ -47,7 +55,7 @@ describe('slashMenuEntries after a space', () => {
     expect(slashMenuEntries('/context guideline l', DEFAULT_SLASH_COMMANDS)?.map((entry) => entry.key)).toEqual(['/context guideline list', '/context guideline rollback']);
     expect(slashMenuEntries('/context guideline li', DEFAULT_SLASH_COMMANDS)?.map((entry) => entry.key)).toEqual(['/context guideline list']);
     expect(slashMenuEntries('/tui mouse ', DEFAULT_SLASH_COMMANDS)?.map((entry) => entry.key)).toEqual(['/tui mouse on', '/tui mouse off']);
-    expect(slashMenuEntries('/config notify ', DEFAULT_SLASH_COMMANDS)?.map((entry) => entry.key)).toEqual(['/config notify off', '/config notify bell']);
+    expect(slashMenuEntries('/config notify ', DEFAULT_SLASH_COMMANDS)?.map((entry) => entry.key)).toEqual(['/config notify auto', '/config notify bell', '/config notify off']);
     expect(slashMenuEntries('/config notify', DEFAULT_SLASH_COMMANDS)?.[0]).toMatchObject({ key: '/config notify', continueOnEnter: false });
     expect(slashMenuEntries('/memory review', DEFAULT_SLASH_COMMANDS)?.[0]).toMatchObject({ key: '/memory review', continueOnEnter: false });
   });
@@ -137,11 +145,11 @@ describe('staged slash subcommand completion in the terminal UI', () => {
     await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('Mouse: off')), 'Enter executes /tui mouse off');
     expect(saved).toEqual([['mouse', false]]);
     await app.type('/config notify', (lines) => lines.some((line) => line.includes('› /config notify')), 'standalone parent menu row renders');
-    await app.type(KEYS.tab, (lines) => lines.some((line) => line.includes('› /config notify off')) && lines.some((line) => line.includes('/config notify bell')), 'Tab on standalone parent opens child choices');
+    await app.type(KEYS.tab, (lines) => lines.some((line) => line.includes('› /config notify auto')) && lines.some((line) => line.includes('/config notify bell')) && lines.some((line) => line.includes('/config notify off')), 'Tab on standalone parent opens child choices');
     await app.type('\u001b[27u', (lines) => !lines.some((line) => line.includes('/config notify bell')) && lines.some((line) => line.includes('> /config notify ')), 'Escape closes subcommand menu and keeps typed text');
     await app.type(KEYS.ctrlC, (lines) => !lines.some((line) => line.includes('> /config notify')), 'Ctrl+C clears draft');
     await app.type('/config notify', (lines) => lines.some((line) => line.includes('› /config notify')), 'standalone parent reopens cleanly');
-    await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('notify: off')), 'Enter on standalone parent /config notify shows current value without mutating');
+    await app.type(KEYS.enter, (lines) => lines.some((line) => line.includes('notify: auto')), 'Enter on standalone parent /config notify shows current value without mutating');
     expect(saved).toEqual([['mouse', false]]);
     await app.type('/context imp', (lines) => lines.some((line) => line.includes('› /context improve')), 'prefix filters /context improve');
     await app.type(KEYS.tab, (lines) => lines.some((line) => line.includes('> /context improve ')) && !lines.some((line) => line.includes('› /context improve')), 'Tab on leaf subcommand completes with space and closes menu');

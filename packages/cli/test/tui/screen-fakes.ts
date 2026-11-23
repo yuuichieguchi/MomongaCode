@@ -82,6 +82,7 @@ export type FakeScreenTerminal = ScreenTerminal & {
   screens: ScreenMode[];
   titles: string[];
   bells: string[];
+  notifications: { text: string; tmux: boolean }[];
 };
 
 export type FakeScreenSize = { readonly screen?: ScreenMode; readonly columns: number; readonly rows: number };
@@ -98,6 +99,7 @@ export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal =>
   const screens: ScreenMode[] = [];
   const titles: string[] = [];
   const bells: string[] = [];
+  const notifications: { text: string; tmux: boolean }[] = [];
   let state: TerminalState = {
     screen: given.screen ?? 'fullscreen',
     negotiation: 'unknown',
@@ -115,11 +117,15 @@ export const fakeScreenTerminal = (given: FakeScreenSize): FakeScreenTerminal =>
     screens,
     titles,
     bells,
+    notifications,
     setTitle: (title) => {
       titles.push(title);
     },
     bell: () => {
       bells.push(titles.at(-1) ?? '');
+    },
+    desktopNotification: (text, options) => {
+      notifications.push({ text, tmux: options.tmux });
     },
     enable: (mode) => {
       if (!state.enabled.includes(mode)) publish({ ...state, enabled: [...state.enabled, mode] });

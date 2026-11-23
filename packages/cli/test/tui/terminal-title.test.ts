@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ProcessEvent } from '../../src/tui/terminal/layer.ts';
 import { BACKGROUND_QUERY, QUERY_BATCH, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
-import { TITLE_MAX_CHARACTERS, TITLE_STATES, titleOf, titleSequence, titleStateOf } from '../../src/tui/terminal/title.ts';
+import { NOTIFICATION_MAX_BYTES, TITLE_MAX_CHARACTERS, TITLE_STATES, notificationSequence, titleOf, titleSequence, titleStateOf, tmuxPassthrough } from '../../src/tui/terminal/title.ts';
 import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
@@ -181,5 +181,62 @@ describe('the background colour query', () => {
     expect(t.writes.join('')).toBe(`${BACKGROUND_QUERY}${DA1_QUERY}`);
     t.feed(`${ESC}]11;rgb:ffff/ffff/ffff\u0007${DA1_REPLY}`);
     expect(t.layer.state().backgroundColor).toBe('rgb:ffff/ffff/ffff');
+  });
+});
+
+const BEL = '\u0007';
+const OSC9 = `${ESC}]9;`;
+const bodyOf = (sequence: string): string => {
+  expect(sequence.startsWith(OSC9)).toBe(true);
+  expect(sequence.endsWith(BEL)).toBe(true);
+  return sequence.slice(OSC9.length, -BEL.length);
+};
+const bytesOf = (text: string): number => Buffer.byteLength(text, 'utf8');
+
+describe('the desktop notification sequence', () => {
+  it('is OSC 9 with the text, ended by BEL', () => {
+    expect(notificationSequence('done · myproject · momonga')).toBe(`${ESC}]9;done · myproject · momonga${BEL}`);
+  });
+
+  it('removes ESC, BEL, C1 controls and new lines from the text', () => {
+    expect(notificationSequence(`a${ESC}b${BEL}c\u009cd\ne`)).toBe(`${OSC9}abcde${BEL}`);
+  });
+
+  it('holds no control character inside its body', () => {
+    const body = bodyOf(notificationSequence(`done${ESC}]0;pwn${BEL}\u009b2J\r\n\t · x · momonga`));
+    expect(body).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+  });
+
+  it('caps its text at 255 UTF-8 bytes', () => {
+    expect(NOTIFICATION_MAX_BYTES).toBe(255);
+  });
+
+  it('keeps a text of exactly 255 bytes whole', () => {
+    expect(bodyOf(notificationSequence('a'.repeat(255)))).toBe('a'.repeat(255));
+    expect(bodyOf(notificationSequence('あ'.repeat(85)))).toBe('あ'.repeat(85));
+  });
+
+  it('cuts a longer text to at most 252 bytes and appends an ellipsis', () => {
+    expect(bodyOf(notificationSequence('a'.repeat(256)))).toBe(`${'a'.repeat(252)}…`);
+  });
+
+  it('cuts multi-byte text on a character boundary', () => {
+    const body = bodyOf(notificationSequence(`a${'あ'.repeat(100)}`));
+    expect(body).toBe(`a${'あ'.repeat(83)}…`);
+    expect(bytesOf(body)).toBe(253);
+  });
+
+  it('counts the bytes after the controls are removed', () => {
+    expect(bodyOf(notificationSequence(`${'a'.repeat(255)}${ESC}`))).toBe('a'.repeat(255));
+  });
+});
+
+describe('the tmux passthrough', () => {
+  it('wraps a sequence in a DCS tmux; string with every ESC doubled', () => {
+    expect(tmuxPassthrough(`${ESC}]9;hi${BEL}`)).toBe(`${ESC}Ptmux;${ESC}${ESC}]9;hi${BEL}${ESC}\\`);
+  });
+
+  it('doubles every ESC of the sequence, not only the first', () => {
+    expect(tmuxPassthrough(`${ESC}]2;t${ESC}\\`)).toBe(`${ESC}Ptmux;${ESC}${ESC}]2;t${ESC}${ESC}\\${ESC}\\`);
   });
 });

@@ -5,9 +5,6 @@ import type { FocusEvent } from '../terminal/events.ts';
 import { titleOf, titleStateOf } from '../terminal/title.ts';
 import type { RunEnd, TitleState } from '../terminal/title.ts';
 import type { ScreenTerminal } from './input.ts';
-import type { ScreenTimers } from './timers.ts';
-
-export const FOCUS_REPORT_WAIT_MS = 1000;
 
 export const NOTIFY_MODES = TUI_NOTIFY_MODES;
 
@@ -27,68 +24,38 @@ export const UNSTORED_TUI_SETTINGS: TuiSettingsPort = {
 
 export type FocusDirection = FocusEvent['direction'];
 
-export type FocusKnowledge = FocusDirection | 'unknown' | 'unreported';
-
-export const focusKnowledgeOf = (reportingEnabled: boolean, lastEvent: FocusDirection | undefined, waitEnded: boolean): FocusKnowledge => {
-  if (!reportingEnabled) return 'unreported';
-  if (lastEvent !== undefined) return lastEvent;
-  return waitEnded ? 'unreported' : 'unknown';
-};
-
 const NEEDS_THE_USER: ReadonlySet<TitleState> = new Set<TitleState>(['waiting for you', 'done', 'error']);
 
-export const bellDue = ({ notify, focus, state }: { notify: NotifyMode; focus: FocusKnowledge; state: TitleState }): boolean => notify === 'bell' && focus !== 'in' && focus !== 'unknown' && NEEDS_THE_USER.has(state);
+export type AttentionTerminal = { osc9: boolean; tmux: boolean };
+
+export const signalDue = ({ notify, focus, state, osc9 }: { notify: NotifyMode; focus: FocusDirection | undefined; state: TitleState; osc9: boolean }): 'none' | 'bell' | 'notification' => {
+  if (notify === 'off' || focus !== 'out' || !NEEDS_THE_USER.has(state)) return 'none';
+  return notify === 'auto' && osc9 ? 'notification' : 'bell';
+};
 
 export type AttentionOptions = {
-  terminal: Pick<ScreenTerminal, 'state' | 'setTitle' | 'bell' | 'enable' | 'disable' | 'input'>;
+  terminal: Pick<ScreenTerminal, 'state' | 'setTitle' | 'bell' | 'desktopNotification' | 'enable' | 'disable' | 'input'>;
   cwd: string;
   working: boolean;
   prompting: boolean;
   notify: NotifyMode;
-  timers: ScreenTimers;
+  attentionTerminal: AttentionTerminal;
 };
 
 export type Attention = { runEnded(end: RunEnd | undefined): void };
 
-export const useAttention = ({ terminal, cwd, working, prompting, notify, timers }: AttentionOptions): Attention => {
+export const useAttention = ({ terminal, cwd, working, prompting, notify, attentionTerminal }: AttentionOptions): Attention => {
   const [lastRun, setLastRun] = useState<RunEnd | undefined>(undefined);
   const lastFocus = useRef<FocusDirection | undefined>(undefined);
-  const waitEnded = useRef(false);
-  const heldBell = useRef<{ timer: unknown } | undefined>(undefined);
   const state = titleStateOf({ working, prompting, lastRun });
-
-  const focusNow = (): FocusKnowledge => focusKnowledgeOf(terminal.state().enabled.includes('focus'), lastFocus.current, waitEnded.current);
-
-  const dropHeldBell = (): void => {
-    if (heldBell.current === undefined) return;
-    timers.clearTimeout(heldBell.current.timer);
-    heldBell.current = undefined;
-  };
-
-  const ringHeldBell = (): void => {
-    dropHeldBell();
-    terminal.bell();
-  };
+  const reportsFocus = notify !== 'off';
 
   const announce = useEffectEvent((next: TitleState): void => {
-    terminal.setTitle(titleOf(cwd, next));
-    const focus = focusNow();
-    if (bellDue({ notify, focus, state: next })) terminal.bell();
-    else if (notify === 'bell' && focus === 'unknown' && NEEDS_THE_USER.has(next) && heldBell.current === undefined) {
-      heldBell.current = {
-        timer: timers.setTimeout(() => {
-          waitEnded.current = true;
-          ringHeldBell();
-        }, FOCUS_REPORT_WAIT_MS),
-      };
-    }
-  });
-
-  const focusReported = useEffectEvent((direction: FocusDirection): void => {
-    lastFocus.current = direction;
-    if (heldBell.current === undefined) return;
-    if (direction === 'out') ringHeldBell();
-    else dropHeldBell();
+    const title = titleOf(cwd, next);
+    terminal.setTitle(title);
+    const signal = signalDue({ notify, focus: lastFocus.current, state: next, osc9: attentionTerminal.osc9 });
+    if (signal === 'bell') terminal.bell();
+    if (signal === 'notification') terminal.desktopNotification(title, { tmux: attentionTerminal.tmux });
   });
 
   useEffect(() => {
@@ -98,22 +65,23 @@ export const useAttention = ({ terminal, cwd, working, prompting, notify, timers
   useEffect(
     () =>
       terminal.input.observe((event) => {
-        if (event.type === 'focus') focusReported(event.direction);
+        if (event.type === 'focus') lastFocus.current = event.direction;
         if (event.type === 'key') setLastRun((end) => (end === 'error' ? undefined : end));
       }),
     [terminal],
   );
 
   useEffect(() => {
-    if (notify !== 'bell') return undefined;
+    if (!reportsFocus) {
+      if (terminal.state().enabled.includes('focus')) terminal.disable('focus');
+      return undefined;
+    }
     terminal.enable('focus');
     return () => {
       terminal.disable('focus');
       lastFocus.current = undefined;
-      waitEnded.current = false;
-      dropHeldBell();
     };
-  }, [terminal, notify]);
+  }, [terminal, reportsFocus]);
 
   return { runEnded: setLastRun };
 };

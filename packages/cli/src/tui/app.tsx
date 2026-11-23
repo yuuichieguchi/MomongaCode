@@ -93,6 +93,7 @@ import type { KeyEvent, MouseEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 import { NEWLINE_HINT } from './terminal/negotiation.ts';
 import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
+import type { AttentionTerminal } from './screen/notify.ts';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
 import type { ColourHost, ThemeId } from './screen/theme.ts';
@@ -113,6 +114,7 @@ export type TuiOutcome = { error?: Error; reopen?: string };
 export type AppProps = {
   backend: TuiBackend;
   terminal: ScreenTerminal;
+  attentionTerminal?: AttentionTerminal;
   initialMode: PermissionMode | undefined;
   initialPrompt?: string;
   initialImages?: readonly string[];
@@ -137,6 +139,8 @@ export type AppProps = {
   timers: ScreenTimers;
   onExit(outcome: TuiOutcome): void;
 };
+
+const UNKNOWN_ATTENTION_TERMINAL: AttentionTerminal = { osc9: false, tmux: false };
 
 const unavailableAutoMode: AutoModePort = {
   check() {
@@ -417,7 +421,7 @@ export function App(props: AppProps) {
     working: busy,
     prompting: phase.kind === 'trust' || transcript.approval !== undefined || transcript.elicitation !== undefined,
     notify,
-    timers,
+    attentionTerminal: props.attentionTerminal ?? UNKNOWN_ATTENTION_TERMINAL,
   });
 
   const enterPhase = (next: Phase): void => {

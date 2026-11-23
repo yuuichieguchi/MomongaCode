@@ -42,7 +42,7 @@ describe('/config, the settings screen', () => {
     expect(rows.length).toBeGreaterThan(40);
     for (const label of rows) expect(frame, label).toContain(label);
     expect(frame).toContain(`1. ${OPEN_SETTINGS_FILE_ROW}`);
-    expect(frame).toContain('Ring the terminal bell when a run ends or needs you  off  default');
+    expect(frame).toContain('Notify when a run ends or needs you  auto  default');
     expect(frame).toContain('Screen-reader display  off  default');
     expect(frame).toContain('Reduced motion  off  default');
     expect(frame).toContain('Screen mode at start  fullscreen  default');
@@ -409,9 +409,10 @@ describe('/config, the settings screen', () => {
     const place = freshPlace();
     const started = await startAt(place, {}, await realPort(place));
     await open(started);
-    await openRow(started, 'Ring the terminal bell', '2. bell');
+    const choices = await openRow(started, 'Notify when a run ends', '2. bell');
+    expect(choices).toMatch(/1\. auto[\s\S]*2\. bell[\s\S]*3\. off/);
     await press(started, '2', '› 2. bell');
-    await press(started, KEYS.enter, `Ring the terminal bell when a run ends or needs you  bell  user  ${APPLIES_NOW}`);
+    await press(started, KEYS.enter, `Notify when a run ends or needs you  bell  user  ${APPLIES_NOW}`);
     expect(stored(place.userFile)).toEqual({ tui: { notify: 'bell' } });
     await press(started, KEYS.escape, (frame) => !frame.includes(SETTINGS_TITLE));
     await command(started, '/config notify', '> /config notify');

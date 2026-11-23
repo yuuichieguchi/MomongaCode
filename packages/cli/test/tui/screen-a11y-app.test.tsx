@@ -332,7 +332,7 @@ describe('the two switches from inside the TUI', () => {
     await command(started, '/config screen-reader maybe');
     await untilOutput(started.app, 'unknown screen-reader value maybe; available: on, off');
     await command(started, '/config nothing');
-    await untilOutput(started.app, 'usage: /config notify [off|bell]\n/config screen-reader [on|off]\n/config reduced-motion [on|off]');
+    await untilOutput(started.app, 'usage: /config notify [auto|bell|off]\n/config screen-reader [on|off]\n/config reduced-motion [on|off]');
     expect(started.saved).toEqual([]);
     started.app.unmount();
   });

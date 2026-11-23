@@ -25,7 +25,7 @@ The interactive session that `momonga` opens takes these commands at the start o
 | `/tui [fullscreen\|scrollback\|mouse on\|off\|copy-on-select on\|off]` | show or switch the screen mode (fullscreen, or scrollback: the terminal's own history), and turn the mouse or copy on select on or off |
 | `/theme [auto\|dark\|light\|dark-colorblind\|light-colorblind]` | choose the colours of the screen from the five built-in sets |
 | `/keybindings` | show the keys of every action and change them; the changes are written to the key-binding file |
-| `/config notify [off\|bell] \| screen-reader [on\|off] \| reduced-motion [on\|off]` | open the settings screen, or show or change one setting by name; notify: ring the terminal bell when a run ends or needs you; screen-reader: Screen-reader display; reduced-motion: Reduced motion |
+| `/config notify [auto\|bell\|off] \| screen-reader [on\|off] \| reduced-motion [on\|off]` | open the settings screen, or show or change one setting by name; notify: notify when a run ends or needs you; screen-reader: Screen-reader display; reduced-motion: Reduced motion |
 | `/context improve [--candidates <n>] [--dataset <file>] [--model <model>] [--token-cap <n>] [--outcome <file>] [--yes] \| guideline adopt <file> \| guideline list \| guideline rollback <version>` | improve how the context is compacted, and inspect, adopt and roll back the compaction guideline |
 | `/permissions` | show and change the start mode, the allow, ask and deny rules, the additional directories and the trust of this folder |
 | `/hooks` | show the hooks by event and add, edit or remove one |
@@ -145,9 +145,10 @@ The interactive session that `momonga` opens takes these commands at the start o
 
 | Subcommand | Meaning |
 | --- | --- |
-| `/config notify [off\|bell]` | ring the terminal bell when a run ends or needs you |
-| `/config notify off` | set notify to off |
+| `/config notify [auto\|bell\|off]` | notify when a run ends or needs you |
+| `/config notify auto` | set notify to auto |
 | `/config notify bell` | set notify to bell |
+| `/config notify off` | set notify to off |
 | `/config screen-reader [on\|off]` | Screen-reader display |
 | `/config screen-reader on` | set screen-reader to on |
 | `/config screen-reader off` | set screen-reader to off |
@@ -945,7 +946,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `daemon.startupStallMs` | integer (at least 1) | `60000` | milliseconds | user |
 | `tui` | object |  |  | user, project, local |
 | `tui.theme` | `"auto"` or `"dark"` or `"light"` or `"dark-colorblind"` or `"light-colorblind"` | `"auto"` |  | user, project, local |
-| `tui.notify` | `"off"` or `"bell"` | `"off"` |  | user, project, local |
+| `tui.notify` | `"auto"` or `"bell"` or `"off"` | `"auto"` |  | user, project, local |
 | `tui.screenReader` | boolean | `false` |  | user, project, local |
 | `tui.reducedMotion` | boolean | `false` |  | user, project, local |
 | `tui.screen` | `"fullscreen"` or `"scrollback"` | `"fullscreen"` |  | user |

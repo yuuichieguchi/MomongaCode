@@ -65,6 +65,8 @@ export type PtySession = {
   waitForGone(pattern: Pattern, options?: WaitOptions & { readonly in?: Region }): Promise<Frame>;
   waitForPrompt(pattern: Pattern, options?: WaitOptions): Promise<Frame>;
   exit(options?: WaitOptions): Promise<Exited>;
+  reportFocus(direction: 'in' | 'out'): Promise<void>;
+  written(): Promise<string>;
 };
 
 const FOOTER_ROW = /^mode: \S+/;
@@ -75,6 +77,8 @@ const SETTLED_PROMPT_HINT = /to choose|to move|to confirm the value/;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 const PASTE_START = '\u001b[200~';
 const PASTE_END = '\u001b[201~';
+const FOCUS_IN = '\u001b[I';
+const FOCUS_OUT = '\u001b[O';
 
 const lastIndexWhere = (rows: readonly string[], before: number, test: (row: string) => boolean): number => {
   for (let index = before - 1; index >= 0; index -= 1) if (test(rows[index] ?? '')) return index;
@@ -155,11 +159,13 @@ export const attachPtySession = ({ input, output, closed, terminal }: PtyIo): Pt
   const inputPipe = trackStreamErrors(input, 'the input pipe of the pty');
   let rendering = Promise.resolve();
   let beforeWrite = EMPTY_FRAME;
+  let writtenBytes = '';
   terminal.onAnswer((answer) => {
     if (input.writable) input.write(answer);
   });
   output.setEncoding('utf8');
   output.on('data', (chunk: string) => {
+    writtenBytes += chunk;
     rendering = rendering.then(() => terminal.write(chunk));
   });
 
@@ -244,6 +250,11 @@ export const attachPtySession = ({ input, output, closed, terminal }: PtyIo): Pt
     waitForGone: (pattern, { boundMs = E2E_RUN_COMPLETED_BOUND_MS, in: region = 'screen' } = {}) => awaitChecks(checksOf({ lacks: pattern, in: region }), boundMs),
     waitForPrompt: (pattern, { boundMs = E2E_RUN_COMPLETED_BOUND_MS } = {}) => awaitChecks([promptCheck(pattern)], boundMs),
     exit,
+    reportFocus: (direction) => send(direction === 'in' ? FOCUS_IN : FOCUS_OUT),
+    written: async () => {
+      await rendering;
+      return writtenBytes;
+    },
   };
 };
 

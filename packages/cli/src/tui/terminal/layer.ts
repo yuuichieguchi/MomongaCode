@@ -6,7 +6,7 @@ import type { ScreenMode, TerminalModeName } from './modes.ts';
 import { advance, fullscreenRefused, modifyOtherKeysSent, modifyOtherKeysWanted, mouseReported, negotiationFrom, synchronizedOutputReported } from './negotiation.ts';
 import type { NegotiationState } from './negotiation.ts';
 import { createInputParser } from './parser.ts';
-import { BEL, titleSequence } from './title.ts';
+import { BEL, notificationSequence, titleSequence, tmuxPassthrough } from './title.ts';
 
 export type TerminalSize = { columns: number; rows: number };
 
@@ -85,6 +85,7 @@ export type TerminalLayer = {
   setScreen(screen: ScreenMode): void;
   setTitle(title: string): void;
   bell(): void;
+  desktopNotification(text: string, options: { tmux: boolean }): void;
   handoverTerminal(): HandoverTerminal;
   state(): TerminalState;
   subscribe(listener: () => void): () => void;
@@ -440,6 +441,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
       publish();
     },
     bell: () => output.writeSync(BEL),
+    desktopNotification: (text, { tmux }) => output.writeSync(tmux ? tmuxPassthrough(notificationSequence(text)) : notificationSequence(text)),
     handoverTerminal: () => ({ screen, modes: inTableOrder(enabled) }),
     state: () => snapshot,
     subscribe: (listener) => {

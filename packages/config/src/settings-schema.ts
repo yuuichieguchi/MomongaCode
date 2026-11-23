@@ -10,7 +10,7 @@ export const MODEL_ROLES = ['compaction', 'reflection', 'analysis', 'subagent'] 
 export const BASH_ON_TIMEOUT = ['background', 'kill'] as const;
 
 export const TUI_THEMES = ['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind'] as const;
-export const TUI_NOTIFY_MODES = ['off', 'bell'] as const;
+export const TUI_NOTIFY_MODES = ['auto', 'bell', 'off'] as const;
 export const TUI_SCREEN_MODES = ['fullscreen', 'scrollback'] as const;
 export const ISSUE_AUTHOR_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'] as const;
 

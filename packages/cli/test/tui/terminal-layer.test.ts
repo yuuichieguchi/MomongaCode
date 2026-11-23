@@ -754,3 +754,23 @@ describe('a lone ESC and the key settle', () => {
     expect(t.delivered).toEqual([]);
   });
 });
+
+describe('the desktop notification through the layer', () => {
+  it('writes OSC 9 with the text through the one writer', () => {
+    const t = withEveryMode();
+    t.layer.desktopNotification('done · myproject · momonga', { tmux: false });
+    expect(t.writes).toEqual([`${ESC}]9;done · myproject · momonga\u0007`]);
+  });
+
+  it('wraps it for tmux passthrough inside tmux', () => {
+    const t = withEveryMode();
+    t.layer.desktopNotification('done · myproject · momonga', { tmux: true });
+    expect(t.writes).toEqual([`${ESC}Ptmux;${ESC}${ESC}]9;done · myproject · momonga\u0007${ESC}\\`]);
+  });
+
+  it('leaves the bell one plain BEL', () => {
+    const t = withEveryMode();
+    t.layer.bell();
+    expect(t.writes).toEqual(['\u0007']);
+  });
+});
