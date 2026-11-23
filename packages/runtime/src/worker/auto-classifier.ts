@@ -134,8 +134,13 @@ export const callResolvedClassifier = async <P extends UsageChargePurpose>(optio
   }
 };
 
-export const resolveClassifier = async (gateway: Pick<GatewayPort, 'listing'>, configured: string, signal: AbortSignal): Promise<ResolvedClassifier | undefined> => {
-  const { views } = await gateway.listing({ signal });
+export const resolveClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>, configured: string): Promise<ResolvedClassifier | ClassifierCall<P> | undefined> => {
+  let views;
+  try {
+    ({ views } = await options.gateway.listing({ signal: options.signal }));
+  } catch (error) {
+    return gatewayFailureOf(options, error);
+  }
   const resolution = resolveTypedModelRef(typedModelText(configured), views);
   if (resolution.kind !== 'found') return undefined;
   return { canon: resolution.model.canon, display: displayOf(resolution.model, views) };
@@ -143,13 +148,9 @@ export const resolveClassifier = async (gateway: Pick<GatewayPort, 'listing'>, c
 
 export const callClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P> & { configured: string | undefined }): Promise<ClassifierCall<P>> => {
   if (options.configured === undefined) return failed(NO_CLASSIFIER_FAILURE);
-  let resolved: ResolvedClassifier | undefined;
-  try {
-    resolved = await resolveClassifier(options.gateway, options.configured, options.signal);
-  } catch (error) {
-    return gatewayFailureOf(options, error);
-  }
+  const resolved = await resolveClassifier(options, options.configured);
   if (resolved === undefined) return failed(AUTO_MODE_UNAVAILABLE.message);
+  if ('kind' in resolved) return resolved;
   return callResolvedClassifier(options, resolved);
 };
 

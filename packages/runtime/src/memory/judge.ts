@@ -8,7 +8,7 @@ import { requestKey } from '../model-key.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import type { BudgetAccount } from '../worker/admitted-request.ts';
 import { callResolvedClassifier, resolveClassifier } from '../worker/auto-classifier.ts';
-import type { ClassifierCall, ResolvedClassifier } from '../worker/auto-classifier.ts';
+import type { ClassifierCall, ClassifierCallOptions } from '../worker/auto-classifier.ts';
 import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { readRunLimits } from '../worker/limits.ts';
 import type { WorkerDefaults } from '../worker/types.ts';
@@ -94,28 +94,24 @@ export const createMemoryJudge = (options: MemoryJudgeOptions): MemoryJudge => {
     };
   };
 
-  const ask = (project: string, memory: MemoryRecord, runId: string, model: ResolvedClassifier, signal: AbortSignal): Promise<ClassifierCall<'memory_classifier'>> =>
-    callResolvedClassifier(
-      {
-        gateway,
-        role: options.role,
-        timers: options.timers,
-        account: accountOf(runId, signal),
-        instructions: MEMORY_CLASSIFIER_INSTRUCTIONS,
-        prompt: () => promptOf(project, memory),
-        subject: 'memory',
-        purpose: 'memory_classifier',
-        metadata: { run_id: runId, purpose: 'memory_classifier' },
-        idempotencyKeyOf: (_classifier, body) => requestKey(runId, 'memory_classifier', { memoryId: memory.id, body }),
-        signal,
-        streamOptions: () => ({ deadlineAt: clock.now() + options.attemptTimeoutMs }),
-        onSending: () => undefined,
-        onLeaseLost: () => {
-          throw new Error(`the store asked for a lease to admit the memory classifier call of the ended run ${runId}`);
-        },
-      },
-      model,
-    );
+  const callOptionsOf = (project: string, memory: MemoryRecord, runId: string, signal: AbortSignal): ClassifierCallOptions<'memory_classifier'> => ({
+    gateway,
+    role: options.role,
+    timers: options.timers,
+    account: accountOf(runId, signal),
+    instructions: MEMORY_CLASSIFIER_INSTRUCTIONS,
+    prompt: () => promptOf(project, memory),
+    subject: 'memory',
+    purpose: 'memory_classifier',
+    metadata: { run_id: runId, purpose: 'memory_classifier' },
+    idempotencyKeyOf: (_classifier, body) => requestKey(runId, 'memory_classifier', { memoryId: memory.id, body }),
+    signal,
+    streamOptions: () => ({ deadlineAt: clock.now() + options.attemptTimeoutMs }),
+    onSending: () => undefined,
+    onLeaseLost: () => {
+      throw new Error(`the store asked for a lease to admit the memory classifier call of the ended run ${runId}`);
+    },
+  });
 
   const commit = (project: string, judgement: Omit<MemoryJudgementCommit, 'openSessionIds'>): void => {
     store.memoryJudgements.commit({ ...judgement, openSessionIds: openSessionsOf(project) });
@@ -148,9 +144,10 @@ export const createMemoryJudge = (options: MemoryJudgeOptions): MemoryJudge => {
         const { folder, memory } = first;
         let call: ClassifierCall<'memory_classifier'>;
         try {
-          const resolved = await resolveClassifier(gateway, model, bounded);
+          const callOptions = callOptionsOf(folder, memory, sourceOf(memory).runId, bounded);
+          const resolved = await resolveClassifier(callOptions, model);
           if (resolved === undefined) return 'idle';
-          call = await ask(folder, memory, sourceOf(memory).runId, resolved, bounded);
+          call = 'kind' in resolved ? resolved : await callResolvedClassifier(callOptions, resolved);
         } catch (error) {
           if (signal.aborted) throw error;
           if ((await retireDecisionOf(error, options.role)) === 'retire-yield') return 'idle';

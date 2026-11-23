@@ -510,6 +510,62 @@ describe('an interrupted judgement records nothing', () => {
   });
 });
 
+describe('a failure of the model listing', () => {
+  const failListingOnce = (env: Env, fail: (signal: AbortSignal | undefined) => Promise<never>): void => {
+    const listing = env.gateway.listing.bind(env.gateway);
+    env.gateway.listing = async (options) => {
+      env.gateway.listing = listing;
+      return fail(options?.signal);
+    };
+  };
+
+  it('leaves the candidate waiting with the code and message of a gateway request error, records no model and judges it once', async () => {
+    const env = await setup();
+    const memory = env.candidate('tests live in test/');
+    failListingOnce(env, async () => {
+      throw new GatewayRequestError({ status: 502, type: 'server_error', code: 'upstream_down', message: 'the gateway could not list the models' });
+    });
+    expect(await env.judge().runOne(SIGNAL)).toBe('ran');
+    const record = env.store.memoryJudgements.get(memory.id);
+    expect(record).toMatchObject({ memoryId: memory.id, outcome: 'left', failure: 'upstream_down: the gateway could not list the models' });
+    expect(record?.classifier).toBeUndefined();
+    expect(memoryStateOf(env.store, memory.id)).toEqual({ state: 'candidate', keptByClassifier: null });
+    reply(env, textStep(verdictReply('safe', 'high')));
+    expect(await env.judge().runOne(SIGNAL)).toBe('idle');
+    expect(env.asked()).toEqual([]);
+  });
+
+  it('records nothing when the gateway says its generation retired, and judges the candidate on a later turn', async () => {
+    const env = await setup();
+    const memory = env.candidate('tests live in test/');
+    failListingOnce(env, async () => {
+      throw new GatewayRequestError({ status: 503, type: 'server_error', code: GENERATION_RETIRED_CODE, message: 'the generation retired' });
+    });
+    expect(await env.judge().runOne(SIGNAL)).toBe('idle');
+    expect(env.store.memoryJudgements.get(memory.id)).toBeUndefined();
+    expect(memoryStateOf(env.store, memory.id)).toEqual({ state: 'candidate', keptByClassifier: null });
+    reply(env, textStep(verdictReply('safe', 'high')));
+    expect(await env.judge().runOne(SIGNAL)).toBe('ran');
+    expect(env.store.memoryJudgements.get(memory.id)?.outcome).toBe('kept');
+  });
+
+  it('records nothing when the daemon stops during the listing, and judges the candidate on a later turn', async () => {
+    const env = await setup();
+    const memory = env.candidate('tests live in test/');
+    const stopping = new AbortController();
+    failListingOnce(env, async () => {
+      stopping.abort(new Error('the daemon stops'));
+      throw stopping.signal.reason;
+    });
+    await expect(env.judge().runOne(stopping.signal)).rejects.toBeDefined();
+    expect(env.store.memoryJudgements.get(memory.id)).toBeUndefined();
+    expect(env.judged(env.auto.id)).toEqual([]);
+    reply(env, textStep(verdictReply('safe', 'high')));
+    expect(await env.judge().runOne(SIGNAL)).toBe('ran');
+    expect(env.store.memoryJudgements.get(memory.id)?.outcome).toBe('kept');
+  });
+});
+
 describe('the person wins', () => {
   it.each([
     ['accepts', (store: RuntimeStore, id: string) => store.memories.accept(id), 'active'],
