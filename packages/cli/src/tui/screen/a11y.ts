@@ -19,7 +19,7 @@ export const a11yOf = (stored: StoredA11y, asked: AskedA11y): A11y => {
   return { screenReader, reducedMotion: screenReader || stored.reducedMotion || asked.env[NO_MOTION_ENV] === ASKED };
 };
 
-export const STATIC_MARK = '•';
+export { STATIC_MARK } from '../terminal/marks.ts';
 
 export const SCREEN_READER_KEEPS_HISTORY = "Screen-reader mode keeps the terminal's own history.";
 

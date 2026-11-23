@@ -430,6 +430,8 @@ export function App(props: AppProps) {
     waiting: waitingNotice(),
     notify,
     attentionTerminal: props.attentionTerminal ?? UNKNOWN_ATTENTION_TERMINAL,
+    timers,
+    reducedMotion: a11y.reducedMotion,
   });
 
   const enterPhase = (next: Phase): void => {

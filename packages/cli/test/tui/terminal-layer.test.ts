@@ -7,6 +7,7 @@ import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { DeliverableSignal, ProcessEvent, ProcessSignal, ScreenRequest, TerminalLayerOptions } from '../../src/tui/terminal/layer.ts';
 import { BACKGROUND_QUERY, DEVICE_ATTRIBUTES_QUERY, LEAVE_EVERY_MODE, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
 import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
+import { titleSequence } from '../../src/tui/terminal/title.ts';
 import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
@@ -537,6 +538,43 @@ describe('suspend', () => {
   });
 });
 
+describe('the title writes and the state subscribers', () => {
+  it('tells subscribers once, when the title mode is entered, and not for later title writes', () => {
+    const t = fakes();
+    t.layer.start();
+    t.feed(`${MOUSE_REPLY}${DA1_REPLY}`);
+    expect(t.layer.state().enabled).not.toContain('title');
+    let changes = 0;
+    t.layer.subscribe(() => {
+      changes += 1;
+    });
+    t.layer.setTitle('one - momonga');
+    expect(changes).toBe(1);
+    expect(t.layer.state().enabled).toContain('title');
+    const entered = t.layer.state();
+    t.writes.length = 0;
+    t.layer.setTitle('two - momonga');
+    t.layer.setTitle('three - momonga');
+    expect(t.writes.join('')).toBe(`${titleSequence('two - momonga')}${titleSequence('three - momonga')}`);
+    expect(changes).toBe(1);
+    expect(t.layer.state()).toBe(entered);
+  });
+
+  it('writes the latest title again when the process continues after a stop', () => {
+    const t = withEveryMode();
+    t.layer.setTitle('one - momonga');
+    t.layer.setTitle('two - momonga');
+    t.layer.setTitle('three - momonga');
+    t.feed('\u001a');
+    t.log.length = 0;
+    t.raise('SIGCONT');
+    const written = t.log.join('');
+    expect(written).toContain(titleSequence('three - momonga'));
+    expect(written).not.toContain(titleSequence('two - momonga'));
+    expect(written.indexOf(titleSequence('three - momonga'))).toBeGreaterThan(written.indexOf(`${ESC}[22;2t`));
+  });
+});
+
 describe('resize and the size limits', () => {
   it('follows the size the terminal reports', () => {
     const t = fakes();
@@ -758,14 +796,14 @@ describe('a lone ESC and the key settle', () => {
 describe('the desktop notification through the layer', () => {
   it('writes OSC 9 with the text through the one writer', () => {
     const t = withEveryMode();
-    t.layer.desktopNotification('done · myproject · momonga', { tmux: false });
-    expect(t.writes).toEqual([`${ESC}]9;done · myproject · momonga\u0007`]);
+    t.layer.desktopNotification('Run complete in 32s - myproject', { tmux: false });
+    expect(t.writes).toEqual([`${ESC}]9;Run complete in 32s - myproject\u0007`]);
   });
 
   it('wraps it for tmux passthrough inside tmux', () => {
     const t = withEveryMode();
-    t.layer.desktopNotification('done · myproject · momonga', { tmux: true });
-    expect(t.writes).toEqual([`${ESC}Ptmux;${ESC}${ESC}]9;done · myproject · momonga\u0007${ESC}\\`]);
+    t.layer.desktopNotification('Run complete in 32s - myproject', { tmux: true });
+    expect(t.writes).toEqual([`${ESC}Ptmux;${ESC}${ESC}]9;Run complete in 32s - myproject\u0007${ESC}\\`]);
   });
 
   it('leaves the bell one plain BEL', () => {

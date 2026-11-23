@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { escapeTerminalLine, measuringSkipOf, measuringStepOf } from '@momonga/protocol';
 import type { Measuring } from '@momonga/protocol';
 import type { ActionId, KeyTable } from '../keys/table.ts';
-import { STATIC_MARK } from './a11y.ts';
+import { SPINNER_FRAMES, SPINNER_MS, STATIC_MARK } from '../terminal/marks.ts';
 import { every } from './timers.ts';
 import type { ScreenTimers } from './timers.ts';
 
@@ -26,9 +26,7 @@ export type WaitingFacts = {
   loading: Loading | undefined;
 };
 
-export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
-
-export const SPINNER_MS = 100;
+export { SPINNER_FRAMES, SPINNER_MS };
 
 export const STARTING_TEXT = 'starting the momonga daemon';
 export const RECONNECTING_TEXT = 'reconnecting to the daemon';

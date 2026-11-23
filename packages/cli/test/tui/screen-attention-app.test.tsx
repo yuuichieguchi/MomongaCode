@@ -14,16 +14,24 @@ import { titleSequence } from '../../src/tui/terminal/title.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { fakeBackend, runView } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS, renderObservable, untilFrame, untilOutput, settleAtOnce } from '../ink-helpers.ts';
+import { KEYS, TUI_TEST_TIMEOUT_MS, renderObservable, untilFrame, untilOutput, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
 import { createFakeClock, pollUntil } from '@momonga/testkit';
+import { manualClock } from './screen-clock.ts';
+import type { ManualClock } from './screen-clock.ts';
 import type { FakeClock } from '@momonga/testkit';
 
 const HOSTILE_FOLDER = '/work/pro\u001b]0;pwn\u0007ject\u009b2J\n';
-const TITLE = (state: string): string => `${state} · pro]0;pwnject2J · momonga`;
 const FOLDER = 'pro]0;pwnject2J';
-const NOTICE = (text: string): string => `${text} · ${FOLDER}`;
+const PLAIN = `${FOLDER} - momonga`;
+const WORKING = `⠋ ${FOLDER} - momonga`;
+const SECOND_FRAME = `⠙ ${FOLDER} - momonga`;
+const STILL = `• ${FOLDER} - momonga`;
+const ACTION = `[ ! ] Action Required - ${FOLDER} - momonga`;
+const ACTION_DOT = `[ . ] Action Required - ${FOLDER} - momonga`;
+const NOTICE = (text: string): string => `${text} - ${FOLDER}`;
+const ANIMATION_AND_SIGNAL_MS: readonly number[] = [100, 1000];
 const CLOCK_START_MS = 1_700_000_000_000;
 
 const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
@@ -44,11 +52,27 @@ const storedSettings = (initial: Partial<ResolvedTuiSettings> = {}) => {
   return { port, saved };
 };
 
-type StartGiven = { attentionTerminal?: AttentionTerminal; timers?: ScreenTimers; unstored?: boolean; clock?: FakeClock; before?: (backend: ReturnType<typeof fakeBackend>, terminal: ReturnType<typeof fakeScreenTerminal>) => void };
+type StartGiven = { scrollback?: boolean; attentionTerminal?: AttentionTerminal; timers?: ScreenTimers; unstored?: boolean; clock?: FakeClock; before?: (backend: ReturnType<typeof fakeBackend>, terminal: ReturnType<typeof fakeScreenTerminal>) => void };
+
+const routed = (base: ScreenTimers, manual: ManualClock): ScreenTimers => {
+  const owned = new WeakSet<object>();
+  return {
+    setTimeout: (run, ms) => {
+      if (!ANIMATION_AND_SIGNAL_MS.includes(ms)) return base.setTimeout(run, ms);
+      const handle = manual.timers.setTimeout(run, ms);
+      if (typeof handle === 'object' && handle !== null) owned.add(handle);
+      return handle;
+    },
+    clearTimeout: (handle) => {
+      if (typeof handle === 'object' && handle !== null && owned.has(handle)) manual.timers.clearTimeout(handle);
+      else base.clearTimeout(handle);
+    },
+  };
+};
 
 const start = async (options: FakeBackendOptions = {}, initial: Partial<ResolvedTuiSettings> = {}, given: StartGiven = {}) => {
   const backend = fakeBackend({ session: { cwd: HOSTILE_FOLDER }, ...options });
-  const terminal = fakeScreenTerminal({ columns: 100, rows: 30 });
+  const terminal = fakeScreenTerminal({ ...(given.scrollback === true ? { screen: 'scrollback' } : {}), columns: 100, rows: 30 });
   const disabled: string[] = [];
   const disable = terminal.disable;
   terminal.disable = (mode) => {
@@ -58,19 +82,41 @@ const start = async (options: FakeBackendOptions = {}, initial: Partial<Resolved
   given.before?.(backend, terminal);
   const clock = given.clock ?? createFakeClock(CLOCK_START_MS);
   const settings = storedSettings(initial);
+  const manual = manualClock(0);
   const app = renderObservable(
     <App
       backend={backend}
       terminal={terminal}
       initialMode={undefined}
       now={clock.now}
-      timers={given.timers ?? settleAtOnce(systemTiming)}
+      timers={routed(given.timers ?? settleAtOnce(systemTiming), manual)}
       {...(given.unstored === true ? {} : { tuiSettings: settings.port })}
       {...(given.attentionTerminal === undefined ? {} : { attentionTerminal: given.attentionTerminal })}
       onExit={() => undefined}
     />,
   );
-  return { backend, terminal, app, saved: settings.saved, disabled, clock };
+  return { backend, terminal, app, saved: settings.saved, disabled, clock, manual };
+};
+
+type Started = Awaited<ReturnType<typeof start>>;
+
+const untilTitle = async (started: Started, title: string, what: string): Promise<void> => {
+  await until(() => started.terminal.titles.at(-1) === title, what);
+};
+
+const signalCount = (started: Started): number => started.terminal.bells.length + started.terminal.notifications.length;
+
+const afterTheDelay = async (started: Started, signals: number): Promise<void> => {
+  started.manual.advance(100);
+  await until(() => signalCount(started) >= signals, `${signals} signal(s) after the delay`);
+};
+
+const nothingAfterTheDelay = async (started: Started): Promise<void> => {
+  started.manual.advance(100);
+  started.terminal.resize(100, 31);
+  await untilFrame(started.app, 'mode: manual');
+  started.terminal.resize(100, 30);
+  await untilFrame(started.app, 'mode: manual');
 };
 
 const ready = async (options: FakeBackendOptions = {}, initial: Partial<ResolvedTuiSettings> = {}, given: StartGiven = {}) => {
@@ -89,7 +135,7 @@ const run = async (started: Awaited<ReturnType<typeof start>>, text = 'go'): Pro
   const runs = started.backend.started.length;
   await submit(started, text);
   await until(() => started.backend.started.length > runs, 'the run is started');
-  await until(() => started.terminal.titles.at(-1)?.startsWith('working · ') === true, 'the title says working');
+  await untilTitle(started, WORKING, 'the title shows the first spinner frame');
 };
 
 const ask = (started: Awaited<ReturnType<typeof start>>): void => {
@@ -98,67 +144,119 @@ const ask = (started: Awaited<ReturnType<typeof start>>): void => {
 };
 
 describe('the terminal title names the state of the session', () => {
-  it('says ready at the start, with the folder name made safe, and is not repeated while nothing changes', async () => {
+  it('shows the folder made safe and the product at the start, and is not repeated while nothing changes', async () => {
     const started = await ready();
-    expect(started.terminal.titles).toEqual([TITLE('ready')]);
+    expect(started.terminal.titles).toEqual([PLAIN]);
     started.app.stdin.write('abc');
     await untilFrame(started.app, '> abc');
     started.terminal.resize(100, 31);
-    expect(started.terminal.titles).toEqual([TITLE('ready')]);
+    started.manual.advance(3000);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.titles).toEqual([PLAIN]);
     started.app.unmount();
   });
 
-  it('says working during a run, waiting for you while an approval is open, and done after a run that ended well', async () => {
+  it('spins during a run, asks for action while an approval is open, and is plain after a run that ended well', async () => {
     const started = await ready();
     await run(started);
     ask(started);
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
     started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('working'), 'working again');
+    await untilTitle(started, WORKING, 'the spinner again');
     started.backend.finish(runView());
-    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
-    expect(started.terminal.titles).toEqual([TITLE('ready'), TITLE('working'), TITLE('waiting for you'), TITLE('working'), TITLE('done')]);
+    await untilTitle(started, PLAIN, 'the plain title after the run');
+    expect(started.terminal.titles).toEqual([PLAIN, WORKING, ACTION, WORKING, PLAIN]);
     started.terminal.emit({ type: 'focus', direction: 'out' });
     started.terminal.resize(100, 31);
-    expect(started.terminal.titles.at(-1)).toBe(TITLE('done'));
+    expect(started.terminal.titles.at(-1)).toBe(PLAIN);
     await run(started, 'again');
-    expect(started.terminal.titles.slice(-2)).toEqual([TITLE('done'), TITLE('working')]);
+    expect(started.terminal.titles.slice(-2)).toEqual([PLAIN, WORKING]);
     started.app.unmount();
   });
 
-  it('says error after a run that failed, and ready again after the next key', async () => {
+  it('turns the spinner every 100 ms of the screen timers while a run works', async () => {
+    const started = await ready();
+    await run(started);
+    started.manual.advance(100);
+    await untilTitle(started, SECOND_FRAME, 'the second spinner frame');
+    expect(started.terminal.titles).toEqual([PLAIN, WORKING, SECOND_FRAME]);
+    started.app.unmount();
+  });
+
+  it('swaps the mark of the action title every 1000 ms of the screen timers while a prompt is shown', async () => {
+    const started = await ready();
+    await run(started);
+    ask(started);
+    await untilTitle(started, ACTION, 'the title asks for action');
+    started.manual.advance(1000);
+    await untilTitle(started, ACTION_DOT, 'the dot');
+    started.manual.advance(1000);
+    await untilTitle(started, ACTION, 'the exclamation mark again');
+    started.app.unmount();
+  });
+
+  it.each([{ setting: 'reducedMotion' }, { setting: 'screenReader' }] as const)('with $setting shows the static mark while working and a steady action title while a prompt is shown', async ({ setting }) => {
+    const started = await start({}, { [setting]: true }, { scrollback: true });
+    await untilOutput(started.app, 'mode: manual');
+    await submit(started, 'go');
+    await until(() => started.backend.started.length === 1, 'the run is started');
+    await untilTitle(started, STILL, 'the static mark');
+    started.manual.advance(1000);
+    ask(started);
+    await untilTitle(started, ACTION, 'the title asks for action');
+    started.manual.advance(1000);
+    started.manual.advance(1000);
+    started.terminal.resize(100, 31);
+    await until(() => started.terminal.titles.length >= 3, 'the titles are written');
+    expect(started.terminal.titles).toEqual([PLAIN, STILL, ACTION]);
+    started.app.unmount();
+  }, TUI_TEST_TIMEOUT_MS);
+
+  it('is plain after a run that failed, and stays so without a new write after the next key', async () => {
     const started = await ready();
     await run(started);
     started.backend.finish(runView({ status: 'FAILED', error: { code: 'provider_error', message: 'the provider failed' } }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    await untilTitle(started, PLAIN, 'the plain title after the failure');
     started.terminal.emit(keyX);
-    await until(() => started.terminal.titles.at(-1) === TITLE('ready'), 'ready after a key');
+    started.terminal.resize(100, 31);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.titles).toEqual([PLAIN, WORKING, PLAIN]);
     started.app.unmount();
   });
 
-  it('says ready after a run the user cancelled', async () => {
+  it('is plain after a run the user cancelled', async () => {
     const started = await ready();
     await run(started);
     started.backend.finish(runView({ status: 'CANCELLED' }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('ready'), 'ready after a cancel');
+    await untilTitle(started, PLAIN, 'the plain title after a cancel');
+    expect(started.terminal.titles).toEqual([PLAIN, WORKING, PLAIN]);
     started.app.unmount();
   });
 
-  it('says waiting for you while the trust question is open', async () => {
+  it('asks for action while the trust question is open', async () => {
     const started = await start({ trust: { path: HOSTILE_FOLDER, decision: null } });
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
     started.app.unmount();
+  });
+
+  it('writes no title after the screen ended', async () => {
+    const started = await ready();
+    await run(started);
+    const written = started.terminal.titles.length;
+    started.app.unmount();
+    started.manual.advance(5000);
+    expect(started.terminal.titles).toHaveLength(written);
   });
 
   it('never holds more than 120 characters and nothing a terminal acts on', async () => {
     const started = await ready({ session: { cwd: `/work/${'字'.repeat(200)}\u001b[2J` } });
-    await run(started);
+    await submit(started, 'go');
+    await until(() => started.terminal.titles.at(-1)?.startsWith('⠋ ') === true, 'the title shows the first spinner frame');
     for (const title of started.terminal.titles) {
       expect([...title].length).toBeLessThanOrEqual(120);
       expect(title).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
     }
-    expect(started.terminal.titles.at(-1)?.startsWith('working · ')).toBe(true);
-    expect(started.terminal.titles.at(-1)?.endsWith(' · momonga')).toBe(true);
+    expect(started.terminal.titles.at(-1)).toBe(`⠋ ${'字'.repeat(108)} - momonga`);
     started.app.unmount();
   });
 });
@@ -213,10 +311,25 @@ const heldLongWaits = (base: ScreenTimers) => {
   };
 };
 
-const finishDone = async (started: Awaited<ReturnType<typeof start>>, text = 'go'): Promise<void> => {
+const finishDone = async (started: Started, text = 'go'): Promise<void> => {
   await run(started, text);
   started.backend.finish(runView());
-  await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+  await untilTitle(started, PLAIN, 'the plain title after the run');
+};
+
+const ended = async (started: Started, view: Parameters<typeof runView>[0]): Promise<void> => {
+  started.backend.finish(runView(view));
+  await untilTitle(started, PLAIN, 'the plain title after the run');
+};
+
+const lastTitleBeforeEachSignal = (started: Started): string[] => {
+  const seen: string[] = [];
+  let title = '';
+  for (const entry of started.terminal.written) {
+    if (entry.kind === 'title') title = entry.text;
+    else seen.push(title);
+  }
+  return seen;
 };
 
 describe('the notification setting in the running screen', () => {
@@ -225,13 +338,15 @@ describe('the notification setting in the running screen', () => {
     started.terminal.emit(focus('out'));
     await run(started);
     ask(started);
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await nothingAfterTheDelay(started);
     started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
-    started.backend.finish(runView());
-    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+    await untilTitle(started, WORKING, 'the spinner again');
+    await ended(started, {});
+    await nothingAfterTheDelay(started);
     await run(started, 'again');
-    started.backend.finish(runView({ status: 'FAILED', error: { code: 'provider_error', message: 'the provider failed' } }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    await ended(started, { status: 'FAILED', error: { code: 'provider_error', message: 'the provider failed' } });
+    await nothingAfterTheDelay(started);
     expect(started.terminal.bells).toEqual([]);
     expect(started.terminal.notifications).toEqual([]);
     expect(started.terminal.state().enabled).not.toContain('focus');
@@ -246,13 +361,24 @@ describe('the notification setting in the running screen', () => {
     started.app.unmount();
   });
 
-  it('auto on a terminal that shows OSC 9 sends one desktop notification with the title text when a run ends while the focus is out', async () => {
+  it('auto on a terminal that shows OSC 9 sends one desktop notification 100 ms after the plain title when a run ends while the focus is out', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     expect(started.terminal.state().enabled).toContain('focus');
     started.terminal.emit(focus('out'));
     await finishDone(started);
     started.terminal.resize(100, 31);
-    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: false }]);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([]);
+    started.manual.advance(99);
+    started.terminal.resize(100, 30);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([]);
+    started.manual.advance(1);
+    await until(() => started.terminal.notifications.length === 1, 'the notification');
+    expect(started.terminal.written.slice(-2)).toEqual([
+      { kind: 'title', text: PLAIN },
+      { kind: 'notification', text: NOTICE('Run complete in 0s'), tmux: false },
+    ]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
@@ -261,16 +387,20 @@ describe('the notification setting in the running screen', () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: { osc9: true, tmux: true } });
     started.terminal.emit(focus('out'));
     await finishDone(started);
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: true }]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
 
-  it('auto on a terminal that does not show OSC 9 rings the bell once', async () => {
+  it('auto on a terminal that does not show OSC 9 rings the bell once, 100 ms after the plain title', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: BELL_TERMINAL });
     started.terminal.emit(focus('out'));
     await finishDone(started);
-    expect(started.terminal.bells).toEqual([TITLE('done')]);
+    expect(started.terminal.bells).toEqual([]);
+    await afterTheDelay(started, 1);
+    expect(started.terminal.bells).toEqual([PLAIN]);
+    expect(started.terminal.written.slice(-2)).toEqual([{ kind: 'title', text: PLAIN }, { kind: 'bell' }]);
     expect(started.terminal.notifications).toEqual([]);
     started.app.unmount();
   });
@@ -279,34 +409,99 @@ describe('the notification setting in the running screen', () => {
     const started = await ready({}, { notify: 'auto' });
     started.terminal.emit(focus('out'));
     await finishDone(started);
-    expect(started.terminal.bells).toEqual([TITLE('done')]);
+    await afterTheDelay(started, 1);
+    expect(started.terminal.bells).toEqual([PLAIN]);
     expect(started.terminal.notifications).toEqual([]);
     started.app.unmount();
   });
 
-  it('auto sends waiting for you for an approval while the focus is out, and done for the end of the run', async () => {
+  it('auto sends the approval heading after the action title while the focus is out, and the run end after the plain title', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await run(started);
     ask(started);
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await afterTheDelay(started, 1);
     started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('working'), 'working again');
-    started.backend.finish(runView());
-    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+    await untilTitle(started, WORKING, 'the spinner again');
+    await ended(started, {});
+    await afterTheDelay(started, 2);
     expect(started.terminal.notifications.map((sent) => sent.text)).toEqual([NOTICE('Permission requested: Bash c1'), NOTICE('Run complete in 0s')]);
+    expect(lastTitleBeforeEachSignal(started)).toEqual([ACTION, PLAIN]);
     started.app.unmount();
+  });
+
+  it('drops the approval signal when the approval is answered within 100 ms', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    ask(started);
+    await untilTitle(started, ACTION, 'the title asks for action');
+    started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
+    await untilTitle(started, WORKING, 'the spinner again');
+    started.manual.advance(1000);
+    started.terminal.resize(100, 31);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([]);
+    started.app.unmount();
+  });
+
+  it('drops the run-end signal when the next run starts within 100 ms', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await finishDone(started);
+    await run(started, 'again');
+    started.manual.advance(1000);
+    started.terminal.resize(100, 31);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([]);
+    expect(started.terminal.bells).toEqual([]);
+    started.app.unmount();
+  });
+
+  it('drops the run-end signal when the focus comes back within 100 ms', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await finishDone(started);
+    started.terminal.emit(focus('in'));
+    await nothingAfterTheDelay(started);
+    started.manual.advance(1000);
+    expect(started.terminal.notifications).toEqual([]);
+    started.app.unmount();
+  });
+
+  it('drops the run-end signal when the setting changes within 100 ms', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: BELL_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await finishDone(started);
+    await submit(started, '/config notify bell');
+    await untilOutput(started.app, 'notify: bell');
+    await nothingAfterTheDelay(started);
+    started.manual.advance(1000);
+    expect(started.terminal.bells).toEqual([]);
+    expect(started.terminal.notifications).toEqual([]);
+    started.app.unmount();
+  });
+
+  it('drops the run-end signal when the screen ends within 100 ms', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await finishDone(started);
+    started.app.unmount();
+    started.manual.advance(1000);
+    expect(started.terminal.notifications).toEqual([]);
+    expect(started.terminal.bells).toEqual([]);
   });
 
   it('auto sends error for a run that failed and nothing for one the user cancelled', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await run(started);
-    started.backend.finish(runView({ status: 'FAILED', error: { code: 'provider_error', message: 'the provider failed' } }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    await ended(started, { status: 'FAILED', error: { code: 'provider_error', message: 'the provider failed' } });
+    await afterTheDelay(started, 1);
     await run(started, 'again');
-    started.backend.finish(runView({ status: 'CANCELLED' }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('ready'), 'ready');
+    await ended(started, { status: 'CANCELLED' });
+    await nothingAfterTheDelay(started);
     expect(started.terminal.notifications.map((sent) => sent.text)).toEqual([NOTICE('Run failed: provider_error: the provider failed')]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
@@ -318,13 +513,14 @@ describe('the notification setting in the running screen', () => {
     started.terminal.emit(focus('out'));
     await run(started);
     ask(started);
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await afterTheDelay(started, 1);
     started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('working'), 'working again');
-    started.backend.finish(runView());
-    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+    await untilTitle(started, WORKING, 'the spinner again');
+    await ended(started, {});
+    await afterTheDelay(started, 2);
     started.terminal.resize(100, 31);
-    expect(started.terminal.bells).toEqual([TITLE('waiting for you'), TITLE('done')]);
+    expect(started.terminal.bells).toEqual([ACTION, PLAIN]);
     expect(started.terminal.notifications).toEqual([]);
     started.app.unmount();
   });
@@ -334,9 +530,9 @@ describe('the notification setting in the running screen', () => {
     const started = await ready({}, { notify }, { attentionTerminal: OSC9_TERMINAL, timers: waits.timers });
     await run(started);
     waits.hold();
-    started.backend.finish(runView());
-    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+    await ended(started, {});
     waits.endEveryHeldWait();
+    started.manual.advance(5000);
     started.terminal.resize(100, 31);
     await untilFrame(started.app, 'mode: manual');
     expect(started.terminal.bells).toEqual([]);
@@ -349,6 +545,7 @@ describe('the notification setting in the running screen', () => {
     started.terminal.emit(focus('out'));
     started.terminal.emit(focus('in'));
     await finishDone(started);
+    await nothingAfterTheDelay(started);
     expect(started.terminal.bells).toEqual([]);
     expect(started.terminal.notifications).toEqual([]);
     started.app.unmount();
@@ -357,12 +554,13 @@ describe('the notification setting in the running screen', () => {
   it.each(['auto', 'bell'] as const)('%s writes nothing for a focus out that arrives after the run ended, and signals the next run end', async (notify) => {
     const started = await ready({}, { notify }, { attentionTerminal: BELL_TERMINAL });
     await finishDone(started);
+    await nothingAfterTheDelay(started);
     started.terminal.emit(focus('out'));
-    started.terminal.resize(100, 31);
-    await untilFrame(started.app, 'mode: manual');
+    await nothingAfterTheDelay(started);
     expect(started.terminal.bells).toEqual([]);
     await finishDone(started, 'again');
-    expect(started.terminal.bells).toEqual([TITLE('done')]);
+    await afterTheDelay(started, 1);
+    expect(started.terminal.bells).toEqual([PLAIN]);
     started.app.unmount();
   });
 
@@ -373,9 +571,10 @@ describe('the notification setting in the running screen', () => {
     await untilOutput(started.app, 'notify: bell');
     expect(started.saved).toEqual([{ name: 'notify', value: 'bell', aborted: false }]);
     await finishDone(started);
+    await afterTheDelay(started, 1);
     expect(started.disabled).not.toContain('focus');
     expect(started.terminal.state().enabled).toContain('focus');
-    expect(started.terminal.bells).toEqual([TITLE('done')]);
+    expect(started.terminal.bells).toEqual([PLAIN]);
     expect(started.terminal.notifications).toEqual([]);
     started.app.unmount();
   });
@@ -388,10 +587,12 @@ describe('the notification setting in the running screen', () => {
     await until(() => !started.terminal.state().enabled.includes('focus'), 'focus reporting is off');
     expect(started.disabled).toEqual(['focus']);
     await finishDone(started);
+    await nothingAfterTheDelay(started);
     expect(started.terminal.bells).toEqual([]);
     await submit(started, '/config notify auto');
     await until(() => started.terminal.state().enabled.includes('focus'), 'focus reporting is on again');
     await finishDone(started, 'again');
+    await nothingAfterTheDelay(started);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
@@ -414,17 +615,24 @@ describe('the notification setting in the running screen', () => {
     await until(() => started.terminal.state().enabled.includes('focus'), 'focus reporting is on');
     started.terminal.emit(focus('out'));
     openBoot();
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
-    started.terminal.resize(100, 31);
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: 'Do you trust the files in /tmp/work/trusted?', tmux: false }]);
+    expect(lastTitleBeforeEachSignal(started)).toEqual([ACTION]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
 
   it('the trust screen shown at start writes no signal because no focus report exists yet', async () => {
     const started = await start({ trust: { path: HOSTILE_FOLDER, decision: null } }, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await untilFrame(started.app, 'Do you trust the files in');
+    started.manual.advance(100);
     started.terminal.resize(100, 31);
+    await untilFrame(started.app, 'Do you trust the files in');
+    started.terminal.resize(100, 30);
+    await untilFrame(started.app, 'Do you trust the files in');
+    expect(started.terminal.titles).toEqual([PLAIN, ACTION]);
     expect(started.terminal.notifications).toEqual([]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
@@ -436,7 +644,8 @@ describe('the notification setting in the running screen', () => {
     await run(started);
     started.backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'mcp__calc__ask', kind: 'other', title: 'mcp__calc__ask {}', rawInput: {} }));
     started.backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'c1', server: 'calc', requests: [{ key: 'k1', mode: 'form', message: 'Which branch?', requestedSchema: { type: 'object', properties: { branch: { type: 'string' } } } }] }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await afterTheDelay(started, 1);
     started.terminal.resize(100, 31);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('MCP server calc asks for input (mcp__calc__ask {})'), tmux: false }]);
     expect(started.terminal.bells).toEqual([]);
@@ -447,13 +656,16 @@ describe('the notification setting in the running screen', () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await finishDone(started);
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toHaveLength(1);
     started.terminal.resize(100, 31);
     started.terminal.emit(focus('in'));
     started.terminal.emit(focus('out'));
+    await nothingAfterTheDelay(started);
+    started.manual.advance(5000);
     started.terminal.resize(100, 30);
     await untilFrame(started.app, 'mode: manual');
-    expect(started.terminal.titles.at(-1)).toBe(TITLE('done'));
+    expect(started.terminal.titles.at(-1)).toBe(PLAIN);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: false }]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
@@ -465,8 +677,8 @@ describe('the notification setting in the running screen', () => {
     await run(started);
     await until(() => started.backend.followed.length === 1, 'the run is followed');
     started.clock.advance(32_999);
-    started.backend.finish(runView());
-    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+    await ended(started, {});
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 32s'), tmux: false }]);
     started.app.unmount();
   });
@@ -475,8 +687,8 @@ describe('the notification setting in the running screen', () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await run(started);
-    started.backend.finish(runView({ status: 'FAILED' }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    await ended(started, { status: 'FAILED' });
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run failed'), tmux: false }]);
     started.app.unmount();
   });
@@ -485,8 +697,8 @@ describe('the notification setting in the running screen', () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await run(started);
-    started.backend.finish(runView({ status: 'FAILED', stopReason: 'max_steps' }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    await ended(started, { status: 'FAILED', stopReason: 'max_steps' });
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run failed: max_steps'), tmux: false }]);
     started.app.unmount();
   });
@@ -502,7 +714,8 @@ describe('the notification setting in the running screen', () => {
     });
     started.terminal.emit(focus('out'));
     await submit(started, 'go');
-    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    await untilOutput(started.app, 'the gateway refused the run');
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run failed: the gateway refused the run'), tmux: false }]);
     started.app.unmount();
   });
@@ -513,7 +726,8 @@ describe('the notification setting in the running screen', () => {
     await run(started);
     started.backend.emit(frame({ type: 'tool.call', callId: 'e1', providerCallId: 'e1', name: 'Edit', kind: 'edit', title: 'Edit src/app.ts', rawInput: { file_path: 'src/app.ts' } }));
     started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'e1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Permission requested: Edit src/app.ts'), tmux: false }]);
     started.app.unmount();
   });
@@ -527,6 +741,7 @@ describe('the notification setting in the running screen', () => {
     started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
     started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap2', callId: 'c2', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
     await untilFrame(started.app, 'Permission requested: Bash c1 (1 of 2)');
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Permission requested: Bash c1'), tmux: false }]);
     started.app.unmount();
   });
@@ -549,6 +764,7 @@ describe('the notification setting in the running screen', () => {
       }),
     );
     await untilFrame(started.app, 'MCP server github asks for input (mcp__github__ask {}) 1/2');
+    await afterTheDelay(started, 1);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('MCP server github asks for input (mcp__github__ask {})'), tmux: false }]);
     started.app.unmount();
   });
@@ -558,13 +774,14 @@ describe('the notification setting in the running screen', () => {
     started.terminal.emit(focus('out'));
     await run(started);
     ask(started);
-    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    await untilTitle(started, ACTION, 'the title asks for action');
+    await afterTheDelay(started, 1);
     const titlesBefore = started.terminal.titles.length;
     started.backend.emit(frame({ type: 'tool.call', callId: 'm1', providerCallId: 'm1', name: 'mcp__calc__ask', kind: 'other', title: 'mcp__calc__ask {}', rawInput: {} }));
     started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
     started.backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'm1', server: 'calc', requests: [{ key: 'k1', mode: 'form', message: 'Which branch?', requestedSchema: { type: 'object', properties: { branch: { type: 'string' } } } }] }));
     await untilFrame(started.app, 'MCP server calc asks for input');
-    started.terminal.resize(100, 31);
+    await nothingAfterTheDelay(started);
     expect(started.terminal.titles.slice(titlesBefore)).toEqual([]);
     expect(started.terminal.notifications).toEqual([{ text: NOTICE('Permission requested: Bash c1'), tmux: false }]);
     started.app.unmount();
@@ -603,8 +820,10 @@ const FOCUS_OUT = `${ESC}[O`;
 const FOCUS_ON = `${ESC}[?1004h`;
 const FOCUS_OFF = `${ESC}[?1004l`;
 const PLAIN_FOLDER = '/work/myproject';
-const DONE = 'done · myproject · momonga';
-const DONE_NOTICE = 'Run complete in 5s · myproject';
+const LAYER_PLAIN = titleSequence('myproject - momonga');
+const LAYER_WORKING = titleSequence('⠋ myproject - momonga');
+const LAYER_ACTION = titleSequence('[ ! ] Action Required - myproject - momonga');
+const DONE_NOTICE = 'Run complete in 5s - myproject';
 const LAYER_BOUND_MS = 3000;
 
 const closers: (() => void)[] = [];
@@ -647,6 +866,7 @@ const onLayer = async (notify: ResolvedTuiSettings['notify'] | undefined, attent
   layer.start();
   const backend = fakeBackend({ session: { cwd: PLAIN_FOLDER } });
   const clock = createFakeClock(CLOCK_START_MS);
+  const manual = manualClock(0);
   const settings = storedSettings(notify === undefined ? {} : { notify });
   const instance = render(
     <TerminalFrame layer={layer}>
@@ -654,7 +874,7 @@ const onLayer = async (notify: ResolvedTuiSettings['notify'] | undefined, attent
         backend={backend}
         terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, desktopNotification: layer.desktopNotification, enable: layer.enable, disable: layer.disable, input }}
         now={clock.now}
-        timers={settleAtOnce(systemTiming)}
+        timers={routed(settleAtOnce(systemTiming), manual)}
         initialMode={undefined}
         {...(notify === undefined ? {} : { tuiSettings: settings.port })}
         {...(attentionTerminal === undefined ? {} : { attentionTerminal })}
@@ -676,14 +896,15 @@ const onLayer = async (notify: ResolvedTuiSettings['notify'] | undefined, attent
     await waitFor(() => stdout.written.join('').includes('> go'), 'the prompt is typed');
     feed('\r');
     await waitFor(() => backend.started.length === 1, 'the run is started');
-    await waitFor(() => written().includes(titleSequence('working · myproject · momonga')), 'the title says working');
+    await waitFor(() => written().includes(LAYER_WORKING), 'the title shows the first spinner frame');
     await waitFor(() => backend.followed.length === 1, 'the run is followed');
     clock.advance(5_000);
     backend.finish(runView());
-    await waitFor(() => written().includes(titleSequence(DONE)), 'the title says done');
+    await waitFor(() => written().lastIndexOf(LAYER_PLAIN) > written().lastIndexOf(LAYER_WORKING), 'the plain title after the run');
   };
+  const pastTheDelay = (): void => manual.advance(100);
   const typed = (shown: string): Promise<void> => waitFor(() => stdout.written.join('').includes(shown), `${shown} is shown`);
-  return { written, feed, runToDone, typed, backend, waitFor };
+  return { written, feed, runToDone, typed, backend, waitFor, pastTheDelay };
 };
 
 const count = (text: string, part: string): number => text.split(part).length - 1;
@@ -698,9 +919,13 @@ describe('the signal in the bytes the terminal layer writes', () => {
     const t = await onLayer('auto', OSC9_TERMINAL);
     t.feed(FOCUS_OUT);
     await t.runToDone();
+    expect(t.written()).not.toContain(`${ESC}]9;`);
+    t.pastTheDelay();
+    await t.waitFor(() => t.written().includes(`${ESC}]9;`), 'the notification');
     expect(count(t.written(), `${ESC}]9;`)).toBe(1);
     expect(t.written()).toContain(`${ESC}]9;${DONE_NOTICE}${BEL}`);
-    expect(t.written()).not.toContain(`${ESC}]9;${DONE}${BEL}`);
+    expect(t.written().lastIndexOf(LAYER_PLAIN)).toBeLessThan(t.written().indexOf(`${ESC}]9;${DONE_NOTICE}${BEL}`));
+    expect(t.written().lastIndexOf(LAYER_WORKING)).toBeLessThan(t.written().lastIndexOf(LAYER_PLAIN));
     expect(count(t.written(), BEL)).toBe(1);
   });
 
@@ -708,6 +933,8 @@ describe('the signal in the bytes the terminal layer writes', () => {
     const t = await onLayer('auto', { osc9: true, tmux: true });
     t.feed(FOCUS_OUT);
     await t.runToDone();
+    t.pastTheDelay();
+    await t.waitFor(() => t.written().includes(`]9;`), 'the notification');
     expect(t.written()).toContain(`${ESC}Ptmux;${ESC}${ESC}]9;${DONE_NOTICE}${BEL}${ESC}\\`);
     expect(count(t.written(), `]9;`)).toBe(1);
   });
@@ -718,11 +945,16 @@ describe('the signal in the bytes the terminal layer writes', () => {
     t.feed('go');
     await t.typed('> go');
     t.feed('\r');
-    await t.waitFor(() => t.written().includes(titleSequence('working · myproject · momonga')), 'the title says working');
+    await t.waitFor(() => t.written().includes(LAYER_WORKING), 'the title shows the first spinner frame');
     t.backend.emit(frame({ type: 'tool.call', callId: 'e1', providerCallId: 'e1', name: 'Edit', kind: 'edit', title: 'Edit src/app.ts', rawInput: { file_path: 'src/app.ts' } }));
     t.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'e1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
-    await t.waitFor(() => t.written().includes(titleSequence('waiting for you · myproject · momonga')), 'the title says waiting for you');
-    expect(t.written()).toContain(`${ESC}]9;Permission requested: Edit src/app.ts · myproject${BEL}`);
+    await t.waitFor(() => t.written().includes(LAYER_ACTION), 'the title asks for action');
+    expect(t.written()).not.toContain(`${ESC}]9;`);
+    t.pastTheDelay();
+    await t.waitFor(() => t.written().includes(`${ESC}]9;`), 'the notification');
+    const approval = `${ESC}]9;Permission requested: Edit src/app.ts - myproject${BEL}`;
+    expect(t.written()).toContain(approval);
+    expect(t.written().indexOf(LAYER_ACTION)).toBeLessThan(t.written().indexOf(approval));
     expect(count(t.written(), `${ESC}]9;`)).toBe(1);
   });
 
@@ -730,7 +962,10 @@ describe('the signal in the bytes the terminal layer writes', () => {
     const t = await onLayer('auto', BELL_TERMINAL);
     t.feed(FOCUS_OUT);
     await t.runToDone();
-    expect(count(t.written(), BEL)).toBe(1);
+    expect(count(t.written(), BEL)).toBe(0);
+    t.pastTheDelay();
+    await t.waitFor(() => count(t.written(), BEL) === 1, 'the bell');
+    expect(t.written().lastIndexOf(LAYER_PLAIN)).toBeLessThan(t.written().lastIndexOf(BEL));
     expect(t.written()).not.toContain(`${ESC}]9;`);
   });
 
@@ -738,6 +973,9 @@ describe('the signal in the bytes the terminal layer writes', () => {
     const t = await onLayer('off', OSC9_TERMINAL);
     t.feed(FOCUS_OUT);
     await t.runToDone();
+    t.pastTheDelay();
+    t.feed('x');
+    await t.typed('> x');
     expect(t.written()).not.toContain(FOCUS_ON);
     expect(t.written()).not.toContain(BEL);
     expect(t.written()).not.toContain(FOCUS_OFF);
@@ -746,7 +984,9 @@ describe('the signal in the bytes the terminal layer writes', () => {
   it('auto writes no signal for a focus out that arrives after the run ended', async () => {
     const t = await onLayer('auto', OSC9_TERMINAL);
     await t.runToDone();
+    t.pastTheDelay();
     t.feed(FOCUS_OUT);
+    t.pastTheDelay();
     t.feed('x');
     await t.typed('> x');
     expect(t.written()).not.toContain(`${ESC}]9;`);

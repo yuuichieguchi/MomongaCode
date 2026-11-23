@@ -3,7 +3,8 @@ import type { ToolCallingState } from '@momonga/protocol';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { runView } from '../fake-backend.ts';
 import { account, startPlan } from '../fake-plan-gateway.tsx';
-import { KEYS, untilFrame } from '../ink-helpers.ts';
+import { pollUntil } from '@momonga/testkit';
+import { FRAME_BOUND_MS, KEYS, untilFrame } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 import { DAEMON_STOPPING_TEXT } from '../../src/tui/screen/waiting-row.tsx';
@@ -43,6 +44,7 @@ describe('the waiting row in the screen (6.1)', () => {
     backend.finish(runView());
     const idle = await untilFrame(app, (shown) => !shown.includes('to cancel'));
     expect(idle).toContain('hello');
+    await pollUntil(() => clock.pending() === 0, { description: 'every timer of the run ends once the run has ended', boundMs: FRAME_BOUND_MS });
     expect(clock.pending()).toBe(0);
     app.unmount();
   });

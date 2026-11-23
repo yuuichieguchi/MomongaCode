@@ -1,11 +1,14 @@
 import path from 'node:path';
 import { escapeTerminalLine } from '@momonga/protocol';
+import { SPINNER_FRAMES, STATIC_MARK } from './marks.ts';
 
 const ESC = '\u001b';
 
 export const BEL = '\u0007';
 
 export const TITLE_MAX_CHARACTERS = 120;
+
+export const TITLE_BLINK_MS = 1000;
 
 export const TITLE_STATES = ['ready', 'working', 'waiting for you', 'done', 'error'] as const;
 
@@ -16,7 +19,7 @@ export type RunEnd = 'done' | 'error';
 export type TitleFacts = { working: boolean; prompting: boolean; lastRun: RunEnd | undefined };
 
 const PRODUCT = 'momonga';
-const SEPARATOR = ' · ';
+const SEPARATOR = ' - ';
 
 const withoutControls = (text: string): string => [...text].filter((character) => escapeTerminalLine(character) === character).join('');
 
@@ -26,8 +29,14 @@ export const titleStateOf = ({ working, prompting, lastRun }: TitleFacts): Title
   return lastRun ?? 'ready';
 };
 
-export const titleOf = (cwd: string, state: TitleState): string => {
-  const head = `${state}${SEPARATOR}`;
+const headOf = (state: TitleState, step: number, reducedMotion: boolean): string => {
+  if (state === 'waiting for you') return `[ ${!reducedMotion && step % 2 === 1 ? '.' : '!'} ] Action Required${SEPARATOR}`;
+  if (state === 'working') return `${reducedMotion ? STATIC_MARK : SPINNER_FRAMES[step % SPINNER_FRAMES.length]} `;
+  return '';
+};
+
+export const titleOf = ({ cwd, state, step, reducedMotion }: { cwd: string; state: TitleState; step: number; reducedMotion: boolean }): string => {
+  const head = headOf(state, step, reducedMotion);
   const tail = `${SEPARATOR}${PRODUCT}`;
   const folder = [...withoutControls(path.basename(cwd))].slice(0, TITLE_MAX_CHARACTERS - [...head].length - [...tail].length).join('');
   return `${head}${folder}${tail}`;

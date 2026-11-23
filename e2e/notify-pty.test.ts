@@ -54,19 +54,33 @@ const escaped = (raw: string): string => JSON.stringify(raw);
 
 const folderOf = (home: E2eHome): string => path.basename(home.project);
 
-const titleTextOf = (state: string, home: E2eHome): string => `${state} · ${folderOf(home)} · momonga`;
+const TITLE_START = `${ESC}]2;`;
+const TITLE_END = `${ESC}\\`;
+
+const plainTitleOf = (home: E2eHome): string => `${TITLE_START}${folderOf(home)} - momonga${TITLE_END}`;
+
+const actionTitleOf = (home: E2eHome): string => `${TITLE_START}[ ! ] Action Required - ${folderOf(home)} - momonga${TITLE_END}`;
+
+const titlesIn = (raw: string): string[] => splitOscs(raw).oscs.filter((osc) => osc.startsWith(TITLE_START));
 
 const literalPattern = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const doneNotificationPattern = (home: E2eHome): string => `${literalPattern(OSC9)}Run complete in \\d+s · ${literalPattern(folderOf(home))}${literalPattern(BEL)}`;
+const doneNotificationPattern = (home: E2eHome): string => `${literalPattern(OSC9)}Run complete in \\d+s - ${literalPattern(folderOf(home))}${literalPattern(BEL)}`;
+
+const isSpinnerTitle = (title: string | undefined, home: E2eHome): boolean => title !== undefined && new RegExp(`^${literalPattern(TITLE_START)}[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] ${literalPattern(folderOf(home))} - momonga${literalPattern(TITLE_END)}$`).test(title);
+
+const runEndTitlesIn = (raw: string, home: E2eHome): number => {
+  const titles = titlesIn(raw);
+  return titles.filter((title, index) => title === plainTitleOf(home) && isSpinnerTitle(titles[index - 1], home)).length;
+};
+
+const titlesBefore = (raw: string, needle: string): string[] => titlesIn(raw.slice(0, raw.indexOf(needle)));
 
 const doneNotificationsIn = (raw: string, home: E2eHome): string[] => raw.match(new RegExp(doneNotificationPattern(home), 'g')) ?? [];
 
 const tmuxDoneNotificationsIn = (raw: string, home: E2eHome): string[] => raw.match(new RegExp(`${literalPattern(`${ESC}Ptmux;${ESC}`)}${doneNotificationPattern(home)}${literalPattern(`${ESC}\\`)}`, 'g')) ?? [];
 
-const approvalNotificationOf = (home: E2eHome): string => `${OSC9}Permission requested: Edit config.toml · ${folderOf(home)}${BEL}`;
-
-const titleSequenceOf = (state: string, home: E2eHome): string => `${ESC}]2;${titleTextOf(state, home)}${ESC}\\`;
+const approvalNotificationOf = (home: E2eHome): string => `${OSC9}Permission requested: Edit config.toml - ${folderOf(home)}${BEL}`;
 
 const startSession = async (home: E2eHome, env: Readonly<Record<string, string>>): Promise<PtySession> => {
   const pty = await spawnPty(home, [], env, { fakes: true });
@@ -89,17 +103,28 @@ const reportAwayAndProveRead = async (pty: PtySession): Promise<void> => {
   await pty.key(`${DELETE_KEY}${DELETE_KEY}` as KeyName, { until: { lacks: MARKER, in: 'input' } });
 };
 
-const submitWhileAway = async (pty: PtySession, fake: FakeChatCompletionsServer, text: string): Promise<void> => {
+const untilSpinnerTitle = async (pty: PtySession, home: E2eHome): Promise<void> => {
+  await until(async () => titlesIn(await pty.written()).some((title) => isSpinnerTitle(title, home)), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the product to set a spinner title while the model holds its reply' });
+};
+
+const submitWhileAway = async (pty: PtySession, fake: FakeChatCompletionsServer, text: string, home: E2eHome): Promise<void> => {
   const hold = fake.hold();
   await submit(pty, text);
   await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: `the model request of ${text}` });
+  await untilSpinnerTitle(pty, home);
   await reportAwayAndProveRead(pty);
   hold.release();
 };
 
 const untilDoneTitle = async (pty: PtySession, home: E2eHome, times: number): Promise<void> => {
-  const done = titleSequenceOf('done', home);
-  await until(async () => countOf(await pty.written(), done) >= times, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `the product to set the done title ${times} time(s)` });
+  await until(async () => runEndTitlesIn(await pty.written(), home) >= times, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `the product to set the plain title after a spinner ${times} time(s)` });
+};
+
+const untilSignals = async (pty: PtySession, times: number): Promise<void> => {
+  await until(async () => {
+    const raw = await pty.written();
+    return countOf(raw, OSC9) + bellSignalsIn(raw) >= times;
+  }, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `${times} signal(s) after the title` });
 };
 
 const awaitRunEnd = async (pty: PtySession, reply: string, home: E2eHome, times = 1): Promise<void> => {
@@ -126,11 +151,15 @@ describe('notify: attention signals through a pty', () => {
     const atStart = await pty.written();
     expect(countOf(atStart, FOCUS_REPORTING_ON), escaped(atStart)).toBe(1);
     expect(countOf(atStart, FOCUS_REPORTING_OFF), escaped(atStart)).toBe(0);
-    await submitWhileAway(pty, fake, 'finish the work');
+    await submitWhileAway(pty, fake, 'finish the work', home);
     await awaitRunEnd(pty, 'All finished.', home);
+    await untilSignals(pty, 1);
     const all = await leave(pty);
     const done = doneNotificationsIn(all, home);
     expect(done, escaped(all)).toHaveLength(1);
+    const beforeDone = titlesBefore(all, done[0] ?? OSC9);
+    expect(beforeDone.at(-1), escaped(all)).toBe(plainTitleOf(home));
+    expect(isSpinnerTitle(beforeDone.at(-2), home), escaped(all)).toBe(true);
     expect(countOf(all, OSC9), escaped(all)).toBe(1);
     expect(bellSignalsIn(all), escaped(all)).toBe(0);
     expect(all.lastIndexOf(FOCUS_REPORTING_OFF), escaped(all)).toBeGreaterThan(all.indexOf(done[0] ?? OSC9));
@@ -142,8 +171,9 @@ describe('notify: attention signals through a pty', () => {
     const atStart = await pty.written();
     expect(countOf(atStart, FOCUS_REPORTING_ON), escaped(atStart)).toBe(1);
     expect(bellSignalsIn(atStart), escaped(atStart)).toBe(0);
-    await submitWhileAway(pty, fake, 'finish the work');
+    await submitWhileAway(pty, fake, 'finish the work', home);
     await awaitRunEnd(pty, 'All finished.', home);
+    await untilSignals(pty, 1);
     const all = await leave(pty);
     expect(bellSignalsIn(all), escaped(all)).toBe(1);
     expect(countOf(all, OSC9), escaped(all)).toBe(0);
@@ -156,7 +186,7 @@ describe('notify: attention signals through a pty', () => {
     await submit(pty, 'finish the work');
     await awaitRunEnd(pty, 'All finished.', home);
     const all = await leave(pty);
-    expect(countOf(all, titleSequenceOf('done', home)), escaped(all)).toBeGreaterThan(0);
+    expect(runEndTitlesIn(all, home), escaped(all)).toBeGreaterThan(0);
     expectNoSignal(all);
   });
 
@@ -168,7 +198,7 @@ describe('notify: attention signals through a pty', () => {
     await submit(pty, 'finish the work');
     await awaitRunEnd(pty, 'All finished.', home);
     const all = await leave(pty);
-    expect(countOf(all, titleSequenceOf('done', home)), escaped(all)).toBeGreaterThan(0);
+    expect(runEndTitlesIn(all, home), escaped(all)).toBeGreaterThan(0);
     expectNoSignal(all);
   });
 
@@ -186,18 +216,22 @@ describe('notify: attention signals through a pty', () => {
     });
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
     const pty = await startSession(home, GHOSTTY);
-    await submitWhileAway(pty, fake, 'change the greeting');
+    await submitWhileAway(pty, fake, 'change the greeting', home);
     await pty.waitFor('Permission requested: Edit config.toml');
     await pty.waitForPrompt('+greeting = "hello, momonga"');
+    await untilSignals(pty, 1);
     const atApproval = await pty.written();
     expect(countOf(atApproval, approvalNotificationOf(home)), escaped(atApproval)).toBe(1);
     expect(countOf(atApproval, OSC9), escaped(atApproval)).toBe(1);
+    const beforeApproval = titlesBefore(atApproval, approvalNotificationOf(home));
+    expect(beforeApproval.at(-1), escaped(atApproval)).toBe(actionTitleOf(home));
+    expect(beforeApproval.findLastIndex((title) => isSpinnerTitle(title, home)), escaped(atApproval)).toBeGreaterThan(-1);
     await pty.reportFocus('in');
     await pty.key('1', { until: 'Edited the greeting.' });
     await untilRunEnds(pty, 'manual');
     await untilDoneTitle(pty, home, 1);
     const all = await leave(pty);
-    expect(countOf(all, titleSequenceOf('done', home)), escaped(all)).toBeGreaterThan(0);
+    expect(runEndTitlesIn(all, home), escaped(all)).toBeGreaterThan(0);
     expect(countOf(all, OSC9), escaped(all)).toBe(1);
     expect(bellSignalsIn(all), escaped(all)).toBe(0);
   });
@@ -205,8 +239,9 @@ describe('notify: attention signals through a pty', () => {
   it(titleOf('notify-pty-tmux'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home, fake } = await prepareProduct({ script: [textReply('All finished.')] });
     const pty = await startSession(home, { ...GHOSTTY, TMUX: '/tmp/fake,1,0' });
-    await submitWhileAway(pty, fake, 'finish the work');
+    await submitWhileAway(pty, fake, 'finish the work', home);
     await awaitRunEnd(pty, 'All finished.', home);
+    await untilSignals(pty, 1);
     const all = await leave(pty);
     const wrapped = tmuxDoneNotificationsIn(all, home);
     expect(wrapped, escaped(all)).toHaveLength(1);
@@ -222,15 +257,17 @@ describe('notify: attention signals through a pty', () => {
     await pty.reportFocus('out');
     await pty.type('second task');
     const whileAway = await pty.written();
-    expect(countOf(whileAway, titleSequenceOf('done', home)), escaped(whileAway)).toBeGreaterThan(0);
+    expect(runEndTitlesIn(whileAway, home), escaped(whileAway)).toBeGreaterThan(0);
     expectNoSignal(whileAway);
     await pty.reportFocus('in');
     const hold = fake.hold();
     await pty.key('enter', { until: { lacks: 'second task', in: 'input' } });
     await hold.waitForRequest({ timeoutMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the model request of the second task' });
+    await untilSpinnerTitle(pty, home);
     await reportAwayAndProveRead(pty);
     hold.release();
     await awaitRunEnd(pty, 'Second finished.', home, 2);
+    await untilSignals(pty, 1);
     const all = await leave(pty);
     expect(doneNotificationsIn(all, home), escaped(all)).toHaveLength(1);
     expect(countOf(all, OSC9), escaped(all)).toBe(1);

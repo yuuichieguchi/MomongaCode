@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NOTIFY_MODES, UNSTORED_TUI_SETTINGS, noticeOf, signalDue } from '../../src/tui/screen/notify.ts';
+import { NOTIFY_DELAY_MS, NOTIFY_MODES, UNSTORED_TUI_SETTINGS, noticeOf, signalDue } from '../../src/tui/screen/notify.ts';
 import { TITLE_STATES } from '../../src/tui/terminal/title.ts';
 
 const FOCUSES = [undefined, 'in', 'out'] as const;
@@ -12,6 +12,12 @@ describe('the notification setting', () => {
   it('has the values auto, bell and off in that order, and auto is the value without a settings file', () => {
     expect(NOTIFY_MODES).toEqual(['auto', 'bell', 'off']);
     expect(UNSTORED_TUI_SETTINGS.initial).toEqual({ theme: 'auto', notify: 'auto', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
+  });
+});
+
+describe('when a due signal is written', () => {
+  it('is 100 ms after the title of the state that made it due', () => {
+    expect(NOTIFY_DELAY_MS).toBe(100);
   });
 });
 
@@ -54,40 +60,40 @@ const PERMISSION = { heading: 'Permission requested: npm test', namesFolder: fal
 
 describe('the text of the desktop notification', () => {
   it('says how long a completed run took and names the folder', () => {
-    expect(noticeOf({ state: 'done', cwd: CWD, outcome: { kind: 'done', elapsedMs: 32000 }, waiting: undefined })).toBe('Run complete in 32s · myproject');
+    expect(noticeOf({ state: 'done', cwd: CWD, outcome: { kind: 'done', elapsedMs: 32000 }, waiting: undefined })).toBe('Run complete in 32s - myproject');
   });
 
   it('counts whole seconds, rounded down, always in seconds', () => {
     const doneIn = (elapsedMs: number) => noticeOf({ state: 'done', cwd: CWD, outcome: { kind: 'done', elapsedMs }, waiting: undefined });
-    expect(doneIn(0)).toBe('Run complete in 0s · myproject');
-    expect(doneIn(999)).toBe('Run complete in 0s · myproject');
-    expect(doneIn(32999)).toBe('Run complete in 32s · myproject');
-    expect(doneIn(754000)).toBe('Run complete in 754s · myproject');
+    expect(doneIn(0)).toBe('Run complete in 0s - myproject');
+    expect(doneIn(999)).toBe('Run complete in 0s - myproject');
+    expect(doneIn(32999)).toBe('Run complete in 32s - myproject');
+    expect(doneIn(754000)).toBe('Run complete in 754s - myproject');
   });
 
   it('says why a run failed when the reason is known', () => {
-    expect(noticeOf({ state: 'error', cwd: CWD, outcome: { kind: 'error', reason: 'provider_error: the provider failed' }, waiting: undefined })).toBe('Run failed: provider_error: the provider failed · myproject');
+    expect(noticeOf({ state: 'error', cwd: CWD, outcome: { kind: 'error', reason: 'provider_error: the provider failed' }, waiting: undefined })).toBe('Run failed: provider_error: the provider failed - myproject');
   });
 
   it('gives only the first line of a reason of several lines', () => {
-    expect(noticeOf({ state: 'error', cwd: CWD, outcome: { kind: 'error', reason: 'the gateway refused the run\ndetail: quota\nremedy: wait' }, waiting: undefined })).toBe('Run failed: the gateway refused the run · myproject');
+    expect(noticeOf({ state: 'error', cwd: CWD, outcome: { kind: 'error', reason: 'the gateway refused the run\ndetail: quota\nremedy: wait' }, waiting: undefined })).toBe('Run failed: the gateway refused the run - myproject');
   });
 
   it('says only that the run failed when no reason is known or the reason is blank', () => {
-    for (const reason of [undefined, '', '   ', '\n\t']) expect(noticeOf({ state: 'error', cwd: CWD, outcome: { kind: 'error', reason }, waiting: undefined }), JSON.stringify(reason)).toBe('Run failed · myproject');
+    for (const reason of [undefined, '', '   ', '\n\t']) expect(noticeOf({ state: 'error', cwd: CWD, outcome: { kind: 'error', reason }, waiting: undefined }), JSON.stringify(reason)).toBe('Run failed - myproject');
   });
 
   it('gives the heading of an approval of a command and of a file edit, then the folder', () => {
-    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: PERMISSION })).toBe('Permission requested: npm test · myproject');
-    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: { heading: 'Permission requested: Edit src/app.ts', namesFolder: false } })).toBe('Permission requested: Edit src/app.ts · myproject');
+    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: PERMISSION })).toBe('Permission requested: npm test - myproject');
+    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: { heading: 'Permission requested: Edit src/app.ts', namesFolder: false } })).toBe('Permission requested: Edit src/app.ts - myproject');
   });
 
   it('gives the heading of an approval of calls with an unknown effect, then the folder', () => {
-    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: { heading: 'Effect unknown: Write /a.txt', namesFolder: false } })).toBe('Effect unknown: Write /a.txt · myproject');
+    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: { heading: 'Effect unknown: Write /a.txt', namesFolder: false } })).toBe('Effect unknown: Write /a.txt - myproject');
   });
 
   it('gives the heading of a question from an MCP server, then the folder', () => {
-    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: { heading: 'MCP server github asks for input (Pick a branch)', namesFolder: false } })).toBe('MCP server github asks for input (Pick a branch) · myproject');
+    expect(noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: { heading: 'MCP server github asks for input (Pick a branch)', namesFolder: false } })).toBe('MCP server github asks for input (Pick a branch) - myproject');
   });
 
   it('gives the trust question without the folder after it', () => {
@@ -103,7 +109,7 @@ describe('the text of the desktop notification', () => {
 
   it('keeps the folder whole and stays within 255 bytes for a long command', () => {
     const text = noticeOf({ state: 'waiting for you', cwd: CWD, outcome: undefined, waiting: { heading: `Permission requested: ${'npm run build && '.repeat(30)}`, namesFolder: false } });
-    expect(text?.endsWith('… · myproject')).toBe(true);
+    expect(text?.endsWith('… - myproject')).toBe(true);
     expect(text?.startsWith('Permission requested: npm run build && npm run build')).toBe(true);
     expect(Buffer.byteLength(text ?? '', 'utf8')).toBe(255);
   });

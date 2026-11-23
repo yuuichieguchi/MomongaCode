@@ -435,10 +435,11 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     },
     setScreen,
     setTitle: (next) => {
+      const saving = !enabled.has('title');
       title = next;
       enter(['title']);
       output.writeSync(titleSequence(next));
-      publish();
+      if (saving) publish();
     },
     bell: () => output.writeSync(BEL),
     desktopNotification: (text, { tmux }) => output.writeSync(tmux ? tmuxPassthrough(notificationSequence(text)) : notificationSequence(text)),
