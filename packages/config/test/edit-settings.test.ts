@@ -263,4 +263,46 @@ describe('editSettings names the layer that shadows the edited key', () => {
     const result = await editSettings(placeOf(tree), 'user', { kind: 'addRule', effect: 'deny', rule: 'Bash(curl:*)' }, { ...UNABORTED, env: process.env, trusted: true });
     expect(result.shadowedBy).toBeUndefined();
   });
+
+  it('reports no shadow for tools.ripgrep set in the project file, which only the user file honours', async () => {
+    const tree = makeTree();
+    writeJson(projectSettingsPath(tree), { tools: { ripgrep: '/opt/fake/project-rg' } });
+    const result = await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tools', 'ripgrep'], value: '/opt/fake/user-rg' }, { ...UNABORTED, env: process.env, trusted: true });
+    expect(result.shadowedBy).toBeUndefined();
+  });
+
+  it('reports no shadow for tui.mouse set in the local file, which only the user file honours', async () => {
+    const tree = makeTree();
+    writeJson(localSettingsPath(tree), { tui: { mouse: false } });
+    const result = await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tui', 'mouse'], value: true }, { ...UNABORTED, env: process.env, trusted: true });
+    expect(result.shadowedBy).toBeUndefined();
+  });
+
+  it.for([
+    ['sandbox', ['sandbox'], 'bubblewrap', 'none'],
+    ['autoUpdates', ['autoUpdates'], false, true],
+    ['retention.days', ['retention', 'days'], 30, 45],
+  ] as const)('reports no shadow for %s set in the project file, which only the user file honours', async ([, keys, held, edited]) => {
+    const tree = makeTree();
+    writeJson(projectSettingsPath(tree), keys.toReversed().reduce<unknown>((inner, key) => ({ [key]: inner }), held));
+    const result = await editSettings(placeOf(tree), 'user', { kind: 'set', path: [...keys], value: edited }, { ...UNABORTED, env: process.env, trusted: true });
+    expect(result.shadowedBy).toBeUndefined();
+  });
+
+  it.for([
+    ['sandbox', ['sandbox'], 'bubblewrap', 'none'],
+    ['autoUpdates', ['autoUpdates'], false, true],
+  ] as const)('reports no shadow for %s set in the local file, which only the user file honours', async ([, keys, held, edited]) => {
+    const tree = makeTree();
+    writeJson(localSettingsPath(tree), keys.toReversed().reduce<unknown>((inner, key) => ({ [key]: inner }), held));
+    const result = await editSettings(placeOf(tree), 'user', { kind: 'set', path: [...keys], value: edited }, { ...UNABORTED, env: process.env, trusted: true });
+    expect(result.shadowedBy).toBeUndefined();
+  });
+
+  it('still names the project file for context.autoCompact, which the project file honours', async () => {
+    const tree = makeTree();
+    const project = writeJson(projectSettingsPath(tree), { context: { autoCompact: false } });
+    const result = await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['context', 'autoCompact'], value: true }, { ...UNABORTED, env: process.env, trusted: true });
+    expect(result.shadowedBy).toEqual({ layer: 'project', file: project });
+  });
 });

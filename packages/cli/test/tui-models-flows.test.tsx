@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { editSettings, readSettingsSnapshot } from '@momonga/config';
-import { testKernelLock } from '@momonga/testkit';
+import { PROJECT_ENV_NAMES, editSettings, loadSettings, readSettingsSnapshot } from '@momonga/config';
+import { createTempDir, removeTempDir, testKernelLock } from '@momonga/testkit';
 import type { LocalServerDetection, PlanCatalogEntry } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { TuiBackend } from '../src/tui/backend.ts';
@@ -11,7 +11,8 @@ import { runModelsHub } from '../src/tui/models/hub.ts';
 import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from '../src/tui/models/order.ts';
 import { ADD_TITLE, HUB_ACTIONS } from '../src/tui/models/texts.ts';
 import { createPlanFlows } from '../src/tui/plan-flows.ts';
-import { runSettingsScreen, settingsFileLines } from '../src/tui/settings-screen.tsx';
+import { SETTING_ROWS, currentOf, runSettingsScreen, settingLeaves, settingsFileLines, settingsRows, shownValue } from '../src/tui/settings-screen.tsx';
+import type { SettingLeaf } from '../src/tui/settings-screen.tsx';
 import type { SlashContext } from '../src/tui/slash.ts';
 import { CHATGPT, account, fakePlanBackend } from './fake-plan-gateway.tsx';
 import { LLAMA_SERVER, OLLAMA_ADDRESS, S1, S2, S3, S4, ollamaFound, threeModels } from './models-shell-harness.ts';
@@ -652,5 +653,323 @@ describe('the row Auto review of the settings screen, section Memory', () => {
     await runSettingsScreen(settingsOf(harness), []);
     expect(titles(harness)).toContain(TITLE);
     expect(harness.bytes()).toBe(before);
+  });
+
+  const placeOf = (harness: FlowHarness) => ({ home: harness.place.home, projectDir: path.join(harness.place.home, 'project') });
+
+  const shownOf = async (harness: FlowHarness, row: string, before?: (place: ReturnType<typeof placeOf>) => Promise<void>, seen: string[] = []): Promise<(string | undefined)[]> => {
+    const slash = settingsOf(harness) as unknown as Record<string, unknown> & { overlays: FlowHarness['context']['overlays'] };
+    if (before !== undefined) await before(placeOf(harness));
+    const shown: (string | undefined)[] = [];
+    const { overlays } = slash;
+    await runSettingsScreen(
+      {
+        ...slash,
+        overlays: { ...overlays, choose: (request: Parameters<typeof overlays.choose>[0]) => (seen.push(JSON.stringify(request)), request.title === 'Settings' && shown.push((request.rows.find((entry) => entry.label === row && entry.separator !== true) as { value?: string } | undefined)?.value), overlays.choose(request)) },
+      } as unknown as SlashContext,
+      [],
+    );
+    seen.push(...harness.infos);
+    return shown;
+  };
+
+  const projectFile = (place: ReturnType<typeof placeOf>): string => path.join(place.projectDir, '.momonga', 'settings.json');
+
+  const writeProject = (document: unknown) => async (place: ReturnType<typeof placeOf>): Promise<void> => {
+    fs.mkdirSync(path.dirname(projectFile(place)), { recursive: true });
+    fs.writeFileSync(projectFile(place), `${JSON.stringify(document, null, 2)}\n`);
+  };
+
+  const writeLocal = (document: { memory: { autoReview: boolean } }) => async (place: ReturnType<typeof placeOf>): Promise<void> => {
+    await editSettings(place, 'local', { kind: 'addRule', effect: 'allow', rule: 'Read' }, { env: process.env, trusted: true, lock: testKernelLock(), signal: new AbortController().signal });
+    const file = localFile(place);
+    fs.writeFileSync(file, `${JSON.stringify({ ...(JSON.parse(fs.readFileSync(file, 'utf8')) as object), ...document }, null, 2)}\n`);
+  };
+
+  const localFile = (place: ReturnType<typeof placeOf>): string => {
+    const projects = path.join(place.home, '.momonga', 'projects');
+    const [hashed] = fs.readdirSync(projects);
+    return path.join(projects, hashed ?? '', 'settings.local.json');
+  };
+
+  type Seeded = { file: string; bytes: string };
+
+  const seeding = (seed: (place: ReturnType<typeof placeOf>) => Promise<void>, fileOf: (place: ReturnType<typeof placeOf>) => string, seeded: Seeded) => async (place: ReturnType<typeof placeOf>): Promise<void> => {
+    await seed(place);
+    seeded.file = fileOf(place);
+    seeded.bytes = fs.readFileSync(seeded.file, 'utf8');
+  };
+
+  it('shows the state in force, off from the default, when only the project settings turn it on', async (context) => {
+    const harness = flowOf(context, threeModels(), [], { model: SESSION });
+    const shown = await shownOf(harness, 'Auto review', writeProject({ memory: { autoReview: true } }));
+    expect(shown[0]).toBe('off  default');
+  });
+
+  it('Enter turns on the state in force in the user settings when only the project settings turn it on, leaving the project file alone', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'Auto review' }], { model: SESSION });
+    let projectBefore: string | undefined;
+    let projectPath = '';
+    const shown = await shownOf(harness, 'Auto review', async (place) => {
+      await writeProject({ memory: { autoReview: true } })(place);
+      projectPath = projectFile(place);
+      projectBefore = fs.readFileSync(projectPath, 'utf8');
+    });
+    expect(harness.written()['memory']).toEqual({ autoReview: true, autoReviewModel: SESSION });
+    expect(fs.readFileSync(projectPath, 'utf8')).toBe(projectBefore);
+    expect(titles(harness)).not.toContain('Save to:');
+    expect(shown[1]).toBe('on  user');
+  });
+
+  it('shows on from the user settings over a project false, and Enter writes off to the user settings', async (context) => {
+    const harness = flowOf(context, { ...threeModels(), memory: { autoReview: true, autoReviewModel: 'ollama/qwen3.8:27b' } }, [{ pick: 'Auto review' }], { model: SESSION });
+    const shown = await shownOf(harness, 'Auto review', writeProject({ memory: { autoReview: false } }));
+    expect(shown[0]).toBe('on  user');
+    expect(harness.written()['memory']).toEqual({ autoReview: false, autoReviewModel: 'ollama/qwen3.8:27b' });
+  });
+
+  it('shows the state in force, off from the default, when only the local settings turn it on', async (context) => {
+    const harness = flowOf(context, threeModels(), [], { model: SESSION });
+    const shown = await shownOf(harness, 'Auto review', writeLocal({ memory: { autoReview: true } }));
+    expect(shown[0]).toBe('off  default');
+  });
+
+  it('the row ripgrep program shows the value in force, the default, when only the project settings set it', async (context) => {
+    const harness = flowOf(context, threeModels(), [], { model: SESSION });
+    const shown = await shownOf(harness, 'ripgrep program', writeProject({ tools: { ripgrep: '/opt/fake/project-rg' } }));
+    expect(shown[0]).toBe('bundled  default');
+  });
+
+  it('a path typed on the row ripgrep program goes to the user settings without Save to: when only the project settings set it', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'ripgrep program' }, { type: '/opt/fake/user-rg' }], { model: SESSION });
+    let projectBefore: string | undefined;
+    let projectPath = '';
+    await shownOf(harness, 'ripgrep program', async (place) => {
+      await writeProject({ tools: { ripgrep: '/opt/fake/project-rg' } })(place);
+      projectPath = projectFile(place);
+      projectBefore = fs.readFileSync(projectPath, 'utf8');
+    });
+    expect(titles(harness)).not.toContain('Save to:');
+    expect(harness.written()['tools']).toEqual({ ripgrep: '/opt/fake/user-rg' });
+    expect(fs.readFileSync(projectPath, 'utf8')).toBe(projectBefore);
+  });
+
+  it('the row Mouse shows the default when only the project settings turn it off', async (context) => {
+    const harness = flowOf(context, threeModels(), [], { model: SESSION });
+    const shown = await shownOf(harness, 'Mouse', writeProject({ tui: { mouse: false } }));
+    expect(shown[0]).toBe('on  default');
+  });
+
+  it('the row Repository facts, honoured in the project settings, still shows the project value', async (context) => {
+    const harness = flowOf(context, threeModels(), [], { model: SESSION });
+    const shown = await shownOf(harness, 'Repository facts', writeProject({ memory: { repositoryFacts: false } }));
+    expect(shown[0]).toBe('off  project');
+  });
+
+  it('after a path typed on the row ripgrep program, no sentence says the project sets it, and the row shows the typed path from the user settings', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'ripgrep program' }, { type: '/opt/fake/user-rg' }], { model: SESSION });
+    const seen: string[] = [];
+    const shown = await shownOf(harness, 'ripgrep program', writeProject({ tools: { ripgrep: '/opt/fake/project-rg' } }), seen);
+    expect(seen.join('\n').match(/[^"]*sets it in[^"]*/g) ?? []).toEqual([]);
+    expect(shown.at(-1)).toBe('/opt/fake/user-rg  user');
+  });
+
+  it.for([
+    ['Mouse', { mouse: false }, { mouse: false }],
+    ['Copy on select', { copyOnSelect: false }, { copyOnSelect: false }],
+  ] as const)('Enter on the row %s turns over the value in force into the user settings when only the project settings set it', async ([row, project, written], context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: row }], { model: SESSION });
+    const seen: string[] = [];
+    const seeded: Seeded = { file: '', bytes: '' };
+    const shown = await shownOf(harness, row, seeding(writeProject({ tui: project }), projectFile, seeded), seen);
+    expect(shown[0]).toBe('on  default');
+    expect(titles(harness)).not.toContain('Save to:');
+    expect(harness.written()['tui']).toEqual(written);
+    expect(seen.join('\n').match(/[^"]*sets it in[^"]*/g) ?? []).toEqual([]);
+    expect(fs.readFileSync(seeded.file, 'utf8')).toBe(seeded.bytes);
+  });
+
+  it('the row Screen mode at start shows the default and a chosen mode goes to the user settings when only the project settings set it', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'Screen mode at start' }, { pick: 'scrollback' }], { model: SESSION });
+    const seen: string[] = [];
+    const seeded: Seeded = { file: '', bytes: '' };
+    const shown = await shownOf(harness, 'Screen mode at start', seeding(writeProject({ tui: { screen: 'scrollback' } }), projectFile, seeded), seen);
+    expect(shown[0]).toBe('fullscreen  default');
+    expect(titles(harness)).not.toContain('Save to:');
+    expect(harness.written()['tui']).toEqual({ screen: 'scrollback' });
+    expect(seen.join('\n').match(/[^"]*sets it in[^"]*/g) ?? []).toEqual([]);
+    expect(fs.readFileSync(seeded.file, 'utf8')).toBe(seeded.bytes);
+  });
+
+  it.for([
+    ['Sandbox', { sandbox: 'bubblewrap' }, [{ pick: 'none' }, { pick: 'Yes' }], (written: Record<string, unknown>) => written['sandbox'], 'none', 'none  user'],
+    ['Automatic updates', { autoUpdates: false }, [], (written: Record<string, unknown>) => written['autoUpdates'], false, 'off  user'],
+    ['Retention of every store (days)', { retention: { days: 30 } }, [{ type: '45' }], (written: Record<string, unknown>) => (written['retention'] as Record<string, unknown> | undefined)?.['days'], 45, '45  user'],
+  ] as const)('a change on the user-only row %s while only the project settings set it goes to the user settings without Save to:', async ([row, project, steps, writtenOf, written, after], context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: row }, ...steps], { model: SESSION });
+    const seen: string[] = [];
+    const seeded: Seeded = { file: '', bytes: '' };
+    const shown = await shownOf(harness, row, seeding(writeProject(project), projectFile, seeded), seen);
+    expect(titles(harness)).not.toContain('Save to:');
+    expect(writtenOf(harness.written())).toBe(written);
+    expect(fs.readFileSync(seeded.file, 'utf8')).toBe(seeded.bytes);
+    expect(seen.join('\n').match(/[^"]*sets it in[^"]*/g) ?? []).toEqual([]);
+    expect(shown.at(-1)).toBe(after);
+  });
+
+  it('Enter on Auto review while only the local settings turn it on turns it on in the user settings and leaves the local file alone', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'Auto review' }], { model: SESSION });
+    const seeded: Seeded = { file: '', bytes: '' };
+    await shownOf(harness, 'Auto review', seeding(writeLocal({ memory: { autoReview: true } }), localFile, seeded));
+    expect(harness.written()['memory']).toEqual({ autoReview: true, autoReviewModel: SESSION });
+    expect(fs.readFileSync(seeded.file, 'utf8')).toBe(seeded.bytes);
+  });
+});
+
+describe('every row of the settings screen shows the value the loader has in force when a trusted project file sets it', () => {
+  const SKIPPED: Readonly<Record<string, string>> = {
+    'models.dialects': 'no candidate',
+    'issues.watch': 'no candidate',
+    'telemetry.otlp.headers': "<home>/.momonga/settings.json: invalid settings at /telemetry/otlp: must have required property 'endpoint'",
+  };
+  const TEXTS = ['http://127.0.0.1:9', '/opt/fake/value', 'value'];
+  const FIXTURES: Readonly<Record<string, readonly unknown[]>> = {
+    env: [{ [PROJECT_ENV_NAMES[0] ?? '']: 'value' }],
+    pricing: [[{ provider: 'ollama', model: 'value', effectiveFrom: '2026-01-01', currency: 'USD', inputPerMTok: 1, outputPerMTok: 2 }]],
+    forges: [[{ id: 'hub', descriptor: 'github', hosts: ['github.com'], apiBaseUrl: 'https://api.github.com', credential: { env: 'GITHUB_TOKEN' } }]],
+    mandates: [{ triage: { ask: ['Bash'], steps: 20 } }],
+    projectChecks: [{ '/opt/fake/project': { commands: ['npm test'] } }],
+    projectApprovals: [{ '/opt/fake/project': { hooks: [] } }],
+    'operations.approval': [{ PullRequestMerge: 'always' }],
+  };
+
+  const valueAt = (document: unknown, keys: readonly string[]): unknown => keys.reduce<unknown>((current, key) => (current !== null && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined), document);
+
+  const nested = (keys: readonly string[], value: unknown): unknown => keys.toReversed().reduce<unknown>((inner, key) => ({ [key]: inner }), value);
+
+  const numbersOf = (schema: Readonly<Record<string, unknown>>, standing: unknown): number[] => {
+    const minimum = typeof schema['minimum'] === 'number' ? schema['minimum'] : undefined;
+    const maximum = typeof schema['maximum'] === 'number' ? schema['maximum'] : undefined;
+    const base = typeof standing === 'number' ? standing : 0;
+    return [base + 1, base - 1, minimum, maximum, 1, 2, 1000].filter((value): value is number => value !== undefined && (minimum === undefined || value >= minimum) && (maximum === undefined || value <= maximum) && (schema['type'] !== 'integer' || Number.isInteger(value)));
+  };
+
+  const candidatesOf = (leaf: SettingLeaf, standing: unknown): unknown[] => {
+    const items = (leaf.schema['items'] ?? {}) as Record<string, unknown>;
+    const all: Record<SettingLeaf['kind'], () => unknown[]> = {
+      toggle: () => [standing !== true],
+      choice: () => [...(leaf.schema['enum'] as unknown[])],
+      number: () => numbersOf(leaf.schema, standing),
+      text: () => TEXTS,
+      list: () => TEXTS.map((text) => [text]),
+      choices: () => ((items['enum'] ?? []) as unknown[]).map((member) => [member]),
+      map: () => [{ VALUE: 'value' }, { 'X-Value': 'value' }, { 'x-value': 'value' }],
+      structured: () => [],
+    };
+    return [...(FIXTURES[leaf.key] ?? all[leaf.kind]())].filter((candidate) => JSON.stringify(candidate) !== JSON.stringify(standing));
+  };
+
+  const signal = (): AbortSignal => new AbortController().signal;
+
+  const refusalOf = async (leaf: SettingLeaf, value: unknown): Promise<string | undefined> => {
+    const home = createTempDir();
+    try {
+      const place = { home, projectDir: home };
+      await editSettings(place, 'user', { kind: 'set', path: leaf.path, value }, { env: process.env, trusted: true, lock: testKernelLock(), signal: signal() });
+      return undefined;
+    } catch (error) {
+      return (error instanceof Error ? error.message : String(error)).replaceAll(home, '<home>');
+    } finally {
+      removeTempDir(home);
+    }
+  };
+
+  type Checked = { key: string; label: string; expected: string; received: string };
+
+  const rowOf = async (home: string, project: string, label: string): Promise<string | undefined> => {
+    const snapshot = await readSettingsSnapshot({ env: process.env, home, projectDir: project, trusted: true, signal: signal() });
+    return settingsRows(snapshot, [], undefined).rows.find((row) => row.label === label && row.separator !== true)?.value;
+  };
+
+  const checked = async (leaf: SettingLeaf, label: string): Promise<Checked | { skipped: string }> => {
+    const root = createTempDir();
+    try {
+      const home = path.join(root, 'home');
+      const project = path.join(root, 'project');
+      fs.mkdirSync(home);
+      fs.mkdirSync(project);
+      const before = await readSettingsSnapshot({ env: process.env, home, projectDir: project, trusted: true, signal: signal() });
+      const untouched = await rowOf(home, project, label);
+      let chosen: { value: unknown } | undefined;
+      const inForce = valueAt((await loadSettings({ env: process.env, home, projectDir: project, cli: {}, trust: { isTrusted: () => true }, signal: signal() })).settings, leaf.path);
+      let refusal = 'no candidate';
+      for (const candidate of candidatesOf(leaf, valueAt(before.defaults, leaf.path)).filter((value) => JSON.stringify(value) !== JSON.stringify(inForce))) {
+        const refused = await refusalOf(leaf, candidate);
+        if (refused === undefined) {
+          chosen = { value: candidate };
+          break;
+        }
+        refusal = refused;
+      }
+      if (chosen === undefined) return { skipped: refusal };
+      fs.mkdirSync(path.join(project, '.momonga'));
+      fs.writeFileSync(path.join(project, '.momonga', 'settings.json'), `${JSON.stringify(nested(leaf.path, chosen.value), null, 2)}\n`);
+      const loaded = await loadSettings({ env: process.env, home, projectDir: project, cli: {}, trust: { isTrusted: () => true }, signal: signal() });
+      const honoured = JSON.stringify(valueAt(loaded.settings, leaf.path)) === JSON.stringify(chosen.value);
+      const received = (await rowOf(home, project, label)) ?? '';
+      const expected = honoured ? `${shownValue(chosen.value)}  project` : (untouched ?? 'no row');
+      return { key: leaf.key, label, expected, received };
+    } finally {
+      removeTempDir(root);
+    }
+  };
+
+  it.for([['auto', false], ['bypassPermissions', false], ['acceptEdits', true]] as const)('the start mode that /permissions shows is the one the loader has in force when the project file sets %s', async ([mode, honoured]) => {
+    const root = createTempDir();
+    try {
+      const home = path.join(root, 'home');
+      const project = path.join(root, 'project');
+      fs.mkdirSync(home);
+      fs.mkdirSync(path.join(project, '.momonga'), { recursive: true });
+      fs.writeFileSync(path.join(project, '.momonga', 'settings.json'), `${JSON.stringify({ permissions: { defaultMode: mode } }, null, 2)}\n`);
+      const loaded = await loadSettings({ env: process.env, home, projectDir: project, cli: {}, trust: { isTrusted: () => true }, signal: signal() });
+      const snapshot = await readSettingsSnapshot({ env: process.env, home, projectDir: project, trusted: true, signal: signal() });
+      expect(loaded.settings.permissions.defaultMode === mode).toBe(honoured);
+      expect(currentOf(snapshot, ['permissions', 'defaultMode'])).toEqual(honoured ? { value: mode, source: 'project' } : { value: loaded.settings.permissions.defaultMode, source: 'default' });
+    } finally {
+      removeTempDir(root);
+    }
+  });
+
+  const ROWS = settingLeaves().flatMap((leaf) => (SETTING_ROWS[leaf.key] === undefined ? [] : [{ leaf, label: SETTING_ROWS[leaf.key]?.label ?? '' }]));
+
+  it('lists every row of the settings screen', () => {
+    expect(ROWS.length).toBeGreaterThan(50);
+  });
+
+  it.for(ROWS.map(({ leaf, label }) => [leaf.key, leaf, label] as const))('the row of %s shows what the loader has in force when only a trusted project file sets it', { timeout: 120_000 }, async ([key, leaf, label]) => {
+    const result = await checked(leaf, label);
+    if ('skipped' in result) expect({ key, refusal: result.skipped }).toEqual({ key, refusal: SKIPPED[key] });
+    else {
+      expect(SKIPPED[key]).toBeUndefined();
+      expect(result.received).toBe(result.expected);
+    }
+  });
+
+  it('the row Environment variables shows the value in force when the project file sets a name off the project allowlist', async () => {
+    const root = createTempDir();
+    try {
+      const home = path.join(root, 'home');
+      const project = path.join(root, 'project');
+      fs.mkdirSync(home);
+      fs.mkdirSync(path.join(project, '.momonga'), { recursive: true });
+      const untouched = await rowOf(home, project, 'Environment variables');
+      fs.writeFileSync(path.join(project, '.momonga', 'settings.json'), `${JSON.stringify({ env: { VALUE: 'value' } }, null, 2)}\n`);
+      const loaded = await loadSettings({ env: process.env, home, projectDir: project, cli: {}, trust: { isTrusted: () => true }, signal: signal() });
+      expect(loaded.settings.env['VALUE']).toBeUndefined();
+      expect(await rowOf(home, project, 'Environment variables')).toBe(untouched);
+    } finally {
+      removeTempDir(root);
+    }
   });
 });

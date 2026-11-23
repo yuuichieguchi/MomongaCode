@@ -104,37 +104,38 @@ export const USER_LAYER_ONLY_MODES: readonly string[] = USER_ONLY_MODES;
 
 export const PROJECT_ENV_NAMES: readonly string[] = [...PROJECT_ENV_ALLOWLIST];
 
-const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
-  const restricted: Settings = { ...settings };
+const restrictToUserTrustLevel = (settings: Readonly<Record<string, unknown>>, source: string, warnings: string[]): Record<string, unknown> => {
+  const restricted: Record<string, unknown> = { ...settings };
 
-  if (settings.env !== undefined) {
-    const kept: Record<string, string> = {};
-    for (const [key, value] of Object.entries(settings.env)) {
+  if (isRecord(settings['env'])) {
+    const kept: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(settings['env'])) {
       if (looksLikeCredentialName(key)) warnings.push(`${source}: env key ${key} looks like a credential and is only honored in user settings; discarded`);
       else if (!isProjectEnvAllowed(key)) warnings.push(`${source}: env key ${key} is not on the project env allowlist and is only honored in user settings; discarded`);
       else kept[key] = value;
     }
-    restricted.env = kept;
+    if (Object.keys(kept).length > 0) restricted['env'] = kept;
+    else delete restricted['env'];
   }
 
-  if (settings.credentials !== undefined) {
-    for (const key of Object.keys(settings.credentials)) warnings.push(`${source}: credentials.${key} is only honored in user settings; discarded`);
-    delete restricted.credentials;
+  if (settings['credentials'] !== undefined) {
+    for (const key of isRecord(settings['credentials']) ? Object.keys(settings['credentials']) : []) warnings.push(`${source}: credentials.${key} is only honored in user settings; discarded`);
+    delete restricted['credentials'];
   }
 
-  if (settings.mcp !== undefined) {
-    for (const key of Object.keys(settings.mcp)) warnings.push(`${source}: mcp.${key} is only honored in user settings; discarded`);
-    delete restricted.mcp;
+  if (settings['mcp'] !== undefined) {
+    for (const key of isRecord(settings['mcp']) ? Object.keys(settings['mcp']) : []) warnings.push(`${source}: mcp.${key} is only honored in user settings; discarded`);
+    delete restricted['mcp'];
   }
 
-  if (settings.mcpServers !== undefined) {
+  if (settings['mcpServers'] !== undefined) {
     warnings.push(`${source}: mcpServers is only honored in user settings; discarded (define project servers in .mcp.json)`);
-    delete restricted.mcpServers;
+    delete restricted['mcpServers'];
   }
 
-  if (settings.sandboxNetwork !== undefined) {
+  if (settings['sandboxNetwork'] !== undefined) {
     warnings.push(`${source}: sandboxNetwork is only honored in user settings and on the command line; discarded`);
-    delete restricted.sandboxNetwork;
+    delete restricted['sandboxNetwork'];
   }
 
   for (const key of USER_ONLY_KEYS) {
@@ -143,37 +144,39 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted[key];
   }
 
-  if (settings.tools?.ripgrep !== undefined) {
+  const tools = settings['tools'];
+  if (isRecord(tools) && tools['ripgrep'] !== undefined) {
     warnings.push(`${source}: tools.ripgrep is only honored in user settings; discarded`);
-    const { ripgrep: _ignored, ...remaining } = settings.tools;
-    restricted.tools = remaining;
+    const { ripgrep: _ignored, ...remaining } = tools;
+    restricted['tools'] = remaining;
   }
 
-  if (settings.memory !== undefined) {
-    const kept = { ...settings.memory };
+  if (isRecord(settings['memory'])) {
+    const kept = { ...settings['memory'] };
     for (const key of USER_ONLY_MEMORY_KEYS) {
       if (kept[key] === undefined) continue;
       warnings.push(`${source}: memory.${key} is only honored in user settings; discarded`);
       delete kept[key];
     }
-    restricted.memory = kept;
+    restricted['memory'] = kept;
   }
 
-  const mode = settings.permissions?.defaultMode;
-  if (settings.permissions !== undefined && mode !== undefined && (USER_ONLY_MODES as readonly string[]).includes(mode)) {
+  const permissions = settings['permissions'];
+  const mode = isRecord(permissions) ? permissions['defaultMode'] : undefined;
+  if (isRecord(permissions) && typeof mode === 'string' && (USER_ONLY_MODES as readonly string[]).includes(mode)) {
     warnings.push(`${source}: permissions.defaultMode ${mode} is only honored in user settings and on the command line; discarded`);
-    const { defaultMode: _discarded, ...remaining } = settings.permissions;
-    restricted.permissions = remaining;
+    const { defaultMode: _discarded, ...remaining } = permissions;
+    restricted['permissions'] = remaining;
   }
 
-  if (settings.tui !== undefined) {
-    const kept = { ...settings.tui };
+  if (isRecord(settings['tui'])) {
+    const kept = { ...settings['tui'] };
     for (const key of USER_ONLY_TUI_KEYS) {
       if (kept[key] === undefined) continue;
       warnings.push(`${source}: tui.${key} is only honored in user settings; discarded`);
       delete kept[key];
     }
-    restricted.tui = kept;
+    restricted['tui'] = kept;
   }
 
   return restricted;
@@ -184,6 +187,11 @@ const withoutModels = (value: unknown, source: string, warnings: string[]): unkn
   const { models, ...rest } = value;
   for (const key of Object.keys(models)) warnings.push(`${source}: models.${key} is only honored in user settings; discarded`);
   return rest;
+};
+
+export const honouredBelowUserTrust = (document: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+  const value = withoutModels(document, '', []);
+  return restrictToUserTrustLevel(isRecord(value) ? value : {}, '', []);
 };
 
 const buildLayer = (
@@ -202,7 +210,7 @@ const buildLayer = (
   for (const key of Object.keys(settings)) {
     if (!KNOWN_SETTINGS_KEYS.includes(key)) warnings.push(`${file}: unknown setting ${JSON.stringify(key)} ignored`);
   }
-  const kept = restricted ? restrictToUserTrustLevel(settings, file, warnings) : settings;
+  const kept = restricted ? assertSettings(restrictToUserTrustLevel(settings, file, warnings), file) : settings;
   checkIssueWatch(kept, file, warnings);
   return { origin, source: file, root, ruleRoot, settings: kept };
 };

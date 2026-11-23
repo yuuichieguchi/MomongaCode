@@ -1,6 +1,6 @@
 import { STANDARD_REASONING_EFFORT, isReasoningEffort } from '@momonga/protocol';
 import type { ReasoningEffort } from '@momonga/protocol';
-import { ConfigError, EVERY_MODEL_EFFORT_LABEL, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
+import { ConfigError, EVERY_MODEL_EFFORT_LABEL, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, honouredPartOf, settingReadPointOf } from '@momonga/config';
 import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsShadow, SettingsSnapshot } from '@momonga/config';
 import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { openInEditor } from './external-editor.ts';
@@ -254,7 +254,7 @@ const valueAt = (document: unknown, path: readonly string[]): unknown => path.re
 
 export const currentOf = (snapshot: SettingsSnapshot, path: readonly string[]): { value: unknown; source: SettingSource } => {
   for (const view of snapshot.layers.toReversed()) {
-    const value = valueAt(view.document, path);
+    const value = valueAt(honouredPartOf(view.layer, view.document), path);
     if (value !== undefined) return { value, source: view.layer };
   }
   return { value: valueAt(snapshot.defaults, path), source: 'default' };

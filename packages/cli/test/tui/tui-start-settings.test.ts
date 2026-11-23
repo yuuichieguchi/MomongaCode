@@ -64,4 +64,34 @@ describe('the terminal settings at the start', () => {
     expect(start.message).toContain(place.userFile);
     expect(start.message).toContain('/tui/screen');
   });
+
+  it('do not count a screen mode, mouse or copy on select stored in a trusted project file as set by the person, even when it equals the value in force', async () => {
+    const place = freshPlace();
+    writeSettings(place.projectFile, { tui: { screen: 'fullscreen', mouse: true, copyOnSelect: true } });
+    const start = await readTuiStart({ env: {}, home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => true });
+    if (start.kind !== 'loaded') throw new Error(`expected the settings to load: ${start.message}`);
+    expect([start.sources.screen, start.sources.mouse, start.sources.copyOnSelect]).toEqual(['default', 'default', 'default']);
+    expect([setByPerson(start, 'screen'), setByPerson(start, 'mouse'), setByPerson(start, 'copyOnSelect')]).toEqual([false, false, false]);
+  });
+
+  it('do not count a screen mode, mouse or copy on select stored in the local file as set by the person, even when it equals the value in force', async () => {
+    const place = freshPlace();
+    const local = localFileOf(place);
+    fs.mkdirSync(path.dirname(local), { recursive: true });
+    writeSettings(local, { tui: { screen: 'fullscreen', mouse: true, copyOnSelect: true } });
+    const start = await read(place);
+    if (start.kind !== 'loaded') throw new Error(`expected the settings to load: ${start.message}`);
+    expect([start.sources.screen, start.sources.mouse, start.sources.copyOnSelect]).toEqual(['default', 'default', 'default']);
+    expect([setByPerson(start, 'screen'), setByPerson(start, 'mouse'), setByPerson(start, 'copyOnSelect')]).toEqual([false, false, false]);
+  });
+
+  it('count a mouse and copy on select stored in the user file as set by the person, from the user layer, over a project file holding the same', async () => {
+    const place = freshPlace();
+    writeSettings(place.userFile, { tui: { mouse: true, copyOnSelect: true } });
+    writeSettings(place.projectFile, { tui: { mouse: true, copyOnSelect: true } });
+    const start = await readTuiStart({ env: {}, home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => true });
+    if (start.kind !== 'loaded') throw new Error(`expected the settings to load: ${start.message}`);
+    expect([start.sources.mouse, start.sources.copyOnSelect]).toEqual(['user', 'user']);
+    expect([setByPerson(start, 'mouse'), setByPerson(start, 'copyOnSelect')]).toEqual([true, true]);
+  });
 });

@@ -48,7 +48,7 @@ export { credentialNamesOf, forgeCredentialNamesOf, isCredentialEnvName, stripCr
 export type { CredentialNaming, CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_THEMES } from './settings-schema.ts';
-export { editSettings, readSettingsSnapshot } from './edit-settings.ts';
+export { editSettings, honouredPartOf, readSettingsSnapshot } from './edit-settings.ts';
 export type { EditSettingsOptions, EditSettingsResult, SettingsShadow, SettingsLayer, SettingsLayerView, SettingsOperation, SettingsPath, SettingsPlace, SettingsSnapshot, SettingsSnapshotRequest } from './edit-settings.ts';
 export { writeTuiSetting } from './tui-settings.ts';
 export { writeMemoryAutoReview } from './memory-auto-review.ts';
