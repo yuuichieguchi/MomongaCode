@@ -230,7 +230,11 @@ export function App(props: AppProps) {
   const [storedA11y, setStoredA11y] = useState<StoredA11y>({ screenReader: tuiSettings.initial.screenReader, reducedMotion: tuiSettings.initial.reducedMotion });
   const a11y = a11yOf(storedA11y, props.a11y ?? NOTHING_ASKED);
   applyA11y(a11y);
-  const [store] = useState(createTranscriptStore);
+  const [store] = useState(() => {
+    const created = createTranscriptStore();
+    if (props.startup !== undefined) created.append({ kind: 'banner', banner: { config: props.startup, model: { kind: 'unread' }, cwd: backend.cwd, notices: [], figure: true } }, BANNER_KEY);
+    return created;
+  });
   const [origins] = useState(() => createOrigins(store));
   useEffect(() => origins.stop, [origins]);
   const visible = store.shown();
@@ -438,8 +442,7 @@ export function App(props: AppProps) {
     phaseRef.current = next.kind;
     setPhase(next);
     const shown = store.byKey(BANNER_KEY)?.entry;
-    if (shown?.kind === 'banner' && shown.banner.model.kind === 'unread' && next.kind !== 'trust')
-      showBanner(bannerModelIn(next.kind, sessionModelRef.current, sessionEffortRef.current), shown.banner.notices, shown.banner.figure);
+    if (shown?.kind === 'banner') showBanner(bannerModelIn(next.kind, sessionModelRef.current, sessionEffortRef.current), shown.banner.notices, shown.banner.figure);
   };
 
   const renewHistory = (): void => {
@@ -575,8 +578,10 @@ export function App(props: AppProps) {
     setSessionOutputStyle(session.outputStyle);
   };
 
-  const bannerModelIn = (kind: Phase['kind'], model: string | undefined, effort: ReasoningEffort | undefined): BannerModel =>
-    kind === 'trust' ? { kind: 'unread' } : model === undefined ? { kind: 'not-connected', login: kind === 'unconnected' } : connectedModel(model, effort);
+  const bannerModelIn = (kind: Phase['kind'], model: string | undefined, effort: ReasoningEffort | undefined): BannerModel => {
+    if (kind === 'starting' || kind === 'trust') return { kind: 'unread' };
+    return kind === 'ready' && model !== undefined ? connectedModel(model, effort) : { kind: 'not-connected', login: kind === 'unconnected' };
+  };
 
   const showBanner = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): void => {
     const banner = bannerOf(shownModel, shownNotices, figure);
@@ -1512,8 +1517,8 @@ export function App(props: AppProps) {
   const beforeConversation = phase.kind === 'trust' || phase.kind === 'welcome';
   const modelsUnread = phase.kind === 'trust';
   const syncBanner = useEffectEvent((): void => {
-    if (sessionModel === undefined ? unconnected || beforeConversation : store.byKey(BANNER_KEY) !== undefined)
-      showBanner(bannerModelIn(phase.kind, sessionModel, sessionEffort), notices, figureFits);
+    if (store.byKey(BANNER_KEY) !== undefined || (sessionModel === undefined && (unconnected || beforeConversation)))
+      showBanner(bannerModelIn(phaseRef.current, sessionModel, sessionEffort), notices, figureFits);
   });
 
   const measured = useEffectEvent((entry: MomongaModelEntry): void => showModel(entry));
@@ -2077,7 +2082,7 @@ export function App(props: AppProps) {
   const transcriptAllocation = panel === undefined ? allocation : allocate(rows, { ...rowRequests, panel: 0 });
   const transcriptWidth = fullscreen ? Math.max(1, columns - SCROLLBAR_COLUMNS) : columns;
   const onlyEntry = visible.count() === 1 ? visible.at(0).entry : undefined;
-  const followedStart = panel !== undefined && !conversationArea && onlyEntry?.kind === 'banner' ? onlyEntry.banner : undefined;
+  const followedStart = panel !== undefined && (phase.kind === 'starting' || beforeConversation) && onlyEntry?.kind === 'banner' ? onlyEntry.banner : undefined;
   const listFollows = followedStart !== undefined;
   const figureFits = followedStart === undefined ? conversationArea : panelRows !== undefined && bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
   useEffect(() => {
