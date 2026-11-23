@@ -46,7 +46,6 @@ export type ClassifierCallOptions<P extends UsageChargePurpose> = {
   gateway: Pick<GatewayPort, 'listing' | 'capabilities' | 'countTokens' | 'stream'>;
   role: Pick<RolePort, 'refresh'>;
   timers: Pick<ServiceTimers, 'monotonicMs'>;
-  configured: string | undefined;
   account: BudgetAccount;
   instructions: string;
   prompt(): string;
@@ -119,20 +118,39 @@ const askResolved = async <P extends UsageChargePurpose>(options: ClassifierCall
   return { kind: 'answered', model: classifier, verdict: read.value, spend };
 };
 
-export const callClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>): Promise<ClassifierCall<P>> => {
-  if (options.configured === undefined) return failed(NO_CLASSIFIER_FAILURE);
-  let classifier: string | undefined;
+const gatewayFailureOf = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>, error: unknown, classifier?: string): Promise<ClassifierCall<P>> => {
+  if (options.signal.aborted || !(error instanceof GatewayRequestError)) throw error;
+  if ((await retireDecisionOf(error, options.role)) === 'retire-yield') return { kind: 'retired', error };
+  return failed(`${error.code}: ${error.message}`, classifier);
+};
+
+export type ResolvedClassifier = { canon: string; display: string };
+
+export const callResolvedClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>, { canon, display }: ResolvedClassifier): Promise<ClassifierCall<P>> => {
   try {
-    const { views } = await options.gateway.listing({ signal: options.signal });
-    const resolution = resolveTypedModelRef(typedModelText(options.configured), views);
-    if (resolution.kind !== 'found') return failed(AUTO_MODE_UNAVAILABLE.message);
-    classifier = resolution.model.canon;
-    return await askResolved(options, classifier, displayOf(resolution.model, views));
+    return await askResolved(options, canon, display);
   } catch (error) {
-    if (options.signal.aborted || !(error instanceof GatewayRequestError)) throw error;
-    if ((await retireDecisionOf(error, options.role)) === 'retire-yield') return { kind: 'retired', error };
-    return failed(`${error.code}: ${error.message}`, classifier);
+    return gatewayFailureOf(options, error, canon);
   }
+};
+
+export const resolveClassifier = async (gateway: Pick<GatewayPort, 'listing'>, configured: string, signal: AbortSignal): Promise<ResolvedClassifier | undefined> => {
+  const { views } = await gateway.listing({ signal });
+  const resolution = resolveTypedModelRef(typedModelText(configured), views);
+  if (resolution.kind !== 'found') return undefined;
+  return { canon: resolution.model.canon, display: displayOf(resolution.model, views) };
+};
+
+export const callClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P> & { configured: string | undefined }): Promise<ClassifierCall<P>> => {
+  if (options.configured === undefined) return failed(NO_CLASSIFIER_FAILURE);
+  let resolved: ResolvedClassifier | undefined;
+  try {
+    resolved = await resolveClassifier(options.gateway, options.configured, options.signal);
+  } catch (error) {
+    return gatewayFailureOf(options, error);
+  }
+  if (resolved === undefined) return failed(AUTO_MODE_UNAVAILABLE.message);
+  return callResolvedClassifier(options, resolved);
 };
 
 const firstUserMessageOf = (ctx: ClaimContext, runId: string): string => {

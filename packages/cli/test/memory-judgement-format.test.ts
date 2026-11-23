@@ -19,38 +19,38 @@ const leveller = (): ((judgement: Judgement) => 'info' | 'warning') => {
 
 const CLASSIFIER = 'openai/gpt-5-mini';
 
-const NO_CLASSIFIER = 'no classifier model is configured: set autoMode.classifier in the user settings, or run /auto-mode and choose one';
+const NO_CLASSIFIER = 'the memory judgement passed its deadline of 1000 ms';
 
 const judgement = (overrides: Partial<Judgement> = {}): Judgement => ({ memoryId: 'mem-1', outcome: 'left', classifier: CLASSIFIER, judgedAt: 0, owed: true, closed: false, ...overrides });
 
 describe('the line of a judged memory', () => {
-  it('says auto mode kept a memory the classifier judged safe with high confidence', () => {
+  it('says auto review kept a memory the classifier judged safe with high confidence', () => {
     expect(formatter()(judgement({ outcome: 'kept', verdict: 'safe', confidence: 'high' }))).toBe(
-      'auto mode kept memory mem-1; classifier openai/gpt-5-mini judged it safe with high confidence',
+      'auto review kept memory mem-1; model openai/gpt-5-mini judged it safe with high confidence',
     );
   });
 
-  it.each(['medium', 'low'] as const)('says auto mode left a memory waiting that the classifier judged safe with %s confidence', (confidence) => {
-    expect(formatter()(judgement({ verdict: 'safe', confidence }))).toBe('auto mode left memory mem-1 waiting; classifier openai/gpt-5-mini judged it safe without high confidence');
+  it.each(['medium', 'low'] as const)('says auto review left a memory waiting that the classifier judged safe with %s confidence', (confidence) => {
+    expect(formatter()(judgement({ verdict: 'safe', confidence }))).toBe('auto review left memory mem-1 waiting; model openai/gpt-5-mini judged it safe without high confidence');
   });
 
-  it.each(['high', 'medium', 'low'] as const)('says auto mode left a memory waiting that the classifier judged unsafe with %s confidence', (confidence) => {
-    expect(formatter()(judgement({ verdict: 'unsafe', confidence }))).toBe('auto mode left memory mem-1 waiting; classifier openai/gpt-5-mini judged it unsafe');
+  it.each(['high', 'medium', 'low'] as const)('says auto review left a memory waiting that the classifier judged unsafe with %s confidence', (confidence) => {
+    expect(formatter()(judgement({ verdict: 'unsafe', confidence }))).toBe('auto review left memory mem-1 waiting; model openai/gpt-5-mini judged it unsafe');
   });
 
   it('gives the failure text when the classifier could not be asked', () => {
-    expect(formatter()({ memoryId: 'mem-2', outcome: 'left', failure: NO_CLASSIFIER, judgedAt: 0, owed: true, closed: false })).toBe(`auto mode left memory mem-2 waiting; ${NO_CLASSIFIER}`);
+    expect(formatter()({ memoryId: 'mem-2', outcome: 'left', failure: NO_CLASSIFIER, judgedAt: 0, owed: true, closed: false })).toBe(`auto review left memory mem-2 waiting; ${NO_CLASSIFIER}`);
   });
 
   it('gives the failure text when the classifier answered wrongly, whatever classifier is named', () => {
     expect(formatter()(judgement({ memoryId: 'mem-3', failure: 'the classifier stream ended without a terminal event' }))).toBe(
-      'auto mode left memory mem-3 waiting; the classifier stream ended without a terminal event',
+      'auto review left memory mem-3 waiting; the classifier stream ended without a terminal event',
     );
   });
 
   it('names the classifier of the record', () => {
     expect(formatter()(judgement({ outcome: 'kept', classifier: 'ollama/qwen3:8b', verdict: 'safe', confidence: 'high' }))).toBe(
-      'auto mode kept memory mem-1; classifier ollama/qwen3:8b judged it safe with high confidence',
+      'auto review kept memory mem-1; model ollama/qwen3:8b judged it safe with high confidence',
     );
   });
 });
@@ -104,12 +104,12 @@ const SHOWN_TODAY = [
   '  The build uses pnpm.',
 ].join('\n');
 
-describe('memory show of a memory auto mode kept', () => {
+describe('memory show of a memory auto review kept', () => {
   it('is as today for a memory no classifier kept', () => {
     expect(formatMemory(MEMORY)).toBe(SHOWN_TODAY);
   });
 
-  it('names auto mode and the classifier directly after the kept line', () => {
+  it('names auto review and the model directly after the kept line', () => {
     expect(formatMemory({ ...MEMORY, keptByClassifier: CLASSIFIER })).toBe(
       [
         'id: mem-1',
@@ -120,7 +120,7 @@ describe('memory show of a memory auto mode kept', () => {
         'project: /work/project',
         'created: 1970-01-01T00:00:00.000Z',
         'kept: 1970-01-01T00:00:01.000Z',
-        'kept by: auto mode, classifier openai/gpt-5-mini',
+        'kept by: auto review, model openai/gpt-5-mini',
         'source: session s1, run r1, step 2, call c1, event 9',
         '',
         '  The build uses pnpm.',
@@ -134,6 +134,6 @@ describe('memory show of a memory auto mode kept', () => {
     const after = formatMemory({ ...withValidity, keptByClassifier: CLASSIFIER }).split('\n');
     const kept = before.indexOf('kept: 1970-01-01T00:00:01.000Z');
     expect(before[kept + 1]?.startsWith('validity: ')).toBe(true);
-    expect(after).toEqual([...before.slice(0, kept + 1), 'kept by: auto mode, classifier openai/gpt-5-mini', ...before.slice(kept + 1)]);
+    expect(after).toEqual([...before.slice(0, kept + 1), 'kept by: auto review, model openai/gpt-5-mini', ...before.slice(kept + 1)]);
   });
 });

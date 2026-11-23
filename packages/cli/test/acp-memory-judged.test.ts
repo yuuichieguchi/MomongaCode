@@ -7,11 +7,11 @@ import type { Harness } from './acp-harness.ts';
 
 const NOTICES = { session: { notices: {} } };
 
-const KEPT_LINE = 'auto mode kept memory mem-1; classifier openai/gpt-5-mini judged it safe with high confidence';
+const KEPT_LINE = 'auto review kept memory mem-1; model openai/gpt-5-mini judged it safe with high confidence';
 
 const FAILURE = 'the classifier stream ended without a terminal event';
 
-const OTHER_LINE = 'auto mode left memory mem-2 waiting; classifier openai/gpt-5-mini judged it unsafe';
+const OTHER_LINE = 'auto review left memory mem-2 waiting; model openai/gpt-5-mini judged it unsafe';
 
 const kept = (overrides: Partial<MemoryJudgementView> = {}): MemoryJudgementView => ({
   memoryId: 'mem-1',
@@ -46,7 +46,7 @@ const untilNotice = (harness: Harness, title: string): Promise<void> => received
 
 const judgementCalls = (harness: Harness): string[] => harness.runtime.calls.filter((call) => call.startsWith('memoryJudgement') || call.startsWith('markMemoryJudgementsShown'));
 
-describe('a memory auto mode judged, in an ACP session', () => {
+describe('a memory auto review judged, in an ACP session', () => {
   it('reads the record of the memory, shows its line as one notice, then marks it shown', async () => {
     const harness = startAgent();
     harness.runtime.judgements.set('mem-1', kept());
@@ -67,9 +67,9 @@ describe('a memory auto mode judged, in an ACP session', () => {
     await open(harness);
 
     harness.emitSessionEvent(memoryJudgedFrame(8, 'mem-3'));
-    await untilNotice(harness, `auto mode left memory mem-3 waiting; ${FAILURE}`);
+    await untilNotice(harness, `auto review left memory mem-3 waiting; ${FAILURE}`);
 
-    expect(notices(harness)).toEqual([{ sessionUpdate: 'notice', severity: 'warning', title: `auto mode left memory mem-3 waiting; ${FAILURE}` }]);
+    expect(notices(harness)).toEqual([{ sessionUpdate: 'notice', severity: 'warning', title: `auto review left memory mem-3 waiting; ${FAILURE}` }]);
     await harness.peer.close();
   });
 

@@ -74,7 +74,7 @@ export const formatMemory = (memory: MemoryView): string =>
     ...(memory.project === null ? [] : [`project: ${escapeTerminalLine(memory.project)}`]),
     `created: ${iso(memory.createdAt)}`,
     `kept: ${iso(memory.keptAt)}`,
-    ...(memory.keptByClassifier === null ? [] : [`kept by: auto mode, classifier ${escapeTerminalLine(memory.keptByClassifier)}`]),
+    ...(memory.keptByClassifier === null ? [] : [`kept by: auto review, model ${escapeTerminalLine(memory.keptByClassifier)}`]),
     ...(memory.validity === undefined ? [] : [`validity: ${describeValidity(memory.validity)}`]),
     sourceLine(memory.source),
     ...memory.evidence.map(evidenceLine),
@@ -86,14 +86,21 @@ const judgedLine = (judgement: MemoryJudgementView): string => {
   if (judgement.failure !== undefined) return escapeTerminalLine(judgement.failure);
   const { classifier, verdict, confidence } = judgement;
   if (classifier === undefined || verdict === undefined || confidence === undefined) throw new Error(`the judgement of memory ${judgement.memoryId} names neither a failure nor a classifier answer`);
-  const judged = `classifier ${escapeTerminalLine(classifier)} judged it`;
+  const judged = `model ${escapeTerminalLine(classifier)} judged it`;
   if (verdict === 'safe') return `${judged} safe ${confidence === 'high' ? 'with' : 'without'} high confidence`;
   return `${judged} ${verdict}`;
 };
 
 export const formatMemoryJudgement = (judgement: MemoryJudgementView): string =>
   judgement.outcome === 'kept'
-    ? `auto mode kept memory ${judgement.memoryId}; ${judgedLine(judgement)}`
-    : `auto mode left memory ${judgement.memoryId} waiting; ${judgedLine(judgement)}`;
+    ? `auto review kept memory ${judgement.memoryId}; ${judgedLine(judgement)}`
+    : `auto review left memory ${judgement.memoryId} waiting; ${judgedLine(judgement)}`;
 
 export const memoryJudgementLevel = (judgement: MemoryJudgementView): 'info' | 'warning' => (judgement.failure === undefined ? 'info' : 'warning');
+
+export type MemoryAutoReviewState = { readonly on: boolean; readonly model: string | undefined };
+
+export const memoryAutoReviewText = ({ on, model }: MemoryAutoReviewState, displays: ReadonlyMap<string, string>): string => {
+  if (!on) return 'memory auto review is off';
+  return model === undefined ? 'memory auto review is on' : `memory auto review is on, model ${displays.get(model) ?? model}`;
+};

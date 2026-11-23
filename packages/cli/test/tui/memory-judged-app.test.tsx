@@ -27,13 +27,13 @@ const judgement = (memoryId: string, overrides: Partial<MemoryJudgementView> = {
 });
 
 const KEPT = judgement('mem-1', { outcome: 'kept', verdict: 'safe', confidence: 'high' });
-const KEPT_LINE = 'auto mode kept memory mem-1; classifier openai/gpt-5-mini judged it safe with high confidence';
+const KEPT_LINE = 'auto review kept memory mem-1; model openai/gpt-5-mini judged it safe with high confidence';
 const SAFE_LOW = judgement('mem-2', { verdict: 'safe', confidence: 'low' });
-const SAFE_LOW_LINE = 'auto mode left memory mem-2 waiting; classifier openai/gpt-5-mini judged it safe without high confidence';
+const SAFE_LOW_LINE = 'auto review left memory mem-2 waiting; model openai/gpt-5-mini judged it safe without high confidence';
 const UNSAFE = judgement('mem-3');
-const UNSAFE_LINE = 'auto mode left memory mem-3 waiting; classifier openai/gpt-5-mini judged it unsafe';
+const UNSAFE_LINE = 'auto review left memory mem-3 waiting; model openai/gpt-5-mini judged it unsafe';
 const FAILED = { memoryId: 'mem-4', outcome: 'left', failure: FAILURE, judgedAt: 1, owed: true, closed: false } as const satisfies MemoryJudgementView;
-const FAILED_LINE = `auto mode left memory mem-4 waiting; ${FAILURE}`;
+const FAILED_LINE = `auto review left memory mem-4 waiting; ${FAILURE}`;
 
 const BOUND = { boundMs: 3000 };
 
@@ -61,7 +61,7 @@ const idle = async (options: FakeBackendOptions = {}): Promise<{ backend: FakeBa
   return started;
 };
 
-describe('a memory auto mode judged, in the terminal UI', () => {
+describe('a memory auto review judged, in the terminal UI', () => {
   it('reads the record on memory.judged, prints the line of an owed record, then marks it shown', async () => {
     const { backend, app } = await idle();
     backend.judgements.set('mem-1', KEPT);

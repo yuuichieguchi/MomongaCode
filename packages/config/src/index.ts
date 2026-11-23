@@ -51,6 +51,7 @@ export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_THEMES } from './s
 export { editSettings, readSettingsSnapshot } from './edit-settings.ts';
 export type { EditSettingsOptions, EditSettingsResult, SettingsShadow, SettingsLayer, SettingsLayerView, SettingsOperation, SettingsPath, SettingsPlace, SettingsSnapshot, SettingsSnapshotRequest } from './edit-settings.ts';
 export { writeTuiSetting } from './tui-settings.ts';
+export { writeMemoryAutoReview } from './memory-auto-review.ts';
 export { defaultOutputSettings, mergeOutputSettings, writeOutputStyleSetting } from './output-settings.ts';
 export type { OutputSettings, ResolvedOutputSettings } from './output-settings.ts';
 export { DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, SANDBOX_LAUNCHERS, SANDBOX_LAUNCHERS_LOOKED_FOR, SANDBOX_MECHANISM_OF_OS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';

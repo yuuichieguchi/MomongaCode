@@ -48,7 +48,7 @@ const reflectorFor = async (env: Env, gateway: ReturnType<typeof createFakeGatew
     settings: {
       trusted: () => true,
       verification: async () => VERIFICATION,
-      memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true }),
+      memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true, autoReview: false }),
     },
     clock: env.clock,
     isIdle: () => true,

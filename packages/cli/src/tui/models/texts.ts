@@ -97,6 +97,10 @@ export const ROLE_ROWS = [
   { label: 'Auto-mode classifier', job: 'classifier' },
 ] as const;
 
+export const MEMORY_REVIEW_ROW = 'Memory auto review';
+
+export const MEMORY_REVIEW_MODEL_TITLE = 'Model for memory auto review';
+
 export const TIMEOUTS_TITLE = 'Wait limits';
 
 export const headersWaitRow = (shown: string): string => `Wait for the first reply: ${shown}`;

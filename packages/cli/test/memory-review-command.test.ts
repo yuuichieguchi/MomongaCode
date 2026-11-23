@@ -1,3 +1,4 @@
+import { testKernelLock } from '@momonga/testkit';
 import { testEndpointScope } from '@momonga/testkit';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -237,16 +238,16 @@ describe('momonga memory review', () => {
   });
 });
 
-describe('auto mode in the shell memory commands', () => {
+describe('auto review in the shell memory commands', () => {
   const JUDGEMENT_ROUTE = /\/v1\/memory-judgements/;
 
-  it('memory show names auto mode and the classifier of a memory auto mode kept, directly after the kept line', async (context) => {
+  it('memory show names auto review and the model of a memory auto review kept, directly after the kept line', async (context) => {
     const kept = memory('m1', { state: 'active', keptAt: 1000, keptByClassifier: 'openai/gpt-5-mini' });
     const { paths, ports, seen, out } = await setup(context, () => ({ status: 200, body: { memory: kept } }));
     expect(await command('memoryShow')(ports, paths, 'm1', false)).toBe(0);
     expect(requests(seen)).toEqual(['GET /v1/memories/m1']);
     const lines = out.join('').split('\n');
-    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto mode, classifier openai/gpt-5-mini');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto review, model openai/gpt-5-mini');
   });
 
   it('memory show prints no kept by line for a memory a person kept', async (context) => {
@@ -260,7 +261,7 @@ describe('auto mode in the shell memory commands', () => {
     expect(await command('memoryReview')(ports, paths, { json: false })).toBe(0);
     expect(requests(seen)).toEqual([`GET /v1/memories?state=candidate&project=${encodeURIComponent(project)}`]);
     expect(seen.some((entry) => JUDGEMENT_ROUTE.test(entry.url))).toBe(false);
-    expect(out.join('')).not.toContain('auto mode');
+    expect(out.join('')).not.toContain('auto review');
   });
 
   it('memory review accept does not mark any judgement shown', async (context) => {
@@ -341,7 +342,7 @@ describe('the TUI start note', () => {
   });
 
   it('is one of the default sources', () => {
-    const defaults = notices.defaultNoticeSources({ env: {}, home: '/h', interrupt: new AbortController().signal }, {} as never);
+    const defaults = notices.defaultNoticeSources({ env: {}, home: '/h', interrupt: new AbortController().signal }, {} as never, () => testKernelLock());
     expect(defaults).toContain(source());
   });
 });

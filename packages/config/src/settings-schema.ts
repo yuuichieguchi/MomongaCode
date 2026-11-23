@@ -589,6 +589,8 @@ export const SETTINGS_SCHEMA = {
         },
         forgetAfterDays: { ...POSITIVE_INTEGER, default: MEMORY_DEFAULTS.forgetAfterDays },
         repositoryFacts: { type: 'boolean', default: MEMORY_DEFAULTS.repositoryFacts },
+        autoReview: { type: 'boolean', default: MEMORY_DEFAULTS.autoReview },
+        autoReviewModel: { type: 'string', minLength: 1 },
       },
       additionalProperties: false,
     },

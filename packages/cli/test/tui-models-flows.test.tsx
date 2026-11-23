@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { readSettingsSnapshot } from '@momonga/config';
+import { editSettings, readSettingsSnapshot } from '@momonga/config';
+import { testKernelLock } from '@momonga/testkit';
 import type { LocalServerDetection, PlanCatalogEntry } from '@momonga/protocol';
 import { describe, expect, it } from 'vitest';
 import type { TuiBackend } from '../src/tui/backend.ts';
@@ -309,12 +310,46 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
       YES,
     ]);
     await runRoleFlow(harness.context);
-    expect(harness.picks()[0]?.rows).toEqual([`Summaries (compaction)  ·  ${session}`, `Reflection  ·  ${session}`, `Analysis  ·  ${session}`, `Subagents  ·  ${session}`, `Auto-mode classifier  ·  ${session}`]);
+    expect(harness.picks()[0]?.rows).toEqual([`Summaries (compaction)  ·  ${session}`, `Reflection  ·  ${session}`, `Analysis  ·  ${session}`, `Subagents  ·  ${session}`, `Auto-mode classifier  ·  ${session}`, 'Memory auto review  ·  not set']);
     expect(harness.picks()[1]?.rows).toEqual(['ollama/gemma-3-4b', 'ollama/qwen3.8:27b', 'lmstudio/gemma-3-4b', "Use the session's model"]);
     const confirms = harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title);
     expect(confirms).toEqual(['Use ollama/qwen3.8:27b for summaries?', 'Use lmstudio/gemma-3-4b for subagents?', 'Use ollama/qwen3.8:27b for the auto-mode classifier?', "Use the session's model for summaries?"]);
     expect(writtenOf(harness).models['roles']).toEqual({ subagent: 'lmstudio/gemma-3-4b' });
     expect(writtenOf(harness).autoMode).toEqual({ classifier: 'ollama/qwen3.8:27b' });
+  });
+
+  it('row 10: the model of memory auto review is shown after the classifier and chosen from the configured models only, starting on the current one', async (context) => {
+    const harness = flowOf(context, { ...threeModels(), memory: { autoReviewModel: 'ollama/qwen3.8:27b' } }, [{ pick: /^Memory auto review/ }, { pick: 'lmstudio/gemma-3-4b' }], { model: 'ollama/gemma-3-4b:latest' });
+    const initials: (number | undefined)[] = [];
+    const { overlays } = harness.context;
+    await runRoleFlow({ ...harness.context, overlays: { ...overlays, choose: (request) => (initials.push(request.initial), overlays.choose(request)) } });
+    const session = "the session's model";
+    expect(harness.picks()[0]?.rows).toEqual([`Summaries (compaction)  ·  ${session}`, `Reflection  ·  ${session}`, `Analysis  ·  ${session}`, `Subagents  ·  ${session}`, `Auto-mode classifier  ·  ${session}`, 'Memory auto review  ·  ollama/qwen3.8:27b']);
+    expect(harness.picks()[1]).toEqual({ kind: 'pick', title: 'Model for memory auto review', lines: [], rows: ['ollama/gemma-3-4b', 'ollama/qwen3.8:27b', 'lmstudio/gemma-3-4b'] });
+    expect(initials[1]).toBe(1);
+    expect(harness.picks()[2]?.rows.at(-1)).toBe('Memory auto review  ·  lmstudio/gemma-3-4b');
+    expect(harness.written()['memory']).toEqual({ autoReviewModel: 'lmstudio/gemma-3-4b' });
+    expect(writtenOf(harness).autoMode).toBeUndefined();
+    expect(writtenOf(harness).models['roles']).toBeUndefined();
+    expect(harness.infos).toEqual(['The memory auto review model is now lmstudio/gemma-3-4b.']);
+  });
+
+  it('row 10: the selection of memory auto review starts on the current model when it is stored by its bare name', async (context) => {
+    const harness = flowOf(context, { ...threeModels(), memory: { autoReviewModel: 'qwen3.8:27b' } }, [{ pick: /^Memory auto review/ }, { leave: true }]);
+    const initials: (number | undefined)[] = [];
+    const { overlays } = harness.context;
+    await runRoleFlow({ ...harness.context, overlays: { ...overlays, choose: (request) => (initials.push(request.initial), overlays.choose(request)) } });
+    expect(harness.picks()[1]?.title).toBe('Model for memory auto review');
+    expect(initials[1]).toBe(1);
+  });
+
+  it('row 10: the row of memory auto review shows a stored model that is not configured as it is stored, and Escape on its selection writes nothing', async (context) => {
+    const harness = flowOf(context, { ...threeModels(), memory: { autoReview: true, autoReviewModel: 'openai/gpt-9' } }, [{ pick: /^Memory auto review/ }, { leave: true }]);
+    const before = harness.bytes();
+    await runRoleFlow(harness.context);
+    expect(harness.picks()[0]?.rows.at(-1)).toBe('Memory auto review  ·  openai/gpt-9');
+    expect(harness.picks()[1]?.title).toBe('Model for memory auto review');
+    expect(harness.bytes()).toBe(before);
   });
 
   it('row 11: a number of a model is edited from its row', async (context) => {
@@ -516,5 +551,106 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const cancelled = flowOf(context, threeModels(), [], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING, holdHealth: true });
     await runModelsHub(cancelled.context);
     expect(cancelled.picks()).toEqual([]);
+  });
+});
+
+describe('the row Auto review of the settings screen, section Memory', () => {
+  const TITLE = 'Model for memory auto review';
+  const ROWS = ['ollama/gemma-3-4b', 'ollama/qwen3.8:27b', 'lmstudio/gemma-3-4b'];
+  const SESSION = 'ollama/gemma-3-4b:latest';
+
+  const settingsOf = (harness: FlowHarness): SlashContext => {
+    const project = path.join(harness.place.home, 'project');
+    fs.mkdirSync(project);
+    const place = { home: harness.place.home, projectDir: project };
+    return {
+      ...harness.context,
+      commands: [],
+      backend: {
+        ...harness.context.backend,
+        ...folderTrustFakes({ settingsPlace: () => place, trust: undefined, trustItems: undefined, cwd: () => project, record: () => undefined }),
+        settings: async () => readSettingsSnapshot({ env: process.env, home: harness.place.home, projectDir: project, trusted: true, signal: new AbortController().signal }),
+        editSettings: (layer: Parameters<typeof editSettings>[1], operation: Parameters<typeof editSettings>[2], signal: AbortSignal) => editSettings(place, layer, operation, { env: process.env, trusted: true, lock: testKernelLock(), signal }),
+      },
+      background: (_label: string, work: (signal: AbortSignal) => Promise<unknown>) => work(new AbortController().signal),
+    } as unknown as SlashContext;
+  };
+
+  const titles = (harness: FlowHarness): (string | undefined)[] => harness.picks().map((pick) => pick.title);
+
+  type Save = { labels: string[]; phases: string[]; kept: (string | undefined)[] };
+
+  const savingOf = async (harness: FlowHarness, row: string): Promise<Save> => {
+    const slash = settingsOf(harness) as unknown as Record<string, unknown> & { overlays: FlowHarness['context']['overlays'] };
+    const labels: string[] = [];
+    const kept: (string | undefined)[] = [];
+    const { overlays } = slash;
+    await runSettingsScreen(
+      {
+        ...slash,
+        background: (label: string, work: (signal: AbortSignal) => Promise<unknown>) => (labels.push(label), work(new AbortController().signal)),
+        overlays: { ...overlays, choose: (request: Parameters<typeof overlays.choose>[0]) => (request.title === 'Settings' && kept.push((request.rows.find((entry) => entry.label === row) as { kept?: string } | undefined)?.kept), overlays.choose(request)) },
+      } as unknown as SlashContext,
+      [],
+    );
+    return { labels, phases: [...harness.phases], kept };
+  };
+
+  it.for([
+    ['only the switch is written', { memory: { autoReviewModel: 'ollama/qwen3.8:27b' } }],
+    ['the model of the session is written too', {}],
+  ] as const)('saves Auto review the way an ordinary toggle row saves when %s', async ([, memory], context) => {
+    const ordinary = await savingOf(flowOf(context, threeModels(), [{ pick: 'Repository facts' }], { model: SESSION }), 'Repository facts');
+    const auto = await savingOf(flowOf(context, { ...threeModels(), ...memory }, [{ pick: 'Auto review' }], { model: SESSION }), 'Auto review');
+    expect(ordinary.labels.length).toBeGreaterThan(0);
+    expect(auto.labels).toEqual(ordinary.labels);
+    expect(auto.phases).toEqual(ordinary.phases);
+    expect(ordinary.kept[1]).toBeDefined();
+    expect(auto.kept[1]).toBeDefined();
+  });
+
+  it('lists the row Auto review under the heading Memory', async (context) => {
+    const harness = flowOf(context, threeModels(), [], { model: SESSION });
+    await runSettingsScreen(settingsOf(harness), []);
+    const rows = harness.picks()[0]?.rows ?? [];
+    expect(rows).toContain('Auto review');
+    expect(rows.indexOf('Auto review')).toBeGreaterThan(rows.indexOf('Memory'));
+  });
+
+  it('turning it on with no model set writes the model of the session with the switch to the user settings, without a selection', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'Auto review' }], { model: SESSION });
+    await runSettingsScreen(settingsOf(harness), []);
+    expect(harness.written()['memory']).toEqual({ autoReview: true, autoReviewModel: SESSION });
+    expect(titles(harness)).not.toContain(TITLE);
+    expect(titles(harness)).not.toContain('Save to:');
+  });
+
+  it('turning it on with a model set keeps that model', async (context) => {
+    const harness = flowOf(context, { ...threeModels(), memory: { autoReview: false, autoReviewModel: 'ollama/qwen3.8:27b' } }, [{ pick: 'Auto review' }], { model: SESSION });
+    await runSettingsScreen(settingsOf(harness), []);
+    expect(harness.written()['memory']).toEqual({ autoReview: true, autoReviewModel: 'ollama/qwen3.8:27b' });
+    expect(titles(harness)).not.toContain(TITLE);
+  });
+
+  it('turning it off keeps the model', async (context) => {
+    const harness = flowOf(context, { ...threeModels(), memory: { autoReview: true, autoReviewModel: 'ollama/qwen3.8:27b' } }, [{ pick: 'Auto review' }], { model: SESSION });
+    await runSettingsScreen(settingsOf(harness), []);
+    expect(harness.written()['memory']).toEqual({ autoReview: false, autoReviewModel: 'ollama/qwen3.8:27b' });
+    expect(titles(harness)).not.toContain(TITLE);
+  });
+
+  it('turning it on with no model set while the session has no model opens the selection, and choosing a row writes the model and the switch', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'Auto review' }, { pick: 'lmstudio/gemma-3-4b' }]);
+    await runSettingsScreen(settingsOf(harness), []);
+    expect(harness.picks().find((pick) => pick.title === TITLE)?.rows).toEqual(ROWS);
+    expect(harness.written()['memory']).toEqual({ autoReview: true, autoReviewModel: 'lmstudio/gemma-3-4b' });
+  });
+
+  it('Escape on that selection changes nothing', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: 'Auto review' }, { leave: true }]);
+    const before = harness.bytes();
+    await runSettingsScreen(settingsOf(harness), []);
+    expect(titles(harness)).toContain(TITLE);
+    expect(harness.bytes()).toBe(before);
   });
 });

@@ -28,7 +28,7 @@ export type MemoryJudgementCommit = Omit<MemoryJudgement, 'judgedAt'> & {
 };
 
 export type MemoryJudgementsStore = {
-  next(project: string): MemoryRecord | undefined;
+  waiting(): MemoryRecord[];
   commit(judgement: MemoryJudgementCommit): 'recorded' | 'discarded';
   get(memoryId: string): StoredMemoryJudgement | undefined;
   owed(project: string): StoredMemoryJudgement[];
@@ -37,7 +37,7 @@ export type MemoryJudgementsStore = {
 
 export type MemoryJudgementWriters = {
   transaction<T>(fn: () => T): T;
-  memories: { get(id: string): MemoryRecord | undefined; candidates(filter: { project: string }): MemoryRecord[]; keepByClassifier(id: string, classifier: string): boolean };
+  memories: { get(id: string): MemoryRecord | undefined; candidates(): MemoryRecord[]; keepByClassifier(id: string, classifier: string): boolean };
   endedRun: { append(runId: string, payloads: readonly RunEventPayload[]): void };
   sessionEvent: { append(sessionId: string, payload: SessionEventPayload): void };
 };
@@ -87,8 +87,10 @@ export const createMemoryJudgementsStore = (db: DatabaseSync, clock: Clock, cont
     return runId;
   };
 
+  const unjudged = (memory: MemoryRecord): boolean => memory.retiredAt === null && byId.get({ memoryId: memory.id }) === undefined;
+
   return {
-    next: (project) => writers.memories.candidates({ project }).find((memory) => memory.retiredAt === null && byId.get({ memoryId: memory.id }) === undefined),
+    waiting: () => writers.memories.candidates().filter(unjudged),
     commit: ({ memoryId, outcome, classifier, verdict, confidence, failure, charge, openSessionIds }) =>
       writers.transaction<'recorded' | 'discarded'>(() => {
         if (charge !== undefined) writers.endedRun.append(chargedRunOf(memoryId), [charge]);

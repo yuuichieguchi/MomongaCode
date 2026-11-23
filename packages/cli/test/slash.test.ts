@@ -349,11 +349,11 @@ describe('/memory', () => {
     expect(infos.at(-1)).toBe('no memories');
   });
 
-  it('shows which classifier kept a memory auto mode kept, directly after the kept line, and nothing of the kind for a memory a person kept', async () => {
+  it('shows which classifier kept a memory auto review kept, directly after the kept line, and nothing of the kind for a memory a person kept', async () => {
     const { context, infos } = contextWith({ memories: [{ ...MEMORY, keptByClassifier: 'openai/gpt-5-mini' }, { ...MEMORY, id: 'mem-2' }] });
     await memory?.run('show mem-1', context);
     const lines = (infos.at(-1) ?? '').split('\n');
-    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto mode, classifier openai/gpt-5-mini');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto review, model openai/gpt-5-mini');
     await memory?.run('show mem-2', context);
     expect(infos.at(-1)).not.toContain('kept by:');
   });
@@ -362,7 +362,7 @@ describe('/memory', () => {
     const { context, infos } = contextWith();
     await memory?.run('show', context);
     await memory?.run('forget mem-1', context);
-    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory open (Open AGENTS.md in $EDITOR) | /memory show <id> | /memory delete <id> (retires the memory; it stays in /memory history) | /memory add <text> | /memory history <id> | /memory review | /memory restore <id> | /memory promote <id> --skill <name>'));
+    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory open (Open AGENTS.md in $EDITOR) | /memory show <id> | /memory delete <id> (retires the memory; it stays in /memory history) | /memory add <text> | /memory history <id> | /memory review | /memory restore <id> | /memory promote <id> --skill <name> | /memory auto [on|off|model]'));
   });
 });
 

@@ -83,6 +83,7 @@ export type ResolvedModels = {
   fallback: readonly string[];
   roles: ModelRoles;
   classifier?: string;
+  memoryReviewModel?: string;
   billingChanges: readonly BillingChange[];
   dialects: Record<string, DialectDefinition>;
   headersTimeoutMs: number;
@@ -101,6 +102,7 @@ export type ResolveModelsOptions = {
   servers: ServerRegistry;
   planProfiles?: PlanProfiles;
   classifier?: string | undefined;
+  memoryReviewModel?: string | undefined;
   kinds?: ServerKinds;
 };
 
@@ -522,9 +524,9 @@ const referenceProblem = (text: string, views: ModelViews, displays: ReadonlyMap
   return { problem: configured.length === 0 ? `${quoted} is not a configured model; no model is configured` : `${quoted} is not a configured model; configured models: ${configured.join(', ')}` };
 };
 
-type References = { start: string | undefined; fallback: string[]; roles: ModelRoles; billingChanges: BillingChange[]; classifier: string | undefined };
+type References = { start: string | undefined; fallback: string[]; roles: ModelRoles; billingChanges: BillingChange[]; classifier: string | undefined; memoryReviewModel: string | undefined };
 
-const resolveReferences = (models: ModelsSettings | undefined, classifier: string | undefined, views: ModelViews, displays: ReadonlyMap<string, string>, source: string): References => {
+const resolveReferences = (models: ModelsSettings | undefined, { classifier, memoryReviewModel }: Pick<ResolveModelsOptions, 'classifier' | 'memoryReviewModel'>, views: ModelViews, displays: ReadonlyMap<string, string>, source: string): References => {
   const canonAt = (key: string, text: string): string => {
     const outcome = referenceProblem(text, views, displays);
     if ('problem' in outcome) throw new ConfigError(`${source}: ${key}: ${outcome.problem}`);
@@ -537,7 +539,14 @@ const resolveReferences = (models: ModelsSettings | undefined, classifier: strin
   const billingChanges = (models?.billingChanges ?? []).map((change, index) =>
     change.model === undefined ? { from: change.from, to: change.to } : { from: change.from, to: change.to, model: canonAt(`models.billingChanges[${index}].model`, change.model) },
   );
-  return { start, fallback, roles, billingChanges, classifier: classifier === undefined ? undefined : canonAt('autoMode.classifier', classifier) };
+  return {
+    start,
+    fallback,
+    roles,
+    billingChanges,
+    classifier: classifier === undefined ? undefined : canonAt('autoMode.classifier', classifier),
+    memoryReviewModel: memoryReviewModel === undefined ? undefined : canonAt('memory.autoReviewModel', memoryReviewModel),
+  };
 };
 
 const checkBillingChanges = (changes: readonly BillingChange[], source: string): void => {
@@ -592,11 +601,11 @@ const warnUnallowedBillingChanges = (changes: readonly BillingChange[], { models
   }
 };
 
-export const resolveModels = (models: ModelsSettings | undefined, { source, warnings, servers, planProfiles = PLAN_PROFILES, classifier, kinds = SERVER_KINDS }: ResolveModelsOptions): ResolvedModels => {
+export const resolveModels = (models: ModelsSettings | undefined, { source, warnings, servers, planProfiles = PLAN_PROFILES, classifier, memoryReviewModel, kinds = SERVER_KINDS }: ResolveModelsOptions): ResolvedModels => {
   const dialects = resolveDialects(models?.dialects, source);
   const configured = resolveConnections((models?.connections ?? []).map(withDefaultAddress), source, kinds, { warnings, servers, profiles: planProfiles });
   const displays = displayMapOf(configured.views);
-  const references = resolveReferences(models, classifier, configured.views, displays, source);
+  const references = resolveReferences(models, { classifier, memoryReviewModel }, configured.views, displays, source);
   checkModelDialects(models?.connections ?? [], dialects, source);
   checkBillingChanges(references.billingChanges, source);
   const chains = new Map(configured.views.map((view) => [view.canon, chainOf(view.canon, references.fallback)]));
@@ -616,6 +625,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, warn
     fallback: references.fallback,
     roles: references.roles,
     ...(references.classifier === undefined ? {} : { classifier: references.classifier }),
+    ...(references.memoryReviewModel === undefined ? {} : { memoryReviewModel: references.memoryReviewModel }),
     billingChanges: references.billingChanges,
     dialects,
     headersTimeoutMs: models?.headersTimeoutMs ?? FIVE_MINUTES_MS,

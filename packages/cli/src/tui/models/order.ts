@@ -1,5 +1,8 @@
-import { durationText, editModelsSettings } from '@momonga/config';
+import { durationText, editModelsSettings, writeMemoryAutoReview } from '@momonga/config';
+import type { ModelsEditResult } from '@momonga/config';
+import { isRecord } from '@momonga/foundation';
 import type { TargetBilling } from '@momonga/protocol';
+import type { MemoryAutoReviewState } from '../../memory/format.ts';
 import { SEPARATOR, START_MARK, billingRows, displayIn, fallbackRows, proposeForm, roleRows } from '../../commands/models.ts';
 import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
 import { chosenOf, chosenThen, confirmAndWrite, confirmedBy, openEdit, proposeAndWrite, refusedSentence } from './context.ts';
@@ -13,7 +16,10 @@ import {
   FIRST_MODEL_ROW,
   FORBID_ROW,
   MINUTES_PROBLEM,
+  MEMORY_REVIEW_MODEL_TITLE,
+  MEMORY_REVIEW_ROW,
   MINUTES_PROMPT,
+  NOT_SET,
   ROLE_ROWS,
   ROLE_TITLE,
   SAVING_PHASE,
@@ -155,9 +161,10 @@ export const chooseRoleModel = async (context: ModelsFlowContext, opened: Opened
 export const runRoleFlow = async (context: ModelsFlowContext): Promise<void> => {
   for (;;) {
     const opened = await openEdit(context);
-    const acted = await chosenThen(context, { title: ROLE_TITLE, rows: roleRows(opened.edit).map((label) => ({ label })) }, async (index) => {
+    const acted = await chosenThen(context, { title: ROLE_TITLE, rows: [...roleRows(opened.edit), memoryReviewRow(opened.edit)].map((label) => ({ label })) }, async (index) => {
       const row = ROLE_ROWS[index];
       if (row !== undefined) await chooseRoleModel(context, opened, row.job, row.label);
+      else await runMemoryReviewModelFlow(context, opened);
     });
     if (acted === undefined) return;
   }
@@ -167,6 +174,61 @@ export const runClassifierFlow = async (context: ModelsFlowContext): Promise<voi
   const row = ROLE_ROWS.find((candidate) => candidate.job === 'classifier');
   if (row === undefined) throw new TypeError('the roles hold no classifier row');
   await chooseRoleModel(context, await openEdit(context), row.job, row.label);
+};
+
+export const memoryReviewStateOf = (edit: ModelsEdit): MemoryAutoReviewState => {
+  const memory = edit.document['memory'];
+  const model = isRecord(memory) ? memory['autoReviewModel'] : undefined;
+  return { on: isRecord(memory) && memory['autoReview'] === true, model: edit.resolved.memoryReviewModel ?? (typeof model === 'string' ? model : undefined) };
+};
+
+export const sessionModelOf = (model: string | undefined): string | undefined => (model === '' ? undefined : model);
+
+const memoryReviewRow = (edit: ModelsEdit): string => {
+  const { model } = memoryReviewStateOf(edit);
+  return `${MEMORY_REVIEW_ROW}${SEPARATOR}${model === undefined ? NOT_SET : displayIn(edit, model)}`;
+};
+
+const chooseMemoryReviewModel = async (context: ModelsFlowContext, { edit }: Opened): Promise<string | undefined> => {
+  const canons = canonsOf(edit);
+  const { model } = memoryReviewStateOf(edit);
+  const index = await chosenOf(context, { title: MEMORY_REVIEW_MODEL_TITLE, rows: canons.map((canon) => ({ label: displayIn(edit, canon) })), initial: Math.max(0, canons.findIndex((canon) => canon === model)) });
+  return index === undefined ? undefined : canons[index];
+};
+
+export type MemoryReviewSave = <T>(work: (signal: AbortSignal) => Promise<T>) => Promise<T>;
+
+export const savingIn =
+  (context: ModelsFlowContext): MemoryReviewSave =>
+  (work) =>
+    context.wait(SAVING_PHASE, work);
+
+const writeMemoryReviewModel = ({ host }: Opened, model: string, signal: AbortSignal): Promise<ModelsEditResult> => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setMemoryReviewModel', model }], { lock: host.lock(), signal });
+
+const writeMemoryReviewSwitch = ({ host }: Opened, value: boolean, signal: AbortSignal): Promise<void> => writeMemoryAutoReview(host.home, host.settingsFile, value, { lock: host.lock(), signal });
+
+export const runMemoryReviewModelFlow = async (context: ModelsFlowContext, opened: Opened): Promise<void> => {
+  const model = await chooseMemoryReviewModel(context, opened);
+  if (model === undefined) return;
+  const written = await refusedSentence(context, () => savingIn(context)((signal) => writeMemoryReviewModel(opened, model, signal)));
+  if (written !== undefined) context.info(written.value.summaries.join('\n'));
+};
+
+export const setMemoryAutoReview = async (context: ModelsFlowContext, save: MemoryReviewSave, opened: Opened, on: boolean): Promise<MemoryAutoReviewState | undefined> => {
+  const current = memoryReviewStateOf(opened.edit).model;
+  if (!on) {
+    await save((signal) => writeMemoryReviewSwitch(opened, false, signal));
+    return { on, model: current };
+  }
+  const model = current ?? sessionModelOf(context.model) ?? (await chooseMemoryReviewModel(context, opened));
+  if (model === undefined) return undefined;
+  const written = await refusedSentence(context, () =>
+    save(async (signal) => {
+      if (current === undefined) await writeMemoryReviewModel(opened, model, signal);
+      await writeMemoryReviewSwitch(opened, true, signal);
+    }),
+  );
+  return written === undefined ? undefined : { on, model };
 };
 
 const WHOLE_MINUTES = /^[1-9]\d*$/;

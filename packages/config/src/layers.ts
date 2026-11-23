@@ -21,7 +21,7 @@ import { localSettingsFile, pathExists, worktreeRootOf } from './local-settings.
 import type { RuleOrigin } from './rule.ts';
 import { invalidSettingsMessage } from './schema-errors.ts';
 import { assertSettings, checkIssueWatch, KNOWN_SETTINGS_KEYS } from './settings.ts';
-import type { Settings } from './settings.ts';
+import type { MemorySettings, Settings } from './settings.ts';
 
 export type TrustOracle = { isTrusted: (directory: string, signal: AbortSignal) => boolean | Promise<boolean> };
 
@@ -96,7 +96,9 @@ const USER_ONLY_KEYS = [
 
 export const USER_LAYER_ONLY_SETTINGS: readonly string[] = ['models', 'credentials', 'mcp', 'mcpServers', 'sandboxNetwork', ...USER_ONLY_KEYS];
 
-export const USER_LAYER_ONLY_PARTS: readonly string[] = ['tools.ripgrep', ...USER_ONLY_TUI_KEYS.map((key) => `tui.${key}`)];
+const USER_ONLY_MEMORY_KEYS = ['autoReview', 'autoReviewModel'] as const satisfies readonly (keyof MemorySettings)[];
+
+export const USER_LAYER_ONLY_PARTS: readonly string[] = ['tools.ripgrep', ...USER_ONLY_MEMORY_KEYS.map((key) => `memory.${key}`), ...USER_ONLY_TUI_KEYS.map((key) => `tui.${key}`)];
 
 export const USER_LAYER_ONLY_MODES: readonly string[] = USER_ONLY_MODES;
 
@@ -145,6 +147,16 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     warnings.push(`${source}: tools.ripgrep is only honored in user settings; discarded`);
     const { ripgrep: _ignored, ...remaining } = settings.tools;
     restricted.tools = remaining;
+  }
+
+  if (settings.memory !== undefined) {
+    const kept = { ...settings.memory };
+    for (const key of USER_ONLY_MEMORY_KEYS) {
+      if (kept[key] === undefined) continue;
+      warnings.push(`${source}: memory.${key} is only honored in user settings; discarded`);
+      delete kept[key];
+    }
+    restricted.memory = kept;
   }
 
   const mode = settings.permissions?.defaultMode;
@@ -259,9 +271,9 @@ export const readUserJsonFile = async (home: string, asker: Asker): Promise<Json
 
 export type UserModelsSource = { source: string; warnings: string[]; planProfiles?: PlanProfiles; kinds?: ServerKinds };
 
-export const userModelsOf = (settings: Pick<Settings, 'models' | 'autoMode'> | undefined, { source, warnings, planProfiles = PLAN_PROFILES, kinds = SERVER_KINDS }: UserModelsSource): ResolvedModels => {
+export const userModelsOf = (settings: Pick<Settings, 'models' | 'autoMode' | 'memory'> | undefined, { source, warnings, planProfiles = PLAN_PROFILES, kinds = SERVER_KINDS }: UserModelsSource): ResolvedModels => {
   const declared = settings?.models;
-  return resolveModels(declared, { source, warnings, servers: serverRegistryOf(declared?.servers, source), planProfiles, classifier: settings?.autoMode?.classifier, kinds });
+  return resolveModels(declared, { source, warnings, servers: serverRegistryOf(declared?.servers, source), planProfiles, classifier: settings?.autoMode?.classifier, memoryReviewModel: settings?.memory?.autoReviewModel, kinds });
 };
 
 export function* userLayerFrom(home: string, read: JsonFile, planProfiles?: PlanProfiles, sections?: SectionSelection): PathAsking<UserLayer> {

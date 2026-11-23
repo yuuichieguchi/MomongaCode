@@ -7,8 +7,8 @@ import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { requestKey } from '../model-key.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import type { BudgetAccount } from '../worker/admitted-request.ts';
-import { callClassifier } from '../worker/auto-classifier.ts';
-import type { ClassifierCall } from '../worker/auto-classifier.ts';
+import { callResolvedClassifier, resolveClassifier } from '../worker/auto-classifier.ts';
+import type { ClassifierCall, ResolvedClassifier } from '../worker/auto-classifier.ts';
 import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { readRunLimits } from '../worker/limits.ts';
 import type { WorkerDefaults } from '../worker/types.ts';
@@ -26,7 +26,8 @@ const MEMORY_CLASSIFIER_INSTRUCTIONS = jsonReplyInstructions(MEMORY_CLASSIFIER_T
 export type MemoryJudgeOptions = {
   store: Pick<RuntimeStore, 'memoryJudgements' | 'memories' | 'getRun' | 'getSession' | 'treeSpend' | 'admitModelRequest'>;
   gateway: Pick<GatewayPort, 'listing' | 'capabilities' | 'countTokens' | 'stream' | 'quote'>;
-  settings: Pick<SettingsPort, 'trusted' | 'autoModeClassifier'>;
+  settings: Pick<SettingsPort, 'trusted'>;
+  autoReview(): MemoryAutoReview;
   clock: Clock;
   role: Pick<RolePort, 'refresh'>;
   isIdle(): boolean;
@@ -36,14 +37,14 @@ export type MemoryJudgeOptions = {
   defaults?: WorkerDefaults;
 };
 
+export type MemoryAutoReview = { enabled: boolean; model: string | undefined };
+
 export type MemoryJudgeTurn = 'idle' | 'busy' | 'ran';
 
 export type MemoryJudge = { runOne(signal: AbortSignal): Promise<MemoryJudgeTurn> };
 
-const reviewOrder = (left: MemoryRecord, right: MemoryRecord): number => left.createdAt - right.createdAt || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
-
-const sourceRunOf = (memory: MemoryRecord): string => {
-  if (memory.source.kind === 'reflection' || memory.source.kind === 'tool') return memory.source.runId;
+const sourceOf = (memory: MemoryRecord): { sessionId: string; runId: string } => {
+  if (memory.source.kind === 'reflection' || memory.source.kind === 'tool') return memory.source;
   throw new Error(`memory ${memory.id} has no source run to charge its judgement to`);
 };
 
@@ -59,14 +60,22 @@ export const createMemoryJudge = (options: MemoryJudgeOptions): MemoryJudge => {
   const { store, gateway, settings, clock } = options;
   let running = false;
 
-  const foldersToJudge = async (signal: AbortSignal): Promise<string[]> => {
-    const folders = new Set<string>();
-    for (const sessionId of options.openSessionIds()) {
-      const session = store.getSession(sessionId);
-      if (session === undefined || session.permissionMode !== 'auto' || folders.has(session.cwd)) continue;
-      if (await settings.trusted(session, signal)) folders.add(session.cwd);
+  const sourceSessionOf = (memory: MemoryRecord) => {
+    const { sessionId } = sourceOf(memory);
+    const session = store.getSession(sessionId);
+    if (session === undefined) throw new Error(`the source session ${sessionId} of memory ${memory.id} does not exist`);
+    return session;
+  };
+
+  const firstOfTrustedFolder = async (signal: AbortSignal): Promise<{ folder: string; memory: MemoryRecord } | undefined> => {
+    const trustOf = new Map<string, boolean>();
+    for (const memory of store.memoryJudgements.waiting()) {
+      const folder = memory.project;
+      if (folder === null) continue;
+      if (!trustOf.has(folder)) trustOf.set(folder, await settings.trusted(sourceSessionOf(memory), signal));
+      if (trustOf.get(folder) === true) return { folder, memory };
     }
-    return [...folders];
+    return undefined;
   };
 
   const openSessionsOf = (project: string): string[] =>
@@ -85,26 +94,28 @@ export const createMemoryJudge = (options: MemoryJudgeOptions): MemoryJudge => {
     };
   };
 
-  const ask = (project: string, memory: MemoryRecord, runId: string, signal: AbortSignal): Promise<ClassifierCall<'memory_classifier'>> =>
-    callClassifier({
-      gateway,
-      role: options.role,
-      timers: options.timers,
-      configured: settings.autoModeClassifier(),
-      account: accountOf(runId, signal),
-      instructions: MEMORY_CLASSIFIER_INSTRUCTIONS,
-      prompt: () => promptOf(project, memory),
-      subject: 'memory',
-      purpose: 'memory_classifier',
-      metadata: { run_id: runId, purpose: 'memory_classifier' },
-      idempotencyKeyOf: (_classifier, body) => requestKey(runId, 'memory_classifier', { memoryId: memory.id, body }),
-      signal,
-      streamOptions: () => ({ deadlineAt: clock.now() + options.attemptTimeoutMs }),
-      onSending: () => undefined,
-      onLeaseLost: () => {
-        throw new Error(`the store asked for a lease to admit the memory classifier call of the ended run ${runId}`);
+  const ask = (project: string, memory: MemoryRecord, runId: string, model: ResolvedClassifier, signal: AbortSignal): Promise<ClassifierCall<'memory_classifier'>> =>
+    callResolvedClassifier(
+      {
+        gateway,
+        role: options.role,
+        timers: options.timers,
+        account: accountOf(runId, signal),
+        instructions: MEMORY_CLASSIFIER_INSTRUCTIONS,
+        prompt: () => promptOf(project, memory),
+        subject: 'memory',
+        purpose: 'memory_classifier',
+        metadata: { run_id: runId, purpose: 'memory_classifier' },
+        idempotencyKeyOf: (_classifier, body) => requestKey(runId, 'memory_classifier', { memoryId: memory.id, body }),
+        signal,
+        streamOptions: () => ({ deadlineAt: clock.now() + options.attemptTimeoutMs }),
+        onSending: () => undefined,
+        onLeaseLost: () => {
+          throw new Error(`the store asked for a lease to admit the memory classifier call of the ended run ${runId}`);
+        },
       },
-    });
+      model,
+    );
 
   const commit = (project: string, judgement: Omit<MemoryJudgementCommit, 'openSessionIds'>): void => {
     store.memoryJudgements.commit({ ...judgement, openSessionIds: openSessionsOf(project) });
@@ -125,21 +136,21 @@ export const createMemoryJudge = (options: MemoryJudgeOptions): MemoryJudge => {
     runOne: async (signal) => {
       if (running) return 'busy';
       if (!options.isIdle()) return 'busy';
+      const { enabled, model } = options.autoReview();
+      if (!enabled || model === undefined) return 'idle';
       running = true;
       const deadline = new AbortController();
       const timer = options.timers.setTimeout(() => deadline.abort(new Error(`the memory judgement passed its deadline of ${options.attemptTimeoutMs} ms`)), options.attemptTimeoutMs);
       const bounded = AbortSignal.any([signal, deadline.signal]);
       try {
-        const waiting = (await foldersToJudge(bounded)).flatMap((folder) => {
-          const next = store.memoryJudgements.next(folder);
-          return next === undefined ? [] : [{ folder, memory: next }];
-        });
-        const [first] = waiting.sort((left, right) => reviewOrder(left.memory, right.memory));
+        const first = await firstOfTrustedFolder(bounded);
         if (first === undefined) return 'idle';
         const { folder, memory } = first;
         let call: ClassifierCall<'memory_classifier'>;
         try {
-          call = await ask(folder, memory, sourceRunOf(memory), bounded);
+          const resolved = await resolveClassifier(gateway, model, bounded);
+          if (resolved === undefined) return 'idle';
+          call = await ask(folder, memory, sourceOf(memory).runId, resolved, bounded);
         } catch (error) {
           if (signal.aborted) throw error;
           if ((await retireDecisionOf(error, options.role)) === 'retire-yield') return 'idle';

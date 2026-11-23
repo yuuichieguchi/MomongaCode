@@ -52,44 +52,53 @@ const leftUnsafe = (memoryId: string, openSessionIds: readonly string[]) => ({
   openSessionIds,
 });
 
-describe('the next candidate to judge', () => {
-  it('is the first waiting candidate of the project in review order', async () => {
+describe('the waiting candidates to judge', () => {
+  const idsOf = (memories: readonly { id: string }[]) => memories.map((memory) => memory.id);
+
+  it('are every waiting candidate of every folder in review order', async () => {
     const { judgements, candidate } = await started();
     const first = candidate('first');
-    candidate('second');
-    candidate('third', OTHER);
-    expect(judgements.next(PROJECT)?.id).toBe(first.id);
+    const second = candidate('second', OTHER);
+    const third = candidate('third');
+    expect(idsOf(judgements.waiting())).toEqual([first.id, second.id, third.id]);
   });
 
-  it('is undefined when the project has no waiting candidate', async () => {
+  it('are an empty list when no candidate waits', async () => {
+    const { judgements } = await started();
+    expect(judgements.waiting()).toEqual([]);
+  });
+
+  it('include a candidate added later, after the earlier ones', async () => {
     const { judgements, candidate } = await started();
-    candidate('elsewhere', OTHER);
-    expect(judgements.next(PROJECT)).toBeUndefined();
+    const first = candidate('first');
+    expect(idsOf(judgements.waiting())).toEqual([first.id]);
+    const later = candidate('later', OTHER);
+    expect(idsOf(judgements.waiting())).toEqual([first.id, later.id]);
   });
 
-  it('skips a candidate the person accepted, rejected or deleted', async () => {
+  it('leave out a candidate the person accepted, rejected or deleted', async () => {
     const { store, judgements, candidate } = await started();
     const accepted = candidate('accepted');
     const rejected = candidate('rejected');
-    const deleted = candidate('deleted');
+    const deleted = candidate('deleted', OTHER);
     const waiting = candidate('waiting');
     store.memories.accept(accepted.id);
     store.memories.reject(rejected.id);
     store.memories.retire(deleted.id);
-    expect(judgements.next(PROJECT)?.id).toBe(waiting.id);
+    expect(idsOf(judgements.waiting())).toEqual([waiting.id]);
   });
 
-  it('never returns a candidate that has a record, kept or left', async () => {
+  it('leave out a candidate that has a record, kept or left', async () => {
     const { judgements, candidate } = await started();
     const first = candidate('first');
-    const second = candidate('second');
+    const second = candidate('second', OTHER);
     const third = candidate('third');
     expect(judgements.commit(leftUnsafe(first.id, []))).toBe('recorded');
-    expect(judgements.next(PROJECT)?.id).toBe(second.id);
+    expect(idsOf(judgements.waiting())).toEqual([second.id, third.id]);
     expect(judgements.commit(kept(second.id, []))).toBe('recorded');
-    expect(judgements.next(PROJECT)?.id).toBe(third.id);
+    expect(idsOf(judgements.waiting())).toEqual([third.id]);
     expect(judgements.commit({ memoryId: third.id, outcome: 'left', failure: 'the classifier stream ended without a terminal event', openSessionIds: [] })).toBe('recorded');
-    expect(judgements.next(PROJECT)).toBeUndefined();
+    expect(judgements.waiting()).toEqual([]);
   });
 });
 
@@ -122,7 +131,7 @@ describe('committing a judgement', () => {
   it('leaves the memory waiting with a failure and no verdict, and charges nothing when no charge is given', async () => {
     const { store, judgements, candidate, run } = await started();
     const memory = candidate('a note');
-    const failure = 'no classifier model is configured: set autoMode.classifier in the user settings, or run /auto-mode and choose one';
+    const failure = 'the memory judgement passed its deadline of 1000 ms';
     expect(judgements.commit({ memoryId: memory.id, outcome: 'left', failure, openSessionIds: [] })).toBe('recorded');
     const record = judgements.get(memory.id);
     expect(record).toMatchObject({ memoryId: memory.id, outcome: 'left', failure, owed: true });
@@ -176,7 +185,7 @@ describe('committing a judgement', () => {
     expect(store.memories.get(memory.id)).toEqual(before);
     expect(judgedEventsOf(store, session.id)).toEqual([]);
     expect(chargesOf(store, run.id)).toEqual([]);
-    expect(judgements.next(PROJECT)?.id).toBe(memory.id);
+    expect(judgements.waiting().map((waiting) => waiting.id)).toEqual([memory.id]);
   });
 
   it('writes nothing, not even the charge, when the transaction fails', async () => {
@@ -243,7 +252,7 @@ describe('the person decides a memory that has an unshown record', () => {
     expect(judgements.get(memory.id)).toMatchObject({ outcome: 'left', verdict: 'unsafe', owed: false, closed: true });
   });
 
-  it('closes the record when the person deletes a memory auto mode kept', async () => {
+  it('closes the record when the person deletes a memory auto review kept', async () => {
     const { store, judgements, candidate } = await started();
     const memory = candidate('a note');
     judgements.commit(kept(memory.id, []));
@@ -252,7 +261,7 @@ describe('the person decides a memory that has an unshown record', () => {
     expect(judgements.owed(PROJECT)).toEqual([]);
   });
 
-  it('refuses to accept a memory auto mode kept, keeping its text and classifier', async () => {
+  it('refuses to accept a memory auto review kept, keeping its text and classifier', async () => {
     const { store, judgements, candidate } = await started();
     const memory = candidate('tests live in test/');
     judgements.commit(kept(memory.id, []));

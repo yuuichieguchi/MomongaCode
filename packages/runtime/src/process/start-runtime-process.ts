@@ -940,6 +940,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         role: rolePort,
         isIdle,
         openSessionIds: () => notifier.watchedSessionIds(),
+        autoReview: () => {
+          const { autoReview, autoReviewModel } = settingsComposition.takeUserSnapshot().settings.memory;
+          return { enabled: autoReview, model: autoReviewModel };
+        },
         timers,
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         defaults: RUNTIME_DEFAULTS.limits,

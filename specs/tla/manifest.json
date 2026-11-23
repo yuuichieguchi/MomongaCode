@@ -1041,12 +1041,14 @@
         "one folder: folder scoping is only a filter; a candidate's text, the classifier prompt and the judgement reason are not modelled",
         "creation order is the candidate number; reflection adds the lowest absent candidate, so a new candidate goes to the end",
         "every not-allow kind (unsafe, safe without high confidence, call failure, broken reply, no classifier, budget exhausted, context too small) is one outcome notAllow; every wait of the classifier call is bounded, so Decide always ends",
-        "a session is the UI process connected to it (a terminal UI or an ACP editor session, set Acp): a closed session has no mode and no undelivered line event; a session that reopens is a new UI process with an empty memory of printed lines",
+        "a session is the UI process connected to it (a terminal UI or an ACP editor session, set Acp): a closed session has no undelivered line event; a session that reopens is a new UI process with an empty memory of printed lines",
         "a UI process may stop at any step; the store read, the print and the shown mark of a record are three separate steps of one process",
         "a terminal UI starts in two steps: it connects to its event stream, then reads the unshown records; an ACP session only connects",
         "the line events of one UI are a set: one commit per record appends at most one event per session",
         "a person's retire applies to a waiting candidate and to an active memory; the record of a retired memory stays",
         "restoring an archived memory is not modelled",
+        "the switch is one fact: memory.autoReview on and a model the gateway knows",
+        "a terminal UI's reconnect within one process is not modelled; a stop and a new start covers it with an empty memory of printed lines",
         "the state space is bounded by the constants of its configurations; the base row MemoryAutoReview sets N = 2, UIs = {u1, u2}, Acp = {}, MaxCrashes = 1 and every switch FALSE"
       ],
       "notProved": [
@@ -1057,8 +1059,9 @@
         "that the code follows the model: no tie test exists yet"
       ],
       "header": [
-        "Model of the auto-mode judge of memory candidates in the memory",
-        "sweeper: start guard, review order, one judgement at a time, the",
+        "Model of memory auto review in the memory sweeper, independent of",
+        "the permission mode of a session: start guard (switch, trust, no",
+        "active run), review order, one judgement at a time, the",
         "commit transaction that re-checks the candidate, the durable",
         "judgement record and its shown mark, the line events of every open",
         "session, and the read, print and mark of a line by a UI process that",
@@ -1070,7 +1073,7 @@
         "  MarkAtCommit     the commit marks the record shown when an open",
         "                   session exists, instead of the reader",
         "  MarkBeforePrint  a UI marks a record shown before it prints it",
-        "  AutoOnly         the commit sends the line event to auto sessions only",
+        "  IgnoreSwitch     a judgement may start while the switch is off",
         "  ReadFirst        a terminal UI reads the unshown records before it",
         "                   connects to its event stream",
         "  ShowDecided      a UI prints a record the person has decided"
@@ -2312,7 +2315,7 @@
         "      the rules packages/runtime/src/governance/rules.ts (rules)",
         "      packages/runtime/src/governance/governance-port.ts (trusted)",
         "      packages/runtime/src/memory/reflection.ts (memory, trusted, verification)",
-        "      packages/runtime/src/memory/judge.ts (autoModeClassifier, trusted)",
+        "      packages/runtime/src/memory/judge.ts (trusted)",
         "      the process ports packages/runtime/src/process/tool-runtime.ts (loadSessionSettings, takeUserSnapshot, userSnapshot)",
         "      packages/runtime/src/process/agents-port.ts (approvedProjectAgents, trusted)",
         "      packages/runtime/src/process/history-port.ts (trusted)",
@@ -11345,13 +11348,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 10226588,
-      "measuredSeconds": 164.08,
+      "distinctStates": 5381760,
+      "measuredSeconds": 71.56,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 831.49,
-      "budgetCpuSeconds": 1666,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 12.23 at start)",
-      "identity": "2da3412ccd62b902fc523c918931cf14e3761b1f8f99e6f864975a61c7e3082a"
+      "measuredCpuSeconds": 365.13,
+      "budgetCpuSeconds": 734,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.41 at start)",
+      "identity": "b744e5ef0202fb34d2e90516734c588cc591697bae79d54190b5c565b0acfed0"
     },
     {
       "config": "MemoryAutoReview.live",
@@ -11362,13 +11365,13 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 171076,
-      "measuredSeconds": 49.06,
+      "distinctStates": 180248,
+      "measuredSeconds": 41.3,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 195.42,
-      "budgetCpuSeconds": 394,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 11.36 at start)",
-      "identity": "7a615188c83dd1633a625d87064cd63942ce3d41fd5d4337f4d365971af09851"
+      "measuredCpuSeconds": 198.33,
+      "budgetCpuSeconds": 400,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.66 at start)",
+      "identity": "a7cadfb82db9fdec9c0ad3306a2001685955161ec140e8af4dd14ee4a53b4ecf"
     },
     {
       "config": "MemoryAutoReview.n3",
@@ -11376,13 +11379,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 9731564,
-      "measuredSeconds": 130.01,
+      "distinctStates": 9964936,
+      "measuredSeconds": 111.23,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 615.15,
-      "budgetCpuSeconds": 1234,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 19.79 at start)",
-      "identity": "781ac34998865cdee7f4e29c7bd4776106b0fa92ad6ca18d45765820b2471b01"
+      "measuredCpuSeconds": 568.94,
+      "budgetCpuSeconds": 1141,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.18 at start)",
+      "identity": "b02c603f44d713d06d980ad8c86b5986ae78e6fbad7eec73f90a4931b9c6699a"
     },
     {
       "config": "MemoryAutoReview.acp",
@@ -11390,13 +11393,13 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 3227876,
-      "measuredSeconds": 62.65,
+      "distinctStates": 1763776,
+      "measuredSeconds": 21,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 240.45,
-      "budgetCpuSeconds": 484,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.07 at start)",
-      "identity": "f0c415211d21a915f3cbd27c5d9080b3a7581e9ffd818074239405640bf5f8ee"
+      "measuredCpuSeconds": 105.68,
+      "budgetCpuSeconds": 215,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)",
+      "identity": "a2462a308e08bc89cb354363dcf402d8e68afab0d1d7a9e1895755b817cc9a2e"
     },
     {
       "config": "MemoryAutoReview.liveAcp",
@@ -11407,13 +11410,13 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 13968,
-      "measuredSeconds": 4.26,
+      "distinctStates": 8648,
+      "measuredSeconds": 3.14,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 18.99,
-      "budgetCpuSeconds": 41,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.04 at start)",
-      "identity": "89e7cd441d30f8a8d617784db28a8d9727504f2b1784bcd58fdae80225068aec"
+      "measuredCpuSeconds": 14.12,
+      "budgetCpuSeconds": 32,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.94 at start)",
+      "identity": "6dcd1f259413872eb34141e307c313a14fb862aa71446542576301fa700d3a09"
     },
     {
       "config": "MemoryAutoReview.liveUIs",
@@ -11424,13 +11427,13 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 62124,
-      "measuredSeconds": 15.92,
+      "distinctStates": 35512,
+      "measuredSeconds": 8.29,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 71.2,
-      "budgetCpuSeconds": 146,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.28 at start)",
-      "identity": "4cbc1643885e666c7e103ba6b771f4be530b906eb7f64208c3608d816a35029c"
+      "measuredCpuSeconds": 39.9,
+      "budgetCpuSeconds": 83,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.79 at start)",
+      "identity": "068881e97be075a5ded0f7d4939f21969c803b062d64c4e2dfcbeade78322ed1"
     },
     {
       "config": "MemoryAutoReview.noRecheck",
@@ -11441,13 +11444,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 251,
-      "measuredSeconds": 2.31,
+      "distinctStates": 258,
+      "measuredSeconds": 1.34,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.88,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.40 at start)",
-      "identity": "aa7c272d3f40bb9911e962cd4abf0aaf0b260e8c9ebc78a4857764ef396f8da0"
+      "measuredCpuSeconds": 2.44,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.77 at start)",
+      "identity": "a296b0fb0205e8ad02ae28ff10ca0bbcaa61638c0a2ff55aff2ce5dd6e7a4952"
     },
     {
       "config": "MemoryAutoReview.retryLeft",
@@ -11458,13 +11461,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 468,
-      "measuredSeconds": 2.2,
+      "distinctStates": 382,
+      "measuredSeconds": 1.3,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.73,
-      "budgetCpuSeconds": 9,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 8.40 at start)",
-      "identity": "3a327f5fe86380812b55efd38580a9921b9de9610299a8fcfb2ea4f273874ecc"
+      "measuredCpuSeconds": 2.39,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.77 at start)",
+      "identity": "de317cdc09d34f5eb08340d05d6045d5e9c3bd6a8aae92134701537284c1bdd0"
     },
     {
       "config": "MemoryAutoReview.markAtCommit",
@@ -11478,13 +11481,13 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 1564,
+      "distinctStates": 1760,
       "measuredSeconds": 1.86,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 5.54,
-      "budgetCpuSeconds": 15,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.78 at start)",
-      "identity": "e1ece9ee33888849be587526e6aaa3683becd73dae1ad58b6a0dd05571c3ef48"
+      "measuredCpuSeconds": 5.13,
+      "budgetCpuSeconds": 14,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.94 at start)",
+      "identity": "b6e37e45d7ab017977e75b0161eb307c192c1ae99e9f9c514cd7c276e30b3ee1"
     },
     {
       "config": "MemoryAutoReview.showDecided",
@@ -11495,13 +11498,13 @@
       },
       "args": [],
       "tier": "deep",
-      "distinctStates": 646,
-      "measuredSeconds": 2.25,
+      "distinctStates": 779,
+      "measuredSeconds": 1.46,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 2.94,
+      "measuredCpuSeconds": 2.67,
       "budgetCpuSeconds": 9,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.41 at start)",
-      "identity": "bf1aac7eb3f55ac9bb92f93327a4b3a9e583eaa8e12cdcd5af86fc4af7570617"
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)",
+      "identity": "e1647801f40a66937d8b4f909cb875703885c1f2624df72e9307c394af359c23"
     },
     {
       "config": "MemoryAutoReview.markBeforePrint",
@@ -11515,33 +11518,30 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 1440,
-      "measuredSeconds": 1.91,
+      "distinctStates": 1608,
+      "measuredSeconds": 1.66,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 5.26,
-      "budgetCpuSeconds": 14,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.41 at start)",
-      "identity": "7f1ed484c969dfbb27d7a5a93309aee3f3d04625241df0ca050b9f4e1c0ac68b"
+      "measuredCpuSeconds": 3.99,
+      "budgetCpuSeconds": 11,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)",
+      "identity": "1d2beb7c0b884d04b7d9cf562449ecbabc19909c43db196395af152d2b4c6a25"
     },
     {
-      "config": "MemoryAutoReview.autoOnly",
+      "config": "MemoryAutoReview.ignoreSwitch",
       "role": "evidence",
       "expect": {
-        "violates": "LineReachesOpenTui",
+        "violates": "StartGuard",
         "exitCode": 13
       },
-      "args": [
-        "-lncheck",
-        "final"
-      ],
+      "args": [],
       "tier": "deep",
-      "distinctStates": 1496,
-      "measuredSeconds": 1.69,
+      "distinctStates": 91,
+      "measuredSeconds": 1.29,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 4.54,
-      "budgetCpuSeconds": 13,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.78 at start)",
-      "identity": "ba2afb2c59171eec19906c2c649bccddd9720240f61ad296495e7d94f991a1fe"
+      "measuredCpuSeconds": 2.22,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.77 at start)",
+      "identity": "6ed2ff5c3509b2bce033290a6279e62bc9f14fd95fe5e375b972703a8fc5615f"
     },
     {
       "config": "MemoryAutoReview.readFirst",
@@ -11555,13 +11555,13 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 1312,
-      "measuredSeconds": 1.76,
+      "distinctStates": 1480,
+      "measuredSeconds": 1.63,
       "measuredReuse": "off",
-      "measuredCpuSeconds": 5.02,
-      "budgetCpuSeconds": 14,
-      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 9.78 at start)",
-      "identity": "a23e521a692d6bd1e4de4493aa9f80ea38fd6cd318762013c1cc7d6777098799"
+      "measuredCpuSeconds": 4.8,
+      "budgetCpuSeconds": 13,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.94 at start)",
+      "identity": "354a99f6f1eb83073c56b5ea1a1098d886e8c9432cf8de8b4be6926cd4b11886"
     }
   ]
 }

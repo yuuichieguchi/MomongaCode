@@ -66,7 +66,7 @@ describe('migration 58: memory judgements of auto mode', () => {
       expect(store.memoryJudgements.get(accepted.id)).toBeUndefined();
       expect(store.memoryJudgements.get(waiting.id)).toBeUndefined();
       expect(store.memoryJudgements.owed(PROJECT)).toEqual([]);
-      expect(store.memoryJudgements.next(PROJECT)?.id).toBe(waiting.id);
+      expect(store.memoryJudgements.waiting().map((memory) => memory.id)).toEqual([waiting.id]);
     } finally {
       store.close();
     }

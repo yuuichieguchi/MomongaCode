@@ -10,7 +10,7 @@ CONSTANTS
     RetryLeft,
     MarkAtCommit,
     MarkBeforePrint,
-    AutoOnly,
+    IgnoreSwitch,
     ReadFirst,
     ShowDecided
 
@@ -22,7 +22,7 @@ ASSUME /\ N \in Nat \ {0}
        /\ RetryLeft \in BOOLEAN
        /\ MarkAtCommit \in BOOLEAN
        /\ MarkBeforePrint \in BOOLEAN
-       /\ AutoOnly \in BOOLEAN
+       /\ IgnoreSwitch \in BOOLEAN
        /\ ReadFirst \in BOOLEAN
        /\ ShowDecided \in BOOLEAN
 
@@ -30,16 +30,16 @@ Cand == 1..N
 
 Tuis == UIs \ Acp
 
-VARIABLES st, keptBy, rec, shown, jc, jout, run, trusted, crashes,
-          phase, auto, inbox, stat, seen, lines, everPrinted
+VARIABLES st, keptBy, rec, shown, jc, jout, run, trusted, on, crashes,
+          phase, inbox, stat, seen, lines, everPrinted
 
-vars == <<st, keptBy, rec, shown, jc, jout, run, trusted, crashes,
-          phase, auto, inbox, stat, seen, lines, everPrinted>>
+vars == <<st, keptBy, rec, shown, jc, jout, run, trusted, on, crashes,
+          phase, inbox, stat, seen, lines, everPrinted>>
 
 storeVars == <<st, keptBy, rec, shown>>
 judgeVars == <<jc, jout, crashes>>
-envVars == <<run, trusted>>
-uiVars == <<phase, auto, inbox, stat, seen, lines>>
+envVars == <<run, trusted, on>>
+uiVars == <<phase, inbox, stat, seen, lines>>
 
 NoLines == [c \in Cand |-> 0]
 NoStat == [c \in Cand |-> "none"]
@@ -51,9 +51,8 @@ Init ==
     /\ rec = [c \in Cand |-> "none"]
     /\ shown = [c \in Cand |-> FALSE]
     /\ jc = 0 /\ jout = "none" /\ crashes = 0
-    /\ run = FALSE /\ trusted = TRUE
+    /\ run = FALSE /\ trusted = TRUE /\ on = FALSE
     /\ phase = [u \in UIs |-> "closed"]
-    /\ auto = [u \in UIs |-> FALSE]
     /\ inbox = [u \in UIs |-> {}]
     /\ stat = [u \in UIs |-> NoStat]
     /\ seen = [u \in UIs |-> NoSeen]
@@ -70,11 +69,11 @@ PersonDecided(c) == keptBy[c] = "person" \/ st[c] \in {"rejected", "retired"}
 
 Connected(u) == phase[u] = "run" \/ (phase[u] = "pre" /\ ~ReadFirst)
 
-OpenAuto == {u \in UIs : Connected(u) /\ auto[u]}
+Receivers == {u \in UIs : Connected(u)}
 
-Receivers == {u \in UIs : Connected(u) /\ (~AutoOnly \/ auto[u])}
+GuardHolds == on /\ trusted /\ ~run
 
-StartAllowed == ~run /\ trusted /\ OpenAuto # {}
+StartAllowed == (on \/ IgnoreSwitch) /\ trusted /\ ~run
 
 Reflect(c) ==
     /\ st[c] = "absent"
@@ -100,15 +99,19 @@ Retire(c) ==
 
 StartRun ==
     /\ ~run /\ run' = TRUE
-    /\ UNCHANGED <<storeVars, judgeVars, trusted, uiVars, everPrinted>>
+    /\ UNCHANGED <<storeVars, judgeVars, trusted, on, uiVars, everPrinted>>
 
 EndRun ==
     /\ run /\ run' = FALSE
-    /\ UNCHANGED <<storeVars, judgeVars, trusted, uiVars, everPrinted>>
+    /\ UNCHANGED <<storeVars, judgeVars, trusted, on, uiVars, everPrinted>>
 
 ToggleTrust ==
     /\ trusted' = ~trusted
-    /\ UNCHANGED <<storeVars, judgeVars, run, uiVars, everPrinted>>
+    /\ UNCHANGED <<storeVars, judgeVars, run, on, uiVars, everPrinted>>
+
+ToggleSwitch ==
+    /\ on' = ~on
+    /\ UNCHANGED <<storeVars, judgeVars, run, trusted, uiVars, everPrinted>>
 
 Bump(x) == IF x >= 2 THEN 2 ELSE x + 1
 
@@ -124,7 +127,6 @@ StartRead(u) ==
 
 Launch(u) ==
     /\ phase[u] = "closed"
-    /\ \E m \in BOOLEAN : auto' = [auto EXCEPT ![u] = m]
     /\ IF u \in Acp
        THEN /\ phase' = [phase EXCEPT ![u] = "run"]
             /\ UNCHANGED <<stat, seen>>
@@ -136,7 +138,7 @@ FinishStart(u) ==
     /\ phase[u] = "pre"
     /\ phase' = [phase EXCEPT ![u] = "run"]
     /\ IF ReadFirst THEN UNCHANGED <<stat, seen>> ELSE StartRead(u)
-    /\ UNCHANGED <<storeVars, judgeVars, envVars, auto, inbox, lines, everPrinted>>
+    /\ UNCHANGED <<storeVars, judgeVars, envVars, inbox, lines, everPrinted>>
 
 FetchEvent(u, c) ==
     /\ Connected(u) /\ c \in inbox[u]
@@ -145,7 +147,7 @@ FetchEvent(u, c) ==
        THEN /\ stat' = [stat EXCEPT ![u][c] = "read"]
             /\ seen' = [seen EXCEPT ![u][c] = PersonDecided(c)]
        ELSE UNCHANGED <<stat, seen>>
-    /\ UNCHANGED <<storeVars, judgeVars, envVars, phase, auto, lines, everPrinted>>
+    /\ UNCHANGED <<storeVars, judgeVars, envVars, phase, lines, everPrinted>>
 
 PrintLine(u, c) ==
     /\ lines' = [lines EXCEPT ![u][c] = Bump(@)]
@@ -160,23 +162,17 @@ FirstStep(u, c) ==
     /\ phase[u] # "closed" /\ stat[u][c] = "read"
     /\ stat' = [stat EXCEPT ![u][c] = "half"]
     /\ IF MarkBeforePrint THEN MarkShown(c) ELSE PrintLine(u, c)
-    /\ UNCHANGED <<st, keptBy, rec, judgeVars, envVars, phase, auto, inbox, seen>>
+    /\ UNCHANGED <<st, keptBy, rec, judgeVars, envVars, phase, inbox, seen>>
 
 SecondStep(u, c) ==
     /\ phase[u] # "closed" /\ stat[u][c] = "half"
     /\ stat' = [stat EXCEPT ![u][c] = "done"]
     /\ IF MarkBeforePrint THEN PrintLine(u, c) ELSE MarkShown(c)
-    /\ UNCHANGED <<st, keptBy, rec, judgeVars, envVars, phase, auto, inbox, seen>>
-
-SwitchMode(u) ==
-    /\ phase[u] # "closed"
-    /\ auto' = [auto EXCEPT ![u] = ~auto[u]]
-    /\ UNCHANGED <<storeVars, judgeVars, envVars, phase, inbox, stat, seen, lines, everPrinted>>
+    /\ UNCHANGED <<st, keptBy, rec, judgeVars, envVars, phase, inbox, seen>>
 
 StopUI(u) ==
     /\ phase[u] # "closed"
     /\ phase' = [phase EXCEPT ![u] = "closed"]
-    /\ auto' = [auto EXCEPT ![u] = FALSE]
     /\ inbox' = [inbox EXCEPT ![u] = {}]
     /\ stat' = [stat EXCEPT ![u] = NoStat]
     /\ seen' = [seen EXCEPT ![u] = NoSeen]
@@ -209,7 +205,7 @@ Commit ==
                /\ shown' = [shown EXCEPT ![c] = MarkAtCommit /\ Receivers # {}]
           ELSE UNCHANGED <<storeVars, inbox>>
     /\ jc' = 0 /\ jout' = "none"
-    /\ UNCHANGED <<crashes, envVars, phase, auto, stat, seen, lines, everPrinted>>
+    /\ UNCHANGED <<crashes, envVars, phase, stat, seen, lines, everPrinted>>
 
 DaemonStop ==
     /\ jc # 0 /\ crashes < MaxCrashes
@@ -223,8 +219,8 @@ JudgeStep == StartAny \/ Decide \/ Commit
 
 Person ==
     \/ \E c \in Cand : Accept(c) \/ Reject(c) \/ Retire(c)
-    \/ StartRun \/ EndRun \/ ToggleTrust
-    \/ \E u \in UIs : Launch(u) \/ SwitchMode(u) \/ StopUI(u)
+    \/ StartRun \/ EndRun \/ ToggleTrust \/ ToggleSwitch
+    \/ \E u \in UIs : Launch(u) \/ StopUI(u)
 
 UIStep(u) ==
     \/ FinishStart(u)
@@ -260,9 +256,8 @@ TypeOK ==
     /\ shown \in [Cand -> BOOLEAN]
     /\ jc \in 0..N /\ jout \in {"none", "allow", "notAllow"}
     /\ crashes \in 0..MaxCrashes
-    /\ run \in BOOLEAN /\ trusted \in BOOLEAN
+    /\ run \in BOOLEAN /\ trusted \in BOOLEAN /\ on \in BOOLEAN
     /\ phase \in [UIs -> {"closed", "pre", "run"}]
-    /\ auto \in [UIs -> BOOLEAN]
     /\ inbox \in [UIs -> SUBSET Cand]
     /\ stat \in [UIs -> [Cand -> {"none", "read", "half", "done"}]]
     /\ seen \in [UIs -> [Cand -> BOOLEAN]]
@@ -291,7 +286,7 @@ JudgedOnce ==
     [][/\ \A c \in Cand : rec[c] # "none" => rec'[c] = rec[c]
        /\ \A c \in Cand : StartJudge(c) => rec[c] = "none"]_vars
 
-StartGuard == [][(jc = 0 /\ jc' # 0) => StartAllowed]_vars
+StartGuard == [][(jc = 0 /\ jc' # 0) => GuardHolds]_vars
 
 ReviewOrder == [][(jc = 0 /\ jc' # 0) => \A d \in 1..(jc' - 1) : ~Unjudged(d)]_vars
 
@@ -313,7 +308,7 @@ Idle(u) ==
     /\ \A c \in Cand : stat[u][c] \notin {"read", "half"}
 
 Progress ==
-    (<>[](trusted /\ OpenAuto # {}) /\ []<>(~run))
+    (<>[](on /\ trusted) /\ []<>(~run))
         => \A c \in Cand : Unjudged(c) ~> (rec[c] # "none" \/ ~Waiting(c))
 
 LineReachesAPerson ==

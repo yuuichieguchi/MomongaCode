@@ -144,7 +144,7 @@ describe('a value a person did not write stays on its own line in command output
       keptByClassifier: `c ${FORGED}`,
     } as unknown as MemoryView;
     const printed = formatMemory(memory);
-    expect(printed.split('\n').filter((line) => line.startsWith('kept by:'))).toEqual([`kept by: auto mode, classifier c ${SHOWN}`]);
+    expect(printed.split('\n').filter((line) => line.startsWith('kept by:'))).toEqual([`kept by: auto review, model c ${SHOWN}`]);
     expect(printed).not.toContain('\n  momonga approve');
   });
 
