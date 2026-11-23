@@ -1,6 +1,5 @@
 {
   "format": "momonga-tla-manifest/2",
-  "unitSuiteSeconds": 215.2,
   "startupCpuSeconds": 3,
   "vitestProjects": [
     {
