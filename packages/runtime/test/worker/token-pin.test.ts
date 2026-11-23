@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultToolsSettings } from '@momonga/config';
+import { defaultContextSettings, defaultToolsSettings } from '@momonga/config';
 import type { ResolvedContextSettings, ResolvedToolsSettings } from '@momonga/config';
 import type { RunEvent } from '@momonga/protocol';
 import type { Run, Session } from '@momonga/store';
@@ -11,7 +11,7 @@ import { TOKEN_SETTINGS_OFF } from './fake-settings.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 
-const OFF_CONTEXT: ResolvedContextSettings = { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
+const OFF_CONTEXT: ResolvedContextSettings = { adaptiveBudget: false, autoCompact: true, compactAt: defaultContextSettings().compactAt, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
 const OFF_TOOLS: ResolvedToolsSettings = { ...defaultToolsSettings(), deferral: false, conciseDescriptions: false };
 
 const settingsOf = (context: ResolvedContextSettings, tools: ResolvedToolsSettings) => ({

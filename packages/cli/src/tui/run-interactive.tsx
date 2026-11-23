@@ -41,6 +41,7 @@ import { DEFAULT_KEY_TABLE } from './keys/table.ts';
 import type { HandoverTerminal, TerminalLayer } from './terminal/layer.ts';
 import type { NegotiationState } from './terminal/negotiation.ts';
 import { startWithHandoverTerminal } from './terminal/handover.ts';
+import { insideTmux, showsOsc9Notifications } from './terminal/terminal-name.ts';
 import { orderVersions, readCurrentGeneration } from '@momonga/foundation';
 import { HANDOVER_FORMAT, recordFileOf } from '../handover/record.ts';
 import { adoptionOf, refuseStart } from '../handover/start.ts';
@@ -192,7 +193,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   try {
     const instance = render(
       <TerminalFrame layer={layer}>
-        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} move={moving.port} {...adopted} keyBindings={keyBindings} a11y={asked} copyOnSelect={tuiSettings.initial.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, desktopNotification: layer.desktopNotification, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} attentionTerminal={{ osc9: showsOsc9Notifications(ports.env), tmux: insideTmux(ports.env) }} move={moving.port} {...adopted} keyBindings={keyBindings} a11y={asked} copyOnSelect={tuiSettings.initial.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
           {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           {...(options.reopen === undefined ? {} : { reopen: options.reopen })}

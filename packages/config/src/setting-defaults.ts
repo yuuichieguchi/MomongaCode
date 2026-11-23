@@ -19,7 +19,7 @@ export const SANDBOX_LAUNCHERS_LOOKED_FOR = SANDBOX_LAUNCHERS.map(({ kind, launc
 
 export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting => SANDBOX_MECHANISM_OF_OS[platform] ?? 'none';
 
-export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
+export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'auto', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
 
 export const DEFAULT_AUTO_UPDATES = true;
 

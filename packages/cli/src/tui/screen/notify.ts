@@ -2,14 +2,17 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { TUI_NOTIFY_MODES, defaultTuiSettings } from '@momonga/config';
 import type { ResolvedTuiSettings, TuiNotify } from '@momonga/config';
 import type { FocusEvent } from '../terminal/events.ts';
-import { titleOf, titleStateOf } from '../terminal/title.ts';
-import type { RunEnd, TitleState } from '../terminal/title.ts';
+import path from 'node:path';
+import { TITLE_BLINK_MS, notificationText, titleOf, titleStateOf } from '../terminal/title.ts';
+import type { TitleState } from '../terminal/title.ts';
 import type { ScreenTerminal } from './input.ts';
+import { every } from './timers.ts';
 import type { ScreenTimers } from './timers.ts';
-
-export const FOCUS_REPORT_WAIT_MS = 1000;
+import { SPINNER_MS } from '../terminal/marks.ts';
 
 export const NOTIFY_MODES = TUI_NOTIFY_MODES;
+
+export const NOTIFY_DELAY_MS = 100;
 
 export type NotifyMode = TuiNotify;
 
@@ -27,93 +30,131 @@ export const UNSTORED_TUI_SETTINGS: TuiSettingsPort = {
 
 export type FocusDirection = FocusEvent['direction'];
 
-export type FocusKnowledge = FocusDirection | 'unknown' | 'unreported';
-
-export const focusKnowledgeOf = (reportingEnabled: boolean, lastEvent: FocusDirection | undefined, waitEnded: boolean): FocusKnowledge => {
-  if (!reportingEnabled) return 'unreported';
-  if (lastEvent !== undefined) return lastEvent;
-  return waitEnded ? 'unreported' : 'unknown';
-};
-
 const NEEDS_THE_USER: ReadonlySet<TitleState> = new Set<TitleState>(['waiting for you', 'done', 'error']);
 
-export const bellDue = ({ notify, focus, state }: { notify: NotifyMode; focus: FocusKnowledge; state: TitleState }): boolean => notify === 'bell' && focus !== 'in' && focus !== 'unknown' && NEEDS_THE_USER.has(state);
+export type AttentionTerminal = { osc9: boolean; tmux: boolean };
 
-export type AttentionOptions = {
-  terminal: Pick<ScreenTerminal, 'state' | 'setTitle' | 'bell' | 'enable' | 'disable' | 'input'>;
-  cwd: string;
-  working: boolean;
-  prompting: boolean;
-  notify: NotifyMode;
-  timers: ScreenTimers;
+export const signalDue = ({ notify, focus, state, osc9 }: { notify: NotifyMode; focus: FocusDirection | undefined; state: TitleState; osc9: boolean }): 'none' | 'bell' | 'notification' => {
+  if (notify === 'off' || focus !== 'out' || !NEEDS_THE_USER.has(state)) return 'none';
+  return notify === 'auto' && osc9 ? 'notification' : 'bell';
 };
 
-export type Attention = { runEnded(end: RunEnd | undefined): void };
+export type RunOutcome = { kind: 'done'; elapsedMs: number } | { kind: 'error'; reason: string | undefined };
 
-export const useAttention = ({ terminal, cwd, working, prompting, notify, timers }: AttentionOptions): Attention => {
-  const [lastRun, setLastRun] = useState<RunEnd | undefined>(undefined);
+export type WaitingNotice = { heading: string; namesFolder: boolean };
+
+const firstLine = (text: string): string => text.split(/\r?\n|\r/u, 1)[0] ?? '';
+
+const outcomeDetail = (outcome: RunOutcome): string => {
+  if (outcome.kind === 'done') return `Run complete in ${Math.floor(outcome.elapsedMs / 1000)}s`;
+  const reason = outcome.reason === undefined ? '' : firstLine(outcome.reason).trim();
+  return reason === '' ? 'Run failed' : `Run failed: ${reason}`;
+};
+
+export const noticeOf = ({ state, cwd, outcome, waiting }: { state: TitleState; cwd: string; outcome: RunOutcome | undefined; waiting: WaitingNotice | undefined }): string | undefined => {
+  const folder = path.basename(cwd);
+  if (state === 'waiting for you') return waiting === undefined ? undefined : notificationText(waiting.heading, waiting.namesFolder ? undefined : folder);
+  if (state === 'done' || state === 'error') return outcome?.kind === state ? notificationText(outcomeDetail(outcome), folder) : undefined;
+  return undefined;
+};
+
+export type AttentionOptions = {
+  terminal: Pick<ScreenTerminal, 'state' | 'setTitle' | 'bell' | 'desktopNotification' | 'enable' | 'disable' | 'input'>;
+  cwd: string;
+  working: boolean;
+  waiting: WaitingNotice | undefined;
+  notify: NotifyMode;
+  attentionTerminal: AttentionTerminal;
+  timers: ScreenTimers;
+  reducedMotion: boolean;
+};
+
+export type Attention = { runEnded(outcome: RunOutcome | undefined): void };
+
+const animationStepOf = (state: TitleState): number | undefined => {
+  if (state === 'working') return SPINNER_MS;
+  if (state === 'waiting for you') return TITLE_BLINK_MS;
+  return undefined;
+};
+
+export const useAttention = ({ terminal, cwd, working, waiting, notify, attentionTerminal, timers, reducedMotion }: AttentionOptions): Attention => {
+  const [lastRun, setLastRun] = useState<RunOutcome | undefined>(undefined);
   const lastFocus = useRef<FocusDirection | undefined>(undefined);
-  const waitEnded = useRef(false);
-  const heldBell = useRef<{ timer: unknown } | undefined>(undefined);
-  const state = titleStateOf({ working, prompting, lastRun });
+  const writtenTitle = useRef<string | undefined>(undefined);
+  const scheduledSignals = useRef(new Set<unknown>());
+  const state = titleStateOf({ working, prompting: waiting !== undefined, lastRun: lastRun?.kind });
+  const reportsFocus = notify !== 'off';
 
-  const focusNow = (): FocusKnowledge => focusKnowledgeOf(terminal.state().enabled.includes('focus'), lastFocus.current, waitEnded.current);
-
-  const dropHeldBell = (): void => {
-    if (heldBell.current === undefined) return;
-    timers.clearTimeout(heldBell.current.timer);
-    heldBell.current = undefined;
-  };
-
-  const ringHeldBell = (): void => {
-    dropHeldBell();
-    terminal.bell();
-  };
-
-  const announce = useEffectEvent((next: TitleState): void => {
-    terminal.setTitle(titleOf(cwd, next));
-    const focus = focusNow();
-    if (bellDue({ notify, focus, state: next })) terminal.bell();
-    else if (notify === 'bell' && focus === 'unknown' && NEEDS_THE_USER.has(next) && heldBell.current === undefined) {
-      heldBell.current = {
-        timer: timers.setTimeout(() => {
-          waitEnded.current = true;
-          ringHeldBell();
-        }, FOCUS_REPORT_WAIT_MS),
-      };
-    }
+  const writeTitle = useEffectEvent((next: TitleState, step: number): void => {
+    const title = titleOf({ cwd, state: next, step, reducedMotion });
+    if (title === writtenTitle.current) return;
+    writtenTitle.current = title;
+    terminal.setTitle(title);
   });
 
-  const focusReported = useEffectEvent((direction: FocusDirection): void => {
-    lastFocus.current = direction;
-    if (heldBell.current === undefined) return;
-    if (direction === 'out') ringHeldBell();
-    else dropHeldBell();
+  const decideSignal = useEffectEvent((next: TitleState): (() => void) | undefined => {
+    const due = signalDue({ notify, focus: lastFocus.current, state: next, osc9: attentionTerminal.osc9 });
+    if (due === 'none') return undefined;
+    if (due === 'bell') return () => terminal.bell();
+    const text = noticeOf({ state: next, cwd, outcome: lastRun, waiting });
+    if (text === undefined) return undefined;
+    const { tmux } = attentionTerminal;
+    return () => terminal.desktopNotification(text, { tmux });
   });
+
+  const scheduleSignal = useEffectEvent((next: TitleState): void => {
+    const write = decideSignal(next);
+    if (write === undefined) return;
+    const handle = timers.setTimeout(() => {
+      scheduledSignals.current.delete(handle);
+      write();
+    }, NOTIFY_DELAY_MS);
+    scheduledSignals.current.add(handle);
+  });
+
+  useEffect(
+    () => () => {
+      for (const handle of scheduledSignals.current) timers.clearTimeout(handle);
+      scheduledSignals.current.clear();
+    },
+    [timers],
+  );
 
   useEffect(() => {
-    announce(state);
+    writeTitle(state, 0);
+    const animationMs = animationStepOf(state);
+    if (animationMs === undefined || reducedMotion) return undefined;
+    let step = 0;
+    return every(timers, animationMs, () => {
+      step += 1;
+      writeTitle(state, step);
+    });
+  }, [state, reducedMotion, timers]);
+
+  useEffect(() => {
+    scheduleSignal(state);
   }, [state]);
 
   useEffect(
     () =>
       terminal.input.observe((event) => {
-        if (event.type === 'focus') focusReported(event.direction);
-        if (event.type === 'key') setLastRun((end) => (end === 'error' ? undefined : end));
+        if (event.type === 'focus') lastFocus.current = event.direction;
+        if (event.type === 'key') setLastRun((outcome) => (outcome?.kind === 'error' ? undefined : outcome));
       }),
     [terminal],
   );
 
   useEffect(() => {
-    if (notify !== 'bell') return undefined;
+    if (!reportsFocus) {
+      if (terminal.state().enabled.includes('focus')) terminal.disable('focus');
+      return undefined;
+    }
     terminal.enable('focus');
     return () => {
       terminal.disable('focus');
       lastFocus.current = undefined;
-      waitEnded.current = false;
-      dropHeldBell();
     };
-  }, [terminal, notify]);
+  }, [terminal, reportsFocus]);
 
   return { runEnded: setLastRun };
 };

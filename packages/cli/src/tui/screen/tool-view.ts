@@ -7,7 +7,7 @@ import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
 import { tickRunningTools, toggleNewestThought, toolOf } from '../transcript.ts';
 import type { StoredResult, ToolEntry } from '../transcript.ts';
 import type { ToolResultPage } from '@momonga/protocol';
-import { STATIC_MARK } from './a11y.ts';
+import { SPINNER_FRAMES, STATIC_MARK } from '../terminal/marks.ts';
 import type { A11y } from './a11y.ts';
 import { WHEEL_ROWS } from './constants.ts';
 import { fileLinksIn, NO_FILE_LINKS } from './file-links.ts';
@@ -25,7 +25,6 @@ import { every } from './timers.ts';
 import type { ScreenTimers } from './timers.ts';
 import { styleOf } from './tokens.ts';
 import type { ViewWindow } from './viewport.ts';
-import { SPINNER_FRAMES } from './waiting-row.tsx';
 import { displayWidth, inertText, segmentsOf, wrapLine } from './wrap.ts';
 import type { Row } from './wrap.ts';
 

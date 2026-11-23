@@ -93,3 +93,39 @@ describe('an explicit /compact and context.autoCompact', () => {
     });
   }
 });
+
+describe('context.autoCompact false with a low context.compactAt', () => {
+  const oneRead: RunEventPayload[] = [
+    ...conversation.slice(0, 2),
+    { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'r'.repeat(12_000), handle: HANDLE },
+    responded(2, [assistantMessage('m2', 'short')]),
+    { type: 'user.message', text: 'question two' },
+    responded(3, [assistantMessage('m3', `answer two ${'y'.repeat(6_000)}`)]),
+    { type: 'user.message', text: 'question three' },
+    responded(4, [assistantMessage('m4', `answer three ${'z'.repeat(6_000)}`)]),
+    { type: 'user.message', text: 'question four' },
+  ];
+
+  const runAt = async (compactAt: number) => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+    env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: false, compactAt };
+    const run = await env.enqueue('question one');
+    await env.seed(run.id, oneRead, 'release');
+    env.gateway.script.push(textStep('Done.'));
+    await env.runOnce(env.worker());
+    return { env, run };
+  };
+
+  it('keeps the old tool output at 70 percent', async () => {
+    const { env, run } = await runAt(70);
+    expect(env.ofType(run.id, 'context.truncated')).toEqual([]);
+  });
+
+  it('evicts the old tool output at 10 percent and still never compacts', async () => {
+    const { env, run } = await runAt(10);
+    expect(env.ofType(run.id, 'context.truncated').filter((event) => event.kind === 'omitted' && event.callId === 'c1')).toHaveLength(1);
+    expect(env.gateway.compacts).toEqual([]);
+    expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
+    expect(env.run(run.id).status).toBe('COMPLETED');
+  });
+});

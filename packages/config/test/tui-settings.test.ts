@@ -15,13 +15,13 @@ const userTui = async (tui: Record<string, unknown> | undefined) => {
 const A11Y_OFF = { screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true };
 
 describe('tui.theme and tui.notify', () => {
-  it('name the five sets and the two notification values', () => {
+  it('name the five sets and the three notification values', () => {
     expect(TUI_THEMES).toEqual(['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind']);
-    expect(TUI_NOTIFY_MODES).toEqual(['off', 'bell']);
+    expect(TUI_NOTIFY_MODES).toEqual(['auto', 'bell', 'off']);
   });
 
-  it('default to auto and off', async () => {
-    expect(await userTui(undefined)).toEqual({ theme: 'auto', notify: 'off', ...A11Y_OFF });
+  it('default to auto and auto', async () => {
+    expect(await userTui(undefined)).toEqual({ theme: 'auto', notify: 'auto', ...A11Y_OFF });
   });
 
   it('are described by the settings schema under one tui object', () => {
@@ -30,7 +30,7 @@ describe('tui.theme and tui.notify', () => {
   });
 
   it.each(TUI_THEMES)('accepts the theme %s', async (theme) => {
-    expect(await userTui({ theme })).toEqual({ theme, notify: 'off', ...A11Y_OFF });
+    expect(await userTui({ theme })).toEqual({ theme, notify: 'auto', ...A11Y_OFF });
   });
 
   it('accepts bell and keeps the default of the key that is not set', async () => {
@@ -43,10 +43,10 @@ describe('tui.theme and tui.notify', () => {
     await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: invalid settings at /tui/theme: must be one of auto, dark, light, dark-colorblind, light-colorblind; got ${JSON.stringify(theme)}`);
   });
 
-  it.each(['osc9', true])('refuses the notification value %o with the list of the two', async (notify) => {
+  it.each(['osc9', true])('refuses the notification value %o with the list of the three', async (notify) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { tui: { notify } });
-    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: invalid settings at /tui/notify: must be one of off, bell; got ${JSON.stringify(notify)}`);
+    await expect(loadUserSettings({ env: process.env, home: tree.home, signal: new AbortController().signal })).rejects.toThrow(`${userSettingsPath(tree)}: invalid settings at /tui/notify: must be one of auto, bell, off; got ${JSON.stringify(notify)}`);
   });
 
   it('refuses a key the tui object does not have', async () => {
@@ -104,8 +104,8 @@ describe('tui.screenReader and tui.reducedMotion', () => {
   });
 
   it.each(['screenReader', 'reducedMotion'] as const)('accepts true and false for %s and keeps the other keys', async (name) => {
-    expect(await userTui({ [name]: true })).toEqual({ theme: 'auto', notify: 'off', ...A11Y_OFF, [name]: true });
-    expect(await userTui({ [name]: false })).toEqual({ theme: 'auto', notify: 'off', ...A11Y_OFF });
+    expect(await userTui({ [name]: true })).toEqual({ theme: 'auto', notify: 'auto', ...A11Y_OFF, [name]: true });
+    expect(await userTui({ [name]: false })).toEqual({ theme: 'auto', notify: 'auto', ...A11Y_OFF });
   });
 
   it.each(['screenReader', 'reducedMotion'] as const)('refuses a value of %s that is not a boolean', async (name) => {

@@ -17,7 +17,7 @@ type ConfigRow = {
 
 const notifyRow: ConfigRow = {
   name: 'notify',
-  label: 'ring the terminal bell when a run ends or needs you',
+  label: 'notify when a run ends or needs you',
   values: NOTIFY_MODES,
   store: async (context, value, signal) => {
     const chosen = NOTIFY_MODES.find((mode) => mode === value);

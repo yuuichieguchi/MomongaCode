@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ScreenRequest } from '../../src/tui/terminal/layer.ts';
+import { titleSequence } from '../../src/tui/terminal/title.ts';
 import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
@@ -94,6 +95,35 @@ describe('leaving the screen for a program that takes the terminal', () => {
     await layer.close();
     const mark = written.length;
     await returnToScreen();
+    expect(written.slice(mark)).toEqual([]);
+  });
+  it('writes no title while the terminal is lent, and on return pushes once and writes only the latest title', async () => {
+    const { layer, written } = startLayer();
+    layer.setTitle('one - momonga');
+    const returnToScreen = await layer.leaveForProgram();
+    const lent = written.length;
+    layer.setTitle('two - momonga');
+    layer.setTitle('three - momonga');
+    expect(written.slice(lent)).toEqual([]);
+    expect(layer.state().enabled).not.toContain('title');
+    await returnToScreen();
+    const back = written.slice(lent).join('');
+    expect(back.split(`${ESC}[22;2t`)).toHaveLength(2);
+    expect(back.split(`${ESC}]2;`)).toHaveLength(2);
+    expect(back).toContain(titleSequence('three - momonga'));
+    expect(back.indexOf(titleSequence('three - momonga'))).toBeGreaterThan(back.indexOf(`${ESC}[22;2t`));
+    layer.close();
+  });
+
+  it('writes no title after a screen closed while lent, even when taken back', async () => {
+    const { layer, written } = startLayer();
+    layer.setTitle('one - momonga');
+    const returnToScreen = await layer.leaveForProgram();
+    await layer.close();
+    const mark = written.length;
+    layer.setTitle('two - momonga');
+    await returnToScreen();
+    layer.setTitle('three - momonga');
     expect(written.slice(mark)).toEqual([]);
   });
 });

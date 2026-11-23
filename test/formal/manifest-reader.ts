@@ -34,7 +34,6 @@ export type ModuleLimits = {
 export type Manifest = {
   readonly format: typeof MANIFEST_FORMAT;
   readonly modules: readonly ModuleLimits[];
-  readonly unitSuiteSeconds: number;
   readonly startupCpuSeconds: number;
   readonly entries: readonly ManifestEntry[];
 };
@@ -156,7 +155,6 @@ export const readManifest = (file: string): Manifest => {
   return {
     format: MANIFEST_FORMAT,
     modules,
-    unitSuiteSeconds: positiveNumber(parsed['unitSuiteSeconds'], 'unitSuiteSeconds'),
     startupCpuSeconds,
     entries: entries.map((entry, index) => entryOf(entry, index, startupCpuSeconds)),
   };

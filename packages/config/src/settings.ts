@@ -388,6 +388,7 @@ export type VerificationSettings = { commands?: string[]; manifests?: string[]; 
 export type ContextSettings = {
   adaptiveBudget?: boolean;
   autoCompact?: boolean;
+  compactAt?: number;
   cachePrefix?: boolean;
   outputFormatters?: OutputFormatterName[];
   loopGuidance?: boolean;

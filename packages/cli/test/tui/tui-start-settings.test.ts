@@ -7,6 +7,14 @@ import { freshPlace, localFileOf, writeSettings } from './settings-harness.tsx';
 const read = (place: ReturnType<typeof freshPlace>) => readTuiStart({ env: {}, home: place.home, projectDir: place.project, userFile: place.userFile, signal: new AbortController().signal, isTrusted: async () => false });
 
 describe('the terminal settings at the start', () => {
+  it('notify when a run ends or needs you with auto when nothing is stored', async () => {
+    const place = freshPlace();
+    const start = await read(place);
+    if (start.kind !== 'loaded') throw new Error(`expected the settings to load: ${start.message}`);
+    expect(start.settings.notify).toBe('auto');
+    expect(start.sources.notify).toBe('default');
+  });
+
   it('are read through the merged loader, with the layer each value came from', async () => {
     const place = freshPlace();
     writeSettings(place.userFile, { tui: { notify: 'bell', screen: 'scrollback' } });

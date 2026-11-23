@@ -1,4 +1,4 @@
-import { OUTPUT_FORMATTERS } from '@momonga/protocol';
+import { COMPACT_AT_PERCENT, OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
 import type { AcceptedCheck } from './declared-checks.ts';
 import type { BashOnTimeout, ContextSettings, MemorySettings, RipgrepSetting, ToolsSettings, VerificationSettings } from './settings.ts';
@@ -10,6 +10,7 @@ export type ResolvedVerificationSettings = { commands?: string[]; manifests: str
 export type ResolvedContextSettings = {
   adaptiveBudget: boolean;
   autoCompact: boolean;
+  compactAt: number;
   cachePrefix: boolean;
   outputFormatters: OutputFormatterName[];
   loopGuidance: boolean;
@@ -65,6 +66,7 @@ export const defaultVerificationSettings = (): ResolvedVerificationSettings => (
 export const defaultContextSettings = (): ResolvedContextSettings => ({
   adaptiveBudget: true,
   autoCompact: true,
+  compactAt: COMPACT_AT_PERCENT.default,
   cachePrefix: true,
   outputFormatters: [...OUTPUT_FORMATTERS],
   loopGuidance: true,
@@ -117,6 +119,7 @@ export const mergeContextSettings = (base: ResolvedContextSettings, layer: Conte
   return {
     adaptiveBudget: layer.adaptiveBudget ?? base.adaptiveBudget,
     autoCompact: layer.autoCompact ?? base.autoCompact,
+    compactAt: layer.compactAt ?? base.compactAt,
     cachePrefix: layer.cachePrefix ?? base.cachePrefix,
     outputFormatters: layer.outputFormatters ?? base.outputFormatters,
     loopGuidance: layer.loopGuidance ?? base.loopGuidance,

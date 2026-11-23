@@ -1,5 +1,5 @@
 import { DEFAULT_SANDBOX_NETWORK, MCP_CONNECT_TIMEOUT_LIMITS, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS, STARTUP_TIMEOUT_MS } from '@momonga/foundation';
-import { MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, OUTPUT_STYLES, DEFAULT_OUTPUT_STYLE, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, HOOK_DEFAULT_TIMEOUT_SECONDS, DEFAULT_PERMISSION_MODE, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
+import { COMPACT_AT_PERCENT, MAX_COST_USD, QUIESCENT_BEHAVIOURS, MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, OUTPUT_STYLES, DEFAULT_OUTPUT_STYLE, PERMISSION_MODES, PLAN_LABEL_PATTERN, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, HOOK_DEFAULT_TIMEOUT_SECONDS, DEFAULT_PERMISSION_MODE, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS, IDEMPOTENCY_KEY_HEADER_PATTERN, MIN_REQUEST_OUTPUT_TOKENS } from '@momonga/protocol';
 import { APPROVAL_DIGEST_PATTERN } from './approval-digest.ts';
 import { DEFAULT_UPDATE_STALL_TIMEOUT_MS, defaultContextSettings, defaultMemorySettings, defaultToolsSettings, defaultVerificationSettings } from './context-settings.ts';
 import { DEFAULT_AUTO_UPDATES, DEFAULT_CAPTURE_MESSAGE_CONTENT, DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS, DEFAULT_NETWORK_ENVIRONMENT, DEFAULT_PLAINTEXT_TOKEN_FILES, DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
@@ -10,7 +10,7 @@ export const MODEL_ROLES = ['compaction', 'reflection', 'analysis', 'subagent'] 
 export const BASH_ON_TIMEOUT = ['background', 'kill'] as const;
 
 export const TUI_THEMES = ['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind'] as const;
-export const TUI_NOTIFY_MODES = ['off', 'bell'] as const;
+export const TUI_NOTIFY_MODES = ['auto', 'bell', 'off'] as const;
 export const TUI_SCREEN_MODES = ['fullscreen', 'scrollback'] as const;
 export const ISSUE_AUTHOR_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'] as const;
 
@@ -18,7 +18,7 @@ export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES,
 
 export const SANDBOX_DEFAULT_PLATFORMS = ['darwin', 'linux', 'win32'] as const satisfies readonly NodeJS.Platform[];
 
-export const SETTING_UNITS = { milliseconds: 'milliseconds', seconds: 'seconds', days: 'days', usd: 'USD', usdPerMillionTokens: 'USD per million tokens' } as const;
+export const SETTING_UNITS = { milliseconds: 'milliseconds', seconds: 'seconds', days: 'days', usd: 'USD', usdPerMillionTokens: 'USD per million tokens', percent: 'percent' } as const;
 
 
 const MEMORY_DEFAULTS = defaultMemorySettings();
@@ -433,6 +433,7 @@ export type SettingUnit = (typeof SETTING_UNITS)[keyof typeof SETTING_UNITS];
 
 export const SETTING_UNIT_OF: Readonly<Record<string, SettingUnit>> = {
   'hooks.<name>[].hooks[].timeout': SETTING_UNITS.seconds,
+  'context.compactAt': SETTING_UNITS.percent,
   'mcp.toolIdleTimeoutNetworkMs': SETTING_UNITS.milliseconds,
   'mcp.toolIdleTimeoutStdioMs': SETTING_UNITS.milliseconds,
   'mcp.toolTotalTimeoutMs': SETTING_UNITS.milliseconds,
@@ -608,6 +609,7 @@ export const SETTINGS_SCHEMA = {
       properties: {
         adaptiveBudget: { type: 'boolean', default: CONTEXT_DEFAULTS.adaptiveBudget },
         autoCompact: { type: 'boolean', default: CONTEXT_DEFAULTS.autoCompact },
+        compactAt: { type: 'integer', minimum: COMPACT_AT_PERCENT.min, maximum: COMPACT_AT_PERCENT.max, default: CONTEXT_DEFAULTS.compactAt },
         cachePrefix: { type: 'boolean', default: CONTEXT_DEFAULTS.cachePrefix },
         outputFormatters: { type: 'array', items: { enum: [...OUTPUT_FORMATTERS] }, default: CONTEXT_DEFAULTS.outputFormatters },
         loopGuidance: { type: 'boolean', default: CONTEXT_DEFAULTS.loopGuidance },

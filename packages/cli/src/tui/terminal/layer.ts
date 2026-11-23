@@ -6,7 +6,7 @@ import type { ScreenMode, TerminalModeName } from './modes.ts';
 import { advance, fullscreenRefused, modifyOtherKeysSent, modifyOtherKeysWanted, mouseReported, negotiationFrom, synchronizedOutputReported } from './negotiation.ts';
 import type { NegotiationState } from './negotiation.ts';
 import { createInputParser } from './parser.ts';
-import { BEL, titleSequence } from './title.ts';
+import { BEL, notificationSequence, titleSequence, tmuxPassthrough } from './title.ts';
 
 export type TerminalSize = { columns: number; rows: number };
 
@@ -85,6 +85,7 @@ export type TerminalLayer = {
   setScreen(screen: ScreenMode): void;
   setTitle(title: string): void;
   bell(): void;
+  desktopNotification(text: string, options: { tmux: boolean }): void;
   handoverTerminal(): HandoverTerminal;
   state(): TerminalState;
   subscribe(listener: () => void): () => void;
@@ -177,6 +178,8 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     for (const name of present) enabled.delete(name);
   };
 
+  const holdsTerminal = (): boolean => hooked && raw;
+
   const restore = (): void => {
     leave(inTableOrder(enabled));
     setRaw(false);
@@ -201,10 +204,14 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     },
   }));
 
+  const rewriteTitle = (): void => {
+    if (title !== undefined && enabled.has('title')) output.writeSync(titleSequence(title));
+  };
+
   const reenter = (saved: readonly TerminalModeName[]): void => {
     setRaw(true);
     enter(saved);
-    if (title !== undefined && enabled.has('title')) output.writeSync(titleSequence(title));
+    rewriteTitle();
     publish();
     request({ type: 'redraw' });
   };
@@ -405,6 +412,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     for (const name of terminal.modes) enabled.add(name);
     mouseAnswered = enabled.has('mouse');
     negotiation = negotiationFrom(state);
+    rewriteTitle();
     publish();
     releaseInk(held).catch(options.onFailure);
   };
@@ -435,11 +443,14 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     setScreen,
     setTitle: (next) => {
       title = next;
+      if (!holdsTerminal()) return;
+      const saving = !enabled.has('title');
       enter(['title']);
       output.writeSync(titleSequence(next));
-      publish();
+      if (saving) publish();
     },
     bell: () => output.writeSync(BEL),
+    desktopNotification: (text, { tmux }) => output.writeSync(tmux ? tmuxPassthrough(notificationSequence(text)) : notificationSequence(text)),
     handoverTerminal: () => ({ screen, modes: inTableOrder(enabled) }),
     state: () => snapshot,
     subscribe: (listener) => {

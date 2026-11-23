@@ -19,7 +19,7 @@ export type ScreenInput = {
   observeArrivals(listener: () => void): () => void;
 };
 
-export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen' | 'setTitle' | 'bell' | 'enable' | 'disable'> & { input: Pick<ScreenInput, 'claim' | 'observe' | 'observeFrames'> & Partial<Pick<ScreenInput, 'observeArrivals'>> };
+export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen' | 'setTitle' | 'bell' | 'desktopNotification' | 'enable' | 'disable'> & { input: Pick<ScreenInput, 'claim' | 'observe' | 'observeFrames'> & Partial<Pick<ScreenInput, 'observeArrivals'>> };
 
 export type ClaimTable = { claim(priority: ClaimPriority, handler: EventClaim): () => void; offer(event: TerminalEvent): boolean };
 

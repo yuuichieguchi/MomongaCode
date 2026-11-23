@@ -125,7 +125,7 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   ...(run.report === undefined ? {} : { report: run.report }),
 });
 
-const endReasonLines = (run: RunView, surface: Surface): string[] => {
+export const endReasonLines = (run: RunView, surface: Surface): string[] => {
   if (run.error !== undefined) return describeRunError(run.error, surface);
   if (run.stopReason === undefined) return [];
   return run.stopReason === 'conditions_unmet' && run.report !== undefined ? [run.stopReason, ...unmetConditionLines(run.report)] : [run.stopReason];
