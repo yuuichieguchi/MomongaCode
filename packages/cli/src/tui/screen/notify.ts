@@ -81,7 +81,7 @@ export const useAttention = ({ terminal, cwd, working, waiting, notify, attentio
   const [lastRun, setLastRun] = useState<RunOutcome | undefined>(undefined);
   const lastFocus = useRef<FocusDirection | undefined>(undefined);
   const writtenTitle = useRef<string | undefined>(undefined);
-  const pendingSignal = useRef<unknown>(undefined);
+  const scheduledSignals = useRef(new Set<unknown>());
   const state = titleStateOf({ working, prompting: waiting !== undefined, lastRun: lastRun?.kind });
   const reportsFocus = notify !== 'off';
 
@@ -92,27 +92,33 @@ export const useAttention = ({ terminal, cwd, working, waiting, notify, attentio
     terminal.setTitle(title);
   });
 
-  const signal = useEffectEvent((next: TitleState): void => {
+  const decideSignal = useEffectEvent((next: TitleState): (() => void) | undefined => {
     const due = signalDue({ notify, focus: lastFocus.current, state: next, osc9: attentionTerminal.osc9 });
-    if (due === 'bell') terminal.bell();
-    if (due !== 'notification') return;
+    if (due === 'none') return undefined;
+    if (due === 'bell') return () => terminal.bell();
     const text = noticeOf({ state: next, cwd, outcome: lastRun, waiting });
-    if (text !== undefined) terminal.desktopNotification(text, { tmux: attentionTerminal.tmux });
-  });
-
-  const dropSignal = useEffectEvent((): void => {
-    if (pendingSignal.current === undefined) return;
-    timers.clearTimeout(pendingSignal.current);
-    pendingSignal.current = undefined;
+    if (text === undefined) return undefined;
+    const { tmux } = attentionTerminal;
+    return () => terminal.desktopNotification(text, { tmux });
   });
 
   const scheduleSignal = useEffectEvent((next: TitleState): void => {
-    if (signalDue({ notify, focus: lastFocus.current, state: next, osc9: attentionTerminal.osc9 }) === 'none') return;
-    pendingSignal.current = timers.setTimeout(() => {
-      pendingSignal.current = undefined;
-      signal(next);
+    const write = decideSignal(next);
+    if (write === undefined) return;
+    const handle = timers.setTimeout(() => {
+      scheduledSignals.current.delete(handle);
+      write();
     }, NOTIFY_DELAY_MS);
+    scheduledSignals.current.add(handle);
   });
+
+  useEffect(
+    () => () => {
+      for (const handle of scheduledSignals.current) timers.clearTimeout(handle);
+      scheduledSignals.current.clear();
+    },
+    [timers],
+  );
 
   useEffect(() => {
     writeTitle(state, 0);
@@ -127,23 +133,13 @@ export const useAttention = ({ terminal, cwd, working, waiting, notify, attentio
 
   useEffect(() => {
     scheduleSignal(state);
-    return () => dropSignal();
   }, [state]);
-
-  useEffect(() => () => dropSignal(), [notify]);
-
-  const clearError = useEffectEvent((): void => {
-    if (lastRun?.kind !== 'error') return;
-    dropSignal();
-    setLastRun(undefined);
-  });
 
   useEffect(
     () =>
       terminal.input.observe((event) => {
         if (event.type === 'focus') lastFocus.current = event.direction;
-        if (event.type === 'focus' && event.direction === 'in') dropSignal();
-        if (event.type === 'key') clearError();
+        if (event.type === 'key') setLastRun((outcome) => (outcome?.kind === 'error' ? undefined : outcome));
       }),
     [terminal],
   );

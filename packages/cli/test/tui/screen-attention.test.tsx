@@ -342,62 +342,107 @@ describe('the signal 100 ms after the title', () => {
     started.app.unmount();
   });
 
-  it('drops the signal of a run end when the next run starts within 100 ms', async () => {
+  it('sends the completion of a run 100 ms after it ended even when the next run starts 30 ms after, while the title spins', async () => {
     const started = await mount();
     started.terminal.emit(focus('out'));
     await started.set({ working: true });
     await started.runEnded(DONE_32S);
-    await started.advance(50);
+    await started.advance(30);
     await started.set({ working: true });
-    await started.advance(1000);
-    expect(signalsOf(started.terminal.written)).toEqual([]);
-    expect(started.terminal.titles.at(-1)).not.toBe(PLAIN);
-    started.app.unmount();
-  });
-
-  it('drops the signal of a prompt answered within 100 ms', async () => {
-    const started = await mount();
-    started.terminal.emit(focus('out'));
-    await started.set({ working: true, waiting: APPROVAL });
-    await started.advance(99);
-    await started.set({ waiting: undefined });
-    await started.advance(1000);
-    expect(signalsOf(started.terminal.written)).toEqual([]);
-    started.app.unmount();
-  });
-
-  it('sends exactly one signal, for the new state, 100 ms after a change to another state that needs the person', async () => {
-    const started = await mount();
-    started.terminal.emit(focus('out'));
-    await started.set({ working: true, waiting: APPROVAL });
-    await started.advance(50);
-    started.terminal.written.length = 0;
-    await started.runEnded({ kind: 'error', reason: undefined });
-    await started.set({ waiting: undefined });
-    expect(started.terminal.written).toEqual([{ kind: 'title', text: PLAIN }]);
-    await started.advance(99);
+    expect(started.terminal.titles.at(-1)).toBe(SPIN(0));
+    await started.advance(69);
     expect(signalsOf(started.terminal.written)).toEqual([]);
     started.clock.advance(1);
-    await started.signalsUntil(1, 'the notification of the failure');
+    await started.signalsUntil(1, 'the notification of the completion');
+    expect(started.terminal.titles.at(-1)).toBe(SPIN(0));
+    expect(started.terminal.written.at(-1)).toEqual({ kind: 'notification', text: DONE_NOTICE, tmux: false });
+    await started.advance(1000);
+    expect(signalsOf(started.terminal.written)).toEqual([{ kind: 'notification', text: DONE_NOTICE, tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('sends the completion text decided when the run ended even though the next run has started and ended in failure later', async () => {
+    const started = await mount({}, OSC9_TERMINAL);
+    started.terminal.emit(focus('out'));
+    await started.set({ working: true });
+    await started.runEnded(DONE_32S);
+    await started.advance(30);
+    await started.set({ working: true });
+    await started.advance(69);
+    expect(signalsOf(started.terminal.written)).toEqual([]);
+    started.clock.advance(1);
+    await started.signalsUntil(1, 'the notification of the completion');
+    expect(signalsOf(started.terminal.written)).toEqual([{ kind: 'notification', text: DONE_NOTICE, tmux: false }]);
+    await started.runEnded({ kind: 'error', reason: 'boom' });
+    await started.advance(99);
+    expect(signalsOf(started.terminal.written)).toHaveLength(1);
+    started.clock.advance(1);
+    await started.signalsUntil(2, 'the notification of the failure');
+    expect(signalsOf(started.terminal.written)).toEqual([
+      { kind: 'notification', text: DONE_NOTICE, tmux: false },
+      { kind: 'notification', text: 'Run failed: boom - myproject', tmux: false },
+    ]);
+    started.app.unmount();
+  });
+
+  it('sends the signal of a prompt answered within 100 ms, 100 ms after it opened', async () => {
+    const started = await mount();
+    started.terminal.emit(focus('out'));
+    await started.set({ working: true, waiting: APPROVAL });
+    await started.advance(10);
+    await started.set({ waiting: undefined });
+    await started.advance(89);
+    expect(signalsOf(started.terminal.written)).toEqual([]);
+    started.clock.advance(1);
+    await started.signalsUntil(1, 'the notification of the answered prompt');
+    await started.advance(1000);
+    expect(signalsOf(started.terminal.written)).toEqual([{ kind: 'notification', text: 'Permission requested: npm test - myproject', tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('sends the signal of a prompt and then the signal of the failure that follows 40 ms later, each 100 ms after its own change, in that order', async () => {
+    const started = await mount();
+    started.terminal.emit(focus('out'));
+    await started.set({ working: true, waiting: APPROVAL });
+    await started.advance(40);
+    await started.runEnded({ kind: 'error', reason: undefined });
+    await started.set({ waiting: undefined });
+    expect(started.terminal.written).toEqual([{ kind: 'title', text: PLAIN }, { kind: 'title', text: ACTION }, { kind: 'title', text: PLAIN }]);
+    await started.advance(59);
+    expect(signalsOf(started.terminal.written)).toEqual([]);
+    started.clock.advance(1);
+    await started.signalsUntil(1, 'the notification of the prompt at 100 ms');
+    expect(signalsOf(started.terminal.written)).toEqual([{ kind: 'notification', text: 'Permission requested: npm test - myproject', tmux: false }]);
+    await started.advance(39);
+    expect(signalsOf(started.terminal.written)).toHaveLength(1);
+    started.clock.advance(1);
+    await started.signalsUntil(2, 'the notification of the failure at 140 ms');
     await started.advance(1000);
     expect(started.terminal.written).toEqual([
       { kind: 'title', text: PLAIN },
+      { kind: 'title', text: ACTION },
+      { kind: 'title', text: PLAIN },
+      { kind: 'notification', text: 'Permission requested: npm test - myproject', tmux: false },
       { kind: 'notification', text: 'Run failed - myproject', tmux: false },
     ]);
     started.app.unmount();
   });
 
-  it('drops the signal when the focus comes back within 100 ms', async () => {
+  it('still sends the signal when the focus comes back within 100 ms, and a later focus out adds none', async () => {
     const started = await mount();
     started.terminal.emit(focus('out'));
     await started.set({ working: true });
     await started.runEnded(DONE_32S);
     await started.advance(50);
     started.terminal.emit(focus('in'));
+    await started.advance(49);
+    expect(signalsOf(started.terminal.written)).toEqual([]);
+    started.clock.advance(1);
+    await started.signalsUntil(1, 'the notification after the focus came back');
     await started.advance(1000);
     started.terminal.emit(focus('out'));
     await started.advance(1000);
-    expect(signalsOf(started.terminal.written)).toEqual([]);
+    expect(signalsOf(started.terminal.written)).toEqual([{ kind: 'notification', text: DONE_NOTICE, tmux: false }]);
     started.app.unmount();
   });
 
@@ -418,19 +463,23 @@ describe('the signal 100 ms after the title', () => {
   });
 
   it.each([
-    { from: 'auto', to: 'bell' },
-    { from: 'auto', to: 'off' },
-    { from: 'bell', to: 'auto' },
-    { from: 'bell', to: 'off' },
-  ] as const)('drops the signal when the setting changes from $from to $to within 100 ms', async ({ from, to }) => {
+    { from: 'auto', to: 'bell', decided: { kind: 'notification', text: DONE_NOTICE, tmux: false } },
+    { from: 'auto', to: 'off', decided: { kind: 'notification', text: DONE_NOTICE, tmux: false } },
+    { from: 'bell', to: 'auto', decided: { kind: 'bell' } },
+    { from: 'bell', to: 'off', decided: { kind: 'bell' } },
+  ] as const)('still writes the signal decided under $from when the setting changes to $to 40 ms after', async ({ from, to, decided }) => {
     const started = await mount({ notify: from });
     started.terminal.emit(focus('out'));
     await started.set({ working: true });
     await started.runEnded(DONE_32S);
-    await started.advance(50);
+    await started.advance(40);
     await started.set({ notify: to });
-    await started.advance(1000);
+    await started.advance(59);
     expect(signalsOf(started.terminal.written)).toEqual([]);
+    started.clock.advance(1);
+    await started.signalsUntil(1, 'the signal decided before the setting changed');
+    await started.advance(1000);
+    expect(signalsOf(started.terminal.written)).toEqual([decided]);
     started.app.unmount();
   });
 
@@ -457,15 +506,19 @@ describe('the signal 100 ms after the title', () => {
     expect(started.terminal.titles).toEqual(before);
   });
 
-  it('drops the signal of a failure when the key that clears it comes within 100 ms', async () => {
+  it('still sends the signal of a failure when the key that clears it comes within 100 ms', async () => {
     const started = await mount();
     started.terminal.emit(focus('out'));
     await started.set({ working: true });
     await started.runEnded({ kind: 'error', reason: 'boom' });
     await started.advance(50);
     started.terminal.emit(keyX);
-    await started.advance(1000);
+    await started.advance(49);
     expect(signalsOf(started.terminal.written)).toEqual([]);
+    started.clock.advance(1);
+    await started.signalsUntil(1, 'the notification of the failure');
+    await started.advance(1000);
+    expect(signalsOf(started.terminal.written)).toEqual([{ kind: 'notification', text: 'Run failed: boom - myproject', tmux: false }]);
     started.app.unmount();
   });
 
@@ -481,7 +534,7 @@ describe('the signal 100 ms after the title', () => {
     started.app.unmount();
   });
 
-  it('keeps the pending signal when the prompt is replaced within 100 ms, sends it 100 ms after the original change with the heading shown then, and writes no title for the replacement', async () => {
+  it('sends one signal 100 ms after the first prompt opened with the heading of the first prompt when it is replaced within 100 ms, and writes no title for the replacement', async () => {
     const started = await mount();
     started.terminal.emit(focus('out'));
     await started.set({ working: true, waiting: APPROVAL });
@@ -494,7 +547,7 @@ describe('the signal 100 ms after the title', () => {
     expect(started.terminal.written).toEqual([
       { kind: 'title', text: PLAIN },
       { kind: 'title', text: ACTION },
-      { kind: 'notification', text: 'MCP server github asks for input (Pick a branch) - myproject', tmux: false },
+      { kind: 'notification', text: 'Permission requested: npm test - myproject', tmux: false },
     ]);
     await started.advance(40);
     expect(signalsOf(started.terminal.written)).toHaveLength(1);

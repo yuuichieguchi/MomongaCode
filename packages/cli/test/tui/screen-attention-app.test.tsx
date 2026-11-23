@@ -431,7 +431,7 @@ describe('the notification setting in the running screen', () => {
     started.app.unmount();
   });
 
-  it('drops the approval signal when the approval is answered within 100 ms', async () => {
+  it('sends the approval signal 100 ms after the approval opened even when it is answered at once', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await run(started);
@@ -439,47 +439,74 @@ describe('the notification setting in the running screen', () => {
     await untilTitle(started, ACTION, 'the title asks for action');
     started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
     await untilTitle(started, WORKING, 'the spinner again');
-    started.manual.advance(1000);
+    started.manual.advance(99);
     started.terminal.resize(100, 31);
     await untilFrame(started.app, 'mode: manual');
     expect(started.terminal.notifications).toEqual([]);
+    started.manual.advance(1);
+    await until(() => started.terminal.notifications.length === 1, 'the approval notification');
+    started.manual.advance(1000);
+    started.terminal.resize(100, 30);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Permission requested: Bash c1'), tmux: false }]);
+    expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
 
-  it('drops the run-end signal when the next run starts within 100 ms', async () => {
+  it('sends the run-end signal 100 ms after the run ended even when the next run starts at once', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await finishDone(started);
     await run(started, 'again');
-    started.manual.advance(1000);
+    started.manual.advance(99);
     started.terminal.resize(100, 31);
     await untilFrame(started.app, 'mode: manual');
     expect(started.terminal.notifications).toEqual([]);
+    started.manual.advance(1);
+    await until(() => started.terminal.notifications.length === 1, 'the run-end notification');
+    started.manual.advance(1000);
+    started.terminal.resize(100, 30);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: false }]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
 
-  it('drops the run-end signal when the focus comes back within 100 ms', async () => {
+  it('sends the run-end signal 100 ms after the run ended even when the focus comes back within 100 ms', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await finishDone(started);
+    started.manual.advance(50);
     started.terminal.emit(focus('in'));
-    await nothingAfterTheDelay(started);
-    started.manual.advance(1000);
+    started.manual.advance(49);
+    started.terminal.resize(100, 31);
+    await untilFrame(started.app, 'mode: manual');
     expect(started.terminal.notifications).toEqual([]);
+    started.manual.advance(1);
+    await until(() => started.terminal.notifications.length === 1, 'the run-end notification');
+    started.manual.advance(1000);
+    started.terminal.resize(100, 30);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: false }]);
     started.app.unmount();
   });
 
-  it('drops the run-end signal when the setting changes within 100 ms', async () => {
-    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: BELL_TERMINAL });
+  it.each([
+    { to: 'bell', stored: 'notify: bell' },
+    { to: 'off', stored: 'notify: off' },
+  ] as const)('sends the desktop notification decided under auto when the setting changes to $to within 100 ms', async ({ to, stored }) => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await finishDone(started);
-    await submit(started, '/config notify bell');
-    await untilOutput(started.app, 'notify: bell');
-    await nothingAfterTheDelay(started);
-    started.manual.advance(1000);
-    expect(started.terminal.bells).toEqual([]);
+    await submit(started, `/config notify ${to}`);
+    await untilOutput(started.app, stored);
     expect(started.terminal.notifications).toEqual([]);
+    await afterTheDelay(started, 1);
+    started.manual.advance(1000);
+    started.terminal.resize(100, 31);
+    await untilFrame(started.app, 'mode: manual');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: false }]);
+    expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
 
