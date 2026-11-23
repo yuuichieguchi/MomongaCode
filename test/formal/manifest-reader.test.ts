@@ -39,7 +39,7 @@ describe('the manifest reader', () => {
 
   const manifestWith = (entry: Record<string, unknown>): string => {
     const file = path.join(root, 'manifest.json');
-    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, modules: [validModule], entries: [{ ...validEntry, ...entry }] }));
+    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, startupCpuSeconds: 3, modules: [validModule], entries: [{ ...validEntry, ...entry }] }));
     return file;
   };
 
@@ -65,13 +65,13 @@ describe('the manifest reader', () => {
 
   it('refuses a manifest with no entries', () => {
     const file = path.join(root, 'manifest.json');
-    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, modules: [validModule], entries: [] }));
+    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, startupCpuSeconds: 3, modules: [validModule], entries: [] }));
     expect(() => readManifest(file)).toThrow(new Error('the TLA manifest is invalid: entries must not be empty'));
   });
 
   const documentWith = (document: Record<string, unknown>): string => {
     const file = path.join(root, 'manifest.json');
-    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, unitSuiteSeconds: 100, startupCpuSeconds: 3, modules: [validModule], entries: [validEntry], ...document }));
+    writeFile(file, JSON.stringify({ format: MANIFEST_FORMAT, startupCpuSeconds: 3, modules: [validModule], entries: [validEntry], ...document }));
     return file;
   };
 
@@ -104,8 +104,8 @@ describe('the manifest reader', () => {
     expect(commented).toEqual([]);
   });
 
-  it('is reachable through the manifest module with every name of the reader, the runner and the budget', () => {
-    for (const name of ['MANIFEST_FORMAT', 'readManifest', 'discoveryProblems', 'verdictProblems', 'TLC_WORKERS', 'runTlc', 'everyRunColdSeconds', 'tierBudgetProblem'] as const) {
+  it('is reachable through the manifest module with every name of the reader and the runner', () => {
+    for (const name of ['MANIFEST_FORMAT', 'readManifest', 'discoveryProblems', 'verdictProblems', 'TLC_WORKERS', 'runTlc'] as const) {
       expect(manifestModule[name], name).toBeDefined();
     }
   });

@@ -9,7 +9,9 @@ export const SUMMARY_ROOM: Ratio = { num: 3, den: 10 };
 export const SUMMARY_ACCEPT: Ratio = { num: 13, den: 10 };
 export const ITEM_CAP: Ratio = { num: 1, den: 4 };
 export const ITEM_ROOM: Ratio = { num: 1, den: 2 };
-export const COMPACT_AT: Ratio = { num: 7, den: 10 };
+export const COMPACT_AT_PERCENT = { min: 1, max: 100, default: 70 } as const;
+export const compactAtRatioOf = (percent: number): Ratio => ({ num: percent, den: 100 });
+export const COMPACT_AT: Ratio = compactAtRatioOf(COMPACT_AT_PERCENT.default);
 export const EVICT_LOW_WATER: Ratio = { num: 1, den: 2 };
 export const COMPACTION_MIN_GAIN: Ratio = { num: 2, den: 1 };
 

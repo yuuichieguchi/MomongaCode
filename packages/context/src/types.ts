@@ -10,6 +10,7 @@ import type {
   MessageInputItem,
   NoticeReduction,
   OutputFormatterName,
+  Ratio,
   TokenAnatomy,
 } from '@momonga/protocol';
 
@@ -166,6 +167,7 @@ export type BuildContextInput = {
   calibration?: Calibration;
   model: string;
   sources: ContextSources;
+  compactAt?: Ratio;
   evicted: ReadonlySet<string>;
   recordedReferences: ReadonlySet<string>;
   touchedPaths: readonly TouchedPath[];
