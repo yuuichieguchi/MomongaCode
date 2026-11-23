@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ProcessEvent } from '../../src/tui/terminal/layer.ts';
 import { BACKGROUND_QUERY, QUERY_BATCH, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
-import { NOTIFICATION_MAX_BYTES, TITLE_MAX_CHARACTERS, TITLE_STATES, notificationSequence, titleOf, titleSequence, titleStateOf, tmuxPassthrough } from '../../src/tui/terminal/title.ts';
+import { NOTIFICATION_MAX_BYTES, TITLE_MAX_CHARACTERS, TITLE_STATES, notificationSequence, notificationText, titleOf, titleSequence, titleStateOf, tmuxPassthrough } from '../../src/tui/terminal/title.ts';
 import { manualClock } from './screen-clock.ts';
 
 const ESC = '\u001b';
@@ -228,6 +228,67 @@ describe('the desktop notification sequence', () => {
 
   it('counts the bytes after the controls are removed', () => {
     expect(bodyOf(notificationSequence(`${'a'.repeat(255)}${ESC}`))).toBe('a'.repeat(255));
+  });
+});
+
+describe('the desktop notification text', () => {
+  it('joins the description and the folder with a middle dot', () => {
+    expect(notificationText('Run complete in 32s', 'myproject')).toBe('Run complete in 32s · myproject');
+  });
+
+  it('is the description alone when no folder is given', () => {
+    expect(notificationText('Do you trust the files in /tmp/work/myproject?', undefined)).toBe('Do you trust the files in /tmp/work/myproject?');
+  });
+
+  it('turns every run of spaces, tabs and new lines into one space', () => {
+    expect(notificationText('Permission requested: npm test\n  &&\tnpm run   build', 'myproject')).toBe('Permission requested: npm test && npm run build · myproject');
+    expect(notificationText('Run failed: a\n\n\tb', 'my\t\nproject')).toBe('Run failed: a b · my project');
+  });
+
+  it('removes ESC, BEL and C1 controls', () => {
+    expect(notificationText(`a${ESC}b${BEL}c\u009cd`, `x${ESC}y\u009cz`)).toBe('abcd · xyz');
+  });
+
+  it('trims leading and trailing space of both parts', () => {
+    expect(notificationText('  Run failed \n', ' \tmyproject\n')).toBe('Run failed · myproject');
+  });
+
+  it('keeps a text of exactly 255 bytes whole', () => {
+    expect(notificationText('a'.repeat(242), 'myproject')).toBe(`${'a'.repeat(242)} · myproject`);
+    expect(notificationText('a'.repeat(255), undefined)).toBe('a'.repeat(255));
+  });
+
+  it('cuts a longer description with an ellipsis and keeps the folder whole', () => {
+    const text = notificationText('a'.repeat(243), 'myproject');
+    expect(text).toBe(`${'a'.repeat(239)}… · myproject`);
+    expect(bytesOf(text)).toBe(255);
+  });
+
+  it('cuts a longer text without a folder at the end with an ellipsis', () => {
+    expect(notificationText('a'.repeat(256), undefined)).toBe(`${'a'.repeat(252)}…`);
+  });
+
+  it('cuts a multi-byte description on a character boundary', () => {
+    const text = notificationText('あ'.repeat(100), 'myproject');
+    expect(text).toBe(`${'あ'.repeat(79)}… · myproject`);
+    expect(bytesOf(text)).toBe(253);
+  });
+
+  it('keeps a multi-byte folder whole', () => {
+    const text = notificationText('a'.repeat(300), 'プロジェクト');
+    expect(text).toBe(`${'a'.repeat(230)}… · プロジェクト`);
+    expect(bytesOf(text)).toBe(255);
+  });
+
+  it('cuts the whole text from the end when the folder alone leaves no room', () => {
+    const text = notificationText('x', 'b'.repeat(300));
+    expect(text).toBe(`x · ${'b'.repeat(247)}…`);
+    expect(bytesOf(text)).toBe(255);
+  });
+
+  it('passes through the OSC 9 sequence unchanged', () => {
+    const text = notificationText(`Permission requested: ${'a'.repeat(300)}`, 'myproject');
+    expect(notificationSequence(text)).toBe(`${OSC9}${text}${BEL}`);
   });
 });
 

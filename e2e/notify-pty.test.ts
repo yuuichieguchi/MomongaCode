@@ -56,7 +56,15 @@ const folderOf = (home: E2eHome): string => path.basename(home.project);
 
 const titleTextOf = (state: string, home: E2eHome): string => `${state} · ${folderOf(home)} · momonga`;
 
-const notificationOf = (state: string, home: E2eHome): string => `${OSC9}${titleTextOf(state, home)}${BEL}`;
+const literalPattern = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const doneNotificationPattern = (home: E2eHome): string => `${literalPattern(OSC9)}Run complete in \\d+s · ${literalPattern(folderOf(home))}${literalPattern(BEL)}`;
+
+const doneNotificationsIn = (raw: string, home: E2eHome): string[] => raw.match(new RegExp(doneNotificationPattern(home), 'g')) ?? [];
+
+const tmuxDoneNotificationsIn = (raw: string, home: E2eHome): string[] => raw.match(new RegExp(`${literalPattern(`${ESC}Ptmux;${ESC}`)}${doneNotificationPattern(home)}${literalPattern(`${ESC}\\`)}`, 'g')) ?? [];
+
+const approvalNotificationOf = (home: E2eHome): string => `${OSC9}Permission requested: Edit config.toml · ${folderOf(home)}${BEL}`;
 
 const titleSequenceOf = (state: string, home: E2eHome): string => `${ESC}]2;${titleTextOf(state, home)}${ESC}\\`;
 
@@ -121,10 +129,11 @@ describe('notify: attention signals through a pty', () => {
     await submitWhileAway(pty, fake, 'finish the work');
     await awaitRunEnd(pty, 'All finished.', home);
     const all = await leave(pty);
-    expect(countOf(all, notificationOf('done', home)), escaped(all)).toBe(1);
+    const done = doneNotificationsIn(all, home);
+    expect(done, escaped(all)).toHaveLength(1);
     expect(countOf(all, OSC9), escaped(all)).toBe(1);
     expect(bellSignalsIn(all), escaped(all)).toBe(0);
-    expect(all.lastIndexOf(FOCUS_REPORTING_OFF), escaped(all)).toBeGreaterThan(all.indexOf(notificationOf('done', home)));
+    expect(all.lastIndexOf(FOCUS_REPORTING_OFF), escaped(all)).toBeGreaterThan(all.indexOf(done[0] ?? OSC9));
   });
 
   it(titleOf('notify-pty-bell'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -181,7 +190,7 @@ describe('notify: attention signals through a pty', () => {
     await pty.waitFor('Permission requested: Edit config.toml');
     await pty.waitForPrompt('+greeting = "hello, momonga"');
     const atApproval = await pty.written();
-    expect(countOf(atApproval, notificationOf('waiting for you', home)), escaped(atApproval)).toBe(1);
+    expect(countOf(atApproval, approvalNotificationOf(home)), escaped(atApproval)).toBe(1);
     expect(countOf(atApproval, OSC9), escaped(atApproval)).toBe(1);
     await pty.reportFocus('in');
     await pty.key('1', { until: 'Edited the greeting.' });
@@ -199,10 +208,10 @@ describe('notify: attention signals through a pty', () => {
     await submitWhileAway(pty, fake, 'finish the work');
     await awaitRunEnd(pty, 'All finished.', home);
     const all = await leave(pty);
-    const wrapped = `${ESC}Ptmux;${ESC}${notificationOf('done', home)}${ESC}\\`;
-    expect(countOf(all, wrapped), escaped(all)).toBe(1);
+    const wrapped = tmuxDoneNotificationsIn(all, home);
+    expect(wrapped, escaped(all)).toHaveLength(1);
     expect(countOf(all, OSC9), escaped(all)).toBe(1);
-    expect(bellSignalsIn(all.replace(wrapped, '')), escaped(all)).toBe(0);
+    expect(bellSignalsIn(all.replace(wrapped[0] ?? '', '')), escaped(all)).toBe(0);
   });
 
   it(titleOf('notify-pty-late-focus'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -223,7 +232,7 @@ describe('notify: attention signals through a pty', () => {
     hold.release();
     await awaitRunEnd(pty, 'Second finished.', home, 2);
     const all = await leave(pty);
-    expect(countOf(all, notificationOf('done', home)), escaped(all)).toBe(1);
+    expect(doneNotificationsIn(all, home), escaped(all)).toHaveLength(1);
     expect(countOf(all, OSC9), escaped(all)).toBe(1);
     expect(bellSignalsIn(all), escaped(all)).toBe(0);
   });

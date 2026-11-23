@@ -17,10 +17,14 @@ import type { FakeBackendOptions } from '../fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput, settleAtOnce } from '../ink-helpers.ts';
 import { frame } from '../tui-harness.tsx';
 import { fakeScreenTerminal } from './screen-fakes.ts';
-import { pollUntil } from '@momonga/testkit';
+import { createFakeClock, pollUntil } from '@momonga/testkit';
+import type { FakeClock } from '@momonga/testkit';
 
 const HOSTILE_FOLDER = '/work/pro\u001b]0;pwn\u0007ject\u009b2J\n';
 const TITLE = (state: string): string => `${state} · pro]0;pwnject2J · momonga`;
+const FOLDER = 'pro]0;pwnject2J';
+const NOTICE = (text: string): string => `${text} · ${FOLDER}`;
+const CLOCK_START_MS = 1_700_000_000_000;
 
 const keyX: TerminalEvent = { type: 'key', text: 'x', ctrl: false, alt: false, shift: false, super: false, hyper: false, meta: false };
 const focus = (direction: 'in' | 'out'): TerminalEvent => ({ type: 'focus', direction });
@@ -40,7 +44,7 @@ const storedSettings = (initial: Partial<ResolvedTuiSettings> = {}) => {
   return { port, saved };
 };
 
-type StartGiven = { attentionTerminal?: AttentionTerminal; timers?: ScreenTimers; unstored?: boolean; before?: (backend: ReturnType<typeof fakeBackend>, terminal: ReturnType<typeof fakeScreenTerminal>) => void };
+type StartGiven = { attentionTerminal?: AttentionTerminal; timers?: ScreenTimers; unstored?: boolean; clock?: FakeClock; before?: (backend: ReturnType<typeof fakeBackend>, terminal: ReturnType<typeof fakeScreenTerminal>) => void };
 
 const start = async (options: FakeBackendOptions = {}, initial: Partial<ResolvedTuiSettings> = {}, given: StartGiven = {}) => {
   const backend = fakeBackend({ session: { cwd: HOSTILE_FOLDER }, ...options });
@@ -52,20 +56,21 @@ const start = async (options: FakeBackendOptions = {}, initial: Partial<Resolved
     disable(mode);
   };
   given.before?.(backend, terminal);
+  const clock = given.clock ?? createFakeClock(CLOCK_START_MS);
   const settings = storedSettings(initial);
   const app = renderObservable(
     <App
       backend={backend}
       terminal={terminal}
       initialMode={undefined}
-      now={Date.now}
+      now={clock.now}
       timers={given.timers ?? settleAtOnce(systemTiming)}
       {...(given.unstored === true ? {} : { tuiSettings: settings.port })}
       {...(given.attentionTerminal === undefined ? {} : { attentionTerminal: given.attentionTerminal })}
       onExit={() => undefined}
     />,
   );
-  return { backend, terminal, app, saved: settings.saved, disabled };
+  return { backend, terminal, app, saved: settings.saved, disabled, clock };
 };
 
 const ready = async (options: FakeBackendOptions = {}, initial: Partial<ResolvedTuiSettings> = {}, given: StartGiven = {}) => {
@@ -247,7 +252,7 @@ describe('the notification setting in the running screen', () => {
     started.terminal.emit(focus('out'));
     await finishDone(started);
     started.terminal.resize(100, 31);
-    expect(started.terminal.notifications).toEqual([{ text: TITLE('done'), tmux: false }]);
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: false }]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
@@ -256,7 +261,7 @@ describe('the notification setting in the running screen', () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: { osc9: true, tmux: true } });
     started.terminal.emit(focus('out'));
     await finishDone(started);
-    expect(started.terminal.notifications).toEqual([{ text: TITLE('done'), tmux: true }]);
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: true }]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
@@ -289,7 +294,7 @@ describe('the notification setting in the running screen', () => {
     await until(() => started.terminal.titles.at(-1) === TITLE('working'), 'working again');
     started.backend.finish(runView());
     await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
-    expect(started.terminal.notifications.map((sent) => sent.text)).toEqual([TITLE('waiting for you'), TITLE('done')]);
+    expect(started.terminal.notifications.map((sent) => sent.text)).toEqual([NOTICE('Permission requested: Bash c1'), NOTICE('Run complete in 0s')]);
     started.app.unmount();
   });
 
@@ -302,7 +307,7 @@ describe('the notification setting in the running screen', () => {
     await run(started, 'again');
     started.backend.finish(runView({ status: 'CANCELLED' }));
     await until(() => started.terminal.titles.at(-1) === TITLE('ready'), 'ready');
-    expect(started.terminal.notifications.map((sent) => sent.text)).toEqual([TITLE('error')]);
+    expect(started.terminal.notifications.map((sent) => sent.text)).toEqual([NOTICE('Run failed: provider_error: the provider failed')]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
@@ -391,9 +396,9 @@ describe('the notification setting in the running screen', () => {
     started.app.unmount();
   });
 
-  it('auto sends waiting for you for the trust screen when the focus went out before it was shown', async () => {
+  it('auto sends the trust question for the trust screen when the focus went out before it was shown', async () => {
     let openBoot: () => void = () => undefined;
-    const started = await start({ trust: { path: HOSTILE_FOLDER, decision: null } }, { notify: 'auto' }, {
+    const started = await start({ trust: { path: '/tmp/work/trusted', decision: null } }, { notify: 'auto' }, {
       attentionTerminal: OSC9_TERMINAL,
       before: (backend) => {
         const boot = backend.boot;
@@ -411,7 +416,7 @@ describe('the notification setting in the running screen', () => {
     openBoot();
     await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
     started.terminal.resize(100, 31);
-    expect(started.terminal.notifications).toEqual([{ text: TITLE('waiting for you'), tmux: false }]);
+    expect(started.terminal.notifications).toEqual([{ text: 'Do you trust the files in /tmp/work/trusted?', tmux: false }]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
@@ -425,7 +430,7 @@ describe('the notification setting in the running screen', () => {
     started.app.unmount();
   });
 
-  it('auto sends one waiting for you for a question to the person while the focus is out', async () => {
+  it('auto sends one notification with the heading of a question to the person while the focus is out', async () => {
     const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
     started.terminal.emit(focus('out'));
     await run(started);
@@ -433,7 +438,7 @@ describe('the notification setting in the running screen', () => {
     started.backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'c1', server: 'calc', requests: [{ key: 'k1', mode: 'form', message: 'Which branch?', requestedSchema: { type: 'object', properties: { branch: { type: 'string' } } } }] }));
     await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
     started.terminal.resize(100, 31);
-    expect(started.terminal.notifications).toEqual([{ text: TITLE('waiting for you'), tmux: false }]);
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('MCP server calc asks for input (mcp__calc__ask {})'), tmux: false }]);
     expect(started.terminal.bells).toEqual([]);
     started.app.unmount();
   });
@@ -449,8 +454,119 @@ describe('the notification setting in the running screen', () => {
     started.terminal.resize(100, 30);
     await untilFrame(started.app, 'mode: manual');
     expect(started.terminal.titles.at(-1)).toBe(TITLE('done'));
-    expect(started.terminal.notifications).toEqual([{ text: TITLE('done'), tmux: false }]);
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 0s'), tmux: false }]);
     expect(started.terminal.bells).toEqual([]);
+    started.app.unmount();
+  });
+
+  it('says how many whole seconds a completed run took, counted by the screen clock from when the screen follows the run', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    await until(() => started.backend.followed.length === 1, 'the run is followed');
+    started.clock.advance(32_999);
+    started.backend.finish(runView());
+    await until(() => started.terminal.titles.at(-1) === TITLE('done'), 'done');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run complete in 32s'), tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('says only that the run failed for a failed run with neither an error nor a stop reason', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    started.backend.finish(runView({ status: 'FAILED' }));
+    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run failed'), tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('gives the stop reason of a failed run that has no error', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    started.backend.finish(runView({ status: 'FAILED', stopReason: 'max_steps' }));
+    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run failed: max_steps'), tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('gives the first line of the failure when the run cannot be started', async () => {
+    const started = await ready({}, { notify: 'auto' }, {
+      attentionTerminal: OSC9_TERMINAL,
+      before: (backend) => {
+        backend.startRun = async () => {
+          throw Object.assign(new Error('the gateway refused the run'), { detail: 'the quota is used up' });
+        };
+      },
+    });
+    started.terminal.emit(focus('out'));
+    await submit(started, 'go');
+    await until(() => started.terminal.titles.at(-1) === TITLE('error'), 'error');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Run failed: the gateway refused the run'), tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('gives the heading of the approval of a file edit', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    started.backend.emit(frame({ type: 'tool.call', callId: 'e1', providerCallId: 'e1', name: 'Edit', kind: 'edit', title: 'Edit src/app.ts', rawInput: { file_path: 'src/app.ts' } }));
+    started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'e1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
+    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Permission requested: Edit src/app.ts'), tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('leaves the counter out of the notification while the panel shows that two approvals wait', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    started.backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'Bash c1', rawInput: { command: 'ls' } }));
+    started.backend.emit(frame({ type: 'tool.call', callId: 'c2', providerCallId: 'c2', name: 'Bash', kind: 'execute', title: 'Bash c2', rawInput: { command: 'pwd' } }));
+    started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
+    started.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap2', callId: 'c2', subjectDigest: 'd', reason: 'asks', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
+    await untilFrame(started.app, 'Permission requested: Bash c1 (1 of 2)');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Permission requested: Bash c1'), tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('leaves the position in the flow out of the notification for a question of several steps', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    started.backend.emit(frame({ type: 'tool.call', callId: 'm1', providerCallId: 'm1', name: 'mcp__github__ask', kind: 'other', title: 'mcp__github__ask {}', rawInput: {} }));
+    started.backend.emit(
+      frame({
+        type: 'tool.elicitation.requested',
+        inputId: 'in1',
+        callId: 'm1',
+        server: 'github',
+        requests: [
+          { key: 'k1', mode: 'form', message: 'Which branch?', requestedSchema: { type: 'object', properties: { branch: { type: 'string' } } } },
+          { key: 'k2', mode: 'form', message: 'Which tag?', requestedSchema: { type: 'object', properties: { tag: { type: 'string' } } } },
+        ],
+      }),
+    );
+    await untilFrame(started.app, 'MCP server github asks for input (mcp__github__ask {}) 1/2');
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('MCP server github asks for input (mcp__github__ask {})'), tmux: false }]);
+    started.app.unmount();
+  });
+
+  it('writes one notification only, for the approval, when a question follows the answered approval while the state stays waiting for you', async () => {
+    const started = await ready({}, { notify: 'auto' }, { attentionTerminal: OSC9_TERMINAL });
+    started.terminal.emit(focus('out'));
+    await run(started);
+    ask(started);
+    await until(() => started.terminal.titles.at(-1) === TITLE('waiting for you'), 'waiting for you');
+    const titlesBefore = started.terminal.titles.length;
+    started.backend.emit(frame({ type: 'tool.call', callId: 'm1', providerCallId: 'm1', name: 'mcp__calc__ask', kind: 'other', title: 'mcp__calc__ask {}', rawInput: {} }));
+    started.backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o1' }));
+    started.backend.emit(frame({ type: 'tool.elicitation.requested', inputId: 'in1', callId: 'm1', server: 'calc', requests: [{ key: 'k1', mode: 'form', message: 'Which branch?', requestedSchema: { type: 'object', properties: { branch: { type: 'string' } } } }] }));
+    await untilFrame(started.app, 'MCP server calc asks for input');
+    started.terminal.resize(100, 31);
+    expect(started.terminal.titles.slice(titlesBefore)).toEqual([]);
+    expect(started.terminal.notifications).toEqual([{ text: NOTICE('Permission requested: Bash c1'), tmux: false }]);
     started.app.unmount();
   });
 
@@ -488,6 +604,7 @@ const FOCUS_ON = `${ESC}[?1004h`;
 const FOCUS_OFF = `${ESC}[?1004l`;
 const PLAIN_FOLDER = '/work/myproject';
 const DONE = 'done · myproject · momonga';
+const DONE_NOTICE = 'Run complete in 5s · myproject';
 const LAYER_BOUND_MS = 3000;
 
 const closers: (() => void)[] = [];
@@ -529,13 +646,14 @@ const onLayer = async (notify: ResolvedTuiSettings['notify'] | undefined, attent
   });
   layer.start();
   const backend = fakeBackend({ session: { cwd: PLAIN_FOLDER } });
+  const clock = createFakeClock(CLOCK_START_MS);
   const settings = storedSettings(notify === undefined ? {} : { notify });
   const instance = render(
     <TerminalFrame layer={layer}>
       <App
         backend={backend}
         terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, desktopNotification: layer.desktopNotification, enable: layer.enable, disable: layer.disable, input }}
-        now={Date.now}
+        now={clock.now}
         timers={settleAtOnce(systemTiming)}
         initialMode={undefined}
         {...(notify === undefined ? {} : { tuiSettings: settings.port })}
@@ -559,11 +677,13 @@ const onLayer = async (notify: ResolvedTuiSettings['notify'] | undefined, attent
     feed('\r');
     await waitFor(() => backend.started.length === 1, 'the run is started');
     await waitFor(() => written().includes(titleSequence('working · myproject · momonga')), 'the title says working');
+    await waitFor(() => backend.followed.length === 1, 'the run is followed');
+    clock.advance(5_000);
     backend.finish(runView());
     await waitFor(() => written().includes(titleSequence(DONE)), 'the title says done');
   };
   const typed = (shown: string): Promise<void> => waitFor(() => stdout.written.join('').includes(shown), `${shown} is shown`);
-  return { written, feed, runToDone, typed };
+  return { written, feed, runToDone, typed, backend, waitFor };
 };
 
 const count = (text: string, part: string): number => text.split(part).length - 1;
@@ -574,12 +694,13 @@ describe('the signal in the bytes the terminal layer writes', () => {
     expect(t.written()).toContain(FOCUS_ON);
   });
 
-  it('auto on a terminal that shows OSC 9 writes exactly one OSC 9 with the title text after a focus out and a run end', async () => {
+  it('auto on a terminal that shows OSC 9 writes exactly one OSC 9 with the run time and the folder after a focus out and a run end', async () => {
     const t = await onLayer('auto', OSC9_TERMINAL);
     t.feed(FOCUS_OUT);
     await t.runToDone();
     expect(count(t.written(), `${ESC}]9;`)).toBe(1);
-    expect(t.written()).toContain(`${ESC}]9;${DONE}${BEL}`);
+    expect(t.written()).toContain(`${ESC}]9;${DONE_NOTICE}${BEL}`);
+    expect(t.written()).not.toContain(`${ESC}]9;${DONE}${BEL}`);
     expect(count(t.written(), BEL)).toBe(1);
   });
 
@@ -587,8 +708,22 @@ describe('the signal in the bytes the terminal layer writes', () => {
     const t = await onLayer('auto', { osc9: true, tmux: true });
     t.feed(FOCUS_OUT);
     await t.runToDone();
-    expect(t.written()).toContain(`${ESC}Ptmux;${ESC}${ESC}]9;${DONE}${BEL}${ESC}\\`);
+    expect(t.written()).toContain(`${ESC}Ptmux;${ESC}${ESC}]9;${DONE_NOTICE}${BEL}${ESC}\\`);
     expect(count(t.written(), `]9;`)).toBe(1);
+  });
+
+  it('auto writes exactly one OSC 9 with the heading of the approval of a file edit', async () => {
+    const t = await onLayer('auto', OSC9_TERMINAL);
+    t.feed(FOCUS_OUT);
+    t.feed('go');
+    await t.typed('> go');
+    t.feed('\r');
+    await t.waitFor(() => t.written().includes(titleSequence('working · myproject · momonga')), 'the title says working');
+    t.backend.emit(frame({ type: 'tool.call', callId: 'e1', providerCallId: 'e1', name: 'Edit', kind: 'edit', title: 'Edit src/app.ts', rawInput: { file_path: 'src/app.ts' } }));
+    t.backend.emit(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'e1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], shown: { title: 'approval', input: {} } }));
+    await t.waitFor(() => t.written().includes(titleSequence('waiting for you · myproject · momonga')), 'the title says waiting for you');
+    expect(t.written()).toContain(`${ESC}]9;Permission requested: Edit src/app.ts · myproject${BEL}`);
+    expect(count(t.written(), `${ESC}]9;`)).toBe(1);
   });
 
   it('auto on a terminal that does not show OSC 9 writes exactly one BEL', async () => {

@@ -13,7 +13,7 @@ import { modelChosen } from './transcript.ts';
 import { followMeasurement, modelUnreadText, readinessNoticeOf } from '../readiness.ts';
 import { isPrompt } from '../run/prompt-event.ts';
 import { isTerminalStatus } from '../run/follow.ts';
-import { describeRunEnd } from '../run/headless.ts';
+import { describeRunEnd, endReasonLines } from '../run/headless.ts';
 import type { Reopen } from '../run/resolve-session.ts';
 import { accountsOf, profileOf } from '../plan/accounts.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
@@ -93,11 +93,12 @@ import type { KeyEvent, MouseEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 import { NEWLINE_HINT } from './terminal/negotiation.ts';
 import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
-import type { AttentionTerminal } from './screen/notify.ts';
+import type { AttentionTerminal, WaitingNotice } from './screen/notify.ts';
+import { approvalHeading, approvalWording, elicitationHeading, trustHeading } from './screen/prompt-panel.tsx';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
 import type { ColourHost, ThemeId } from './screen/theme.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, promptTakesFocus, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
+import { appendEntry, BANNER_KEY, toolOf, foldChildEvent, foldLiveEvent, foldReplayedEvent, blockingPrompt, nextMode, promptTakesFocus, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
 import type { OwnGeneration } from '../handover/mover.ts';
 import { attachmentDigest } from '../handover/record.ts';
@@ -415,11 +416,18 @@ export function App(props: AppProps) {
   const externalEditor = props.externalEditor ?? unavailableExternalEditor;
   const [hint, setHint] = useState<string | undefined>(undefined);
   const armedExit = useRef<{ action: ExitAction; timer: unknown } | undefined>(undefined);
+  const waitingNotice = (): WaitingNotice | undefined => {
+    if (phase.kind === 'trust') return { heading: trustHeading(phase.path), namesFolder: true };
+    const { approval, elicitation } = transcript;
+    if (approval !== undefined) return { heading: approvalHeading(approval, approvalWording(approval, (callId) => toolOf(store, callId)).title), namesFolder: false };
+    if (elicitation !== undefined) return { heading: elicitationHeading(elicitation, toolOf(store, elicitation.callId)?.title ?? elicitation.callId), namesFolder: false };
+    return undefined;
+  };
   const attention = useAttention({
     terminal,
     cwd: backend.cwd,
     working: busy,
-    prompting: phase.kind === 'trust' || transcript.approval !== undefined || transcript.elicitation !== undefined,
+    waiting: waitingNotice(),
     notify,
     attentionTerminal: props.attentionTerminal ?? UNKNOWN_ATTENTION_TERMINAL,
   });
@@ -1002,10 +1010,11 @@ export function App(props: AppProps) {
 
   const watchRun = async (runId: string, replay: Replay | undefined, resubmit: { text: string; options: StartRunOptions; sessionModel: string } | undefined): Promise<void> => {
     runIdRef.current = runId;
+    const followedAt = now();
     const run = await follow(runId, replay);
     await replay?.queue.drained();
     setReconnectingSince(undefined);
-    attention.runEnded(run.status === 'COMPLETED' ? 'done' : run.status === 'FAILED' ? 'error' : undefined);
+    attention.runEnded(run.status === 'COMPLETED' ? { kind: 'done', elapsedMs: now() - followedAt } : run.status === 'FAILED' ? { kind: 'error', reason: endReasonLines(run, 'tui')[0] } : undefined);
     const stopped = run.error;
     if (run.status === 'FAILED' && stopped?.code === SIGN_IN_REQUIRED_CODE && resubmit !== undefined) signInFailedRun.current = resubmit;
     const plan = stopped?.plan;
@@ -1084,7 +1093,7 @@ export function App(props: AppProps) {
       caughtUp();
       for (const record of await backend.userInput.pendingShell()) showShellRecord(store, record, now());
     } catch (error) {
-      attention.runEnded('error');
+      attention.runEnded({ kind: 'error', reason: describeFailure(error) });
       if (!exiting.current) reportError(error);
     } finally {
       endReading();
@@ -1206,7 +1215,7 @@ export function App(props: AppProps) {
     try {
       await watchQueuedRuns(ended);
     } catch (error) {
-      attention.runEnded('error');
+      attention.runEnded({ kind: 'error', reason: describeFailure(error) });
       if (!exiting.current) reportError(error);
     } finally {
       runIdRef.current = undefined;
@@ -1303,7 +1312,7 @@ export function App(props: AppProps) {
       await watchRun(started.id, undefined, resubmit);
       await watchQueuedRuns(started.id);
     } catch (error) {
-      attention.runEnded('error');
+      attention.runEnded({ kind: 'error', reason: describeFailure(error) });
       if (!exiting.current) reportError(error);
     } finally {
       promptNotes.current = [];

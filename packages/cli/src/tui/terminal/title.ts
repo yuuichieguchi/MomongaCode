@@ -55,6 +55,17 @@ const cappedToBytes = (text: string, limit: number): string => {
   return `${kept}${ELLIPSIS}`;
 };
 
+const tidied = (text: string): string => withoutControls(text.replace(/\s+/gu, ' ')).trim();
+
+export const notificationText = (detail: string, suffix: string | undefined): string => {
+  const head = tidied(detail);
+  if (suffix === undefined) return cappedToBytes(head, NOTIFICATION_MAX_BYTES);
+  const tail = `${SEPARATOR}${tidied(suffix)}`;
+  const room = NOTIFICATION_MAX_BYTES - bytesOf(tail);
+  if (room < bytesOf(ELLIPSIS)) return cappedToBytes(`${head}${tail}`, NOTIFICATION_MAX_BYTES);
+  return `${cappedToBytes(head, room)}${tail}`;
+};
+
 export const notificationSequence = (text: string): string => `${ESC}]9;${cappedToBytes(withoutControls(text), NOTIFICATION_MAX_BYTES)}${BEL}`;
 
 export const tmuxPassthrough = (sequence: string): string => `${ESC}Ptmux;${sequence.replaceAll(ESC, `${ESC}${ESC}`)}${ESC}\\`;

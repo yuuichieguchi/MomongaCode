@@ -2,8 +2,9 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { TUI_NOTIFY_MODES, defaultTuiSettings } from '@momonga/config';
 import type { ResolvedTuiSettings, TuiNotify } from '@momonga/config';
 import type { FocusEvent } from '../terminal/events.ts';
-import { titleOf, titleStateOf } from '../terminal/title.ts';
-import type { RunEnd, TitleState } from '../terminal/title.ts';
+import path from 'node:path';
+import { notificationText, titleOf, titleStateOf } from '../terminal/title.ts';
+import type { TitleState } from '../terminal/title.ts';
 import type { ScreenTerminal } from './input.ts';
 
 export const NOTIFY_MODES = TUI_NOTIFY_MODES;
@@ -33,21 +34,40 @@ export const signalDue = ({ notify, focus, state, osc9 }: { notify: NotifyMode; 
   return notify === 'auto' && osc9 ? 'notification' : 'bell';
 };
 
+export type RunOutcome = { kind: 'done'; elapsedMs: number } | { kind: 'error'; reason: string | undefined };
+
+export type WaitingNotice = { heading: string; namesFolder: boolean };
+
+const firstLine = (text: string): string => text.split(/\r?\n|\r/u, 1)[0] ?? '';
+
+const outcomeDetail = (outcome: RunOutcome): string => {
+  if (outcome.kind === 'done') return `Run complete in ${Math.floor(outcome.elapsedMs / 1000)}s`;
+  const reason = outcome.reason === undefined ? '' : firstLine(outcome.reason).trim();
+  return reason === '' ? 'Run failed' : `Run failed: ${reason}`;
+};
+
+export const noticeOf = ({ state, cwd, outcome, waiting }: { state: TitleState; cwd: string; outcome: RunOutcome | undefined; waiting: WaitingNotice | undefined }): string | undefined => {
+  const folder = path.basename(cwd);
+  if (state === 'waiting for you') return waiting === undefined ? undefined : notificationText(waiting.heading, waiting.namesFolder ? undefined : folder);
+  if (state === 'done' || state === 'error') return outcome?.kind === state ? notificationText(outcomeDetail(outcome), folder) : undefined;
+  return undefined;
+};
+
 export type AttentionOptions = {
   terminal: Pick<ScreenTerminal, 'state' | 'setTitle' | 'bell' | 'desktopNotification' | 'enable' | 'disable' | 'input'>;
   cwd: string;
   working: boolean;
-  prompting: boolean;
+  waiting: WaitingNotice | undefined;
   notify: NotifyMode;
   attentionTerminal: AttentionTerminal;
 };
 
-export type Attention = { runEnded(end: RunEnd | undefined): void };
+export type Attention = { runEnded(outcome: RunOutcome | undefined): void };
 
-export const useAttention = ({ terminal, cwd, working, prompting, notify, attentionTerminal }: AttentionOptions): Attention => {
-  const [lastRun, setLastRun] = useState<RunEnd | undefined>(undefined);
+export const useAttention = ({ terminal, cwd, working, waiting, notify, attentionTerminal }: AttentionOptions): Attention => {
+  const [lastRun, setLastRun] = useState<RunOutcome | undefined>(undefined);
   const lastFocus = useRef<FocusDirection | undefined>(undefined);
-  const state = titleStateOf({ working, prompting, lastRun });
+  const state = titleStateOf({ working, prompting: waiting !== undefined, lastRun: lastRun?.kind });
   const reportsFocus = notify !== 'off';
 
   const announce = useEffectEvent((next: TitleState): void => {
@@ -55,7 +75,9 @@ export const useAttention = ({ terminal, cwd, working, prompting, notify, attent
     terminal.setTitle(title);
     const signal = signalDue({ notify, focus: lastFocus.current, state: next, osc9: attentionTerminal.osc9 });
     if (signal === 'bell') terminal.bell();
-    if (signal === 'notification') terminal.desktopNotification(title, { tmux: attentionTerminal.tmux });
+    if (signal !== 'notification') return;
+    const text = noticeOf({ state: next, cwd, outcome: lastRun, waiting });
+    if (text !== undefined) terminal.desktopNotification(text, { tmux: attentionTerminal.tmux });
   });
 
   useEffect(() => {
@@ -66,7 +88,7 @@ export const useAttention = ({ terminal, cwd, working, prompting, notify, attent
     () =>
       terminal.input.observe((event) => {
         if (event.type === 'focus') lastFocus.current = event.direction;
-        if (event.type === 'key') setLastRun((end) => (end === 'error' ? undefined : end));
+        if (event.type === 'key') setLastRun((outcome) => (outcome?.kind === 'error' ? undefined : outcome));
       }),
     [terminal],
   );

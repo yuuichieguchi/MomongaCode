@@ -24,8 +24,10 @@ export type TrustDecision = (typeof TRUST_CHOICES)[number]['decision'];
 
 const TRUST_NOTE = 'Project settings and MCP servers in this folder are only loaded when you trust it.';
 
+export const trustHeading = (path: string): string => `Do you trust the files in ${path}?`;
+
 export const trustSpec = (path: string): SelectSpec => ({
-  title: `Do you trust the files in ${path}?`,
+  title: trustHeading(path),
   lines: [TRUST_NOTE],
   rows: TRUST_CHOICES,
   initial: TRUST_CHOICES.findIndex((choice) => choice.decision === 'trusted'),
@@ -66,8 +68,10 @@ const escapeOf = (approval: PendingApproval): SelectSpec['escape'] => {
   return reject >= 0 ? reject : 'inactive';
 };
 
+export const approvalHeading = (approval: PendingApproval, title: string): string => (approval.unknownCallIds === undefined ? `Permission requested: ${title}` : title);
+
 export const approvalSpec = (approval: PendingApproval, title: string, lines: readonly SelectLine[], waiting: number): SelectSpec => ({
-  title: `${approval.unknownCallIds === undefined ? `Permission requested: ${title}` : title}${waitingCounter(waiting)}`,
+  title: `${approvalHeading(approval, title)}${waitingCounter(waiting)}`,
   lines,
   rows: approval.options.map((option) => ({ label: option.name })),
   initial: 0,
@@ -86,8 +90,10 @@ export const decisionChoices = (flow: ElicitationFlow): readonly { decision: Eli
   ];
 };
 
+export const elicitationHeading = (elicitation: Pick<PendingElicitation, 'server'>, title: string): string => `MCP server ${elicitation.server} asks for input (${title})`;
+
 const elicitationTitle = (elicitation: PendingElicitation, title: string, waiting: number): string =>
-  `MCP server ${elicitation.server} asks for input (${title}) ${elicitation.flow.index + 1}/${elicitation.flow.requests.length}${waitingCounter(waiting)}`;
+  `${elicitationHeading(elicitation, title)} ${elicitation.flow.index + 1}/${elicitation.flow.requests.length}${waitingCounter(waiting)}`;
 
 export const elicitationSpec = (elicitation: PendingElicitation, title: string, waiting: number): SelectSpec => {
   const { flow } = elicitation;
