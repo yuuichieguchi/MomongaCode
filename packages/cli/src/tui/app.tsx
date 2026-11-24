@@ -531,7 +531,20 @@ export function App(props: AppProps) {
 
   const shownModel = (stored: string): string => displaysRef.current.get(stored) ?? stored;
 
-  const readDisplays = async (): Promise<ReadonlyMap<string, string>> => {
+  const displaysSettled = useRef<Promise<void>>(Promise.resolve());
+
+  const readDisplays = (): Promise<ReadonlyMap<string, string>> => readDisplaysAfter(Promise.resolve());
+
+  const readDisplaysAfter = (before: Promise<unknown>): Promise<ReadonlyMap<string, string>> => {
+    const reading = before.then(listDisplays);
+    displaysSettled.current = reading.then(
+      () => undefined,
+      () => undefined,
+    );
+    return reading;
+  };
+
+  const listDisplays = async (): Promise<ReadonlyMap<string, string>> => {
     const entries = await backend.models();
     entriesRef.current = entries;
     setEntriesVersion((version) => version + 1);
@@ -650,6 +663,8 @@ export function App(props: AppProps) {
 
   const showSession = async (session: SessionView): Promise<void> => {
     openedSession.current = { id: session.id, hasRun: session.latestRunId !== null };
+    const available = backend.autoModeAvailable();
+    const reading = readDisplaysAfter(available);
     setFollowedSession((before) => (before?.id === session.id ? before : { id: session.id, after: session.lastEventId, cwd: session.cwd }));
     setModeState(session.permissionMode);
     sessionModelRef.current = session.model;
@@ -657,8 +672,8 @@ export function App(props: AppProps) {
     setSessionEffort(session.effort);
     setSessionOutputStyle(session.outputStyle);
     setBypassAllowed(session.bypassAllowed);
-    setAutoAvailable(await backend.autoModeAvailable());
-    const configured = (await readDisplays()).has(session.model);
+    setAutoAvailable(await available);
+    const configured = (await reading).has(session.model);
     unconfiguredModel.current = !configured;
     sessionEffortRef.current = session.effort;
     effortNotedRef.current = false;
@@ -1553,18 +1568,28 @@ export function App(props: AppProps) {
   });
   const inboxStreamLost = useEffectEvent((error: unknown): void => reportError(error));
   const printedJudgements = useRef(new Set<string>());
+  const judgementsPrinted = useRef<Promise<void>>(Promise.resolve());
   const printJudgements = useEffectEvent((judgements: readonly MemoryJudgementView[], signal: AbortSignal): Promise<void> => {
-    if (signal.aborted) return Promise.resolve();
+    const settled = displaysSettled.current;
+    const printed = judgementsPrinted.current.then(() => settled).then(() => printDueJudgements(judgements, signal));
+    judgementsPrinted.current = printed.then(
+      () => undefined,
+      () => undefined,
+    );
+    return printed.then((memoryIds) => (memoryIds.length === 0 ? undefined : backend.markMemoryJudgementsShown(memoryIds)));
+  });
+  const printDueJudgements = (judgements: readonly MemoryJudgementView[], signal: AbortSignal): readonly string[] => {
+    if (signal.aborted) return [];
     const due = judgements
       .filter((judgement) => !printedJudgements.current.has(judgement.memoryId))
       .map((judgement) => ({ memoryId: judgement.memoryId, level: memoryJudgementLevel(judgement), text: formatMemoryJudgement(judgement, shownModel) }));
-    if (due.length === 0) return Promise.resolve();
+    if (due.length === 0) return [];
     for (const line of due) {
       printedJudgements.current.add(line.memoryId);
       append({ kind: 'notice', level: line.level, text: line.text });
     }
-    return backend.markMemoryJudgementsShown(due.map((line) => line.memoryId));
-  });
+    return due.map((line) => line.memoryId);
+  };
   useEffect(() => {
     if (followedSession === undefined) return undefined;
     const following = new AbortController();

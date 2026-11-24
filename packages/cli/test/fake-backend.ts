@@ -138,6 +138,8 @@ export type FakeBackendOptions = {
   openSessionFailure?: Error;
   sessionModelFailures?: Readonly<Record<string, Error>>;
   models?: readonly string[];
+  modelsHeld?: () => Promise<void> | undefined;
+  autoModeHeld?: Promise<void>;
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
   reasoning?: Readonly<Record<string, ReasoningCapability>>;
@@ -469,9 +471,13 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (text === undefined) throw new Error(`the fake holds no stored result for ${runId}/${callId}`);
       return { text, offset, next: null, totalBytes: new TextEncoder().encode(text).length };
     },
-    autoModeAvailable: async () => options.autoModeAvailable ?? false,
+    autoModeAvailable: async () => {
+      await options.autoModeHeld;
+      return options.autoModeAvailable ?? false;
+    },
     models: async () => {
       await answerLater();
+      await options.modelsHeld?.();
       return listedModels();
     },
     modelList: async () => {

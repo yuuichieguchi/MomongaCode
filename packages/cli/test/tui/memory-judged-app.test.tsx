@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { MemoryJudgementView } from '@momonga/protocol';
 import { SESSION, runView } from '../fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from '../fake-backend.ts';
-import { KEYS, untilFrame } from '../ink-helpers.ts';
+import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
-import { frame, runStarted, start, type } from '../tui-harness.tsx';
+import { frame, runStarted, start, startStillStarting, type } from '../tui-harness.tsx';
 
 const WIDE = { columns: 220, rows: 70 };
 const BUSY_HINT = 'enter: steer after the next tool call · tab: queue for after this run · esc: stop';
@@ -316,6 +316,31 @@ const BY_CANON = [
 const UNKNOWN = judgement('mem-5', { classifier: UNCONFIGURED });
 const UNKNOWN_LINE = `auto review left memory mem-5 waiting; model ${UNCONFIGURED} judged it unsafe`;
 
+const OBSERVED_MS = 200;
+
+const output = (app: Instance): string => app.frames.join('\n');
+
+const namingStored = (app: Instance): string[] => [...new Set(output(app).split('\n').filter((row) => row.includes(CANON)).map((row) => row.trim()))];
+
+const watched = (app: Instance): Promise<void> => pollUntil(() => output(app).includes(CANON), { boundMs: OBSERVED_MS, description: 'a line names the stored model' }).catch(() => undefined);
+
+const AFTER_LAUNCH_LISTING = 1;
+
+const listingHeld = async (options: FakeBackendOptions): Promise<{ backend: FakeBackend; app: Instance; answer: () => void }> => {
+  const held = Promise.withResolvers<void>();
+  let listings = 0;
+  const started = await startStillStarting({ ...WITH_GEMMA, ...options, modelsHeld: () => ((listings += 1) > AFTER_LAUNCH_LISTING ? held.promise : undefined) }, {}, WIDE);
+  await seen(started.backend, `session-stream-open:${SESSION.id}`);
+  return { ...started, answer: () => held.resolve() };
+};
+
+const autoModeHeld = async (options: FakeBackendOptions): Promise<{ backend: FakeBackend; app: Instance; answer: () => void }> => {
+  const held = Promise.withResolvers<void>();
+  const started = await startStillStarting({ ...WITH_GEMMA, ...options, autoModeHeld: held.promise }, {}, WIDE);
+  await seen(started.backend, `session-stream-open:${SESSION.id}`);
+  return { ...started, answer: () => held.resolve() };
+};
+
 describe('the model of a judgement is named by its display', () => {
   it.each(BY_CANON)('names the model by its display on memory.judged when %s', async (_name, record, line) => {
     const { backend, app } = await idle(WITH_GEMMA);
@@ -366,6 +391,102 @@ describe('the model of a judgement is named by its display', () => {
     expect(shown).toContain(FAILED_LINE);
     expect(shown).toContain(UNKNOWN_LINE);
     expect(shown).not.toContain(CANON);
+    app.unmount();
+  });
+
+  it('prints an owed record read at connect only after the model listing answered, by its display, once, and marks it shown after', async () => {
+    const [, record, line] = BY_CANON[0];
+    const { backend, app, answer } = await listingHeld({ memoryJudgements: [record] });
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+    await watched(app);
+
+    expect(namingStored(app)).toEqual([]);
+    expect(marked(backend)).toEqual([]);
+    answer();
+    const shown = await untilOutput(app, line);
+    await seen(backend, `memory-judgements-shown:${record.memoryId}`);
+
+    expect(namingStored(app)).toEqual([]);
+    expect(timesShown(await untilFrame(app, line), line)).toBe(1);
+    expect(shown).toContain(line);
+    app.unmount();
+  });
+
+  it('prints a memory.judged arriving while the first model listing has not answered only after it answered, by its display, once', async () => {
+    const [, record, line] = BY_CANON[2];
+    const { backend, app, answer } = await listingHeld({ memoryJudgements: [] });
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+    backend.judgements.set(record.memoryId, record);
+
+    backend.judgeMemory(record.memoryId);
+    await seen(backend, `memory-judgement:${record.memoryId}`);
+    await watched(app);
+
+    expect(namingStored(app)).toEqual([]);
+    answer();
+    await seen(backend, `memory-judgements-shown:${record.memoryId}`);
+
+    expect(namingStored(app)).toEqual([]);
+    expect(timesShown(await untilFrame(app, line), line)).toBe(1);
+    app.unmount();
+  });
+
+  it('keeps the order of two owed records and a later event while the model listing is pending, each once', async () => {
+    const [[, first, firstLine], [, event, eventLine], [, second, secondLine]] = BY_CANON;
+    const { backend, app, answer } = await listingHeld({ memoryJudgements: [first, second] });
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+    await watched(app);
+    backend.judgements.set(event.memoryId, { ...event, owed: false });
+
+    backend.judgeMemory(event.memoryId);
+    await seen(backend, `memory-judgement:${event.memoryId}`);
+    await watched(app);
+
+    expect(namingStored(app)).toEqual([]);
+    answer();
+    const shown = await untilFrame(app, (now) => now.includes(firstLine) && now.includes(secondLine) && now.includes(eventLine));
+    await pollUntil(() => marked(backend).length === 3, { ...BOUND, description: 'the three records are marked shown' });
+
+    expect(namingStored(app)).toEqual([]);
+    expect(shown.indexOf(firstLine)).toBeLessThan(shown.indexOf(secondLine));
+    expect(shown.indexOf(secondLine)).toBeLessThan(shown.indexOf(eventLine));
+    for (const line of [firstLine, secondLine, eventLine]) expect(timesShown(shown, line)).toBe(1);
+    app.unmount();
+  });
+
+  it('prints an owed record read at connect while the auto mode check has not answered only after the model listing answered, by its display, once, and marks it shown after', async () => {
+    const [, record, line] = BY_CANON[0];
+    const { backend, app, answer } = await autoModeHeld({ memoryJudgements: [record] });
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+    await watched(app);
+
+    expect(namingStored(app)).toEqual([]);
+    expect(marked(backend)).toEqual([]);
+    answer();
+    await untilOutput(app, line);
+    await seen(backend, `memory-judgements-shown:${record.memoryId}`);
+
+    expect(namingStored(app)).toEqual([]);
+    expect(timesShown(await untilFrame(app, line), line)).toBe(1);
+    app.unmount();
+  });
+
+  it('prints a memory.judged arriving while the auto mode check has not answered only after the model listing answered, by its display, once', async () => {
+    const [, record, line] = BY_CANON[2];
+    const { backend, app, answer } = await autoModeHeld({ memoryJudgements: [] });
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+    backend.judgements.set(record.memoryId, record);
+
+    backend.judgeMemory(record.memoryId);
+    await seen(backend, `memory-judgement:${record.memoryId}`);
+    await watched(app);
+
+    expect(namingStored(app)).toEqual([]);
+    answer();
+    await seen(backend, `memory-judgements-shown:${record.memoryId}`);
+
+    expect(namingStored(app)).toEqual([]);
+    expect(timesShown(await untilFrame(app, line), line)).toBe(1);
     app.unmount();
   });
 });
