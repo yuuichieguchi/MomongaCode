@@ -140,6 +140,7 @@ export const E2E_CASES = [
   { id: 'cli-race', file: 'cli.test.ts', title: 'cli: two commands started together share one daemon', needsBash: false },
   { id: 'cli-interrupt', file: 'cli.test.ts', title: 'cli: ctrl+c during -p cancels the run and exits 130', needsBash: false },
   { id: 'cli-pty-exit-running', file: 'cli-pty.test.ts', title: 'cli pty: /exit while a task runs leaves the terminal at once and the task continues in the daemon', needsBash: false },
+  { id: 'cli-pty-classifier-notice', file: 'cli-pty.test.ts', title: 'cli pty: changing the auto-mode classifier with /auto-mode while in auto prints the new classifier notice after the result line', needsBash: false },
   { id: 'tui-negotiation-pty', file: 'tui-negotiation-pty.test.ts', title: 'tui pty: the terminal answers the query batch of the interactive screen as a terminal does, and the start screen shows the art, the version line and the model line', needsBash: false },
   { id: 'cli-pty-approval', file: 'cli-pty.test.ts', title: 'cli pty: first-run trust prompt, Edit approval with a diff, mode cycling and a clean exit through a real pty', needsBash: false },
   { id: 'cli-pty-child-approval', file: 'cli-pty.test.ts', title: 'cli pty: an approval raised inside a subagent run is shown in the terminal with the waiting status, and answering it lets the parent finish', needsBash: false },

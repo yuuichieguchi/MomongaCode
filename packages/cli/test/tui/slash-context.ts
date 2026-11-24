@@ -5,14 +5,15 @@ import { createFoundServers } from '../../src/tui/models/context.ts';
 import { NO_A11Y } from '../../src/tui/screen/a11y.ts';
 import { createSlashRegistry } from '../../src/tui/slash.ts';
 import type { SlashContext } from '../../src/tui/slash.ts';
+import type { SessionView } from '../../src/client/views.ts';
 import type { PickRequest, PickChoice } from '../../src/tui/picker.tsx';
 import { SESSION, fakeBackend } from '../fake-backend.ts';
 import type { FakeBackendOptions } from '../fake-backend.ts';
 
-export type Recorded = { infos: string[]; toasts: string[]; modes: string[]; picks: PickRequest[]; opened: string[]; stored: [string, boolean][]; prompts: string[] };
+export type Recorded = { infos: string[]; toasts: string[]; modes: string[]; picks: PickRequest[]; opened: string[]; stored: [string, boolean][]; prompts: string[]; autoNotices: SessionView[] };
 
 export const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions: FakeBackendOptions = {}, answers: { choices?: (PickChoice | undefined)[]; texts?: (string | undefined)[] } = {}) => {
-  const recorded: Recorded = { infos: [], toasts: [], modes: [], picks: [], opened: [], stored: [], prompts: [] };
+  const recorded: Recorded = { infos: [], toasts: [], modes: [], picks: [], opened: [], stored: [], prompts: [], autoNotices: [] };
   const choices = [...(answers.choices ?? [])];
   const texts = [...(answers.texts ?? [])];
   const backend = fakeBackend(backendOptions);
@@ -36,6 +37,7 @@ export const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions:
     exit: () => undefined,
     setMode: async (mode) => void recorded.modes.push(mode),
     setModel: async () => undefined,
+    showAutoNotice: (session) => void recorded.autoNotices.push(session),
     background: (_label, work) => work(new AbortController().signal),
     autoMode: { check: async () => ({ measurement: 'passed' }), status: async () => ({ measurement: 'not_measured' }) },
     shell: { run: async () => 0 },

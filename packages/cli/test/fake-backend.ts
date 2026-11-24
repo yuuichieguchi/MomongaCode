@@ -10,7 +10,7 @@ import { continuedSession, resolveSession } from '../src/run/resolve-session.ts'
 import type { FollowHandlers, StartRunOptions, TuiBackend, UserInputBackend } from '../src/tui/backend.ts';
 import type { ClipboardContent } from '../src/tui/screen/clipboard.ts';
 import type { ReasoningCapability, ReasoningEffort, UserShellRecord } from '@momonga/protocol';
-import { editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
+import { INHERITED_CLASSIFIER, editProjectMandate, writeProjectMcpServer, editSettings, loadUserSettings, projectMandateState, readSettingsSnapshot, settingsWriterPorts } from '@momonga/config';
 import type { CheckProposal } from '@momonga/runtime';
 import type { TrustItemsView } from '@momonga/protocol';
 import { hostPaths, momongaLayout, nodeFileSystem, systemTiming } from '@momonga/foundation';
@@ -134,6 +134,7 @@ export type FakeBackendOptions = {
   modelFailure?: Error;
   modelOfFailures?: Readonly<Record<string, Error>>;
   setModelFailure?: Error;
+  sessionFailure?: Error;
   modelsLockFailure?: Error;
   openSessionFailure?: Error;
   sessionModelFailures?: Readonly<Record<string, Error>>;
@@ -342,6 +343,26 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     const readHome = modelsHome ?? options.settingsPlace?.home;
     return readHome !== undefined && fs.existsSync(momongaLayout(readHome, process.platform, {}).settingsFile) ? listingOf(readHome).data : [];
   };
+  const configuredClassifier = (): string | undefined => {
+    const readHome = modelsHome ?? options.settingsPlace?.home;
+    if (readHome === undefined) return undefined;
+    const file = momongaLayout(readHome, process.platform, {}).settingsFile;
+    if (!fs.existsSync(file)) return undefined;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as { autoMode?: { classifier?: unknown } };
+    const value = parsed.autoMode?.classifier;
+    return typeof value === 'string' && value !== INHERITED_CLASSIFIER ? value : undefined;
+  };
+  const withCurrentClassifier = (view: SessionView): SessionView => {
+    if (view.permissionMode !== 'auto') {
+      const { autoClassifier: _dropped, ...rest } = view;
+      return rest;
+    }
+    const target = configuredClassifier() ?? view.model;
+    const classifierView = options.classifierViews?.[target];
+    if (classifierView === undefined) return view;
+    const { autoClassifier: _replaced, ...unviewed } = view;
+    return classifierView === null ? unviewed : { ...unviewed, autoClassifier: classifierView };
+  };
   const savedEffortOf = (id: string): { effort?: ReasoningEffort } => {
     const effort = writtenEntries().find((entry) => entry.id === id)?.effort;
     return effort === undefined ? {} : { effort };
@@ -529,7 +550,14 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     setMode: async (mode: PermissionMode) => {
       record(`mode:${mode}`);
-      session = { ...session, permissionMode: mode };
+      session = withCurrentClassifier({ ...session, permissionMode: mode });
+      return session;
+    },
+    session: async () => {
+      record('session');
+      await answerLater();
+      if (options.sessionFailure !== undefined) throw options.sessionFailure;
+      session = withCurrentClassifier(session);
       return session;
     },
     startRun: async (text, runOptions = {}) => {

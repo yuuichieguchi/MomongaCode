@@ -564,7 +564,7 @@ describe("the session's model row of the role lists (chooseRoleModel, shared by 
 
   it('on /auto-mode, writes inherit as the classifier when no classifier is configured', async (context) => {
     const harness = flowOf(context, threeModels(), [{ pick: SESSION_ROW }, YES]);
-    await runClassifierFlow(harness.context);
+    expect(await runClassifierFlow(harness.context)).toBe(true);
     expect(harness.picks()[0]?.rows).toEqual(ROWS);
     expect(harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title)).toEqual([CLASSIFIER_CONFIRM]);
     expect(writtenOf(harness).autoMode).toEqual({ classifier: 'inherit' });
@@ -573,9 +573,19 @@ describe("the session's model row of the role lists (chooseRoleModel, shared by 
 
   it('on /auto-mode, replaces a configured classifier with inherit', async (context) => {
     const harness = flowOf(context, withClassifier(), [{ pick: SESSION_ROW }, YES]);
-    await runClassifierFlow(harness.context);
+    expect(await runClassifierFlow(harness.context)).toBe(true);
     expect(writtenOf(harness).autoMode).toEqual({ classifier: 'inherit' });
     expect(harness.infos).toEqual([CLASSIFIER_SUMMARY]);
+  });
+
+  it('on /auto-mode, returns false when the person declines or closes the list with Esc', async (context) => {
+    const declined = flowOf(context, threeModels(), [{ pick: 'ollama/qwen3.8:27b' }, NO]);
+    expect(await runClassifierFlow(declined.context)).toBe(false);
+    expect(declined.infos).toEqual([]);
+
+    const escaped = flowOf(context, threeModels(), [{ leave: true }]);
+    expect(await runClassifierFlow(escaped.context)).toBe(false);
+    expect(escaped.infos).toEqual([]);
   });
 
   it('on the Auto-mode classifier row of Models for other roles, writes inherit as the classifier', async (context) => {

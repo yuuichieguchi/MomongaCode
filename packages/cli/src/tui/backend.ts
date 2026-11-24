@@ -87,6 +87,7 @@ export type TuiBackend = {
   resumeSession(id: string): Promise<SessionView>;
   continueSession(): Promise<SessionView>;
   sessions(): Promise<readonly SessionSummary[]>;
+  session(): Promise<SessionView>;
   runs(): Promise<readonly RunView[]>;
   toolResult(runId: string, callId: string, offset: number): Promise<ToolResultPage>;
   setMode(mode: PermissionMode): Promise<SessionView>;
@@ -303,6 +304,7 @@ export const createTuiBackend = (
     resumeSession: async (id) => adopt(await reopenedAsTyped(runtime(), ports.cwd, ports.platform, { kind: 'id', id }, options)),
     continueSession: async () => adopt(await reopenedAsTyped(runtime(), ports.cwd, ports.platform, { kind: 'newest' }, options)),
     sessions: () => listedSessions(runtime(), ports.cwd, session?.id, closing.signal),
+    session: async () => adopt(await runtime().getSession(current().id)),
     runs: () => conversationRuns(current().id),
     toolResult: (runId, callId, offset) => runtime().toolResult(runId, callId, offset),
     setMode: async (mode) => {

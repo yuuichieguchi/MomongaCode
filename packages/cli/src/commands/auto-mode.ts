@@ -3,7 +3,7 @@ import type { AutoFitKey, UserModels } from '@momonga/config';
 import { createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel, resolveLayoutLocks } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { autoModeNotice, canDoJob, displayMapOf, messageOf, modelJobRefusal, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import { autoModeNotice, canDoJob, displayMapOf, messageOf, modelJobRefusal, modelRefErrorOf, resolveTypedModelRef, sessionModelNotConfiguredText, typedModelText } from '@momonga/protocol';
 import type { AutoClassifierView, AutoModeSurface } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
 import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
@@ -42,12 +42,18 @@ export type AutoModeStatusOptions = { classifier?: string; sessionModel?: string
 
 export type AutoModeStatusOutcome = { measurement: AutoClassifierView['measurement'] };
 
-const typedModelOf = (models: UserModels, text: string): string => {
+const resolvedModelOf = (models: UserModels, text: string, onNotFound?: (text: string) => Error): string => {
   const { views } = models.resolved;
   const resolution = resolveTypedModelRef(typedModelText(text), views);
-  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views, 'cli');
-  return resolution.model.canon;
+  if (resolution.kind === 'found') return resolution.model.canon;
+  if (resolution.kind === 'not_found' && onNotFound !== undefined) throw onNotFound(text);
+  throw modelRefErrorOf(text, resolution, views, 'cli');
 };
+
+const typedModelOf = (models: UserModels, text: string): string => resolvedModelOf(models, text);
+
+const sessionModelOf = (models: UserModels, stored: string): string =>
+  resolvedModelOf(models, stored, (text) => new AutoModeCheckError(sessionModelNotConfiguredText(text)));
 
 const startModelOf = (models: UserModels): string => {
   if (models.resolved.start === undefined) throw new AutoModeCheckError(messageOf('noModelConnected', 'cli'));
@@ -151,7 +157,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
 };
 
 export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoModeStatusOptions): Promise<AutoModeStatusOutcome> => {
-  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier, () => (options.sessionModel === undefined ? startModelOf(ports.models) : typedModelOf(ports.models, options.sessionModel)));
+  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier, () => (options.sessionModel === undefined ? startModelOf(ports.models) : sessionModelOf(ports.models, options.sessionModel)));
   const key = await classifierKeyOf(ports.models, classifier, ports.platform, options.signal);
   const view = await readAutoFitView(autoFitDirectoryOf(ports.home), classifier, key);
   ports.write(`${autoModeNotice({ view, surface: options.surface, shownModel: displayOf(ports.models, view.model) })}\n`);

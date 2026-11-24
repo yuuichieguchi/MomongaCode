@@ -7,6 +7,7 @@ import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
 import type { AutoModeCheckOptions, AutoModeCheckOutcome, AutoModeStatusOptions, AutoModeStatusOutcome } from '../commands/auto-mode.ts';
 import type { DisplayPort } from './commands/theme.ts';
+import type { SessionView } from '../client/views.ts';
 import type { TuiBackend } from './backend.ts';
 import { keyReported, needsReport, sentAsEscape, shownKey } from './keys/table.ts';
 import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
@@ -57,6 +58,7 @@ export type SlashContext = ModeAvailability & {
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
   setModel(model: string, effort?: ReasoningEffort): Promise<void>;
+  showAutoNotice(session: SessionView): void;
   background<T>(label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   readonly autoMode: AutoModePort;
   readonly shell: ShellPort;
