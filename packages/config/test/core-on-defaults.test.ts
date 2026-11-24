@@ -7,6 +7,7 @@ const EVERY_FORMATTER = ['log', 'json', 'grep', 'identicalOutput'];
 const ON_CONTEXT = {
   adaptiveBudget: true,
   autoCompact: true,
+  compactAt: 70,
   cachePrefix: true,
   outputFormatters: EVERY_FORMATTER,
   loopGuidance: true,

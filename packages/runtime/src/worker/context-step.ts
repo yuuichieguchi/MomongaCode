@@ -176,6 +176,7 @@ const offeredInputOf = async (
     reasoningRoom: wrapUp === undefined ? stepReasoningRoom(ctx) : 0,
     calibration: ctx.calibration,
     model: ctx.model,
+    compactAt: ctx.compactAt,
     sources: {
       systemPrompt: ctx.systemPrompt,
       tools: admittedTools === undefined ? candidates : [...admittedTools.tools, ...joined],

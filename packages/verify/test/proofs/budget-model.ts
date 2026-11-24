@@ -1,6 +1,5 @@
 import { MIN_ITEM_CAP, MIN_ROOM_TOKENS } from '@momonga/context';
 import {
-  COMPACT_AT,
   EVICT_LOW_WATER,
   ITEM_CAP,
   ITEM_ROOM,
@@ -83,12 +82,27 @@ export type Marks = {
   readonly L: ProofInt;
 };
 
+export const shareWithinRoomGoal = (arith: ProofArith, ratio: Ratio): ProofBool => {
+  const { ctx } = arith;
+  const room = arith.int('room');
+  arith.given(room.ge(0), room.le(ctx.Int.val(MAX_WINDOW)));
+  const share = named(arith, 'share', floorOf(arith, ratio, room));
+  return ctx.And(share.ge(0), share.le(room));
+};
+
+const shareOf = (arith: ProofArith, room: ProofInt, compactAt: Ratio | undefined): ProofInt => {
+  if (compactAt !== undefined) return floorOf(arith, compactAt, room);
+  const share = arith.int('share');
+  arith.given(share.ge(0), share.le(room));
+  return share;
+};
+
 export const marksOf = (
   arith: ProofArith,
   window: Window,
   ceiling: ProofInt,
   b: ErrorBound,
-  options: { readonly capped: boolean },
+  options: { readonly capped: boolean; readonly compactAt?: Ratio },
 ): Marks => {
   const { ctx } = arith;
   const F = arith.int('F');
@@ -98,7 +112,7 @@ export const marksOf = (
   arith.given(room.ge(ctx.Int.val(MIN_ROOM_TOKENS)));
   arith.given(maxInputB.ge(0), maxInputB.le(ceiling), maxInputB.add(b.at(maxInputB)).le(window.I0));
   arith.given(ctx.Implies(F.add(b.at(F)).le(window.I0), F.le(maxInputB)));
-  const proactive = F.add(floorOf(arith, COMPACT_AT, room));
+  const proactive = F.add(shareOf(arith, room, options.compactAt));
   const H = named(arith, 'H', options.capped ? arith.min(proactive, maxInputB) : proactive);
   const L = named(arith, 'L', F.add(floorOf(arith, EVICT_LOW_WATER, H.sub(F))));
   return { F, room, maxInputB, H, L };

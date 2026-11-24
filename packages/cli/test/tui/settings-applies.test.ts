@@ -8,6 +8,7 @@ describe('the label after a write comes from the table of the readers (design-se
     expect(appliesLabelOf('memory.forgetAfterDays', SETTING_READ_POINTS)).toBe(APPLIES_NOW);
     expect(appliesLabelOf('network.httpsProxy', SETTING_READ_POINTS)).toBe(APPLIES_NOW);
     expect(appliesLabelOf('tui.theme', SETTING_READ_POINTS)).toBe(APPLIES_NOW);
+    expect(appliesLabelOf('context.compactAt', SETTING_READ_POINTS)).toBe(APPLIES_NOW);
     expect(appliesLabelOf('tui.mouse', SETTING_READ_POINTS)).toBe(APPLIES_NEXT_SESSION);
     expect(appliesLabelOf('daemon.startupStallMs', SETTING_READ_POINTS)).toBe(APPLIES_NEXT_DAEMON_START);
   });

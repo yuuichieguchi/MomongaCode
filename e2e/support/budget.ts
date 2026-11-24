@@ -6,7 +6,7 @@ import type { ContextOverflowError, TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
 import { COMPACT_AT, EVICT_LOW_WATER, ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, floorRatio, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, CountTokensResult, CreateResponseBody, FunctionCallItem, InputItem, RunEvent } from '@momonga/protocol';
+import type { Capabilities, CountTokensResult, Ratio, CreateResponseBody, FunctionCallItem, InputItem, RunEvent } from '@momonga/protocol';
 import { RUNTIME_DEFAULTS, buildSystemPrompt, createChildRuns, createGatewayClient, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -150,14 +150,14 @@ export const summaryRoute = (summary: string): FakeRoute => ({ match: isCompacti
 
 export const wireTokensOfBody = wireTokensOfRequest;
 
-export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing => {
+export const sizingFor = (capabilities: Capabilities, pinned: number, compactAt: Ratio = COMPACT_AT): Sizing => {
   const { W, R } = budgetFor(capabilities, 0, 0);
   const ceiling = inputCeilingFor(capabilities);
   const room = ceiling - pinned;
   const itemCap = itemCapFor(capabilities, room);
   const summaryCap = summaryTokenCapFor(capabilities, room);
   const summaryItem = summaryItemTokensFor(summaryCap);
-  const highMark = pinned + floorRatio(COMPACT_AT, ceiling - pinned);
+  const highMark = pinned + floorRatio(compactAt, ceiling - pinned);
   return {
     W,
     R,
@@ -260,7 +260,7 @@ export const overflowStepRange = async (pins: StackPins, base: number, steps: nu
   return range;
 };
 
-const compactsInStack = async (pins: StackPins, base: number, stepTokens: number, steps: number, protectedSteps: number, gain: number): Promise<boolean> => {
+const compactsInStack = async (pins: StackPins, base: number, stepTokens: number, steps: number, protectedSteps: number, gain: number, compactAt: Ratio): Promise<boolean> => {
   const meter = stackMeterOf(pins);
   const items: InputItem[] = [textItemOf(base)];
   const first = await meter.count({ input: items, tools: [] });
@@ -274,17 +274,17 @@ const compactsInStack = async (pins: StackPins, base: number, stepTokens: number
     meter.observe({ inputDigest: last.inputDigest, inputTokens: reportedTokensOf(base + step * stepTokens) });
   }
   const ceiling = tokenPolicyOf(pins.token).observedCapacity ? capacityFor(pins.capabilities, last.underAt) : inputCeilingFor(pins.capabilities);
-  const highMark = first.inputTokens + floorRatio(COMPACT_AT, ceiling - first.inputTokens);
+  const highMark = first.inputTokens + floorRatio(compactAt, ceiling - first.inputTokens);
   return last.inputTokens > highMark && regionEnd - first.inputTokens >= gain;
 };
 
-export const stepTokensToCompact = async (pins: StackPins, base: number, steps: number, protectedSteps: number, gain: number): Promise<number> => {
+export const stepTokensToCompact = async (pins: StackPins, base: number, steps: number, protectedSteps: number, gain: number, compactAt: Ratio = COMPACT_AT): Promise<number> => {
   let low = 1;
   let high = budgetFor(pins.capabilities, 0, 0).I;
-  if (!(await compactsInStack(pins, base, high, steps, protectedSteps, gain))) throw new Error(`no step size carries ${steps} steps over the high mark with a region worth the gain ${gain} (base ${base})`);
+  if (!(await compactsInStack(pins, base, high, steps, protectedSteps, gain, compactAt))) throw new Error(`no step size carries ${steps} steps over the high mark with a region worth the gain ${gain} (base ${base})`);
   while (low < high) {
     const middle = Math.floor((low + high) / 2);
-    if (await compactsInStack(pins, base, middle, steps, protectedSteps, gain)) high = middle;
+    if (await compactsInStack(pins, base, middle, steps, protectedSteps, gain, compactAt)) high = middle;
     else low = middle + 1;
   }
   return low;

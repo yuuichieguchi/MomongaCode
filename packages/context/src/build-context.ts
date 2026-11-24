@@ -1065,7 +1065,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   let total = await measureAssembled();
   const inputBudgetAtZero = budgetFor(capabilities, 0, input.reasoningRoom).I;
   const boundOfBuild = (tokens: number): number => counts.reduce((widest, counted) => Math.max(widest, counted.underAt(tokens)), 0);
-  const exactHighMark = (): number => floorTokens + floorRatio(COMPACT_AT, ceiling - floorTokens);
+  const exactHighMark = (): number => floorTokens + floorRatio(input.compactAt ?? COMPACT_AT, ceiling - floorTokens);
   const pinnedBoundError = async (maxInput: number | undefined, boundAtZero: number): Promise<PinnedBoundError> =>
     new PinnedBoundError({
       pinnedTokens,

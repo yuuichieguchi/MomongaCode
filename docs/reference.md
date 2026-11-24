@@ -919,6 +919,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `context` | object |  |  | user, project, local |
 | `context.adaptiveBudget` | boolean | `true` |  | user, project, local |
 | `context.autoCompact` | boolean | `true` |  | user, project, local |
+| `context.compactAt` | integer (at least 1, at most 100) | `70` | percent | user, project, local |
 | `context.cachePrefix` | boolean | `true` |  | user, project, local |
 | `context.outputFormatters` | array of `"log"` or `"json"` or `"grep"` or `"identicalOutput"` | `["log","json","grep","identicalOutput"]` |  | user, project, local |
 | `context.loopGuidance` | boolean | `true` |  | user, project, local |

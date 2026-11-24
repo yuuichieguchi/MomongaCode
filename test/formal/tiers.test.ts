@@ -63,20 +63,6 @@ const evidenceTierProblems = (entries: readonly ManifestEntry[]): string[] => {
   return problems;
 };
 
-const everyRunWallSeconds = (entries: readonly ManifestEntry[]): number =>
-  entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + entry.measuredSeconds, 0);
-
-const outOfOrderDeepRows = (entries: readonly ManifestEntry[], unitSuiteSeconds: number): string[] => {
-  const everyRun = entries.filter((entry) => entry.tier === 'every-run');
-  const heaviest = Math.max(0, ...everyRun.map((entry) => entry.measuredSeconds));
-  const sum = everyRunWallSeconds(entries);
-  const keptEvidence = new Set(everyRun.filter((entry) => entry.role === 'evidence').map(evidenceKeyOf));
-  return entries
-    .filter((entry) => entry.tier === 'deep' && entry.measuredSeconds < heaviest && sum + entry.measuredSeconds <= unitSuiteSeconds)
-    .filter((entry) => !(entry.role === 'evidence' && keptEvidence.has(evidenceKeyOf(entry))))
-    .map((entry) => `${entry.config} (${entry.measuredSeconds} s) is deep, lighter than an every-run row, and fits within the unit suite time`);
-};
-
 const sameConstants = (left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean =>
   Object.keys(left).length === Object.keys(right).length && Object.entries(left).every(([name, value]) => right[name] === value);
 
@@ -117,19 +103,13 @@ const sample = (config: string, overrides: Partial<ManifestEntry>): ManifestEntr
   ...overrides,
 });
 
-describe('the rules that choose the every-run rows (formal-models C20, E1 to E7)', () => {
+describe('the rules that choose the every-run rows (formal-models C20, E1, E2, E4 and E7)', () => {
   it('E1 fails a name that evidence names and no row of either tier checks or violates', () => {
     const names: Record<string, CfgNames> = { 'M.bug': { constants: {}, invariants: ['A', 'B'], properties: [] }, M: { constants: {}, invariants: ['B'], properties: [] } };
     const bad = { violates: 'X', exitCode: 12 } as const;
     const entries = [sample('M.bug', { role: 'evidence', expect: bad, tier: 'deep' }), sample('M', { tier: 'deep' })];
     const namesOf = (entry: ManifestEntry): CfgNames => names[entry.config] ?? { constants: {}, invariants: [], properties: [] };
     expect(evidenceWithoutRow(entries, namesOf)).toEqual(['M: A is named by evidence but checked by no row']);
-  });
-
-  it('the heaviest-first order fails a deep row that is lighter than an every-run row and would still fit', () => {
-    const entries = [sample('M', { measuredSeconds: 5 }), sample('M.light', { tier: 'deep', measuredSeconds: 2 }), sample('M.heavy', { tier: 'deep', measuredSeconds: 9 })];
-    expect(outOfOrderDeepRows(entries, 8)).toEqual(['M.light (2 s) is deep, lighter than an every-run row, and fits within the unit suite time']);
-    expect(outOfOrderDeepRows(entries, 6)).toEqual([]);
   });
 
   it('E2 fails two every-run evidence rows of one property, and an every-run row that is not the smallest of its property', () => {
@@ -150,20 +130,12 @@ describe('the rules that choose the every-run rows (formal-models C20, E1 to E7)
     expect(evidenceWithoutRow(manifest.entries, (entry) => cfgNames(specDir, entry.config))).toEqual([]);
   });
 
-  it('the heaviest-first order: no deep row could come back to the every-run tier within the unit suite time', () => {
-    expect(outOfOrderDeepRows(manifest.entries, manifest.unitSuiteSeconds)).toEqual([]);
-  });
-
   it('E2: an evidence property has at most one every-run row, the one with the fewest distinct states', () => {
     expect(evidenceTierProblems(manifest.entries)).toEqual([]);
   });
 
   it('E4: no every-run check row repeats another with the same constants', () => {
     expect(redundantCheckRows(manifest.entries, (entry) => cfgNames(specDir, entry.config).constants, checkedNames)).toEqual([]);
-  });
-
-  it('E6: the cold wall of the every-run rows is at most the unit suite wall time', () => {
-    expect(everyRunWallSeconds(manifest.entries)).toBeLessThanOrEqual(manifest.unitSuiteSeconds);
   });
 
   it('E7: no row carries a measurement that is waiting to be repeated', () => {

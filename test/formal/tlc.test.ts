@@ -42,7 +42,6 @@ const manifestConfigs = 'manifest' in loaded ? loaded.manifest.entries.map((entr
 
 const discoveryManifest = (configs: readonly string[], modules: readonly string[] = ['Tiny']): Manifest => ({
   format: MANIFEST_FORMAT,
-  unitSuiteSeconds: 100,
   startupCpuSeconds: 3,
   modules: modules.map((module) => ({ module, abstractions: ['the fixture leaves out time'], notProved: ['the fixture proves nothing'] })),
   entries: configs.map((config) => ({ ...holdsEntry, config })),

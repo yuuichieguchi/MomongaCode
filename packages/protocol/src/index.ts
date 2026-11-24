@@ -73,6 +73,8 @@ export type { HeaderRole } from './headers.ts';
 export {
   COMPACTION_MIN_GAIN,
   COMPACT_AT,
+  COMPACT_AT_PERCENT,
+  compactAtRatioOf,
   ESTIMATED_ERROR,
   EVICT_LOW_WATER,
   ITEM_CAP,

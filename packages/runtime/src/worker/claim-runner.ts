@@ -5,7 +5,7 @@ import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex, sleep } from '@momonga/foundation';
-import { DEFAULT_OUTPUT_STYLE, isOutputStyle, isReasoningEffort, REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
+import { compactAtRatioOf, DEFAULT_OUTPUT_STYLE, isOutputStyle, isReasoningEffort, REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
 import type { OutputStyle, ReasoningEffort, Capabilities, FunctionTool, Measuring } from '@momonga/protocol';
 import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
@@ -631,6 +631,7 @@ const driveClaim = async (
       keepCompanionsWithoutHost: keepCompanionsWithoutHost(),
       required: new Set(readerNamesOf(readersNow(), journal.state)),
     });
+  const contextSettings = await options.settings.context(session, control.signal);
   const ctx: ClaimContext = {
     options,
     claim,
@@ -683,7 +684,8 @@ const driveClaim = async (
       required: pins.verificationRequired === true,
     },
     verificationCommands: (await options.settings.verification(session, control.signal)).conditions,
-    autoCompact: (await options.settings.context(session, control.signal)).autoCompact,
+    autoCompact: contextSettings.autoCompact,
+    compactAt: compactAtRatioOf(contextSettings.compactAt),
     token,
     policyFingerprint: pins.policyVerdict?.fingerprint,
   };

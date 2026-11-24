@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
-import { loadSettings, loadUserSettings } from '@momonga/config';
-import { distrusting, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { defaultContextSettings, loadSettings, loadUserSettings, mergeContextSettings } from '@momonga/config';
+import { COMPACT_AT_PERCENT } from '@momonga/protocol';
+import { distrusting, localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const DEFAULT_MANIFESTS = ['package.json', 'pnpm-lock.yaml', 'Cargo.toml', 'pyproject.toml', 'go.mod', 'Package.swift', 'Makefile'];
 
-const TOKEN_ON = { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
+const TOKEN_ON = { compactAt: 70, cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
 
 const resolvedWith = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
@@ -51,6 +52,35 @@ describe('context.autoCompact', () => {
     writeJson(projectSettingsPath(tree), { context: { adaptiveBudget: true } });
     const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: false, ...TOKEN_ON });
+  });
+});
+
+describe('context.compactAt', () => {
+  it('defaults to 70, the default percent of the compaction mark', async () => {
+    expect((await resolvedWith({})).context.compactAt).toBe(70);
+    expect(defaultContextSettings().compactAt).toBe(COMPACT_AT_PERCENT.default);
+  });
+
+  it('lets a later layer win key by key in mergeContextSettings', () => {
+    const base = defaultContextSettings();
+    expect(mergeContextSettings(base, { compactAt: 40 })).toEqual({ ...base, compactAt: 40 });
+    expect(mergeContextSettings({ ...base, compactAt: 40 }, { autoCompact: false })).toEqual({ ...base, compactAt: 40, autoCompact: false });
+    expect(mergeContextSettings({ ...base, compactAt: 40 }, undefined)).toEqual({ ...base, compactAt: 40 });
+  });
+
+  it.each([1, 70, 100])('loads %i from a settings file', async (value) => {
+    expect((await resolvedWith({ context: { compactAt: value } })).context.compactAt).toBe(value);
+  });
+
+  it('takes the user, then the project, then the local layer', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { context: { compactAt: 50 } });
+    const load = async () => (await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings.context.compactAt;
+    expect(await load()).toBe(50);
+    writeJson(projectSettingsPath(tree), { context: { compactAt: 60 } });
+    expect(await load()).toBe(60);
+    writeJson(localSettingsPath(tree), { context: { compactAt: 80 } });
+    expect(await load()).toBe(80);
   });
 });
 
@@ -112,6 +142,11 @@ describe('context settings rejection', () => {
     [{ verification: { manifests: [''] } }, '/verification/manifests/0'],
     [{ context: { adaptiveBudget: 'no' } }, '/context/adaptiveBudget'],
     [{ context: { autoCompact: 'no' } }, '/context/autoCompact'],
+    [{ context: { compactAt: 0 } }, '/context/compactAt'],
+    [{ context: { compactAt: 101 } }, '/context/compactAt'],
+    [{ context: { compactAt: 70.5 } }, '/context/compactAt'],
+    [{ context: { compactAt: '70' } }, '/context/compactAt'],
+    [{ context: { compactAt: -1 } }, '/context/compactAt'],
   ])('rejects %j at its pointer', async (settings, pointer) => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), settings);

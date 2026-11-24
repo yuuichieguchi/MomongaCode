@@ -2,13 +2,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { parsePolicyOverlay } from '@momonga/eval';
+import { EvalError, parsePolicyOverlay, resolvePolicyOverlay } from '@momonga/eval';
 
 const POLICIES = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'policies');
 
 describe('a key the harness sets per case is refused in a policy overlay (DECISION-7)', () => {
   it('refuses context.autoCompact by name, because every case sets it from its own compaction field', () => {
     expect(() => parsePolicyOverlay(JSON.stringify({ context: { autoCompact: false } }), 'policy.json')).toThrow(/policy\.json: context\.autoCompact is set by the compaction field of each case/);
+  });
+
+  it('refuses context.compactAt, a key outside the token policy, and the resolved policy has no compactAt', () => {
+    expect(() => parsePolicyOverlay(JSON.stringify({ context: { compactAt: 50 } }), 'policy.json')).toThrow(EvalError);
+    expect(() => parsePolicyOverlay(JSON.stringify({ context: { compactAt: 50 } }), 'policy.json')).toThrow(/policy\.json/);
+    expect(resolvePolicyOverlay({}).context).not.toHaveProperty('compactAt');
   });
 
   it('accepts the other core keys', () => {

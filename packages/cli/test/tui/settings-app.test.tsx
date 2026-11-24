@@ -106,6 +106,26 @@ describe('/config, the settings screen', () => {
     started.app.unmount();
   });
 
+  it('shows where compaction starts in the Context section, refuses a value that is not a whole percent from 1 to 100 and stores a whole one', async () => {
+    const place = freshPlace();
+    const label = 'Start compaction at (% of the room above the fixed prefix)';
+    const started = await startAt(place);
+    await open(started);
+    expect(SETTING_ROWS['context.compactAt']).toMatchObject({ label, section: 'Context' });
+    await press(started, label, `${label}  70  default`);
+    const prompt = await press(started, KEYS.enter, 'a whole number from 1 to 100');
+    expect(prompt).toContain('enter to confirm · esc: go back');
+    for (const refused of ['0', '101', '70.5', 'seventy']) {
+      await press(started, `${CLEAR}${refused}`, `> ${refused}`);
+      await press(started, KEYS.enter, 'expected a whole number from 1 to 100');
+      expect(fs.existsSync(place.userFile), refused).toBe(false);
+    }
+    await press(started, `${CLEAR}50`, '> 50');
+    await press(started, KEYS.enter, `${label}  50  user  ${APPLIES_NOW}`);
+    expect(stored(place.userFile)).toEqual({ context: { compactAt: 50 } });
+    started.app.unmount();
+  });
+
   const WRITES = [
     { key: 'daemon.startupStallMs', filter: 'daemon process', edit: `${CLEAR}45000${KEYS.enter}`, value: '45000  user', applies: APPLIES_NEXT_DAEMON_START, stored: { daemon: { startupStallMs: 45000 } } },
     { key: 'tui.mouse', filter: 'Mouse', edit: '', value: 'off  user', applies: APPLIES_NEXT_SESSION, stored: { tui: { mouse: false } } },

@@ -10,6 +10,7 @@ const CHECK_COMMANDS = ['npm test'];
 export const TOKEN_SETTINGS_OFF: ResolvedContextSettings = {
   adaptiveBudget: false,
   autoCompact: true,
+  compactAt: defaultContextSettings().compactAt,
   cachePrefix: false,
   outputFormatters: [],
   loopGuidance: false,
