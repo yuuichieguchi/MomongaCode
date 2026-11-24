@@ -42,7 +42,7 @@ const UNAVAILABLE = { state: 'unavailable', status: 412, type: 'invalid_request'
 
 describe('the models listing of the gateway names every model by its canonical reference', () => {
   it('an entry holds id, provider, ownName, an optional defaultTag, billing, capabilities, its chain and the effort it starts with', () => {
-    expectTypeOf<keyof MomongaModelEntry>().toEqualTypeOf<'id' | 'object' | 'provider' | 'ownName' | 'defaultTag' | 'naming' | 'billing' | 'capabilities' | 'state' | 'chain' | 'effort'>();
+    expectTypeOf<keyof MomongaModelEntry>().toEqualTypeOf<'id' | 'object' | 'provider' | 'ownName' | 'defaultTag' | 'naming' | 'outputKind' | 'billing' | 'capabilities' | 'state' | 'chain' | 'effort'>();
     expectTypeOf<MomongaModelEntry['provider']>().toEqualTypeOf<string>();
     expectTypeOf<MomongaModelEntry['ownName']>().toEqualTypeOf<string>();
     expectTypeOf<MomongaModelEntry['defaultTag']>().toEqualTypeOf<string | undefined>();

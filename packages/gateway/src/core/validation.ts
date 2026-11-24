@@ -343,13 +343,42 @@ const validateCountMomonga = (value: unknown): void => {
 
 const CACHE_MARK_NAMES = ['stable', 'fixed', 'previousHistory', 'history'] as const;
 
+const requireChoices = (momonga: SchemaObject): void => {
+  const choices = momonga['choices'];
+  if (choices === undefined) return;
+  const at = ['momonga', 'choices'];
+  if (!isRecord(choices)) throwIssue({ segments: at, message: 'must be an object' });
+  const choicesObj = choices as SchemaObject;
+  requireKnownKeys(choicesObj, ['questions'], at);
+  const questions = choicesObj['questions'];
+  const qAt = [...at, 'questions'];
+  if (!isRecord(questions) || Object.keys(questions).length === 0) {
+    throwIssue({ segments: qAt, message: 'must be a non-empty object' });
+  }
+  for (const [name, question] of Object.entries(questions as SchemaObject)) {
+    const itemAt = [...qAt, name];
+    if (!isRecord(question)) throwIssue({ segments: itemAt, message: 'must be an object' });
+    const questionObj = question as SchemaObject;
+    requireKnownKeys(questionObj, ['type', 'instructions', 'criteria'], itemAt);
+    if (questionObj['type'] !== 'choice') throwIssue({ segments: [...itemAt, 'type'], message: 'must be "choice"' });
+    if (typeof questionObj['instructions'] !== 'string') throwIssue({ segments: [...itemAt, 'instructions'], message: 'must be a string' });
+    const criteria = questionObj['criteria'];
+    const cAt = [...itemAt, 'criteria'];
+    if (!isRecord(criteria) || Object.keys(criteria).length === 0) throwIssue({ segments: cAt, message: 'must be a non-empty object' });
+    for (const [choice, desc] of Object.entries(criteria as SchemaObject)) {
+      if (desc !== null && typeof desc !== 'string') throwIssue({ segments: [...cAt, choice], message: 'must be a string or null' });
+    }
+  }
+};
+
 const validateCreateMomonga = (value: unknown, inputLength: number, maxOutputTokens: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['cache', 'exact_model', 'max_cost_nano', 'max_input_tokens', 'fence'], ['momonga']);
+  requireKnownKeys(momonga, ['cache', 'exact_model', 'max_cost_nano', 'max_input_tokens', 'fence', 'choices'], ['momonga']);
   requireExactModelFlag(momonga);
   requireCostCeiling(momonga);
   requireFence(momonga);
+  requireChoices(momonga);
   const cache = momonga['cache'];
   if (cache === undefined) return;
   const at = ['momonga', 'cache'];

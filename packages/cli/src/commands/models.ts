@@ -1,5 +1,5 @@
 import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
-import { ConfigError, INHERITED_CLASSIFIER, ModelsEditRefused, resolvedBillingOf, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, modelNamingOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
+import { ConfigError, INHERITED_CLASSIFIER, ModelsEditRefused, resolvedBillingOf, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, isServerListable, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, modelNamingOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
@@ -193,8 +193,11 @@ export const offeredServers = (found: readonly LocalServerDetection[]): Detected
 
 export const notListedOf = async (shell: ModelsHost, resolved: ResolvedModels): Promise<ReadonlySet<string>> => {
   const configured = [...resolved.models.values()];
+  const listableProviders = new Set(resolved.connections.filter((connection) => isServerListable(connection.adapter)).map((connection) => connection.provider));
   const asked = await Promise.all(
-    [...addressesOf(resolved)].map(async ([provider, address]) => {
+    [...addressesOf(resolved)]
+      .filter(([provider]) => listableProviders.has(provider))
+      .map(async ([provider, address]) => {
       const answered = (await shell.detect({ candidates: [], typed: [address], signal: shell.interrupt })).filter(isLocalServer);
       if (answered.length === 0) return [];
       const listed = new Set(answered.flatMap((server) => server.models.map((model) => model.id)));

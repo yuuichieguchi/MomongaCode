@@ -120,6 +120,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.prompt_cache_key === undefined || body.prompt_cache_key === null ? {} : { promptCacheKey: body.prompt_cache_key }),
     ...(cacheMarks === undefined ? {} : { cacheMarks }),
     fence: body.momonga?.fence ?? fenceBoundary(resolved.forAdapter),
+    ...(body.momonga?.choices === undefined ? {} : { choices: body.momonga.choices }),
     ...(Object.keys(job.unknownFields).length === 0 ? {} : { unknownFields: job.unknownFields }),
   };
 };
@@ -612,6 +613,7 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
     toolChoice: { tools: job.body.tools, tool_choice: job.body.tool_choice },
     unknownFields: { keys: Object.keys(job.unknownFields), operation: 'create' },
     carry: { requestFor: (target) => adapterRequestFor(job, resolved, target, undefined, services.fenceBoundary), originFor: (target) => originOf(services, target) },
+    choices: job.body.momonga?.choices !== undefined,
   });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   const call: CallIdentity = job.idempotency === undefined ? { kind: 'unkeyed', nonce: uuidv7(services.clock) } : { kind: 'keyed', ...job.idempotency };

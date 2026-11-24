@@ -1,6 +1,6 @@
 import { agentReadiness, MODEL_SETTINGS_ROW, PLAN_LABEL_REFUSAL, messageOf, SIGN_IN_REQUIRED_CODE, isPlanLabel, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type { ReasoningEffort, DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountRef, PlanAccountView, PlanAccountsResponse, PlanModelsResponse, PlanProfileView, PlanSignInCompleteResponse, PlanSignInIdentity, TargetHealth } from '@momonga/protocol';
-import { displayMapOf } from '@momonga/protocol';
+import { displayMapOf, modelsForJob } from '@momonga/protocol';
 import { GatewayAnswerError, listingViewsOf } from '../client/gateway-client.ts';
 import { isLocalServer, offeredServers } from '../commands/models.ts';
 import { NO_SERVER_ANSWERED_TEXT } from '../models-texts.ts';
@@ -684,7 +684,8 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
         );
     });
     const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
-    const { rows, listed: listedRows } = modelListRows({ listing, current, health, found, plan: catalogChoices.map((choice) => choice.plan) });
+    const sessionListing = { ...listing, data: modelsForJob(listing.data, 'session') };
+    const { rows, listed: listedRows } = modelListRows({ listing: sessionListing, current, health, found, plan: catalogChoices.map((choice) => choice.plan) });
     const displays = displayMapOf(listingViewsOf(entries));
     const allRows = [...rows, { label: MODEL_SETTINGS_ROW }];
     const keys = [

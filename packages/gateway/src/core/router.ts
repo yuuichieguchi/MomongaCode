@@ -10,7 +10,10 @@ import {
   imageCapability,
   largestSummaryCapFor,
   isUnavailableCapabilities,
+  modelJobRefusal,
   modelRefErrorOf,
+  modelsForJob,
+  outputKindOf,
   resolveStoredModelRef,
   resolveTypedModelRef,
   sizingRatioFor,
@@ -19,6 +22,7 @@ import {
 } from '@momonga/protocol';
 import type {
   ModelNaming,
+  ModelOutputKind,
   ReasoningEffort,
   AdapterRequest,
   AdapterTarget,
@@ -73,6 +77,7 @@ export type TargetRuntime = {
   model: string;
   defaultTag: string | undefined;
   naming: ModelNaming;
+  outputKind: ModelOutputKind;
   answers: TargetAnswers;
   billing: TargetBilling;
   counter: string;
@@ -102,6 +107,7 @@ export type CandidateRequirements = {
   summaryCap?: number;
   unknownFields?: UnknownFieldsRequirement;
   carry?: CarryRequirement;
+  choices?: boolean;
 };
 
 export type Narrowed = { targets: TargetRuntime[]; refusals: Refusal[]; billing: BillingWalk; capabilitiesOf(target: TargetRuntime): Promise<Capabilities> };
@@ -215,6 +221,7 @@ const carriesInputKinds = (required: InputKindsRequirement | undefined): boolean
 export const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): ChainCapabilities => {
   const [first] = all;
   return {
+    ...(first.outputKind === undefined ? {} : { outputKind: first.outputKind }),
     contextWindow: Math.min(...all.map((entry) => entry.contextWindow)),
     maxOutputTokens: Math.min(...all.map((entry) => entry.maxOutputTokens)),
     toolCalling: mergedToolCalling(all),
@@ -248,6 +255,7 @@ export const createRouter = (options: RouterOptions): Router => {
     ownName: target.model,
     ...(target.defaultTag === undefined ? {} : { defaultTag: target.defaultTag }),
     naming: target.naming,
+    ...(target.outputKind === undefined || target.outputKind === 'text' ? {} : { outputKind: target.outputKind }),
   }));
   const displays = displayMapOf(views);
   const displayOf = (model: string): string => displays.get(model) ?? model;
@@ -266,6 +274,7 @@ export const createRouter = (options: RouterOptions): Router => {
       model: target.model,
       defaultTag: target.defaultTag,
       naming: target.naming,
+      outputKind: target.outputKind ?? 'text',
       answers: target.answers ?? 'model',
       billing: target.billing,
       counter: target.counter,
@@ -367,6 +376,9 @@ export const createRouter = (options: RouterOptions): Router => {
     const samples = sampling !== undefined && carriesSampling(sampling);
     const judge = (target: TargetRuntime, capabilities: Capabilities): Refusal | undefined => {
       if (isUnavailableCapabilities(capabilities)) throw new UnprobedTarget(unavailableError(capabilities.toolCalling));
+      if (outputKindOf(capabilities) === 'choice' && requirements.choices !== true) {
+        return { stage: REFUSAL_STAGES.carry, error: invalidRequest('unsupported_request', modelJobRefusal(target.display, 'session'), 'model') };
+      }
       if (requirements.tools === true) {
         const readiness = agentReadiness(capabilities);
         if (readiness.state === 'needs_probe') {
@@ -451,7 +463,16 @@ export const createRouter = (options: RouterOptions): Router => {
       return capabilities;
     };
     const billing = billingWalkOf(model);
-    const judging = requirements.tools === true || requirements.images === true || carriesInputKinds(requirements.inputKinds) || requirements.outputBound === true || samples || constrainsToolChoice(requirements.toolChoice?.tool_choice) || requirements.summaryCap !== undefined || (requirements.unknownFields?.keys.length ?? 0) > 0;
+    const judging =
+      requirements.tools === true ||
+      requirements.images === true ||
+      carriesInputKinds(requirements.inputKinds) ||
+      requirements.outputBound === true ||
+      samples ||
+      constrainsToolChoice(requirements.toolChoice?.tool_choice) ||
+      requirements.summaryCap !== undefined ||
+      (requirements.unknownFields?.keys.length ?? 0) > 0 ||
+      (requirements.choices !== true && all.some((target) => target.outputKind === 'choice'));
     if (!judging) return { targets: [...all], refusals: [], billing, capabilitiesOf: capabilitiesForAttempt };
     const resolved = await Promise.all(all.map((target) => resolve(target).catch((error: unknown) => (error instanceof CandidateDropped ? error : undefined))));
     const refusals: Refusal[] = [];
@@ -488,7 +509,7 @@ export const createRouter = (options: RouterOptions): Router => {
     return { targets: kept, refusals, billing, capabilitiesOf: capabilitiesForAttempt };
   };
 
-  const start = config.models.start ?? views[0]?.canon ?? null;
+  const start = config.models.start ?? modelsForJob(views, 'start')[0]?.canon ?? null;
   const roles = config.models.roles ?? {};
   const efforts = new Map(Object.entries(config.models.efforts ?? {}));
 

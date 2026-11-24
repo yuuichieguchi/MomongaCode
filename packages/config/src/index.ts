@@ -57,7 +57,7 @@ export type { OutputSettings, ResolvedOutputSettings } from './output-settings.t
 export { DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, SANDBOX_LAUNCHERS, SANDBOX_LAUNCHERS_LOOKED_FOR, SANDBOX_MECHANISM_OF_OS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
 export type { MechanismSandbox, SandboxLauncher } from './setting-defaults.ts';
 export { connectionAddressProblem, endpointKeyOf, probeRecordKeyOf, recordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
-export { ADAPTERS, isAdapterKind, isMeasuredBy, isProbeable, isProbedBy, measuringProbeIn, measuringProbeOf, probeRecordKeyIn, takesKey, takesKeyIn } from './adapters.ts';
+export { ADAPTERS, isAdapterKind, isMeasuredBy, isProbeable, isProbedBy, isServerListable, measuringProbeIn, measuringProbeOf, probeRecordKeyIn, takesKey, takesKeyIn } from './adapters.ts';
 export type { AdapterKind, AdapterTable, AdapterTraits, MeasuredBy, ProbeKind, Probeable, ProbedBy, WireFacts } from './adapters.ts';
 export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } from './probe-key.ts';
 export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
@@ -149,6 +149,9 @@ export type {
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,
   ResolvedPlanTarget,
+  ResolvedSystemOneTarget,
+  SystemOneTarget,
+  SystemOneTargetCapabilities,
   DeclaredImage,
   TargetCapabilities,
   ContextSettings,

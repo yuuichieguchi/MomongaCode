@@ -4,15 +4,18 @@ import {
   PROVIDER_NAME_PATTERN,
   SERVER_ADAPTER_LABELS,
   SERVER_KINDS,
+  canDoJob,
   canonOf,
   displayMapOf,
+  modelJobRefusal,
   modelRefErrorOf,
   resolveTypedModelRef,
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
+import { ADAPTERS, isAdapterKind } from './adapters.ts';
 import { modelNamingOf } from './model-naming.ts';
-import type { ModelView, ModelViews, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { ModelJob, ModelView, ModelViews, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { askerOf } from './asker.ts';
 import type { Asker } from './asker.ts';
 import { ConfigError } from './config-error.ts';
@@ -180,9 +183,11 @@ const tagOf = (connection: Json, kinds: ServerKinds): string | undefined => serv
 const writtenViewsOf = (connection: unknown, provider: string | undefined, kinds: ServerKinds): ModelView[] => {
   if (provider === undefined || !isRecord(connection)) return [];
   const defaultTag = tagOf(connection, kinds);
+  const adapter = typeof connection['adapter'] === 'string' ? connection['adapter'] : '';
+  const outputKind = isAdapterKind(adapter) ? ADAPTERS[adapter].outputKind : 'text';
   return writtenEntries(connection).map((entry) => {
     const ownName = withDefaultTag(String(isRecord(entry) ? entry['id'] : undefined), defaultTag);
-    return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }), naming: modelNamingOf(connection) };
+    return { canon: canonOf(provider, ownName), provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }), naming: modelNamingOf(connection), ...(outputKind === 'text' ? {} : { outputKind }) };
   });
 };
 
@@ -204,6 +209,13 @@ const placeOf = (state: State, canon: string): Place => state.places.get(canon) 
 
 const requireConfigured = (state: State, canon: string): string => {
   placeOf(state, canon);
+  return canon;
+};
+
+const requireForJob = (state: State, canon: string, job: ModelJob): string => {
+  requireConfigured(state, canon);
+  const view = state.views.find((candidate) => candidate.canon === canon);
+  if (view !== undefined && !canDoJob(view, job)) refuse('invalid_value', modelJobRefusal(displayIn(state, canon), job));
   return canon;
 };
 
@@ -363,12 +375,12 @@ const setStart = (document: Json, state: State, operation: Extract<ModelsOperati
     delete models['start'];
     return { summary: () => 'New sessions start with the first model in your settings.' };
   }
-  models['start'] = requireConfigured(state, model);
+  models['start'] = requireForJob(state, model, 'start');
   return { summary: (after) => `New sessions start with ${displayIn(after, model)}.` };
 };
 
 const setFallback = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setFallback' }>): Applied => {
-  const order = [...new Set(operation.models.map((model) => requireConfigured(state, model)))];
+  const order = [...new Set(operation.models.map((model) => requireForJob(state, model, 'fallback')))];
   const models = modelsIn(document);
   if (order.length === 0) {
     delete models['fallback'];
@@ -391,7 +403,7 @@ const billingChangesIn = (document: Json): Json[] => {
 
 const allowBillingChange = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'allowBillingChange' }>): Applied => {
   const { from, to, model } = operation;
-  if (model !== undefined) requireConfigured(state, model);
+  if (model !== undefined) requireForJob(state, model, 'billing');
   const scope = model === undefined ? '' : ` for ${displayIn(state, model)}`;
   const changes = billingChangesIn(document);
   if (changes.some(sameBillingChange(state, operation))) refuse('duplicate', `Requests may already fall from ${from} to ${to}${scope}; nothing changed.`);
@@ -430,7 +442,7 @@ const setRole = (document: Json, state: State, operation: Extract<ModelsOperatio
     }
     return { summary: () => `${JOB_LABELS[job]} now uses ${SESSION_MODEL_TEXT}.` };
   }
-  recordAt(modelsIn(document), 'roles')[job] = requireConfigured(state, model);
+  recordAt(modelsIn(document), 'roles')[job] = requireForJob(state, model, job);
   return { summary: (after) => `${JOB_LABELS[job]} now uses ${displayIn(after, model)}.` };
 };
 

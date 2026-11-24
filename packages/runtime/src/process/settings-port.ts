@@ -5,7 +5,7 @@ import { createBinaryHashCache, createHeldHostReadings, createHostExec, hostPath
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
-import { AUTO_CLASSIFIER_CODE } from '../worker/auto-classifier.ts';
+import { AUTO_CLASSIFIER_CODE, CLASSIFIER_CHOICE_QUESTIONS } from '../worker/auto-classifier.ts';
 import type { KernelLockMechanism, SandboxNetworkSetting } from '@momonga/foundation';
 
 const credentialRulesOf = ({ env, keep, valuePatterns }: ResolvedSettings['credentials']): CredentialRules => ({ env, keep, valuePatterns });
@@ -50,7 +50,7 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
   const autoFitKeyFor = async (resolved: ResolvedSettings, classifier: string, signal: AbortSignal): Promise<AutoFitKey | undefined> => {
     if (!resolved.models.chains.has(classifier)) return undefined;
     const probeKeys = await readClassifierProbeKeys(resolved.models, classifier, { ...classifierKeyPorts, signal });
-    const result = autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE, probeKeys);
+    const result = autoFitKeyOf(resolved.models, classifier, { ...AUTO_CLASSIFIER_CODE, choiceQuestions: CLASSIFIER_CHOICE_QUESTIONS }, probeKeys);
     return result.kind === 'known' ? result.key : undefined;
   };
 

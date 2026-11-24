@@ -1,6 +1,6 @@
 import { ChildRunError, INHERIT_MODEL, pinOf } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
-import { TERMINAL_STATUSES, acceptedReasoningEfforts, assistantTextOf, displayMapOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import { TERMINAL_STATUSES, acceptedReasoningEfforts, assistantTextOf, canDoJob, displayMapOf, modelJobRefusal, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { InputItem, ModelViews, ReasoningCapability, ReasoningEffort, RunState } from '@momonga/protocol';
 import type { Run, RuntimeStore } from '@momonga/store';
 import type { GatewayListing, ListedGatewayModel } from '../gateway-client.ts';
@@ -31,8 +31,11 @@ export const finalTextOf = (state: RunState): string => {
 
 const agentModelOf = (agentName: string, text: string, views: ModelViews): string => {
   const resolution = resolveTypedModelRef(typedModelText(text), views);
-  if (resolution.kind === 'found') return resolution.model.canon;
   const displays = displayMapOf(views);
+  if (resolution.kind === 'found') {
+    if (!canDoJob(resolution.model, 'subagent')) throw new ChildRunError(modelJobRefusal(displays.get(resolution.model.canon) ?? resolution.model.canon, 'subagent'));
+    return resolution.model.canon;
+  }
   const listOf = (listed: ModelViews): string => listed.map((view) => displays.get(view.canon) ?? view.canon).join(', ');
   if (resolution.kind === 'ambiguous') {
     throw new ChildRunError(`Subagent ${agentName} asks for the model "${text}", which is ambiguous: ${listOf(resolution.choices)}. Write one of them in the agent definition.`);

@@ -316,6 +316,8 @@ const listedModelOf = (entry: unknown): ListedGatewayModel => {
   }
   const effort = entry['effort'];
   if (effort !== undefined && !isReasoningEffort(effort)) throw invalidResponse('the model list holds an entry with a malformed effort');
+  const rawKind = entry['outputKind'];
+  const outputKind = rawKind === 'choice' ? 'choice' : undefined;
   return {
     id: entry['id'],
     canon: entry['id'],
@@ -323,6 +325,7 @@ const listedModelOf = (entry: unknown): ListedGatewayModel => {
     ownName: entry['ownName'],
     ...(defaultTag === undefined ? {} : { defaultTag }),
     naming: naming as ModelNaming,
+    ...(outputKind === undefined ? {} : { outputKind }),
     capabilities: entry['capabilities'],
     chain,
     ...(effort === undefined ? {} : { effort }),
@@ -341,7 +344,14 @@ const listedRolesOf = (value: unknown): MomongaModelRoles => {
   return roles;
 };
 
-const viewOf = ({ canon, provider, ownName, defaultTag, naming }: ModelView): ModelView => ({ canon, provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }), naming });
+const viewOf = ({ canon, provider, ownName, defaultTag, naming, outputKind }: ModelView): ModelView => ({
+  canon,
+  provider,
+  ownName,
+  ...(defaultTag === undefined ? {} : { defaultTag }),
+  naming,
+  ...(outputKind === undefined ? {} : { outputKind }),
+});
 
 export const gatewayListingOf = (parsed: unknown): GatewayListing => {
   const data = isRecord(parsed) ? parsed['data'] : undefined;

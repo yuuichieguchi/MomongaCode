@@ -102,7 +102,7 @@ const memberOf = (model: ResolvedModel, index: number): ChainMemberEntry => ({
   counter: String(index + 1).repeat(64),
   billing: model.billing,
   adapter: model.adapter,
-  answers: model.answers ?? 'model',
+  answers: 'answers' in model && model.answers !== undefined ? model.answers : 'model',
   upstream: model.ownName,
   ...('plan' in model ? { plan: model.plan } : {}),
   capabilities: capabilitiesOf(model),

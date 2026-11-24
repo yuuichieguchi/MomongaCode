@@ -1,7 +1,7 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import { INHERITED_CLASSIFIER } from '@momonga/config';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
-import { displayMapOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import { canDoJob, displayMapOf, modelJobRefusal, modelsForJob, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { ModelViews } from '@momonga/protocol';
 
 export const MODEL_CONFIG_ID = 'model';
@@ -18,7 +18,7 @@ export const modelOptionOf = (views: ModelViews, current: string): SessionConfig
   category: 'model',
   type: 'select',
   currentValue: current,
-  options: modelChoicesOf(views),
+  options: modelChoicesOf(modelsForJob(views, 'session')),
 });
 
 const modelChoicesOf = (views: ModelViews): { value: string; name: string }[] => {
@@ -59,7 +59,11 @@ export const selectableModelOf = (views: ModelViews, request: { configId: string
   }
   const resolution = typeof request.value === 'string' ? resolveTypedModelRef(typedModelText(request.value), views) : undefined;
   if (resolution?.kind !== 'found') {
-    throw RequestError.invalidParams({ configId: request.configId, value: request.value }, `The model "${String(request.value)}" is not one of the configured models: ${displaysOf(views).join(', ')}.`);
+    throw RequestError.invalidParams({ configId: request.configId, value: request.value }, `The model "${String(request.value)}" is not one of the configured models: ${displaysOf(modelsForJob(views, 'session')).join(', ')}.`);
+  }
+  if (!canDoJob(resolution.model, 'session')) {
+    const display = displayMapOf(views).get(resolution.model.canon) ?? resolution.model.canon;
+    throw RequestError.invalidParams({ configId: request.configId, value: request.value }, modelJobRefusal(display, 'session'));
   }
   return resolution.model.canon;
 };

@@ -3,7 +3,7 @@ import type { AutoFitKey, UserModels } from '@momonga/config';
 import { createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel, resolveLayoutLocks } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { autoModeNotice, displayMapOf, messageOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import { autoModeNotice, canDoJob, displayMapOf, messageOf, modelJobRefusal, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { AutoClassifierView, AutoModeSurface } from '@momonga/protocol';
 import { withinCommandLimit } from '../command-limit.ts';
 import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
@@ -59,7 +59,13 @@ const classifierOf = (models: UserModels, configured: string | undefined, named:
   return configured ?? sessionModel();
 };
 
-const agentOf = (models: UserModels, named: string | undefined): string => (named === undefined ? startModelOf(models) : typedModelOf(models, named));
+const agentOf = (models: UserModels, named: string | undefined): string => {
+  if (named === undefined) return startModelOf(models);
+  const canon = typedModelOf(models, named);
+  const view = models.resolved.views.find((candidate) => candidate.canon === canon);
+  if (view !== undefined && !canDoJob(view, 'session')) throw new AutoModeCheckError(modelJobRefusal(displayOf(models, canon), 'session'));
+  return canon;
+};
 
 const displayOf = (models: UserModels, canon: string): string => displayMapOf(models.resolved.views).get(canon) ?? canon;
 
@@ -70,7 +76,10 @@ const classifierKeyOf = async (models: UserModels, classifier: string, platform:
   return result.key;
 };
 
-const classifierCodeOf = async () => (await import('@momonga/runtime')).AUTO_CLASSIFIER_CODE;
+const classifierCodeOf = async () => {
+  const { AUTO_CLASSIFIER_CODE, CLASSIFIER_CHOICE_QUESTIONS } = await import('@momonga/runtime');
+  return { ...AUTO_CLASSIFIER_CODE, choiceQuestions: CLASSIFIER_CHOICE_QUESTIONS };
+};
 
 const progressOf = (dataset: GoldenDataset, write: (text: string) => void): ((caseId: string, runIndex: number) => void) => {
   let done = 0;

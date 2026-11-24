@@ -130,13 +130,17 @@ const SERVING_PROPERTIES = { maxConcurrency: POSITIVE_INTEGER, admissionTimeoutM
 
 const IDEMPOTENCY_KEY_HEADER_SCHEMA = { type: 'string', pattern: IDEMPOTENCY_KEY_HEADER_PATTERN } as const;
 
-const CONNECTION_COMMON_PROPERTIES = { provider: PROVIDER_SCHEMA, answers: ANSWERS_SCHEMA, billing: BILLING_SCHEMA, idempotencyKeyHeader: IDEMPOTENCY_KEY_HEADER_SCHEMA, ...SERVING_PROPERTIES } as const;
+const BASE_CONNECTION_PROPERTIES = { provider: PROVIDER_SCHEMA, billing: BILLING_SCHEMA, ...SERVING_PROPERTIES } as const;
 
-const entriesOf = (properties: object, required: readonly string[]) =>
+const CONNECTION_COMMON_PROPERTIES = { ...BASE_CONNECTION_PROPERTIES, answers: ANSWERS_SCHEMA, idempotencyKeyHeader: IDEMPOTENCY_KEY_HEADER_SCHEMA } as const;
+
+const baseEntriesOf = (properties: object, required: readonly string[]) =>
   ({
     type: 'array',
-    items: { type: 'object', properties: { id: MODEL_ID_SCHEMA, ...properties, ...SERVING_PROPERTIES, effort: { type: 'string', enum: [...REASONING_EFFORTS] } }, required: ['id', ...required], additionalProperties: false },
+    items: { type: 'object', properties: { id: MODEL_ID_SCHEMA, ...properties, ...SERVING_PROPERTIES }, required: ['id', ...required], additionalProperties: false },
   }) as const;
+
+const entriesOf = (properties: object, required: readonly string[]) => baseEntriesOf({ ...properties, effort: { type: 'string', enum: [...REASONING_EFFORTS] } }, required);
 
 const MANAGED_CONNECTION_SCHEMA = {
   type: 'object',
@@ -422,9 +426,40 @@ const OLLAMA_CONNECTION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const CHOICE_CAPABILITIES_SCHEMA = {
+  type: 'object',
+  properties: {
+    contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT },
+  },
+  required: ['contextWindow'],
+  additionalProperties: false,
+} as const;
+
+const SYSTEM_ONE_CONNECTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    adapter: { const: 'system-one' },
+    ...BASE_CONNECTION_PROPERTIES,
+    baseUrl: { type: 'string', minLength: 1 },
+    ...API_KEY_PROPERTIES,
+    models: baseEntriesOf({ capabilities: CHOICE_CAPABILITIES_SCHEMA }, ['capabilities']),
+  },
+  required: ['adapter', 'baseUrl'],
+  ...AT_MOST_ONE_API_KEY,
+  additionalProperties: false,
+} as const;
+
 const MODEL_CONNECTION_SCHEMA = {
   type: 'object',
-  oneOf: [MANAGED_CONNECTION_SCHEMA, CHAT_COMPLETIONS_CONNECTION_SCHEMA, OPEN_RESPONSES_CONNECTION_SCHEMA, PLAN_OPEN_RESPONSES_CONNECTION_SCHEMA, ANTHROPIC_CONNECTION_SCHEMA, OLLAMA_CONNECTION_SCHEMA],
+  oneOf: [
+    MANAGED_CONNECTION_SCHEMA,
+    CHAT_COMPLETIONS_CONNECTION_SCHEMA,
+    OPEN_RESPONSES_CONNECTION_SCHEMA,
+    PLAN_OPEN_RESPONSES_CONNECTION_SCHEMA,
+    ANTHROPIC_CONNECTION_SCHEMA,
+    OLLAMA_CONNECTION_SCHEMA,
+    SYSTEM_ONE_CONNECTION_SCHEMA,
+  ],
 } as const;
 
 const MODEL_REFERENCE_SCHEMA = { type: 'string', minLength: 1 } as const;

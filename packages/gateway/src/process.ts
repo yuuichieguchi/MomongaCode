@@ -8,6 +8,7 @@ import {
   derivedInputsOf,
   diskKeptRecords,
   isMeasuredBy,
+  isServerListable,
   keptSettingsDirectory,
   probeRecordKeyOf,
   registeredIds,
@@ -131,6 +132,7 @@ import type { SpawnCliProcess } from './adapters/cli-subprocess/adapter.ts';
 import type { ExternalCliStatusExec } from './adapters/cli-subprocess/status.ts';
 import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
+import { createSystemOneAdapter } from './adapters/system-one/adapter.ts';
 import { keyAuthSource, unauthenticatedSource } from './adapters/shared/auth.ts';
 import type { AdapterAuth } from './adapters/shared/auth.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from './plan/session.ts';
@@ -749,6 +751,7 @@ const declaredWindowErrorOf = (exceeded: DeclaredWindowExceeded, display: string
   new DeclaredWindowAboveReportedError(display, exceeded.declared, exceeded.reported, exceeded.address);
 
 const declaredWindowExceededOf = async (target: RemoteTarget, network: OutboundNetwork, timers: GatewayTimers, signal: AbortSignal): Promise<DeclaredWindowExceeded | undefined> => {
+  if (!isServerListable(target.adapter)) return undefined;
   const endpoint = upstreamEndpointOf(target);
   const declared = target.capabilities?.contextWindow;
   if (endpoint.kind !== 'tcp' || declared === undefined || isMeteredTarget(target)) return undefined;
@@ -935,8 +938,9 @@ export const gatewayConfigOf = (resolved: Pick<ResolvedModels, 'models' | 'chain
           model: target.model,
           ...(target.defaultTag === undefined ? {} : { defaultTag: target.defaultTag }),
           naming: target.naming,
-          ...(target.answers === undefined ? {} : { answers: target.answers }),
-          ...(target.idempotencyKeyHeader === undefined ? {} : { idempotencyKeyHeader: target.idempotencyKeyHeader }),
+          outputKind: target.outputKind,
+          ...('answers' in target && target.answers !== undefined ? { answers: target.answers } : {}),
+          ...('idempotencyKeyHeader' in target && target.idempotencyKeyHeader !== undefined ? { idempotencyKeyHeader: target.idempotencyKeyHeader } : {}),
           billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,
@@ -1442,6 +1446,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           return unmanagedPart(
             keys.part,
             createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, authSource: authSourceOf(target, readKey) }),
+            counter,
+          );
+        case 'system-one':
+          return unmanagedPart(
+            keys.part,
+            createSystemOneAdapter({ ...common, authSource: authSourceOf(target, readKey) }),
             counter,
           );
       }

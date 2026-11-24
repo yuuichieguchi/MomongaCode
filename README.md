@@ -341,13 +341,13 @@ They also cannot set `tools.ripgrep`, `tui.screen`, `tui.mouse`, or `tui.copyOnS
 
 **Naming models.** Every model uses the exact name its server reports. Its full name is `server/own-name` (for example, `ollama/devstral-small-2:latest`). If the model name is unique across your configured servers, you can pass just the short name (`--model devstral-small-2`); if two servers expose the same name, use the full name.
 
-**Connections.** Each server or account is an entry in `models.connections` specifying an `adapter` (`ollama`, `chat-completions`, `open-responses`, `anthropic`, or `managed`), its address, and its `models` list (each with an `id` and `capabilities`). The server prefix of the full name comes from `provider`; if omitted, it defaults to `ollama` or `anthropic` for those adapters, the account name for subscriptions, the server program for `managed` connections, or a name derived from the address (such as `srv-127.0.0.1-1234`).
+**Connections.** Each server or account is an entry in `models.connections` specifying an `adapter` (`ollama`, `chat-completions`, `open-responses`, `anthropic`, `managed`, or `system-one`), its address, and its `models` list (each with an `id` and `capabilities`). `system-one` connections serve choice-only judging models (such as TypeSafe Jev on OpenRouter) for `autoMode.classifier` and `memory.autoReviewModel`; they require `baseUrl` and `capabilities.contextWindow` and cannot be used as session, fallback, or other role models. The server prefix of the full name comes from `provider`; if omitted, it defaults to `ollama` or `anthropic` for those adapters, the account name for subscriptions, the server program for `managed` connections, or a name derived from the address (such as `srv-127.0.0.1-1234`).
 
 **Credentials.** Keys are always referenced, never stored directly in `settings.json`:
 
 - `apiKeyEnv` — name of an environment variable holding the key.
 - `apiKeySecret` — name of an entry in the OS secret store created with `momonga secret set <name>`.
-- `anthropic` connections require exactly one of the two; `chat-completions` and `open-responses` accept at most one; `ollama` and `managed` take none.
+- `anthropic` connections require exactly one of the two; `chat-completions`, `open-responses`, and `system-one` accept at most one; `ollama` and `managed` take none.
 
 Example configuration:
 

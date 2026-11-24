@@ -2,6 +2,7 @@ import type { AdapterSampling, AllowedToolsForm, Capabilities, HealthResult, Rea
 import type { CountTokensRequest, CountTokensResult, UsageSource } from './gateway-api.ts';
 import type { PlanAccountRef } from './plan-account.ts';
 import type { BreakerVerdict, CredentialEffect, ErrorFallback } from './plan-api.ts';
+import type { RequestChoices } from './model-jobs.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
 export const ADAPTER_NEUTRAL_ERROR_CODES = [
@@ -39,6 +40,7 @@ export type AdapterRequest = {
   promptCacheKey?: string;
   cacheMarks?: PromptCacheCounts;
   fence?: string;
+  choices?: RequestChoices;
   unknownFields?: Record<string, unknown>;
 };
 

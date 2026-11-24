@@ -1,4 +1,5 @@
 import type { SchemaNarrowing } from './dialect.ts';
+import type { RequestChoices } from './model-jobs.ts';
 import type { FallbackCause } from './fallback-cause.ts';
 import type { PlanAccountRef } from './plan-account.ts';
 import type { MeasuringWire } from './measuring.ts';
@@ -315,7 +316,7 @@ export type CreateResponseBody = {
   safety_identifier?: string | null;
   service_tier?: string | null;
   background?: boolean;
-  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number; fence?: string };
+  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number; fence?: string; choices?: RequestChoices };
 };
 
 type ResponseEvent<T extends string> = { type: T; sequence_number: number; response: ResponseResource };

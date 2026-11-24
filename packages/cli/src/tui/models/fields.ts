@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { SETTINGS_SCHEMA, fieldLabel, fieldValueText } from '@momonga/config';
+import { ADAPTERS as ADAPTER_TRAITS, SETTINGS_SCHEMA, fieldLabel, fieldValueText, isAdapterKind } from '@momonga/config';
 import type { ModelsOperation } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import { connectionsOf, displayIn, nameInputOf } from '../../commands/models.ts';
@@ -96,7 +96,11 @@ export const serverFieldRows = (connection: Readonly<Record<string, unknown>>): 
   const addressed = properties['baseUrl'] !== undefined;
   const offered = Object.keys(properties).flatMap((key) => {
     if (key === 'models' || key === 'provider' || key === 'apiKeySecret') return [];
-    if (key === 'adapter') return addressed && connection['plan'] === undefined ? [key] : [];
+    if (key === 'adapter') {
+      const adapter = typeof connection['adapter'] === 'string' ? connection['adapter'] : '';
+      const isText = !isAdapterKind(adapter) || ADAPTER_TRAITS[adapter].outputKind === 'text';
+      return addressed && connection['plan'] === undefined && isText ? [key] : [];
+    }
     if (key === 'plan') return ['plan.account'];
     if (key === 'baseUrl' || key === 'socketPath' || key === 'apiKeyEnv') return connection['plan'] === undefined ? [key] : [];
     return [key];

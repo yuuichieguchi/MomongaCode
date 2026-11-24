@@ -24,6 +24,7 @@ describe('protocol capability types', () => {
   it('defines Capabilities', () => {
     expectTypeOf<Capabilities>().toEqualTypeOf<
       {
+        outputKind?: 'text' | 'choice';
         promptCache?: { kind: 'breakpoints'; maxBreakpoints: number } | { kind: 'key' } | { kind: 'automatic' } | { kind: 'none' };
         contextWindow: number;
         maxOutputTokens: number;

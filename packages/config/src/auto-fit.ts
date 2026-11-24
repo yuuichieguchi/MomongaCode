@@ -36,7 +36,7 @@ export type AutoFitMeasurement = 'passed' | 'did_not_pass' | 'not_measured';
 
 export type AutoFitFailedBound = 'caseMinimum' | 'falseAllow' | 'falseBlock' | 'unobserved';
 
-export type ClassifierCode = { instructions: string; verdictSchema: unknown };
+export type ClassifierCode = { instructions: string; verdictSchema: unknown; choiceQuestions?: unknown };
 
 export const failedBoundOf = (record: AutoFitRecord): AutoFitFailedBound | undefined => {
   if (record.falseAllow.high > AUTO_GATE_BOUNDS.falseAllowHigh) return 'falseAllow';
@@ -129,7 +129,10 @@ export const classifierChainIdentityOf = (models: ResolvedModels, classifier: st
   return { kind: 'known', identity: identities.join(' > ') };
 };
 
-export const classifierCodeDigestOf = (code: ClassifierCode): string => sha256Hex(canonicalJson({ instructions: code.instructions, verdictSchema: code.verdictSchema }));
+export const classifierCodeDigestOf = (code: ClassifierCode, outputKind: 'text' | 'choice' = 'text'): string =>
+  outputKind === 'choice' && code.choiceQuestions !== undefined
+    ? sha256Hex(canonicalJson({ choiceQuestions: code.choiceQuestions }))
+    : sha256Hex(canonicalJson({ instructions: code.instructions, verdictSchema: code.verdictSchema }));
 
 export const autoModeDatasetDigestOf = (dataset: unknown): string => sha256Hex(canonicalJson(dataset));
 
@@ -145,7 +148,8 @@ export type AutoFitKeyResult = { kind: 'known'; key: AutoFitKey } | Extract<Clas
 export const autoFitKeyOf = (models: ResolvedModels, classifier: string, code: ClassifierCode, probeKeys: ClassifierProbeKeys): AutoFitKeyResult => {
   const identity = classifierChainIdentityOf(models, classifier, probeKeys);
   if (identity.kind === 'unknown') return identity;
-  return { kind: 'known', key: { classifier: identity.identity, codeDigest: classifierCodeDigestOf(code), datasetDigest: autoModeDatasetDigest() } };
+  const outputKind = models.models.get(classifier)?.outputKind ?? 'text';
+  return { kind: 'known', key: { classifier: identity.identity, codeDigest: classifierCodeDigestOf(code, outputKind), datasetDigest: autoModeDatasetDigest() } };
 };
 
 export const autoFitDirectoryOf = (home: string): string => path.join(layoutOf(home).state, 'auto-fit');
