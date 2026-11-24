@@ -1,7 +1,7 @@
 import { GENERATION_RETIRED_CODE, HOST_READ_BOUND_MS, JsonDepthError, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver, UdsClient } from '@momonga/foundation';
 import { checkTraceContent } from './contract.ts';
-import { MODEL_NAMINGS, isReasoningEffort, JSON_MODES, MODEL_ENTRY_STATES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
+import { MODEL_NAMINGS, MODEL_OUTPUT_KINDS, isReasoningEffort, JSON_MODES, MODEL_ENTRY_STATES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf, INVALID_GRANT_REASON, PLAN_DISABLED_STATE, RETRY_OUTCOME, SIGNED_IN_OUTCOME, IDENTITY_UNCONFIRMED_OUTCOME } from '@momonga/protocol';
 import type {
   TraceContentPage,
   Capabilities,
@@ -162,6 +162,7 @@ const ENTRY_FIELDS: readonly (readonly [string, (value: unknown) => boolean])[] 
   ['ownName', isString],
   ['defaultTag', (value) => isOptional(value, isString)],
   ['naming', (value) => oneOf(value, MODEL_NAMINGS)],
+  ['outputKind', (value) => isOptional(value, (kind) => oneOf(kind, MODEL_OUTPUT_KINDS))],
   ['billing', isBilling],
   ['capabilities', isEntryCapabilities],
   ['state', (value) => oneOf(value, MODEL_ENTRY_STATES)],
@@ -205,7 +206,14 @@ const isModelListFrame = (value: unknown): value is Omit<MomongaModelList, 'data
   isRecord(value) && value['object'] === 'list' && Array.isArray(value['data']) && (value['start'] === null || isString(value['start'])) && isModelRoles(value['roles']);
 
 export const listingViewsOf = (entries: readonly MomongaModelEntry[]): ModelViews =>
-  entries.map((entry) => ({ canon: entry.id, provider: entry.provider, ownName: entry.ownName, ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }), naming: entry.naming }));
+  entries.map((entry) => ({
+    canon: entry.id,
+    provider: entry.provider,
+    ownName: entry.ownName,
+    ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }),
+    naming: entry.naming,
+    ...(entry.outputKind === undefined ? {} : { outputKind: entry.outputKind }),
+  }));
 
 const isTargetHealth = (value: unknown): value is TargetHealth =>
   isRecord(value) &&

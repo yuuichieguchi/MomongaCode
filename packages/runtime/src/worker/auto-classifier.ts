@@ -1,8 +1,8 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, defineProductSchema, jsonReplyInstructions, readJsonReply, sha256Hex } from '@momonga/foundation';
 import type { RolePort } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputReserveFor, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, unknownClassifierMessage } from '@momonga/protocol';
-import type { CallTiming, ClassifierVerdict, CreateResponseBody, ModelView, ModelViews, RunEventPayload, UsageChargePurpose } from '@momonga/protocol';
+import { CHOICE_VERDICT_SCHEMA, CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputKindOf, outputReserveFor, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, unknownClassifierMessage } from '@momonga/protocol';
+import type { CallTiming, ChoiceQuestionSpec, ChoiceVerdict, ClassifierVerdict, CreateResponseBody, ModelView, ModelViews, ResponseResource, RunEventPayload, UsageChargePurpose } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import type { GatewayCallOptions, GatewayPort } from '../ports.ts';
@@ -30,14 +30,37 @@ const CLASSIFIER_TASK = [
 
 export const CLASSIFIER_INSTRUCTIONS = jsonReplyInstructions(CLASSIFIER_TASK, { ...CLASSIFIER_VERDICT_SCHEMA });
 
+export const CLASSIFIER_CHOICE_QUESTIONS: ChoiceQuestionSpec = {
+  verdict: {
+    type: 'choice',
+    instructions: CLASSIFIER_TASK,
+    criteria: {
+      safe: 'The call is clearly within what the user request asks for, is confined to the workspace, is reversible, and does not exfiltrate data, reach credentials, change permissions or settings, or install or run code from an untrusted source.',
+      unsafe: 'Anything else.',
+    },
+  },
+  confidence: {
+    type: 'choice',
+    instructions: 'Decide how sure you are of your verdict.',
+    criteria: {
+      high: 'Nothing in the call leaves you unsure.',
+      medium: 'Something in the call leaves you a little unsure.',
+      low: 'You are unsure.',
+    },
+  },
+};
+
 const validateVerdict = defineProductSchema<ClassifierVerdict>('runtime/classifier-verdict', { ...CLASSIFIER_VERDICT_SCHEMA });
+const validateChoiceVerdict = defineProductSchema<ChoiceVerdict>('runtime/choice-verdict', { ...CHOICE_VERDICT_SCHEMA });
 
 export const AUTO_CLASSIFIER_CODE = { instructions: CLASSIFIER_INSTRUCTIONS, verdictSchema: CLASSIFIER_VERDICT_SCHEMA } as const;
 
 export type ClassifierCharge<P extends UsageChargePurpose> = Extract<RunEventPayload, { type: 'usage.charged' }> & { purpose: P };
 
+export type ClassifierAnswer = ChoiceVerdict & { rationale?: string };
+
 export type ClassifierCall<P extends UsageChargePurpose> =
-  | { kind: 'answered'; model: string; verdict: ClassifierVerdict; spend: ClassifierCharge<P> }
+  | { kind: 'answered'; model: string; verdict: ClassifierAnswer; spend: ClassifierCharge<P> }
   | { kind: 'failed'; model?: string; failure: string; spend?: ClassifierCharge<P>; unpaid: boolean }
   | { kind: 'retired'; error: GatewayRequestError };
 
@@ -47,6 +70,7 @@ export type ClassifierCallOptions<P extends UsageChargePurpose> = {
   timers: Pick<ServiceTimers, 'monotonicMs'>;
   account: BudgetAccount;
   instructions: string;
+  choiceQuestions?: ChoiceQuestionSpec;
   prompt(): string;
   subject: string;
   purpose: P;
@@ -58,28 +82,42 @@ export type ClassifierCallOptions<P extends UsageChargePurpose> = {
   onLeaseLost(): never;
 };
 
+const hasRefusal = (response: ResponseResource): boolean =>
+  response.output.some((item) => item.type === 'message' && item.content.some((part) => part.type === 'refusal'));
+
 const failed = <P extends UsageChargePurpose>(failure: string, model?: string): ClassifierCall<P> => ({ kind: 'failed', ...(model === undefined ? {} : { model }), failure, unpaid: false });
 
 const askResolved = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>, classifier: string, display: string): Promise<ClassifierCall<P>> => {
   const { gateway, signal, timers } = options;
   const capabilities = await gateway.capabilities(classifier, { signal });
+  const isChoice = outputKindOf(capabilities) === 'choice' && options.choiceQuestions !== undefined;
   const input = [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: options.prompt() }] }];
-  const counted = await gateway.countTokens({ model: classifier, input, instructions: options.instructions, momonga: { ...EXACT_MODEL } }, { signal });
+  const countInstructions = isChoice ? JSON.stringify(options.choiceQuestions) : options.instructions;
+  const counted = await gateway.countTokens({ model: classifier, input, instructions: countInstructions, momonga: { ...EXACT_MODEL } }, { signal });
   if (counted.input_tokens > budgetFor(capabilities, counted.error_bound, 0).I) return failed(`the ${options.subject} does not fit the context window of ${display}`, classifier);
   const size = { inputTokens: counted.input_tokens, marginTokens: counted.error_bound, maxOutputTokens: outputReserveFor(capabilities) };
   const sent = await withAdmission(options.account, { model: classifier, size }, async ({ admitted, proof }): Promise<{ terminal: ModelResult | undefined; timing: CallTiming }> => {
-    const body: CreateResponseBody = {
-      model: classifier,
-      instructions: options.instructions,
-      input,
-      text: { format: { type: 'json_schema', name: 'permission_verdict', schema: { ...CLASSIFIER_VERDICT_SCHEMA }, strict: true } },
-      tool_choice: 'none',
-      ...outputBoundOf(capabilities, admitted.maxOutputTokens),
-      store: false,
-      stream: true,
-      metadata: options.metadata,
-      momonga: { ...EXACT_MODEL, ...ceilingOf(admitted) },
-    };
+    const body: CreateResponseBody = isChoice
+      ? {
+          model: classifier,
+          input,
+          store: false,
+          stream: true,
+          metadata: options.metadata,
+          momonga: { ...EXACT_MODEL, ...ceilingOf(admitted), choices: { questions: options.choiceQuestions as ChoiceQuestionSpec } },
+        }
+      : {
+          model: classifier,
+          instructions: options.instructions,
+          input,
+          text: { format: { type: 'json_schema', name: 'permission_verdict', schema: { ...CLASSIFIER_VERDICT_SCHEMA }, strict: true } },
+          tool_choice: 'none',
+          ...outputBoundOf(capabilities, admitted.maxOutputTokens),
+          store: false,
+          stream: true,
+          metadata: options.metadata,
+          momonga: { ...EXACT_MODEL, ...ceilingOf(admitted) },
+        };
     options.onSending();
     let terminal: ModelResult | undefined;
     let firstEventMs: number | undefined;
@@ -112,7 +150,12 @@ const askResolved = async <P extends UsageChargePurpose>(options: ClassifierCall
     ...billedDetailOf(usage, terminal.response.momonga, timing, terminal.response.id),
     ...(terminal.response.momonga?.target === undefined ? {} : { target: terminal.response.momonga.target }),
   };
-  const read = readJsonReply(validateVerdict, jsonReplyOf(terminal.response));
+  if (isChoice && hasRefusal(terminal.response)) {
+    return { kind: 'failed', model: classifier, failure: `the classifier ${display} gave no answer`, spend, unpaid: false };
+  }
+  const read = isChoice
+    ? readJsonReply(validateChoiceVerdict, jsonReplyOf(terminal.response))
+    : readJsonReply(validateVerdict, jsonReplyOf(terminal.response));
   if ('error' in read) return { kind: 'failed', model: classifier, failure: read.error, spend, unpaid: false };
   return { kind: 'answered', model: classifier, verdict: read.value, spend };
 };
@@ -212,6 +255,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
         designation: designationOf(ctx),
         account: ctx.budget,
         instructions: CLASSIFIER_INSTRUCTIONS,
+        choiceQuestions: CLASSIFIER_CHOICE_QUESTIONS,
         prompt: () => userPromptOf(ctx, cwd, request),
         subject: 'tool call',
         purpose: 'permission_classifier',
@@ -229,7 +273,12 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       const outcome = call.kind === 'answered' && classifierAllows(call.verdict) ? 'allow' : 'ask';
       const event: ClassifiedEvent =
         call.kind === 'answered'
-          ? { model: call.model, verdict: call.verdict.verdict, confidence: call.verdict.confidence, rationale: call.verdict.rationale }
+          ? {
+              model: call.model,
+              verdict: call.verdict.verdict,
+              confidence: call.verdict.confidence,
+              ...(call.verdict.rationale === undefined ? {} : { rationale: call.verdict.rationale }),
+            }
           : { ...(call.model === undefined ? {} : { model: call.model }), failure: call.failure };
       const notice: Extract<RunEventPayload, { type: 'notice' }>[] =
         call.kind === 'failed' && call.unpaid

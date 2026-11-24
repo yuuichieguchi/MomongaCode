@@ -104,6 +104,7 @@ export {
   MARGIN_RATIO,
   MAX_SUMMARY_TOKENS,
   MIN_MARGIN,
+  MIN_OUTPUT_RESERVE,
   MIN_SUMMARY_TOKENS,
   RUN_ID_CHARS,
   SUMMARY_ACCEPT_RATIO,
@@ -623,14 +624,24 @@ export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
 export {
+  MODEL_JOBS,
+  MODEL_OUTPUT_KINDS,
+  canDoJob,
+  modelJobRefusal,
+  modelsForJob,
+  outputKindOf,
+} from './model-jobs.ts';
+export type { ChoiceQuestion, ChoiceQuestionSpec, ModelJob, ModelOutputKind, RequestChoices } from './model-jobs.ts';
+export {
   AUTO_MODE_UNAVAILABLE,
   unknownClassifierMessage,
+  CHOICE_VERDICT_SCHEMA,
   CLASSIFIER_CONFIDENCES,
   CLASSIFIER_VERDICTS,
   CLASSIFIER_VERDICT_SCHEMA,
   classifierAllows,
 } from './auto-mode.ts';
-export type { ClassifierVerdict } from './auto-mode.ts';
+export type { ChoiceVerdict, ClassifierVerdict } from './auto-mode.ts';
 export { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS, AUTO_MODE_CAVEAT, AUTO_MODE_CHECK_COMMANDS, autoModeNotice } from './auto-mode-gate.ts';
 export type { AutoClassifierFacts, AutoClassifierKey, AutoClassifierRefusal, AutoClassifierView, AutoModeSurface } from './auto-mode-gate.ts';
 export {

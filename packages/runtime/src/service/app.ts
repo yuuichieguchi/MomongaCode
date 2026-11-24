@@ -6,7 +6,7 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, unknownClassifierMessage, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf, approvalEndingText, SURFACES, SURFACE_HEADER } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, unknownClassifierMessage, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, canDoJob, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelJobRefusal, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf, approvalEndingText, SURFACES, SURFACE_HEADER } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
 import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RetentionStatusView, RunStatus, RunTraceView, CompactSessionRequest, Surface } from '@momonga/protocol';
@@ -223,7 +223,10 @@ const refuseOversizeImages = (images: readonly { data: string }[] | undefined): 
 
 const requestedModelOf = (text: string, views: ModelViews): string => {
   const resolution = resolveTypedModelRef(typedModelText(text), views);
-  if (resolution.kind === 'found') return resolution.model.canon;
+  if (resolution.kind === 'found') {
+    if (!canDoJob(resolution.model, 'session')) throw invalidRequest(modelJobRefusal(displayIn(views, resolution.model.canon), 'session'), 'model');
+    return resolution.model.canon;
+  }
   throw invalidRequest(modelRefErrorOf(text, resolution, views, 'gateway').message, 'model');
 };
 
@@ -378,9 +381,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const cwdArea = await protectedAreaOf(deps.protectedRootAreas, cwd, paths);
     if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
     const { views, start } = await gatewayListing(context.req.raw.signal);
-    const startModel = startModelOf({ count: views.length, start });
-    if (startModel === undefined) throw targetNotReady(messageOf('noModelConnected', 'cli'));
-    const model = body.model === undefined ? startModel : requestedModelOf(body.model, views);
+    const model = body.model !== undefined ? requestedModelOf(body.model, views) : startModelOf({ count: views.length, start });
+    if (model === undefined) throw targetNotReady(messageOf('noModelConnected', 'cli'));
     const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];
     const seen = new Set<string>([await paths.comparablePath(cwd)]);
@@ -582,6 +584,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const listing = await listingUnlessRestarting(signal);
     const sessionModel = listing === undefined ? undefined : resolveStoredModelRef(storedModelRef(session.model), listing.views);
     if (listing !== undefined && sessionModel === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
+    if (listing !== undefined && sessionModel !== undefined && !canDoJob(sessionModel, 'session')) {
+      throw invalidRequest(modelJobRefusal(displayIn(listing.views, sessionModel.canon), 'session'), 'model');
+    }
     const { delegation } = deps;
     const terms = await runTermsOf({
       request,

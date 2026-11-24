@@ -4,19 +4,23 @@ import { askedPaths, endpointHostOf, redactedUrl, transportUrlMessage, transport
 import type { PathAsking } from '@momonga/foundation';
 import {
   DEFAULT_ANTHROPIC_API_VERSION,
+  MIN_OUTPUT_RESERVE,
   SERVER_KINDS,
   acceptedReasoningEfforts,
   anthropicVersionSamplingBound,
+  canDoJob,
   canonOf,
   displayMapOf,
   imageCapability,
+  modelJobRefusal,
+  modelsForJob,
   resolveTypedModelRef,
   serverCountText,
   typedModelText,
   withDefaultTag,
 } from '@momonga/protocol';
 import { modelNamingOf } from './model-naming.ts';
-import type { AnthropicApiVersion, ModelNaming, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningCapability, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, ModelJob, ModelNaming, ModelOutputKind, DialectDefinition, ImageCapability, ImageTokenModel, ModelView, ModelViews, ReasoningCapability, ReasoningEffort, ServerKinds, TargetBilling } from '@momonga/protocol';
 import { ConfigError, toConfigError } from './config-error.ts';
 import { chainRoomVerdict, roomNumbersText } from './chain-room.ts';
 import type { ChainMember } from './chain-room.ts';
@@ -52,13 +56,15 @@ import type {
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,
   ResolvedPlanTarget,
+  ResolvedSystemOneTarget,
+  SystemOneTarget,
   DeclaredTargetCapabilities,
   PlanTargetCapabilities,
   TargetCapabilities,
   TargetCapabilitiesCore,
 } from './settings.ts';
 
-export type ResolvedModel = ResolvedModelTarget & { canon: string; provider: string; providerWritten: boolean; ownName: string; defaultTag?: string; naming: ModelNaming };
+export type ResolvedModel = ResolvedModelTarget & { canon: string; provider: string; providerWritten: boolean; ownName: string; defaultTag?: string; naming: ModelNaming; outputKind: ModelOutputKind };
 
 export type ResolvedConnection = {
   provider: string;
@@ -349,6 +355,33 @@ const resolveOllama = (target: OllamaTarget, where: Where): ResolvedOllamaTarget
   ...resolveRemote({ ...target, capabilities: target.capabilities ?? {} }, 'ollama', where),
 });
 
+const resolveSystemOne = (target: SystemOneTarget, provider: string, { connection }: Where): ResolvedSystemOneTarget => {
+  checkBaseUrl(target.baseUrl, connection, target.apiKeyEnv !== undefined || target.apiKeySecret !== undefined);
+  const serving = servingDefaultsOf('system-one');
+  const maxConcurrency = target.maxConcurrency ?? serving.maxConcurrency;
+  const capabilities: TargetCapabilities & { maxConcurrency: number } = {
+    ...capabilityBaseOf('system-one'),
+    contextWindow: target.capabilities.contextWindow,
+    maxOutputTokens: MIN_OUTPUT_RESERVE,
+    imageInput: false,
+    maxConcurrency,
+  };
+  return {
+    adapter: 'system-one',
+    model: target.model,
+    baseUrl: target.baseUrl,
+    ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
+    ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
+    provider,
+    toolCalling: 'none',
+    billing: resolvedBillingOf('system-one', target.billing),
+    capabilities,
+    writtenCapabilities: target.capabilities,
+    maxConcurrency,
+    admissionTimeoutMs: target.admissionTimeoutMs ?? DEFAULT_ADMISSION_TIMEOUT_MS,
+  };
+};
+
 const checkJsonMode = (target: ModelTarget, where: string): void => {
   const declared = target.capabilities;
   const jsonMode = declared !== undefined && 'jsonMode' in declared ? declared.jsonMode : undefined;
@@ -370,13 +403,15 @@ const resolveAdapter = (target: ModelTarget, provider: string, where: Where, { w
       return resolveAnthropic(target, where, warnings);
     case 'ollama':
       return resolveOllama(target, where);
+    case 'system-one':
+      return resolveSystemOne(target, provider, where);
   }
 };
 
 const REQUEST_OWN_HEADERS: readonly string[] = ['accept', 'anthropic-version', 'authorization', 'connection', 'content-length', 'content-type', 'host', 'transfer-encoding', 'user-agent', 'x-api-key'];
 
 const idempotencyKeyHeaderOf = (target: ModelTarget, where: string): { idempotencyKeyHeader?: string } => {
-  const { idempotencyKeyHeader } = target;
+  const idempotencyKeyHeader = 'idempotencyKeyHeader' in target ? target.idempotencyKeyHeader : undefined;
   if (idempotencyKeyHeader === undefined) return {};
   if (REQUEST_OWN_HEADERS.includes(idempotencyKeyHeader.toLowerCase())) {
     throw new ConfigError(`${where}: idempotencyKeyHeader ${JSON.stringify(idempotencyKeyHeader)} is a header the request already carries; write the header this server reads an idempotency key from`);
@@ -386,7 +421,7 @@ const idempotencyKeyHeaderOf = (target: ModelTarget, where: string): { idempoten
 
 const resolveTarget = (target: ModelTarget, provider: string, where: Where, context: ResolveContext): ResolvedModelTarget => ({
   ...resolveAdapter(target, provider, where, context),
-  ...(target.answers === undefined ? {} : { answers: target.answers }),
+  ...('answers' in target && target.answers !== undefined ? { answers: target.answers } : {}),
   ...idempotencyKeyHeaderOf(target, where.connection),
 });
 
@@ -500,14 +535,22 @@ const resolveConnections = (connections: readonly ModelConnection[], source: str
     const resolved = entries.map(({ flat, place }) => resolveTarget(flat, provider, place, context));
     configured.connections.push(resolvedConnectionOf(connections[index] as ModelConnection, provider, defaultTag, resolved[0] as ResolvedModelTarget));
     resolved.forEach((target, entryIndex) => {
-      const view: ModelView = { canon: canonOf(provider, target.model), provider, ownName: target.model, ...(defaultTag === undefined ? {} : { defaultTag }), naming: modelNamingOf(target) };
+      const outputKind = ADAPTERS[target.adapter].outputKind;
+      const view: ModelView = {
+        canon: canonOf(provider, target.model),
+        provider,
+        ownName: target.model,
+        ...(defaultTag === undefined ? {} : { defaultTag }),
+        naming: modelNamingOf(target),
+        ...(outputKind === 'text' ? {} : { outputKind }),
+      };
       const saved = savedEffortOf(connections[index] as ModelConnection, entryIndex);
       if (saved !== undefined) {
         checkSavedEffort(target, saved, (entries[entryIndex] as { place: { entry: string } }).place.entry);
         configured.efforts.set(view.canon, saved);
       }
       configured.views.push(view);
-      configured.models.set(view.canon, { ...target, ...view, providerWritten: (connections[index] as ModelConnection).provider !== undefined });
+      configured.models.set(view.canon, { ...target, ...view, outputKind, providerWritten: (connections[index] as ModelConnection).provider !== undefined });
     });
   });
   return configured;
@@ -528,25 +571,30 @@ const referenceProblem = (text: string, views: ModelViews, displays: ReadonlyMap
 type References = { start: string | undefined; fallback: string[]; roles: ModelRoles; billingChanges: BillingChange[]; classifier: string | undefined; memoryReviewModel: string | undefined };
 
 const resolveReferences = (models: ModelsSettings | undefined, { classifier, memoryReviewModel }: Pick<ResolveModelsOptions, 'classifier' | 'memoryReviewModel'>, views: ModelViews, displays: ReadonlyMap<string, string>, source: string): References => {
-  const canonAt = (key: string, text: string): string => {
+  const byCanon = new Map(views.map((view) => [view.canon, view]));
+  const canonAt = (key: string, text: string, job: ModelJob): string => {
     const outcome = referenceProblem(text, views, displays);
     if ('problem' in outcome) throw new ConfigError(`${source}: ${key}: ${outcome.problem}`);
+    const view = byCanon.get(outcome.canon);
+    if (view !== undefined && !canDoJob(view, job)) {
+      throw new ConfigError(`${source}: ${key}: ${modelJobRefusal(displays.get(view.canon) ?? view.canon, job)}`);
+    }
     return outcome.canon;
   };
-  const start = models?.start === undefined ? undefined : canonAt('models.start', models.start);
-  const fallback = (models?.fallback ?? []).map((text, index) => canonAt(`models.fallback[${index}]`, text));
+  const start = models?.start === undefined ? undefined : canonAt('models.start', models.start, 'start');
+  const fallback = (models?.fallback ?? []).map((text, index) => canonAt(`models.fallback[${index}]`, text, 'fallback'));
   const roles: ModelRoles = {};
-  for (const [role, text] of Object.entries(models?.roles ?? {})) roles[role as ModelRole] = canonAt(`models.roles.${role}`, text);
+  for (const [role, text] of Object.entries(models?.roles ?? {})) roles[role as ModelRole] = canonAt(`models.roles.${role}`, text, role as ModelRole);
   const billingChanges = (models?.billingChanges ?? []).map((change, index) =>
-    change.model === undefined ? { from: change.from, to: change.to } : { from: change.from, to: change.to, model: canonAt(`models.billingChanges[${index}].model`, change.model) },
+    change.model === undefined ? { from: change.from, to: change.to } : { from: change.from, to: change.to, model: canonAt(`models.billingChanges[${index}].model`, change.model, 'billing') },
   );
   return {
     start,
     fallback,
     roles,
     billingChanges,
-    classifier: classifier === undefined || classifier === INHERITED_CLASSIFIER ? undefined : canonAt('autoMode.classifier', classifier),
-    memoryReviewModel: memoryReviewModel === undefined ? undefined : canonAt('memory.autoReviewModel', memoryReviewModel),
+    classifier: classifier === undefined || classifier === INHERITED_CLASSIFIER ? undefined : canonAt('autoMode.classifier', classifier, 'classifier'),
+    memoryReviewModel: memoryReviewModel === undefined ? undefined : canonAt('memory.autoReviewModel', memoryReviewModel, 'memoryReview'),
   };
 };
 
@@ -609,7 +657,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, warn
   const references = resolveReferences(models, { classifier, memoryReviewModel }, configured.views, displays, source);
   checkModelDialects(models?.connections ?? [], dialects, source);
   checkBillingChanges(references.billingChanges, source);
-  const chains = new Map(configured.views.map((view) => [view.canon, chainOf(view.canon, references.fallback)]));
+  const chains = new Map(configured.views.map((view) => [view.canon, canDoJob(view, 'fallback') ? chainOf(view.canon, references.fallback) : [view.canon]]));
   const loaded: Loaded = { models: configured.models, chains, displays };
   warnUnsafeChains(loaded, source, warnings);
   warnUnallowedBillingChanges(references.billingChanges, loaded, source, warnings);
@@ -620,7 +668,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, warn
     models: configured.models,
     views: configured.views,
     chains,
-    start: references.start ?? configured.views[0]?.canon,
+    start: references.start ?? modelsForJob(configured.views, 'start')[0]?.canon,
     ...(models?.effort === undefined ? {} : { effort: models.effort }),
     efforts: configured.efforts,
     fallback: references.fallback,

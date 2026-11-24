@@ -24,7 +24,7 @@ export { INIT_INSTRUCTION } from './prompts/init.ts';
 export { checkProposalOf } from './worker/check-proposal.ts';
 export type { CheckProposal } from './worker/check-proposal.ts';
 export { NO_CHECK_DECLARED_CODE } from './worker/verification-step.ts';
-export { AUTO_CLASSIFIER_CODE } from './worker/auto-classifier.ts';
+export { AUTO_CLASSIFIER_CODE, CLASSIFIER_CHOICE_QUESTIONS } from './worker/auto-classifier.ts';
 export type { SystemPromptContext } from './system-prompt.ts';
 export { createWorker } from './worker/worker.ts';
 export type { Worker, WorkerBlobs, WorkerDefaults, WorkerErrorContext, WorkerOptions, WorkerWake } from './worker/types.ts';

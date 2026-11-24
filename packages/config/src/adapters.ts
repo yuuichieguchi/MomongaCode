@@ -1,3 +1,4 @@
+import type { ModelOutputKind } from '@momonga/protocol';
 import { endpointKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
 import type { ProbeRecordKey, WrittenAddress } from './probe-record-key.ts';
 import type { ModelTarget, TargetCapabilitiesCore } from './settings.ts';
@@ -9,14 +10,16 @@ export type WireFacts = Partial<Omit<TargetCapabilitiesCore, 'contextWindow' | '
 export type ProbeKind = 'managed-process' | 'chat-completions-wire' | 'ollama-wire' | 'none';
 
 export type AdapterTraits = {
+  readonly outputKind: ModelOutputKind;
   readonly credentials: 'none' | 'key';
-  readonly address: 'server' | 'written';
+  readonly address: 'server' | 'written' | 'url';
   readonly models: 'one' | 'many';
   readonly toolCallingSetting: boolean;
   readonly jsonOnlyForm: boolean;
   readonly probeRecord: 'model' | 'address' | 'none';
   readonly probe: ProbeKind;
   readonly measured: 'always' | 'when-tool-calling-auto' | 'never';
+  readonly serverListable: boolean;
   readonly wire: WireFacts;
 };
 
@@ -24,6 +27,7 @@ const ANTHROPIC_WIRE_CACHE_BREAKPOINTS = 4;
 
 export const ADAPTERS = {
   managed: {
+    outputKind: 'text',
     credentials: 'none',
     address: 'server',
     models: 'one',
@@ -32,9 +36,11 @@ export const ADAPTERS = {
     probeRecord: 'model',
     probe: 'managed-process',
     measured: 'always',
+    serverListable: true,
     wire: {},
   },
   'chat-completions': {
+    outputKind: 'text',
     credentials: 'key',
     address: 'written',
     models: 'many',
@@ -43,9 +49,11 @@ export const ADAPTERS = {
     probeRecord: 'address',
     probe: 'chat-completions-wire',
     measured: 'when-tool-calling-auto',
+    serverListable: true,
     wire: {},
   },
   'open-responses': {
+    outputKind: 'text',
     credentials: 'key',
     address: 'written',
     models: 'many',
@@ -54,9 +62,11 @@ export const ADAPTERS = {
     probeRecord: 'none',
     probe: 'none',
     measured: 'never',
+    serverListable: true,
     wire: { stopSequences: false },
   },
   anthropic: {
+    outputKind: 'text',
     credentials: 'key',
     address: 'written',
     models: 'many',
@@ -65,9 +75,11 @@ export const ADAPTERS = {
     probeRecord: 'none',
     probe: 'none',
     measured: 'never',
+    serverListable: true,
     wire: { stopSequences: false, parallelToolCalls: true, tokenCounting: 'exact', promptCache: { kind: 'breakpoints', maxBreakpoints: ANTHROPIC_WIRE_CACHE_BREAKPOINTS } },
   },
   ollama: {
+    outputKind: 'text',
     credentials: 'none',
     address: 'written',
     models: 'many',
@@ -76,7 +88,21 @@ export const ADAPTERS = {
     probeRecord: 'address',
     probe: 'ollama-wire',
     measured: 'always',
+    serverListable: true,
     wire: { structuredOutput: 'json_schema', stopSequences: false },
+  },
+  'system-one': {
+    outputKind: 'choice',
+    credentials: 'key',
+    address: 'url',
+    models: 'many',
+    toolCallingSetting: false,
+    jsonOnlyForm: false,
+    probeRecord: 'none',
+    probe: 'none',
+    measured: 'never',
+    serverListable: false,
+    wire: { outputKind: 'choice', structuredOutput: 'json_schema', streaming: false, stopSequences: false, outputBoundField: 'none' },
   },
 } as const satisfies Record<AdapterKind, AdapterTraits>;
 
@@ -135,3 +161,5 @@ export const isMeasuredBy = <Target extends { adapter: AdapterKind; toolCalling?
 export const isProbedBy = <Target extends { adapter: AdapterKind }, Kind extends Exclude<ProbeKind, 'none'>>(target: Target, kind: Kind): target is ProbedBy<Target, Kind> => ADAPTERS[target.adapter].probe === kind;
 
 export const isProbeable = <Target extends { adapter: AdapterKind }>(target: Target): target is Probeable<Target> => ADAPTERS[target.adapter].probe !== 'none';
+
+export const isServerListable = (adapter: string): boolean => !isAdapterKind(adapter) || ADAPTERS[adapter].serverListable;

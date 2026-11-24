@@ -241,6 +241,7 @@ const countTokens = async (
     images: inputHasImages(resolved.forAdapter),
     toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
     unknownFields: { keys: Object.keys(unknownFields), operation: 'count_tokens' },
+    choices: true,
   });
   const call = unkeyedCallOf(services);
   const outcome = await callTargets(services, narrowed.targets, narrowed, signal, deadlineAt, (chosen, attemptNumber, guarded) =>

@@ -1,4 +1,4 @@
-import { declaredCommandProblem, plainHttpWarningText } from '@momonga/config';
+import { declaredCommandProblem, isServerListable, plainHttpWarningText } from '@momonga/config';
 import { PROVIDER_NAME_PATTERN, SIGN_IN_REQUIRED_CODE, messageOf } from '@momonga/protocol';
 import type { GatewayHealth, PlanAccountView, TargetHealth } from '@momonga/protocol';
 import { planServesAccount } from './plan-account.ts';
@@ -114,6 +114,7 @@ const serverStateOf = async (
     const answer = model === undefined ? undefined : facts.health.models[model.model];
     return answer === undefined ? undefined : healthStateOf(answer);
   }
+  if (connection !== undefined && !isServerListable(connection.adapter)) return undefined;
   const address = addressesOf(facts.resolved).get(provider);
   if (address === undefined) return undefined;
   const answered = (await hostOf(context, signal).detect({ candidates: [], typed: [address], signal, includeWithoutModels: true })).some(isLocalServer);
@@ -287,7 +288,7 @@ export const runModelsHub = async (context: ModelsFlowContext): Promise<void> =>
       {
         title: MODELS_TITLE,
         showModelInFooter: true,
-        lines: document.models.length === 0 ? [messageOf('noModelConnected', 'tui')] : [],
+        lines: document.start === null ? [messageOf('noModelConnected', 'tui')] : [],
         rows: rows.map((row) => ({ label: row.label, ...(row.kind === 'warning' ? { disabled: true } : {}), ...(row.kind === 'heading' ? { separator: true } : {}) })),
         initial: kept === -1 ? firstChoosableFrom(rows, Math.min(at, rows.length - 1)) : kept,
       },

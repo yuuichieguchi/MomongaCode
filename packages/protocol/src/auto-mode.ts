@@ -5,11 +5,24 @@ export const unknownClassifierMessage = (model: string): string => `the auto mod
 export const CLASSIFIER_VERDICTS = ['safe', 'unsafe'] as const;
 export const CLASSIFIER_CONFIDENCES = ['high', 'medium', 'low'] as const;
 
-export type ClassifierVerdict = {
+export type ChoiceVerdict = {
   verdict: (typeof CLASSIFIER_VERDICTS)[number];
   confidence: (typeof CLASSIFIER_CONFIDENCES)[number];
+};
+
+export type ClassifierVerdict = ChoiceVerdict & {
   rationale: string;
 };
+
+export const CHOICE_VERDICT_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdict: { type: 'string', enum: [...CLASSIFIER_VERDICTS] },
+    confidence: { type: 'string', enum: [...CLASSIFIER_CONFIDENCES] },
+  },
+  required: ['verdict', 'confidence'],
+  additionalProperties: false,
+} as const;
 
 export const CLASSIFIER_VERDICT_SCHEMA = {
   type: 'object',
@@ -22,4 +35,4 @@ export const CLASSIFIER_VERDICT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export const classifierAllows = (verdict: ClassifierVerdict): boolean => verdict.verdict === 'safe' && verdict.confidence === 'high';
+export const classifierAllows = (verdict: ChoiceVerdict & { rationale?: string }): boolean => verdict.verdict === 'safe' && verdict.confidence === 'high';

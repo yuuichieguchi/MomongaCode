@@ -200,7 +200,7 @@ export const contextImprove = async (
   const explicitDataset = options.dataset === undefined ? undefined : path.resolve(ports.cwd, options.dataset);
   const dataset = explicitDataset === undefined ? parseContextDataset(CONTEXT_DATASET_TEXT, 'context.json') : await loadContextDataset(ports.files, explicitDataset);
   const models = await shellModelsOf(ports, options.interrupt);
-  const pinned = options.model !== undefined ? pinnedModelOf(models, options.model) : models.resolved.start;
+  const pinned = options.model !== undefined ? pinnedModelOf(models, options.model, 'analysis') : models.resolved.start;
   if (pinned === undefined) throw new ContextImproveError(messageOf('noModelConnected', 'cli'));
   const effectiveCandidates = options.candidates ?? (options.tokenCap === undefined ? DEFAULT_CONTEXT_IMPROVE_CANDIDATES : undefined);
   if (options.yes !== true) {

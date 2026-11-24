@@ -13,7 +13,7 @@ describe('the facts of every adapter are declared once', () => {
   it('declares traits for every adapter the settings can name, and for no other', () => {
     expectTypeOf<keyof typeof ADAPTERS>().toEqualTypeOf<AdapterKind>();
     expectTypeOf<AdapterKind>().toEqualTypeOf<ModelTarget['adapter']>();
-    expect(Object.keys(ADAPTERS).sort()).toEqual(['anthropic', 'chat-completions', 'managed', 'ollama', 'open-responses']);
+    expect(Object.keys(ADAPTERS).sort()).toEqual(['anthropic', 'chat-completions', 'managed', 'ollama', 'open-responses', 'system-one']);
   });
 
   it('declares the wire facts of the Anthropic API in the table', () => {

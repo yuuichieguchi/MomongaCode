@@ -167,11 +167,29 @@ export type PlanOpenResponsesTarget = {
   admissionTimeoutMs?: number;
 };
 
-export type ModelTarget = ManagedTarget | ChatCompletionsTarget | OpenResponsesTarget | PlanOpenResponsesTarget | AnthropicTarget | OllamaTarget;
+export type SystemOneTargetCapabilities = { contextWindow: number };
+
+export type SystemOneTarget = {
+  adapter: 'system-one';
+  model: string;
+  baseUrl: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  billing?: TargetBilling;
+  capabilities: SystemOneTargetCapabilities;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+export type ModelTarget = ManagedTarget | ChatCompletionsTarget | OpenResponsesTarget | PlanOpenResponsesTarget | AnthropicTarget | OllamaTarget | SystemOneTarget;
 
 type ConnectionKeys = 'adapter' | 'answers' | 'idempotencyKeyHeader' | 'billing' | 'baseUrl' | 'socketPath' | 'apiKeyEnv' | 'apiKeySecret' | 'plan' | 'apiVersion' | 'server' | 'binary' | 'readyTimeoutMs';
 
-type EntryOf<Target extends ModelTarget> = Target extends ModelTarget ? { id: string; effort?: ReasoningEffort } & Omit<Target, ConnectionKeys | 'model'> : never;
+type EntryOf<Target extends ModelTarget> = Target extends SystemOneTarget
+  ? { id: string } & Omit<Target, ConnectionKeys | 'model'>
+  : Target extends ModelTarget
+    ? { id: string; effort?: ReasoningEffort } & Omit<Target, ConnectionKeys | 'model'>
+    : never;
 
 type ConnectionOf<Target extends ModelTarget> = Target extends ModelTarget
   ? Pick<Target, Extract<keyof Target, ConnectionKeys>> & { provider?: string; maxConcurrency?: number; admissionTimeoutMs?: number; models?: EntryOf<Target>[] }
@@ -293,13 +311,29 @@ export type ResolvedOllamaTarget = {
   admissionTimeoutMs: number;
 };
 
+export type ResolvedSystemOneTarget = {
+  adapter: 'system-one';
+  model: string;
+  baseUrl: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  provider: string;
+  toolCalling: 'none';
+  billing: TargetBilling;
+  capabilities: TargetCapabilities & { maxConcurrency: number };
+  writtenCapabilities: SystemOneTargetCapabilities;
+  maxConcurrency: number;
+  admissionTimeoutMs: number;
+};
+
 export type ResolvedModelTarget =
   | ResolvedManagedTarget
   | ResolvedChatCompletionsTarget
   | ResolvedOpenResponsesTarget
   | ResolvedPlanTarget
   | ResolvedAnthropicTarget
-  | ResolvedOllamaTarget;
+  | ResolvedOllamaTarget
+  | ResolvedSystemOneTarget;
 
 export type ModelRole = (typeof MODEL_ROLES)[number];
 

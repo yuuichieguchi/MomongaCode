@@ -46,7 +46,7 @@ export const RUN_ID_CHARS = 36;
 export const WORKING_FACTS_KEPT = Math.ceil(WORKING_STATE_SUMMARY_RATIO * MAX_SUMMARY_TOKENS);
 export const WORKING_FACT_TEXT_CHARS = ESTIMATED_CHARACTERS_PER_TOKEN * WORKING_FACTS_KEPT;
 
-const MIN_OUTPUT_RESERVE = 256;
+export const MIN_OUTPUT_RESERVE = 256;
 
 export type ErrorShape = { readonly ratio: number; readonly minimum: number };
 

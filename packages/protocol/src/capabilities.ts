@@ -1,4 +1,5 @@
 import type { DialectId } from './dialect.ts';
+import type { ModelOutputKind } from './model-jobs.ts';
 import { ERROR_TYPES } from './open-responses.ts';
 import type { ErrorType } from './open-responses.ts';
 import { CAPABILITIES_UNKNOWN_CODE, PLAN_STORE_STATES, SIGN_IN_REQUIRED_CODE } from './plan-api.ts';
@@ -211,6 +212,7 @@ export type IdempotencyKeyCapability = { header: string };
 export const IDEMPOTENCY_KEY_HEADER_PATTERN = "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$";
 
 export type CapabilitiesCore = {
+  outputKind?: ModelOutputKind;
   promptCache?: PromptCacheCapability;
   sampling?: SamplingCapability;
   reasoning?: ReasoningCapability;

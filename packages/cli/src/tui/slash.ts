@@ -1,5 +1,5 @@
 import type { ExternalEditorPort } from './external-editor.ts';
-import { ModelRefError, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, displayMapOf, isReasoningEffort } from '@momonga/protocol';
+import { ModelRefError, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, canDoJob, displayMapOf, isReasoningEffort, modelJobRefusal } from '@momonga/protocol';
 import type { Mandate, MomongaModelEntry, OutputStyle, PermissionMode, ReasoningEffort } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import { listedModelOf } from '../commands/models.ts';
@@ -265,6 +265,11 @@ export const switchModel = async (args: string, entries: readonly MomongaModelEn
   } catch (error) {
     if (!(error instanceof ModelRefError)) throw error;
     context.info(error.message);
+    return;
+  }
+  const chosenEntry = entries.find((entry) => entry.id === chosen);
+  if (chosenEntry !== undefined && !canDoJob(chosenEntry, 'session')) {
+    context.info(modelJobRefusal(displayMapOf(listingViewsOf(entries)).get(chosen) ?? chosen, 'session'));
     return;
   }
   if (level !== undefined && !acceptedLevelOf(entries, chosen, level, context)) return;

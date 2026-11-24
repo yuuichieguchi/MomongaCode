@@ -3,16 +3,18 @@ import {
   MANAGED_SERVERS,
   SERVER_KINDS,
   TARGET_PROBING_MESSAGE,
+  canDoJob,
   displayMapOf,
   escapeTerminalLine,
   isProbingCapabilities,
   isUnavailableCapabilities,
+  modelJobRefusal,
   modelRefErrorOf,
   notListedMessage,
   resolveTypedModelRef,
   typedModelText,
 } from '@momonga/protocol';
-import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
+import type { Capabilities, ModelJob, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { ADAPTERS, MODEL_ROLES, planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
 import type { ModelRole, ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
@@ -95,10 +97,13 @@ export const assertSocketsFit = async (paths: MomongaPaths, refuseUnfitSockets: 
   }
 };
 
-export const pinnedModelOf = (user: UserModels, text: string): string => {
+export const pinnedModelOf = (user: UserModels, text: string, job: ModelJob = 'session'): string => {
   const { views } = user.resolved;
   const resolution = resolveTypedModelRef(typedModelText(text), views);
   if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views, 'cli');
+  if (!canDoJob(resolution.model, job)) {
+    throw new ContextHostError(modelJobRefusal(displayMapOf(views).get(resolution.model.canon) ?? resolution.model.canon, job));
+  }
   return resolution.model.canon;
 };
 
@@ -164,6 +169,7 @@ type RelayedCapabilities = OpenResponsesTarget['capabilities'];
 type ImagePair = Pick<RelayedCapabilities, ImagePairField>;
 
 const LISTED_FIELDS: Record<ListedField | 'imagePair', true> = {
+  outputKind: true,
   promptCache: true,
   sampling: true,
   reasoning: true,
@@ -238,7 +244,7 @@ const entryOf = (member: ResolvedModel, capabilities: Json | undefined): Json =>
   admissionTimeoutMs: member.admissionTimeoutMs,
 });
 
-const sharedOf = (member: ResolvedModel): Json => ({ provider: member.provider, billing: member.billing, ...(member.answers === undefined ? {} : { answers: member.answers }) });
+const sharedOf = (member: ResolvedModel): Json => ({ provider: member.provider, billing: member.billing, ...('answers' in member && member.answers !== undefined ? { answers: member.answers } : {}) });
 
 const declaredProgramOf = (models: ResolvedModels, id: string): ModelsOperation | undefined => {
   if (MANAGED_SERVERS.some((server) => server.id === id)) return undefined;
@@ -285,9 +291,18 @@ export const liveSettingsFor = (user: UserModels, models: readonly string[], rel
       operations.push(addOperation({ adapter: 'managed', server: member.server, binary: member.binary, readyTimeoutMs: member.readyTimeoutMs, ...sharedOf(member) }, entryOf(member, declaredCapabilitiesOf(member))));
       return;
     }
+    if (member.outputKind === 'choice') {
+      operations.push(
+        addOperation(
+          { adapter: member.adapter, ...('baseUrl' in member && member.baseUrl !== undefined ? { baseUrl: member.baseUrl } : {}), ...keyOf(member), ...sharedOf(member) },
+          { id: member.ownName, maxConcurrency: member.maxConcurrency, admissionTimeoutMs: member.admissionTimeoutMs, capabilities: { contextWindow: member.capabilities.contextWindow } },
+        ),
+      );
+      return;
+    }
     const recordKey = probeRecordKeyOf(member.canon, member);
     if (recordKey?.kind === 'endpoint') endpointProbes.push(recordKey.key);
-    const address = member.socketPath === undefined ? { baseUrl: member.baseUrl } : { socketPath: member.socketPath };
+    const address = 'socketPath' in member && member.socketPath !== undefined ? { socketPath: member.socketPath } : { baseUrl: member.baseUrl };
     const apiVersion = 'apiVersion' in member ? { apiVersion: member.apiVersion } : {};
     operations.push(addOperation({ adapter: member.adapter, ...address, ...keyOf(member), ...apiVersion, ...sharedOf(member) }, entryOf(member, declaredCapabilitiesOf(member))));
   };

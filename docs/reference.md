@@ -881,7 +881,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `mcp.closeGraceMs` | integer (at least 0, at most 30000) | `1000` | milliseconds | user |
 | `mcp.connectTimeoutMs` | integer (at least 1, at most 3600000) | `30000` | milliseconds | user |
 | `models` | object |  |  | user |
-| `models.connections` | array of object or object or object or object or any value or any value or object |  |  | user |
+| `models.connections` | array of object or object or object or object or any value or any value or object or object |  |  | user |
 | `models.start` | string (not empty) |  |  | user |
 | `models.effort` | `"none"` or `"minimal"` or `"low"` or `"medium"` or `"high"` or `"xhigh"` or `"max"` |  |  | user |
 | `models.fallback` | array of string (not empty) |  |  | user |

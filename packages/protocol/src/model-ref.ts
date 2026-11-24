@@ -1,3 +1,4 @@
+import type { ModelOutputKind } from './model-jobs.ts';
 import { messageOf } from './vocabulary.ts';
 import type { Surface } from './vocabulary.ts';
 
@@ -7,7 +8,7 @@ export const MODEL_NAMINGS = ['server', 'account'] as const;
 
 export type ModelNaming = (typeof MODEL_NAMINGS)[number];
 
-export type ModelView = { canon: string; provider: string; ownName: string; defaultTag?: string; naming: ModelNaming };
+export type ModelView = { canon: string; provider: string; ownName: string; defaultTag?: string; naming: ModelNaming; outputKind?: ModelOutputKind };
 export type ModelViews = readonly ModelView[];
 
 declare const storedBrand: unique symbol;

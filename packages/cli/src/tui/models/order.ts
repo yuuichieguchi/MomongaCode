@@ -1,7 +1,8 @@
 import { INHERITED_CLASSIFIER, durationText, editModelsSettings, writeMemoryAutoReview } from '@momonga/config';
 import type { ModelsEditResult } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
-import type { TargetBilling } from '@momonga/protocol';
+import { modelsForJob } from '@momonga/protocol';
+import type { ModelJob, TargetBilling } from '@momonga/protocol';
 import type { MemoryAutoReviewState } from '../../memory/format.ts';
 import { SEPARATOR, START_MARK, billingRows, displayIn, fallbackRows, proposeForm, roleRows } from '../../commands/models.ts';
 import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
@@ -35,12 +36,13 @@ import {
 
 const CHAIN_ARROW = ' → ';
 
-const canonsOf = (edit: ModelsEdit): string[] => edit.resolved.views.map((view) => view.canon);
+const canonsOf = (edit: ModelsEdit, job?: ModelJob): string[] =>
+  (job === undefined ? edit.resolved.views : modelsForJob(edit.resolved.views, job)).map((view) => view.canon);
 
 export const runStartFlow = async (context: ModelsFlowContext): Promise<boolean> => {
   const opened = await openEdit(context);
   const { edit } = opened;
-  const canons = canonsOf(edit);
+  const canons = canonsOf(edit, 'start');
   const rows = [...canons.map((canon) => ({ label: `${displayIn(edit, canon)}${canon === edit.resolved.start ? `${SEPARATOR}${START_MARK}` : ''}` })), { label: FIRST_MODEL_ROW }];
   const acted = await chosenThen(context, { title: START_TITLE, rows }, async (index) => {
     const canon = canons[index];
@@ -82,7 +84,7 @@ const withBillingChange = async (context: ModelsFlowContext, edit: ModelsEdit, a
 
 const addFallback = async (context: ModelsFlowContext, opened: Opened): Promise<void> => {
   const { edit, host } = opened;
-  const offered = canonsOf(edit).filter((canon) => !edit.resolved.fallback.includes(canon));
+  const offered = canonsOf(edit, 'fallback').filter((canon) => !edit.resolved.fallback.includes(canon));
   await chosenThen(context, { title: FALLBACK_ADD_ROW, rows: offered.map((canon) => ({ label: displayIn(edit, canon) })) }, async (index) => {
     const added = offered[index];
     if (added === undefined) return;
@@ -152,7 +154,7 @@ const sessionModelChoice = (opened: Opened, context: ModelsFlowContext, job: Job
 
 export const chooseRoleModel = async (context: ModelsFlowContext, opened: Opened, job: Job, label: string): Promise<boolean> => {
   const { edit } = opened;
-  const canons = canonsOf(edit);
+  const canons = canonsOf(edit, job);
   const acted = await chosenThen(context, { title: label, rows: [...canons.map((canon) => ({ label: displayIn(edit, canon) })), { label: SESSION_MODEL_ROW }] }, async (index) => {
     const canon = canons[index];
     const written = canon === undefined ? await sessionModelChoice(opened, context, job) : await proposeAndWrite(opened, context, 'role set', { args: [job, canon], options: {} });

@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { Context } from 'hono';
 import type { Clock } from '@momonga/foundation';
 import { checkGoverningFact, normalizeTarget, overlappingEnforced, resolveGoverning, ruleSizeReport } from '@momonga/memory';
-import { displayOf, enforcedBehaviorOf, tokensForText } from '@momonga/protocol';
+import { displayOf, enforcedBehaviorOf, modelsForJob, tokensForText } from '@momonga/protocol';
 import type { AddRuleRequest, Capabilities, GoverningFactView, ModelView, ModelViews, PolicyGovernanceResponse, PolicyVerifyRequest, RuleAddResponse } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
@@ -58,7 +58,8 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
 
   const sizeOf = async (tokens: number, signal: AbortSignal): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
     const { views } = await deps.modelListing(signal);
-    const windows = await Promise.all(views.map((view) => windowOf(view, views, signal)));
+    const sessionViews = modelsForJob(views, 'session');
+    const windows = await Promise.all(sessionViews.map((view) => windowOf(view, sessionViews, signal)));
     return {
       size: ruleSizeReport(tokens, windows.flatMap((window) => (window.measured ? [{ target: window.target, contextWindow: window.contextWindow }] : []))),
       warnings: windows.flatMap((window) => (window.measured ? [] : [window.warning])),

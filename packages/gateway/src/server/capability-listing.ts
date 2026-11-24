@@ -80,6 +80,7 @@ export const listModel = async (router: Router, model: string, signal: AbortSign
     ownName: first.model,
     ...(first.defaultTag === undefined ? {} : { defaultTag: first.defaultTag }),
     naming: first.naming,
+    ...(first.outputKind === 'text' ? {} : { outputKind: first.outputKind }),
     billing: first.billing,
     capabilities: await chainCapabilitiesOf(router, model, members, listed),
     state: stateOf(listed),

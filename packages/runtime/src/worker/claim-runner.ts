@@ -5,7 +5,7 @@ import { reapTimingOf } from '../process/reap-timing.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex, sleep } from '@momonga/foundation';
-import { compactAtRatioOf, DEFAULT_OUTPUT_STYLE, isOutputStyle, isReasoningEffort, REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
+import { compactAtRatioOf, DEFAULT_OUTPUT_STYLE, isOutputStyle, isReasoningEffort, REFERENCE_KINDS, measuringLineOf, measuringSkipOf, measuringStepOf, sessionFenceOf, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, canDoJob, displayMapOf, displayOf, modelJobRefusal, readinessText } from '@momonga/protocol';
 import type { OutputStyle, ReasoningEffort, Capabilities, FunctionTool, Measuring } from '@momonga/protocol';
 import { JournalThreadError, UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
@@ -453,6 +453,11 @@ const driveClaim = async (
   const listing = await listedOrUndefined(control, gateway, pinned?.model ?? session.model);
   if (listing === undefined) {
     await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: sessionModelNotConfiguredText(pinned?.model ?? session.model) } });
+    return;
+  }
+  const sessionView = listing.views.find((view) => view.canon === (pinned?.model ?? session.model));
+  if (sessionView !== undefined && !canDoJob(sessionView, 'session')) {
+    await terminals.finish('FAILED', { error: { code: 'unsupported_request', message: modelJobRefusal(displayOf(sessionView, listing.views), 'session') } });
     return;
   }
   const newRoles = pinned === undefined ? rolesFor({ store: options.store, listed: listing.roles, run }) : undefined;
