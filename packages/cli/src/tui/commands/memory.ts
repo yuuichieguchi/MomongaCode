@@ -15,10 +15,10 @@ const USAGE =
 const runAutoReview = async (context: SlashContext, choice: string | undefined): Promise<void> => {
   const opened = await openEdit(context);
   if (choice === 'model') {
-    await runMemoryReviewModelFlow(context, opened);
+    await runMemoryReviewModelFlow(context, opened, { closeOnConfirm: true });
     return;
   }
-  const state = choice === undefined ? memoryReviewStateOf(opened.edit) : await setMemoryAutoReview(context, savingIn(context), opened, choice === 'on');
+  const state = choice === undefined ? memoryReviewStateOf(opened.edit) : await setMemoryAutoReview(context, savingIn(context), opened, choice === 'on', { closeOnConfirm: true });
   if (state !== undefined) context.info(memoryAutoReviewText(state, opened.edit.displays));
 };
 

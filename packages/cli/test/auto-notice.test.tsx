@@ -293,6 +293,7 @@ describe('the auto notice after /auto-mode changes the classifier in the TUI (E)
     await pickOtherClassifier(app, 'Yes');
     await untilOutput(app, RESULT_OTHER);
     await waitForInputReturned(app);
+    await backend.called('session');
     await nextCommandShown(app);
     const finalFrame = flat(app.lastFrame() ?? '');
     expect(backend.calls).toContain('session');
@@ -336,6 +337,7 @@ describe('the auto notice after /auto-mode changes the classifier in the TUI (E)
     await pickOtherClassifier(app, 'Yes');
     await untilOutput(app, RESULT_OTHER);
     await waitForInputReturned(app);
+    await backend.called('session');
     const shown = await nextCommandShown(app);
     expect(backend.calls).toContain('session');
     expect(flat(shown)).not.toContain(`auto: classifier ${CLASSIFIER_OTHER_MODEL}`);

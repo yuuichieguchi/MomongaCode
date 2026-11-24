@@ -7,7 +7,7 @@ import type { MemoryAutoReviewState } from '../../memory/format.ts';
 import { SEPARATOR, START_MARK, billingRows, displayIn, fallbackRows, proposeForm, roleRows } from '../../commands/models.ts';
 import type { ModelsEdit, ModelsProposal } from '../../commands/models.ts';
 import { chosenOf, chosenThen, confirmAndWrite, confirmedBy, openEdit, proposeAndWrite, refusedSentence } from './context.ts';
-import type { ModelsFlowContext, Opened } from './context.ts';
+import type { ModelsFlowContext, Opened, WriteOptions } from './context.ts';
 import {
   BILLING_TITLE,
   EVERY_MODEL_ROW,
@@ -149,15 +149,15 @@ export const runBillingFlow = async (context: ModelsFlowContext): Promise<void> 
 
 type Job = (typeof ROLE_ROWS)[number]['job'];
 
-const sessionModelChoice = (opened: Opened, context: ModelsFlowContext, job: Job): Promise<ModelsEditResult | undefined> =>
-  job === 'classifier' ? proposeAndWrite(opened, context, 'role set', { args: [job, INHERITED_CLASSIFIER], options: {} }) : proposeAndWrite(opened, context, 'role clear', { args: [job], options: {} });
+const sessionModelChoice = (opened: Opened, context: ModelsFlowContext, job: Job, options?: WriteOptions): Promise<ModelsEditResult | undefined> =>
+  job === 'classifier' ? proposeAndWrite(opened, context, 'role set', { args: [job, INHERITED_CLASSIFIER], options: {} }, options) : proposeAndWrite(opened, context, 'role clear', { args: [job], options: {} }, options);
 
-export const chooseRoleModel = async (context: ModelsFlowContext, opened: Opened, job: Job, label: string): Promise<boolean> => {
+export const chooseRoleModel = async (context: ModelsFlowContext, opened: Opened, job: Job, label: string, options?: WriteOptions): Promise<boolean> => {
   const { edit } = opened;
   const canons = canonsOf(edit, job);
   const acted = await chosenThen(context, { title: label, rows: [...canons.map((canon) => ({ label: displayIn(edit, canon) })), { label: SESSION_MODEL_ROW }] }, async (index) => {
     const canon = canons[index];
-    const written = canon === undefined ? await sessionModelChoice(opened, context, job) : await proposeAndWrite(opened, context, 'role set', { args: [job, canon], options: {} });
+    const written = canon === undefined ? await sessionModelChoice(opened, context, job, options) : await proposeAndWrite(opened, context, 'role set', { args: [job, canon], options: {} }, options);
     return written !== undefined;
   });
   return acted?.value === true;
@@ -178,7 +178,7 @@ export const runRoleFlow = async (context: ModelsFlowContext): Promise<void> => 
 export const runClassifierFlow = async (context: ModelsFlowContext): Promise<boolean> => {
   const row = ROLE_ROWS.find((candidate) => candidate.job === 'classifier');
   if (row === undefined) throw new TypeError('the roles hold no classifier row');
-  return chooseRoleModel(context, await openEdit(context), row.job, row.label);
+  return chooseRoleModel(context, await openEdit(context), row.job, row.label, { closeOnConfirm: true });
 };
 
 export const memoryReviewStateOf = (edit: ModelsEdit): MemoryAutoReviewState => {
@@ -212,14 +212,15 @@ const writeMemoryReviewModel = ({ host }: Opened, model: string, signal: AbortSi
 
 const writeMemoryReviewSwitch = ({ host }: Opened, value: boolean, signal: AbortSignal): Promise<void> => writeMemoryAutoReview(host.home, host.settingsFile, value, { lock: host.lock(), signal });
 
-export const runMemoryReviewModelFlow = async (context: ModelsFlowContext, opened: Opened): Promise<void> => {
+export const runMemoryReviewModelFlow = async (context: ModelsFlowContext, opened: Opened, options?: WriteOptions): Promise<void> => {
   const model = await chooseMemoryReviewModel(context, opened);
   if (model === undefined) return;
+  if (options?.closeOnConfirm === true) context.overlays.closeScreen?.();
   const written = await refusedSentence(context, () => savingIn(context)((signal) => writeMemoryReviewModel(opened, model, signal)));
   if (written !== undefined) context.info(written.value.summaries.join('\n'));
 };
 
-export const setMemoryAutoReview = async (context: ModelsFlowContext, save: MemoryReviewSave, opened: Opened, on: boolean): Promise<MemoryAutoReviewState | undefined> => {
+export const setMemoryAutoReview = async (context: ModelsFlowContext, save: MemoryReviewSave, opened: Opened, on: boolean, options?: WriteOptions): Promise<MemoryAutoReviewState | undefined> => {
   const current = memoryReviewStateOf(opened.edit).model;
   if (!on) {
     await save((signal) => writeMemoryReviewSwitch(opened, false, signal));
@@ -227,6 +228,7 @@ export const setMemoryAutoReview = async (context: ModelsFlowContext, save: Memo
   }
   const model = current ?? sessionModelOf(context.model) ?? (await chooseMemoryReviewModel(context, opened));
   if (model === undefined) return undefined;
+  if (options?.closeOnConfirm === true) context.overlays.closeScreen?.();
   const written = await refusedSentence(context, () =>
     save(async (signal) => {
       if (current === undefined) await writeMemoryReviewModel(opened, model, signal);

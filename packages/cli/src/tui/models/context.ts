@@ -23,7 +23,7 @@ export const createFoundServers = (): FoundServers => {
 
 export type ModelsFlowContext = {
   readonly backend: Pick<TuiBackend, 'modelList' | 'modelsHost' | 'storeSecret' | 'health' | 'plan'>;
-  readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText'>;
+  readonly overlays: Pick<OverlayPorts, 'choose' | 'promptText'> & Partial<Pick<OverlayPorts, 'closeScreen'>>;
   readonly found: FoundServers;
   readonly model: string | undefined;
   info(text: string): void;
@@ -103,13 +103,16 @@ export const proposeWrite = async (opened: Opened, context: ModelsFlowContext, f
   return proposal === undefined ? undefined : writeConfirmed(opened, context, proposal.value);
 };
 
-export const proposeAndWrite = async (opened: Opened, context: ModelsFlowContext, form: ModelsForm, input: FormInput): Promise<ModelsEditResult | undefined> => {
+export type WriteOptions = { readonly closeOnConfirm?: boolean };
+
+export const proposeAndWrite = async (opened: Opened, context: ModelsFlowContext, form: ModelsForm, input: FormInput, options?: WriteOptions): Promise<ModelsEditResult | undefined> => {
   const proposal = await refusedSentence(context, () => proposeForm(opened.host, opened.edit, form, input));
-  return proposal === undefined ? undefined : confirmAndWrite(opened, context, proposal.value);
+  return proposal === undefined ? undefined : confirmAndWrite(opened, context, proposal.value, undefined, options);
 };
 
-export const confirmAndWrite = async (opened: Opened, context: ModelsFlowContext, proposal: ModelsProposal, before?: () => Promise<void>): Promise<ModelsEditResult | undefined> => {
+export const confirmAndWrite = async (opened: Opened, context: ModelsFlowContext, proposal: ModelsProposal, before?: () => Promise<void>, options?: WriteOptions): Promise<ModelsEditResult | undefined> => {
   const question = await refusedSentence(context, async () => plannedOf(opened.edit, proposal));
   if (question === undefined || !(await confirmedBy(context, question.value))) return undefined;
+  if (options?.closeOnConfirm === true) context.overlays.closeScreen?.();
   return writeConfirmed(opened, context, proposal, before);
 };
