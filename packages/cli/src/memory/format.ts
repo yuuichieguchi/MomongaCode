@@ -1,5 +1,5 @@
 import { describeMemoryValidity, describeValidity, escapeTerminalLine } from '@momonga/protocol';
-import type { MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
+import type { MemoryJudgementView, MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
 
 const firstLine = (text: string): string => escapeTerminalLine(text.split('\n')[0] ?? '');
 
@@ -64,7 +64,14 @@ export const formatReflection = (job: ReflectionJobView | null): string => {
   return [headline, ...reason, ...job.dropped.map(droppedLine)].join('\n');
 };
 
-export const formatMemory = (memory: MemoryView): string =>
+export type ShownModel = (model: string) => string;
+
+export const shownModelIn =
+  (displays: ReadonlyMap<string, string>): ShownModel =>
+  (model) =>
+    displays.get(model) ?? model;
+
+export const formatMemory = (memory: MemoryView, shownModel: ShownModel): string =>
   [
     `id: ${memory.id}`,
     `scope: ${memory.scope}`,
@@ -74,9 +81,33 @@ export const formatMemory = (memory: MemoryView): string =>
     ...(memory.project === null ? [] : [`project: ${escapeTerminalLine(memory.project)}`]),
     `created: ${iso(memory.createdAt)}`,
     `kept: ${iso(memory.keptAt)}`,
+    ...(memory.keptByClassifier === null ? [] : [`kept by: auto review, model ${escapeTerminalLine(shownModel(memory.keptByClassifier))}`]),
     ...(memory.validity === undefined ? [] : [`validity: ${describeValidity(memory.validity)}`]),
     sourceLine(memory.source),
     ...memory.evidence.map(evidenceLine),
     '',
     ...memory.text.split('\n').map((line) => `  ${escapeTerminalLine(line)}`),
   ].join('\n');
+
+const judgedLine = (judgement: MemoryJudgementView, shownModel: ShownModel): string => {
+  if (judgement.failure !== undefined) return escapeTerminalLine(judgement.failure);
+  const { classifier, verdict, confidence } = judgement;
+  if (classifier === undefined || verdict === undefined || confidence === undefined) throw new Error(`the judgement of memory ${judgement.memoryId} names neither a failure nor a classifier answer`);
+  const judged = `model ${escapeTerminalLine(shownModel(classifier))} judged it`;
+  if (verdict === 'safe') return `${judged} safe ${confidence === 'high' ? 'with' : 'without'} high confidence`;
+  return `${judged} ${verdict}`;
+};
+
+export const formatMemoryJudgement = (judgement: MemoryJudgementView, shownModel: ShownModel): string =>
+  judgement.outcome === 'kept'
+    ? `auto review kept memory ${judgement.memoryId}; ${judgedLine(judgement, shownModel)}`
+    : `auto review left memory ${judgement.memoryId} waiting; ${judgedLine(judgement, shownModel)}`;
+
+export const memoryJudgementLevel = (judgement: MemoryJudgementView): 'info' | 'warning' => (judgement.failure === undefined ? 'info' : 'warning');
+
+export type MemoryAutoReviewState = { readonly on: boolean; readonly model: string | undefined };
+
+export const memoryAutoReviewText = ({ on, model }: MemoryAutoReviewState, displays: ReadonlyMap<string, string>): string => {
+  if (!on) return 'memory auto review is off';
+  return model === undefined ? 'memory auto review is on' : `memory auto review is on, model ${shownModelIn(displays)(model)}`;
+};

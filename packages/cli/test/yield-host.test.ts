@@ -64,6 +64,7 @@ const memoryView = (id: string, text: string, runId: string, state: string, proj
       { kind: 'file', project, path: 'notes.txt', sha256: 'f'.repeat(64) },
     ],
     contributedAt: null,
+    keptByClassifier: null,
     status: 'verified',
   }) as MemoryView;
 

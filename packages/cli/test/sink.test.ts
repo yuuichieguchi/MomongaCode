@@ -100,6 +100,18 @@ describe('text format', () => {
   });
 });
 
+describe('a judged memory in a headless run', () => {
+  it('prints nothing for memory.judged in the text format, verbose or not', () => {
+    for (const verbose of [false, true]) {
+      const { sink, out, err } = sinkFor('text', verbose);
+      sink.handle(frame({ type: 'memory.judged', memoryId: 'mem-1' }));
+      expect(out).toEqual([]);
+      expect(err).toEqual([]);
+      expect(sink.texts()).toBe('');
+    }
+  });
+});
+
 describe('hooks, auto mode and denials', () => {
   const call = (callId: string, title: string) => frame({ type: 'tool.call', callId, providerCallId: 'p', name: 'Write', kind: 'edit', title, rawInput: {} });
 

@@ -105,6 +105,7 @@ export type FollowEventsOptions<Result> = ReconnectPolicy & {
   open: StreamOpener;
   finished(): Promise<Result | undefined>;
   onEvent(frame: RunEventFrame): void;
+  onOpen?(): void;
   onDaemonStopping(): void;
 };
 
@@ -117,7 +118,10 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
       const streamOptions = {
         ...(cursor > 0 ? { lastEventId: cursor } : {}),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-        onOpen: reconnector.opened,
+        onOpen: () => {
+          reconnector.opened();
+          options.onOpen?.();
+        },
         onDaemonStopping: options.onDaemonStopping,
       };
       for await (const frame of options.open(streamOptions)) {
@@ -290,6 +294,7 @@ export type FollowSessionOptions = {
   reconnectBoundMs: number;
   restoreConnection(signal: AbortSignal | undefined): Promise<void>;
   onEvent(frame: RunEventFrame): void;
+  onOpen?(): void;
   onReconnecting?(attempt: number): void;
   onDaemonStopping(): void;
   signal: AbortSignal;
@@ -307,6 +312,7 @@ export const followSession = (options: FollowSessionOptions): Promise<never> => 
     boundExceeded: (boundMs, cause) => new SessionStreamLost(sessionId, boundMs, cause),
     restoreConnection: options.restoreConnection,
     onEvent: options.onEvent,
+    ...(options.onOpen === undefined ? {} : { onOpen: options.onOpen }),
     ...(options.onReconnecting === undefined ? {} : { onReconnecting: options.onReconnecting }),
     onDaemonStopping: options.onDaemonStopping,
     signal: options.signal,

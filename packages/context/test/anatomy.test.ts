@@ -128,6 +128,7 @@ describe('the anatomy of a built context', () => {
       retiredAt: null,
       evidence: [],
       contributedAt: null,
+      keptByClassifier: null,
       status: 'unbound',
     };
     const fact: GoverningFactView = {

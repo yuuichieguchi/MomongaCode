@@ -60,7 +60,7 @@ describe('the folder trust prompt is the selection component and only enter deci
     expect(backend.calls).toEqual(['boot']);
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'mode: manual');
-    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
+    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     app.unmount();
   });
 
@@ -68,7 +68,7 @@ describe('the folder trust prompt is the selection component and only enter deci
     const { app, backend } = await trusting();
     app.stdin.write(KEYS.escape);
     await untilFrame(app, 'mode: manual');
-    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
+    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     app.unmount();
   });
 
@@ -76,7 +76,7 @@ describe('the folder trust prompt is the selection component and only enter deci
     const { app, backend, terminal } = await trusting();
     expect(terminal.emit(press(screenRowOf(app, `2. ${NO_TRUST}`)))).toBe(true);
     await untilFrame(app, 'mode: manual');
-    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
+    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     app.unmount();
   });
 });

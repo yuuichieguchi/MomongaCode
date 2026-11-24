@@ -1,12 +1,14 @@
 import { STANDARD_REASONING_EFFORT, isReasoningEffort } from '@momonga/protocol';
 import type { ReasoningEffort } from '@momonga/protocol';
-import { ConfigError, EVERY_MODEL_EFFORT_LABEL, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, settingReadPointOf } from '@momonga/config';
+import { ConfigError, EVERY_MODEL_EFFORT_LABEL, ModelsEditRefused, SETTINGS_SCHEMA, SETTING_READ_POINTS, editModelsSettings, honouredPartOf, settingReadPointOf } from '@momonga/config';
 import type { ProjectMandateState, SettingReadPoint, SettingsLayer, SettingsOperation, SettingsShadow, SettingsSnapshot } from '@momonga/config';
 import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { openInEditor } from './external-editor.ts';
 import type { PickRow } from './picker.tsx';
 import { switchWordOf } from './screen/a11y.ts';
 import { runModelsHub } from './models/hub.ts';
+import { openEdit } from './models/context.ts';
+import { setMemoryAutoReview } from './models/order.ts';
 import { MODELS_TITLE, settingsFileLine } from './models/texts.ts';
 import { chooseThen } from './flow-step.ts';
 import type { SlashContext } from './slash.ts';
@@ -122,6 +124,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'memory.reflection.maxTokens': { label: 'Reflection token limit', section: 'Memory' },
   'memory.forgetAfterDays': { label: 'Forget after (days)', section: 'Memory' },
   'memory.repositoryFacts': { label: 'Repository facts', section: 'Memory' },
+  'memory.autoReview': { label: 'Auto review', section: 'Memory' },
   'verification.commands': { label: 'Verification commands', section: 'Verification' },
   'verification.manifests': { label: 'Verification manifests', section: 'Verification' },
   'verification.required': { label: 'Require a completion condition', section: 'Verification' },
@@ -181,6 +184,7 @@ export const SETTINGS_REACHED_BY_LINK: Readonly<Record<string, string>> = {
   enabledMcpjsonServers: 'mcp',
   disabledMcpjsonServers: 'mcp',
   'autoMode.classifier': 'models',
+  'memory.autoReviewModel': 'models',
   'models.connections': 'models',
   'models.start': 'models',
   'models.fallback': 'models',
@@ -250,7 +254,7 @@ const valueAt = (document: unknown, path: readonly string[]): unknown => path.re
 
 export const currentOf = (snapshot: SettingsSnapshot, path: readonly string[]): { value: unknown; source: SettingSource } => {
   for (const view of snapshot.layers.toReversed()) {
-    const value = valueAt(view.document, path);
+    const value = valueAt(honouredPartOf(view.layer, view.document), path);
     if (value !== undefined) return { value, source: view.layer };
   }
   return { value: valueAt(snapshot.defaults, path), source: 'default' };
@@ -454,10 +458,8 @@ const saveScalar = async (context: SlashContext, snapshot: SettingsSnapshot, lea
     await context.background(SAVING_SETTING, (signal) => live.store(context, wordOf(chosen.value), signal));
     return { kind: 'written' };
   }
-  if (leaf.key === EVERY_MODEL_EFFORT_KEY) {
-    if (chosen.value !== undefined && !isReasoningEffort(chosen.value)) throw new TypeError(`${EVERY_MODEL_EFFORT_KEY} offered a value that is not a level`);
-    return writeEveryModelEffort(context, chosen.value);
-  }
+  const ownWriter = OWN_WRITERS[leaf.key];
+  if (ownWriter !== undefined) return ownWriter(context, chosen.value);
   const layer = await saveTargetOf(context, snapshot, source);
   if (layer === undefined) return LEFT;
   return outcomeOf(await settingWrite(context, layer, chosen.value === undefined ? { kind: 'unset', path: leaf.path } : { kind: 'set', path: leaf.path, value: chosen.value }));
@@ -816,6 +818,16 @@ const writeEveryModelEffort = async (context: SlashContext, effort: ReasoningEff
   await context.background(SAVING_SETTING, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setEffort', effort }], { lock: host.lock(), signal }));
   await context.refreshConnection();
   return { kind: 'written' };
+};
+
+const writeMemoryAutoReviewSwitch = async (context: SlashContext, on: boolean): Promise<Outcome> => ((await setMemoryAutoReview(context, (work) => context.background(SAVING_SETTING, work), await openEdit(context), on)) === undefined ? LEFT : { kind: 'written' });
+
+const OWN_WRITERS: Readonly<Record<string, (context: SlashContext, value: unknown) => Promise<Outcome>>> = {
+  [EVERY_MODEL_EFFORT_KEY]: (context, value) => {
+    if (value !== undefined && !isReasoningEffort(value)) throw new TypeError(`${EVERY_MODEL_EFFORT_KEY} offered a value that is not a level`);
+    return writeEveryModelEffort(context, value);
+  },
+  'memory.autoReview': (context, value) => writeMemoryAutoReviewSwitch(context, value === true),
 };
 
 const writeDialects = async (context: SlashContext, dialects: object): Promise<Refusal | undefined> => {

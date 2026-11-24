@@ -1,5 +1,6 @@
 export type OrderedQueue = {
   enqueue(task: () => Promise<void>): void;
+  deliver(task: () => Promise<void>): Promise<void>;
   settled(): Promise<void>;
 };
 
@@ -16,6 +17,14 @@ export const createOrderedQueue = (): OrderedQueue => {
           failure = { error };
         }
       });
+    },
+    deliver: (task) => {
+      const delivered = tail.then(async () => {
+        if (failure !== undefined) throw failure.error;
+        await task();
+      });
+      tail = delivered.catch(() => undefined);
+      return delivered;
     },
     settled: async () => {
       await tail;

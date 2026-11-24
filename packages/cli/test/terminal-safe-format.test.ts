@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GoverningFactView, MemoryView, ReflectionJobView } from '@momonga/protocol';
 import { terminalSink } from '../src/terminal-writer.ts';
-import { formatMemory, formatMemoryHistory, formatMemoryList, formatReflection } from '../src/memory/format.ts';
+import { formatMemory, formatMemoryHistory, formatMemoryList, formatReflection, shownModelIn } from '../src/memory/format.ts';
 import { formatGovernanceVerification, formatRuleAdded, formatRuleHistory, formatRuleList } from '../src/rule/format.ts';
 
 const HOSTILE = 'x\u001b]0;pwn\u0007\u009b2J‮y';
@@ -31,6 +31,7 @@ const memory = (overrides: Partial<MemoryView> = {}): MemoryView => ({
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
   ...overrides,
 });
@@ -72,7 +73,7 @@ describe('memory text that a person did not write is printed escaped', () => {
 
   it('escapes the whole text of a memory in show and review, keeping its line breaks and indenting each line', () => {
     const written: string[] = [];
-    terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(formatMemory(memory({ text: `first\n${HOSTILE}` })));
+    terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(formatMemory(memory({ text: `first\n${HOSTILE}` }), shownModelIn(new Map())));
     const printed = written.join('');
     expectSafe(printed);
     expect(printed).toContain(`\n  first\n  ${ESCAPED}`);
@@ -87,6 +88,7 @@ describe('memory text that a person did not write is printed escaped', () => {
           { kind: 'check', command: HOSTILE, exitCode: 0, runId: 'r', conditionId: 'c', seq: 1 },
         ],
       }),
+      shownModelIn(new Map()),
     );
     expect(printed).not.toMatch(UNSAFE);
     expect(printed.split(ESCAPED).length - 1).toBe(3);

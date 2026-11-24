@@ -12,7 +12,7 @@ describe('App startup', () => {
   it('opens the session of a trusted folder and shows the status line', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: manual (shift+tab)');
-    expect(backend.calls).toEqual(['boot', 'openSession']);
+    expect(backend.calls).toEqual(['boot', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     app.unmount();
   });
 
@@ -22,7 +22,7 @@ describe('App startup', () => {
     expect(backend.calls).toEqual(['boot']);
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'mode: manual');
-    expect(backend.calls).toEqual(['boot', 'trust:trusted', 'openSession']);
+    expect(backend.calls).toEqual(['boot', 'trust:trusted', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     app.unmount();
   });
 
@@ -33,7 +33,7 @@ describe('App startup', () => {
     await untilFrame(app, '› 2. No, continue without its project settings');
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'mode: manual');
-    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
+    expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     app.unmount();
   });
 

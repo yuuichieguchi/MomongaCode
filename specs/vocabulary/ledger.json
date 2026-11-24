@@ -537,6 +537,9 @@
       "packages/runtime/src/memory/journal-thread.ts": {
         "limit": 2
       },
+      "packages/runtime/src/memory/judge.ts": {
+        "task": 1
+      },
       "packages/runtime/src/memory/reflection-input.ts": {
         "project": 1,
         "task": 1
@@ -570,7 +573,7 @@
       },
       "packages/runtime/src/service/memories.ts": {
         "directory": 1,
-        "project": 2
+        "project": 3
       },
       "packages/runtime/src/service/rules.ts": {
         "gateway": 1,

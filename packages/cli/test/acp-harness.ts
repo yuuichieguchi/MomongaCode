@@ -3,7 +3,7 @@ import type { AcpBridge, AcpDeps, FollowRequest, FollowSessionRequest } from '..
 import { withReplayedInitialize } from '../src/acp/handover.ts';
 import type { AgentConnection, AnyMessage } from '@agentclientprotocol/sdk';
 import type { MessageStream } from '../src/acp/handover.ts';
-import type { ModelViews, PublicRunEvent, SkillsResponse } from '@momonga/protocol';
+import type { MemoryJudgementView, ModelViews, PublicRunEvent, SkillsResponse } from '@momonga/protocol';
 import { SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER, afterMicrotasks } from '@momonga/testkit';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import type { CreatedSession, RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
@@ -28,6 +28,7 @@ export type Peer = {
   notify(method: string, params: unknown): Promise<void>;
   untilReceived(predicate: (message: AnyMessage) => boolean): Promise<AnyMessage>;
   answerRequests(handler: (method: string, params: unknown) => unknown): void;
+  interceptNotifications(interceptor: (method: string, params: unknown) => Promise<void> | void): void;
   close(): Promise<void>;
 };
 
@@ -41,6 +42,13 @@ export const connectPeer = (app: Connectable): Peer => {
   const toAgent = new TransformStream<AnyMessage, AnyMessage>();
   const fromAgent = new TransformStream<AnyMessage, AnyMessage>();
   const connection = app.connect({ readable: toAgent.readable, writable: fromAgent.writable });
+  const interceptors: ((method: string, params: unknown) => Promise<void> | void)[] = [];
+  const client = connection.client as { notify(method: string, params: unknown): Promise<void> };
+  const delivered = client.notify.bind(client);
+  client.notify = async (method, params) => {
+    for (const interceptor of interceptors) await interceptor(method, params);
+    return delivered(method, params);
+  };
   const writer = toAgent.writable.getWriter();
   const received: AnyMessage[] = [];
   const listeners = new Set<() => void>();
@@ -101,6 +109,9 @@ export const connectPeer = (app: Connectable): Peer => {
     answerRequests: (next) => {
       handler = next;
     },
+    interceptNotifications: (interceptor) => {
+      interceptors.push(interceptor);
+    },
     close: async () => {
       await writer.close();
       connection.close();
@@ -153,6 +164,7 @@ export type FakeRuntime = RuntimeClient & {
   failures: Map<string, Error>;
   modeChanged: ((mode: SessionView['permissionMode']) => void) | undefined;
   modelChanged: ((model: string, previousModel: string) => void) | undefined;
+  judgements: Map<string, MemoryJudgementView>;
 };
 
 const unexpected = (name: string) => (): never => {
@@ -198,6 +210,24 @@ export const fakeRuntime = (): FakeRuntime => {
     elicitationStatus: 'pending',
     createRunResult: async () => runView({ id: 'run-1', status: 'QUEUED' }),
     failures: new Map(),
+    judgements: new Map(),
+    memoryJudgement: async (memoryId: string) => {
+      record(`memoryJudgement ${memoryId}`);
+      const failure = runtime.failures.get('memoryJudgement');
+      if (failure !== undefined) throw failure;
+      const found = runtime.judgements.get(memoryId);
+      if (found === undefined) throw notFound(`memory-judgements/${memoryId}`);
+      return found;
+    },
+    memoryJudgements: async (project: string) => {
+      record(`memoryJudgements ${project}`);
+      return [...runtime.judgements.values()].filter((judgement) => judgement.owed);
+    },
+    markMemoryJudgementsShown: async (memoryIds: readonly string[]) => {
+      record(`markMemoryJudgementsShown ${memoryIds.join(',')}`);
+      const failure = runtime.failures.get('markMemoryJudgementsShown');
+      if (failure !== undefined) throw failure;
+    },
     modeChanged: undefined,
     modelChanged: undefined,
     health: unexpected('health'),
@@ -395,6 +425,12 @@ export const modeChangedFrame = (id: number, mode: SessionView['permissionMode']
   id,
   event: 'mode.changed',
   data: { id, sessionId: SESSION.id, createdAt: 1, type: 'mode.changed', mode },
+});
+
+export const memoryJudgedFrame = (id: number, memoryId: string): RunEventFrame => ({
+  id,
+  event: 'memory.judged',
+  data: { id, sessionId: SESSION.id, createdAt: 1, type: 'memory.judged', memoryId },
 });
 
 export const modelChangedFrame = (id: number, model: string, previousModel: string): RunEventFrame => ({

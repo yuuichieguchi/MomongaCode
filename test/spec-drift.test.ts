@@ -63,6 +63,7 @@ const UNMODELLED_EVENT_TYPES = [
   'mcp.authorization.required',
   'meter.observed',
   'inbox.changed',
+  'memory.judged',
   'mode.changed',
   'model.changed',
   'model.rejected',

@@ -1,7 +1,9 @@
+import { testKernelLock } from '@momonga/testkit';
 import { testEndpointScope } from '@momonga/testkit';
 import fs from 'node:fs';
+import path from 'node:path';
 import http from 'node:http';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaLayout, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { MemoryView } from '@momonga/protocol';
 import { registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
@@ -18,6 +20,7 @@ import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { fakeRuntime } from './acp-harness.ts';
 import { startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import { NO_HELPER } from './no-helper.ts';
+import { threeModels } from './models-shell-harness.ts';
 
 const VERSION = '1.2.3';
 
@@ -38,6 +41,7 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
   ...overrides,
 });
@@ -84,6 +88,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: () => undefined },
     personCapability: async () => 'f'.repeat(32),
+    interrupt: new AbortController().signal,
   } as unknown as CliPorts;
   return { paths, ports: terminalPorts(ports), project, seen, out };
 };
@@ -236,6 +241,90 @@ describe('momonga memory review', () => {
   });
 });
 
+describe('auto review in the shell memory commands', () => {
+  const JUDGEMENT_ROUTE = /\/v1\/memory-judgements/;
+
+  it('memory show names auto review and the model of a memory auto review kept, directly after the kept line', async (context) => {
+    const kept = memory('m1', { state: 'active', keptAt: 1000, keptByClassifier: 'openai/gpt-5-mini' });
+    const { paths, ports, seen, out } = await setup(context, () => ({ status: 200, body: { memory: kept } }));
+    expect(await command('memoryShow')(ports, paths, 'm1', false)).toBe(0);
+    expect(requests(seen)).toEqual(['GET /v1/memories/m1']);
+    const lines = out.join('').split('\n');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto review, model openai/gpt-5-mini');
+  });
+
+  it.for([
+    ['names the model by its display', 'ollama/gemma-3-4b:latest', 'kept by: auto review, model ollama/gemma-3-4b'],
+    ['names a model not among the configured models as it is stored', 'openai/gpt-9', 'kept by: auto review, model openai/gpt-9'],
+  ] as const)('memory show %s on the kept by line, and its json keeps the stored model', async ([, classifier, keptBy], context) => {
+    const kept = memory('m1', { state: 'active', keptAt: 1000, keptByClassifier: classifier });
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memory: kept } }));
+    const { settingsFile } = momongaLayout(ports.home, process.platform, process.env);
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(settingsFile, JSON.stringify(threeModels()), { mode: 0o600 });
+    expect(await command('memoryShow')(ports, paths, 'm1', false)).toBe(0);
+    const lines = out.join('').split('\n');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe(keptBy);
+    out.length = 0;
+    expect(await command('memoryShow')(ports, paths, 'm1', true)).toBe(0);
+    expect((JSON.parse(out.join('')) as MemoryView).keptByClassifier).toBe(classifier);
+  });
+
+  const writeSettings = (home: string, content: string | null): void => {
+    if (content === null) return;
+    const { settingsFile } = momongaLayout(home, process.platform, process.env);
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(settingsFile, content, { mode: 0o600 });
+  };
+
+  it.for([
+    ['a settings file that is not JSON', `${JSON.stringify(threeModels())},`],
+    ['a settings file the loader refuses', JSON.stringify({ ...threeModels(), telemetry: { captureMessageContent: true, contentRetentionDays: 1 } })],
+    ['no settings file', null],
+  ] as const)('memory show with %s names the model as it is stored, and its json keeps the stored model', async ([, content], context) => {
+    const classifier = 'ollama/gemma-3-4b:latest';
+    const kept = memory('m1', { state: 'active', keptAt: 1000, keptByClassifier: classifier });
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memory: kept } }));
+    writeSettings(ports.home, content);
+    expect(await command('memoryShow')(ports, paths, 'm1', false)).toBe(0);
+    const lines = out.join('').split('\n');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe('kept by: auto review, model ollama/gemma-3-4b:latest');
+    out.length = 0;
+    expect(await command('memoryShow')(ports, paths, 'm1', true)).toBe(0);
+    expect((JSON.parse(out.join('')) as MemoryView).keptByClassifier).toBe(classifier);
+  });
+
+  it('memory review with a settings file that is not JSON lists the waiting memories', async (context) => {
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1'), memory('m2')] } }));
+    writeSettings(ports.home, `${JSON.stringify(threeModels())},`);
+    expect(await command('memoryReview')(ports, paths, { json: false })).toBe(0);
+    const text = out.join('');
+    expect(text).toContain('note m1');
+    expect(text).toContain('note m2');
+    expect(text).toContain('momonga memory review accept <id> keeps a memory, momonga memory review reject <id> discards it\n');
+  });
+
+  it('memory show prints no kept by line for a memory a person kept', async (context) => {
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memory: memory('m1', { state: 'active' }) } }));
+    await command('memoryShow')(ports, paths, 'm1', false);
+    expect(out.join('')).not.toContain('kept by:');
+  });
+
+  it('memory review neither prints the lines of judged memories nor asks for or marks them', async (context) => {
+    const { paths, ports, project, seen, out } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1'), memory('m2')] } }));
+    expect(await command('memoryReview')(ports, paths, { json: false })).toBe(0);
+    expect(requests(seen)).toEqual([`GET /v1/memories?state=candidate&project=${encodeURIComponent(project)}`]);
+    expect(seen.some((entry) => JUDGEMENT_ROUTE.test(entry.url))).toBe(false);
+    expect(out.join('')).not.toContain('auto review');
+  });
+
+  it('memory review accept does not mark any judgement shown', async (context) => {
+    const { paths, ports, seen } = await setup(context, () => ({ status: 200, body: { memory: memory('m1', { state: 'active' }) } }));
+    await command('memoryAccept')(ports, paths, 'm1');
+    expect(requests(seen)).toEqual(['POST /v1/memories/m1/accept']);
+  });
+});
+
 describe('momonga memory restore and promote', () => {
   it('restores by id', async (context) => {
     const { paths, ports, seen, out } = await setup(context, () => ({ status: 200, body: { memory: memory('m1', { state: 'active' }) } }));
@@ -307,7 +396,7 @@ describe('the TUI start note', () => {
   });
 
   it('is one of the default sources', () => {
-    const defaults = notices.defaultNoticeSources({ env: {}, home: '/h', interrupt: new AbortController().signal }, {} as never);
+    const defaults = notices.defaultNoticeSources({ env: {}, home: '/h', interrupt: new AbortController().signal }, {} as never, () => testKernelLock());
     expect(defaults).toContain(source());
   });
 });

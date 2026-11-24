@@ -33,7 +33,7 @@ describe('context constants', () => {
   });
 
   it('charges a reflection inside the run it follows and lists the charges without a run separately', () => {
-    expect(USAGE_CHARGE_PURPOSES).toEqual(['compaction', 'permission_classifier', 'rejected_answer', 'reflection']);
+    expect(USAGE_CHARGE_PURPOSES).toEqual(['compaction', 'permission_classifier', 'rejected_answer', 'reflection', 'memory_classifier']);
     expect(CONTEXT_CHARGE_PURPOSES).toEqual(['guideline']);
   });
 
@@ -105,7 +105,7 @@ describe('MemoryView schema additions', () => {
     { kind: 'commit', sha: 'd818eb5' },
     { kind: 'check', runId: 'r1', conditionId: 'c1', seq: 5, command: 'npm test', exitCode: 0 },
   ];
-  const stored = { ...view, kind: 'fact', state: 'active', duplicateOf: null, supersedes: ['m0'], supersededBy: [], retiredAt: null, evidence, contributedAt: null };
+  const stored = { ...view, kind: 'fact', state: 'active', duplicateOf: null, supersedes: ['m0'], supersededBy: [], retiredAt: null, evidence, contributedAt: null, keptByClassifier: null };
   const full = { ...stored, status: 'verified' };
 
   it('accepts a view with the fields of the design', () => {
@@ -117,7 +117,7 @@ describe('MemoryView schema additions', () => {
     expect(acceptsMemory(stored)).toBe(false);
   });
 
-  it.each(['kind', 'state', 'duplicateOf', 'supersedes', 'supersededBy', 'retiredAt', 'contributedAt', 'evidence', 'status'])('requires %s', (field) => {
+  it.each(['kind', 'state', 'duplicateOf', 'supersedes', 'supersededBy', 'retiredAt', 'contributedAt', 'evidence', 'status', 'keptByClassifier'])('requires %s', (field) => {
     expect(acceptsMemory(full)).toBe(true);
     const { [field]: _removed, ...without } = full as Record<string, unknown>;
     expect(acceptsMemory(without)).toBe(false);

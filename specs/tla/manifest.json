@@ -1035,6 +1035,50 @@
       ]
     },
     {
+      "module": "MemoryAutoReview",
+      "abstractions": [
+        "one folder: folder scoping is only a filter; a candidate's text, the classifier prompt and the judgement reason are not modelled",
+        "creation order is the candidate number; reflection adds the lowest absent candidate, so a new candidate goes to the end",
+        "every not-allow kind (unsafe, safe without high confidence, call failure, broken reply, no classifier, budget exhausted, context too small) is one outcome notAllow; every wait of the classifier call is bounded, so Decide always ends",
+        "a session is the UI process connected to it (a terminal UI or an ACP editor session, set Acp): a closed session has no undelivered line event; a session that reopens is a new UI process with an empty memory of printed lines",
+        "a UI process may stop at any step; the store read, the print and the shown mark of a record are three separate steps of one process",
+        "a terminal UI starts in two steps: it connects to its event stream, then reads the unshown records; an ACP session only connects",
+        "the line events of one UI are a set: one commit per record appends at most one event per session",
+        "a person's retire applies to a waiting candidate and to an active memory; the record of a retired memory stays",
+        "restoring an archived memory is not modelled",
+        "the switch is one fact: memory.autoReview on and a model the gateway knows",
+        "a terminal UI's reconnect within one process is not modelled; a stop and a new start covers it with an empty memory of printed lines",
+        "the state space is bounded by the constants of its configurations; the base row MemoryAutoReview sets N = 2, UIs = {u1, u2}, Acp = {}, MaxCrashes = 1 and every switch FALSE"
+      ],
+      "notProved": [
+        "that a line reaches a person when no terminal UI start runs to its end again and no UI stays open (a UI may always stop before it prints)",
+        "a print of a record the person decided between the UI's store read and its print (accepted race)",
+        "that a sweeper tick eventually falls in a window with no active run (the strong fairness of StartAny)",
+        "behaviour beyond the constants of its configurations",
+        "that the code follows the model: no tie test exists yet"
+      ],
+      "header": [
+        "Model of memory auto review in the memory sweeper, independent of",
+        "the permission mode of a session: start guard (switch, trust, no",
+        "active run), review order, one judgement at a time, the",
+        "commit transaction that re-checks the candidate, the durable",
+        "judgement record and its shown mark, the line events of every open",
+        "session, and the read, print and mark of a line by a UI process that",
+        "may stop at any step.",
+        "Switches. The configuration MemoryAutoReview is the design the model holds.",
+        "  NoRecheck        the commit does not re-check that the candidate is",
+        "                   still waiting without a record",
+        "  RetryLeft        the judge picks again a candidate with a left record",
+        "  MarkAtCommit     the commit marks the record shown when an open",
+        "                   session exists, instead of the reader",
+        "  MarkBeforePrint  a UI marks a record shown before it prints it",
+        "  IgnoreSwitch     a judgement may start while the switch is off",
+        "  ReadFirst        a terminal UI reads the unshown records before it",
+        "                   connects to its event stream",
+        "  ShowDecided      a UI prints a record the person has decided"
+      ]
+    },
+    {
       "module": "ModelRef",
       "abstractions": [
         "the characters of ids: an own name is a short sequence of segments, the split at the first slash is the first segment (the property test I-N1 covers any string)",
@@ -2285,6 +2329,7 @@
         "      the rules packages/runtime/src/governance/rules.ts (rules)",
         "      packages/runtime/src/governance/governance-port.ts (trusted)",
         "      packages/runtime/src/memory/reflection.ts (memory, trusted, verification)",
+        "      packages/runtime/src/memory/judge.ts (trusted)",
         "      the process ports packages/runtime/src/process/tool-runtime.ts (loadSessionSettings, takeUserSnapshot, userSnapshot)",
         "      packages/runtime/src/process/agents-port.ts (approvedProjectAgents, trusted)",
         "      packages/runtime/src/process/history-port.ts (trusted)",
@@ -11426,6 +11471,227 @@
       "budgetCpuSeconds": 6,
       "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 15.84 at start)",
       "identity": "3bbd927f5afbb0b5b843d8fb6ca235e3038d92a35ef8473f567e5d139e685a89"
+    },
+    {
+      "config": "MemoryAutoReview",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 5381760,
+      "measuredSeconds": 71.56,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 365.13,
+      "budgetCpuSeconds": 734,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 7.41 at start)",
+      "identity": "b744e5ef0202fb34d2e90516734c588cc591697bae79d54190b5c565b0acfed0"
+    },
+    {
+      "config": "MemoryAutoReview.live",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 180248,
+      "measuredSeconds": 41.3,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 198.33,
+      "budgetCpuSeconds": 400,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.66 at start)",
+      "identity": "a7cadfb82db9fdec9c0ad3306a2001685955161ec140e8af4dd14ee4a53b4ecf"
+    },
+    {
+      "config": "MemoryAutoReview.n3",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 9964936,
+      "measuredSeconds": 111.23,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 568.94,
+      "budgetCpuSeconds": 1141,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 6.18 at start)",
+      "identity": "b02c603f44d713d06d980ad8c86b5986ae78e6fbad7eec73f90a4931b9c6699a"
+    },
+    {
+      "config": "MemoryAutoReview.acp",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 1763776,
+      "measuredSeconds": 21,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 105.68,
+      "budgetCpuSeconds": 215,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)",
+      "identity": "a2462a308e08bc89cb354363dcf402d8e68afab0d1d7a9e1895755b817cc9a2e"
+    },
+    {
+      "config": "MemoryAutoReview.liveAcp",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 8648,
+      "measuredSeconds": 3.14,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 14.12,
+      "budgetCpuSeconds": 32,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.94 at start)",
+      "identity": "6dcd1f259413872eb34141e307c313a14fb862aa71446542576301fa700d3a09"
+    },
+    {
+      "config": "MemoryAutoReview.liveUIs",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 35512,
+      "measuredSeconds": 8.29,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 39.9,
+      "budgetCpuSeconds": 83,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.79 at start)",
+      "identity": "068881e97be075a5ded0f7d4939f21969c803b062d64c4e2dfcbeade78322ed1"
+    },
+    {
+      "config": "MemoryAutoReview.noRecheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "PersonWins",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 258,
+      "measuredSeconds": 1.34,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 2.44,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.77 at start)",
+      "identity": "a296b0fb0205e8ad02ae28ff10ca0bbcaa61638c0a2ff55aff2ce5dd6e7a4952"
+    },
+    {
+      "config": "MemoryAutoReview.retryLeft",
+      "role": "evidence",
+      "expect": {
+        "violates": "JudgedOnce",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 382,
+      "measuredSeconds": 1.3,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 2.39,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.77 at start)",
+      "identity": "de317cdc09d34f5eb08340d05d6045d5e9c3bd6a8aae92134701537284c1bdd0"
+    },
+    {
+      "config": "MemoryAutoReview.markAtCommit",
+      "role": "evidence",
+      "expect": {
+        "violates": "LineReachesAPerson",
+        "exitCode": 13
+      },
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 1760,
+      "measuredSeconds": 1.86,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 5.13,
+      "budgetCpuSeconds": 14,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.94 at start)",
+      "identity": "b6e37e45d7ab017977e75b0161eb307c192c1ae99e9f9c514cd7c276e30b3ee1"
+    },
+    {
+      "config": "MemoryAutoReview.showDecided",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLineAfterDecision",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 779,
+      "measuredSeconds": 1.46,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 2.67,
+      "budgetCpuSeconds": 9,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)",
+      "identity": "e1647801f40a66937d8b4f909cb875703885c1f2624df72e9307c394af359c23"
+    },
+    {
+      "config": "MemoryAutoReview.markBeforePrint",
+      "role": "evidence",
+      "expect": {
+        "violates": "LineReachesAPerson",
+        "exitCode": 13
+      },
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 1608,
+      "measuredSeconds": 1.66,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 3.99,
+      "budgetCpuSeconds": 11,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.95 at start)",
+      "identity": "1d2beb7c0b884d04b7d9cf562449ecbabc19909c43db196395af152d2b4c6a25"
+    },
+    {
+      "config": "MemoryAutoReview.ignoreSwitch",
+      "role": "evidence",
+      "expect": {
+        "violates": "StartGuard",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 91,
+      "measuredSeconds": 1.29,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 2.22,
+      "budgetCpuSeconds": 8,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 4.77 at start)",
+      "identity": "6ed2ff5c3509b2bce033290a6279e62bc9f14fd95fe5e375b972703a8fc5615f"
+    },
+    {
+      "config": "MemoryAutoReview.readFirst",
+      "role": "evidence",
+      "expect": {
+        "violates": "LineReachesOpenTui",
+        "exitCode": 13
+      },
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 1480,
+      "measuredSeconds": 1.63,
+      "measuredReuse": "off",
+      "measuredCpuSeconds": 4.8,
+      "budgetCpuSeconds": 13,
+      "note": "measured cold (not replayed, scripts/tlc.sh under the heavy run lock, workers 5, nice 15, 1-minute load 3.94 at start)",
+      "identity": "354a99f6f1eb83073c56b5ea1a1098d886e8c9432cf8de8b4be6926cd4b11886"
     }
   ]
 }

@@ -42,7 +42,8 @@ const versionThirtyEightWithMemories = async (): Promise<{ dbPath: string; first
   try {
     migrate(db, MIGRATIONS.filter((migration) => migration.version <= 38));
     db.exec(`ATTACH DATABASE '${source.dbPath}' AS head`);
-    db.exec('INSERT INTO memories SELECT * FROM head.memories ORDER BY created_at, id');
+    const columns = db.prepare('PRAGMA table_info(memories)').all().map((column) => String(column['name'])).join(', ');
+    db.exec(`INSERT INTO memories (${columns}) SELECT ${columns} FROM head.memories ORDER BY created_at, id`);
     db.exec(`INSERT INTO memory_evidence (${EVIDENCE_COLUMNS}) SELECT ${EVIDENCE_COLUMNS} FROM head.memory_evidence`);
     db.exec('DETACH DATABASE head');
   } finally {

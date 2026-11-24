@@ -20,6 +20,7 @@ const memoryOf = (index: number, overrides: Partial<MemoryView> = {}): MemoryVie
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
   ...overrides,
 });

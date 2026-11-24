@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { parseOutsideJson } from '@momonga/foundation';
 import { MEMORY_SCOPES, MEMORY_STATES, WORDS } from '@momonga/protocol';
-import type { AddMemoryRequest, ContextChargeView, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
+import type { AddMemoryRequest, ContextChargeView, MarkMemoryJudgementsShownRequest, MemoryJudgementResponse, MemoryJudgementsResponse, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, MemoryListCursor, RuntimeStore } from '@momonga/store';
 import { MemoryAddRefusal, prepareCommandMemory } from '../memory/add-memory.ts';
@@ -52,7 +52,7 @@ const decodeCursor = (raw: string | undefined): MemoryListCursor | null => {
 const projectOf = async (raw: string | undefined, signal: AbortSignal): Promise<string | undefined> => (raw === undefined ? undefined : canonicalProject(raw, 'project', signal));
 
 export type MemoryRoutesDeps = {
-  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'getRun' | 'getSession' | 'readRunEventsOfTypes'>;
+  store: Pick<RuntimeStore, 'memories' | 'memoryJudgements' | 'reflection' | 'trust' | 'getRun' | 'getSession' | 'readRunEventsOfTypes'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
   skillFiles: SkillFileSystem;
@@ -197,6 +197,27 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     };
   };
 
+  const owedJudgements: Handler = async (context) => {
+    const raw = context.req.query('project');
+    if (raw === undefined) throw invalidRequest('project is required', 'project');
+    const view: MemoryJudgementsResponse = { judgements: deps.store.memoryJudgements.owed(await canonicalProject(raw, 'project', context.req.raw.signal)) };
+    return json(view, 200);
+  };
+
+  const judgementOfMemory: Handler = (context) => {
+    const id = context.req.param('memoryId') ?? '';
+    const judgement = deps.store.memoryJudgements.get(id);
+    if (judgement === undefined) throw notFound(`memory ${id} has no judgement`);
+    const view: MemoryJudgementResponse = { judgement };
+    return json(view, 200);
+  };
+
+  const markJudgementsShown: Handler = async (context) => {
+    const body = validateBody<MarkMemoryJudgementsShownRequest>('MarkMemoryJudgementsShownRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    deps.store.memoryJudgements.markShown(body.memoryIds);
+    return new Response(null, { status: 204 });
+  };
+
   const reflectionOfRun: Handler = (context) => json(runReflectionView(context.req.param('id') ?? ''), 200);
 
   route('/v1/reflection', { GET: latestReflection });
@@ -208,4 +229,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
   route('/v1/memories/:id/reject', { POST: rejectMemory }, { person: ['POST'] });
   route('/v1/memories/:id/restore', { POST: restoreMemory }, { person: ['POST'] });
   route('/v1/memories/:id/promote', { POST: promoteMemory }, { person: ['POST'] });
+  route('/v1/memory-judgements', { GET: owedJudgements });
+  route('/v1/memory-judgements/shown', { POST: markJudgementsShown }, { person: ['POST'] });
+  route('/v1/memory-judgements/:memoryId', { GET: judgementOfMemory });
 };

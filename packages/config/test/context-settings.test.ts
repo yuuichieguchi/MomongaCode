@@ -16,7 +16,7 @@ const resolvedWith = async (settings: Record<string, unknown>) => {
 
 describe('context settings defaults', () => {
   it('turns reflection on, sets no fixed token cap, and forgets after 90 days', async () => {
-    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
+    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true, autoReview: false });
   });
 
   it('lists the documented verification manifests and no commands, the completion conditions come from the accepted check', async () => {
@@ -91,14 +91,14 @@ describe('context settings values', () => {
       verification: { commands: ['just check'], manifests: ['justfile'] },
       context: { adaptiveBudget: true },
     });
-    expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 30, repositoryFacts: true });
+    expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 30, repositoryFacts: true, autoReview: false });
     expect(settings.verification).toEqual({ commands: ['just check'], manifests: ['justfile'], conditions: ['just check'], required: false });
     expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_ON });
   });
 
   it('keeps the other defaults when one nested key is set', async () => {
     const settings = await resolvedWith({ memory: { reflection: { maxTokens: 512 } }, verification: { commands: ['just check'] } });
-    expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 90, repositoryFacts: true });
+    expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 90, repositoryFacts: true, autoReview: false });
     expect(settings.verification).toEqual({ commands: ['just check'], manifests: DEFAULT_MANIFESTS, conditions: ['just check'], required: false });
   });
 
@@ -111,7 +111,7 @@ describe('context settings values', () => {
     writeJson(userSettingsPath(tree), { memory: { forgetAfterDays: 30 }, verification: { commands: ['just check'], manifests: ['justfile'] } });
     writeJson(projectSettingsPath(tree), { memory: { reflection: { enabled: true } }, verification: { commands: ['make verify'] } });
     const { settings } = await loadSettings({ env: process.env, signal: new AbortController().signal, home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 30, repositoryFacts: true });
+    expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 30, repositoryFacts: true, autoReview: false });
     expect(settings.verification).toEqual({ commands: ['make verify'], manifests: ['justfile'], conditions: ['make verify'], required: false });
   });
 

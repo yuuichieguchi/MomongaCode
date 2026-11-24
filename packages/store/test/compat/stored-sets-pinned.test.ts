@@ -3,7 +3,7 @@ import { EVENT_TYPES, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
 import { MIGRATIONS } from '../../src/schema.ts';
 
 const RECORDED = {
-  migration: 49,
+  migration: 58,
   eventTypes: [
     'agent.message.delta',
     'agent.thought.delta',
@@ -27,6 +27,7 @@ const RECORDED = {
     'job.finished',
     'loop.warned',
     'mcp.authorization.required',
+    'memory.judged',
     'meter.observed',
     'mode.changed',
     'model.changed',
@@ -86,6 +87,6 @@ describe('the stored closed sets are recorded with the migration that carries th
 
   it('has the migration the sets are recorded with, and its name says what it records', () => {
     const migration = MIGRATIONS.find((candidate) => candidate.version === RECORDED.migration);
-    expect(migration?.name).toMatch(/context\.inherited_compacted/);
+    expect(migration?.name).toMatch(/memory\.judged/);
   });
 });

@@ -1,12 +1,21 @@
 import path from 'node:path';
 import { InvalidArgumentError } from 'commander';
+import { loadUserModels } from '@momonga/config';
 import type { MomongaPaths } from '@momonga/foundation';
+import { displayMapOf } from '@momonga/protocol';
 import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
-import { formatMemory, formatMemoryHistory, formatMemoryList, formatReflection } from '../memory/format.ts';
+import { formatMemory, formatMemoryHistory, formatMemoryList, formatReflection, shownModelIn } from '../memory/format.ts';
+import type { ShownModel } from '../memory/format.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+
+const userShownModel = (ports: Pick<CliPorts, 'home' | 'interrupt'>): Promise<ShownModel> =>
+  loadUserModels({ home: ports.home, signal: ports.interrupt }).then(
+    ({ resolved }) => shownModelIn(displayMapOf(resolved.views)),
+    () => shownModelIn(new Map()),
+  );
 
 export type MemoryAddOptions = { kind?: MemoryKind; user: boolean; paths: readonly string[]; json: boolean };
 
@@ -51,7 +60,7 @@ export const memoryShow = async (ports: CliPorts, paths: MomongaPaths, id: strin
   const client = connectRuntime(ports, paths);
   try {
     const memory = await client.memory(id);
-    ports.stdout.write(`${json ? JSON.stringify(memory) : formatMemory(memory)}\n`);
+    ports.stdout.write(`${json ? JSON.stringify(memory) : formatMemory(memory, await userShownModel(ports))}\n`);
     return 0;
   } finally {
     await client.close();
@@ -77,7 +86,10 @@ export const memoryReview = async (ports: CliPorts, paths: MomongaPaths, options
     const waiting = await client.memories({ state: 'candidate', project: ports.cwd });
     if (options.json) ports.stdout.write(`${JSON.stringify(waiting)}\n`);
     else if (waiting.length === 0) ports.stdout.write(`no memories waiting for review\n${formatReflection(await client.lastReflection(ports.cwd))}\n`);
-    else ports.stdout.write(`${waiting.map(formatMemory).join('\n\n')}\n\nmomonga memory review accept <id> keeps a memory, momonga memory review reject <id> discards it\n`);
+    else {
+      const shownModel = await userShownModel(ports);
+      ports.stdout.write(`${waiting.map((memory) => formatMemory(memory, shownModel)).join('\n\n')}\n\nmomonga memory review accept <id> keeps a memory, momonga memory review reject <id> discards it\n`);
+    }
     return 0;
   } finally {
     await client.close();

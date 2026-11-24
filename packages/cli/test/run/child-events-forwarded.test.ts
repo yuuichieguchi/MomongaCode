@@ -29,3 +29,9 @@ describe('a subagent child shows its held, waiting and check events', () => {
     expect(asChildEvent(event, 'worker')).toBe(event);
   });
 });
+
+describe('a subagent child ignores session events', () => {
+  it('drops memory.judged', () => {
+    expect(asChildEvent(eventOf({ type: 'memory.judged', id: 3, sessionId: 'session-1', createdAt: 1, memoryId: 'mem-1' }), 'worker')).toBeUndefined();
+  });
+});

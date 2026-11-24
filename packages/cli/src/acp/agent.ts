@@ -1,10 +1,11 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
-import { isOpaqueEvent, messageOf, readMandate, readinessShownText } from '@momonga/protocol';
+import { displayMapOf, isOpaqueEvent, messageOf, readMandate, readinessShownText } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness, SkillsResponse } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
+import { formatMemoryJudgement, memoryJudgementLevel, shownModelIn } from '../memory/format.ts';
 import { DAEMON_STOPPING_TEXT, isTerminalStatus } from '../run/follow.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { availableCommandsOf } from './commands.ts';
@@ -127,6 +128,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
   const initialized = Promise.withResolvers<void>();
   const lastSeq = new Map<string, number>();
   const activityListeners = new Set<() => void>();
+  const shownJudgements = new Set<string>();
 
   const active = (): void => {
     for (const listener of [...activityListeners]) listener();
@@ -155,6 +157,30 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   const send = (session: BridgeSession, update: SessionUpdate): void => {
     session.queue.enqueue(() => peer().notify('session/update', { sessionId: session.id, update }));
+  };
+
+  let listedDisplays: ReadonlyMap<string, string> = new Map();
+
+  const modelViews = async (): Promise<ModelViews> => {
+    const views = await deps.models();
+    listedDisplays = displayMapOf(views);
+    return views;
+  };
+
+  const showJudgement = async (session: BridgeSession, memoryId: string): Promise<void> => {
+    const judgement = await deps.runtime.memoryJudgement(memoryId);
+    session.lifetime.signal.throwIfAborted();
+    if (judgement.closed || shownJudgements.has(memoryId)) return;
+    const update = noticeUpdate(clientFeatures(), `${session.id}/memory-judgement/${memoryId}`, memoryJudgementLevel(judgement), formatMemoryJudgement(judgement, shownModelIn(listedDisplays)));
+    shownJudgements.add(memoryId);
+    await session.queue.deliver(() => peer().notify('session/update', { sessionId: session.id, update }));
+    await deps.runtime.markMemoryJudgementsShown([memoryId]);
+  };
+
+  const judged = (session: BridgeSession, memoryId: string): void => {
+    showJudgement(session, memoryId).catch((error: unknown) => {
+      if (!session.lifetime.signal.aborted) deps.report(`session ${session.id}: ${describeFailure(error)}`);
+    });
   };
 
   const contextWindowOf = async (session: BridgeSession): Promise<number> => {
@@ -198,7 +224,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   const listModels = async (): Promise<ModelListing> => {
     try {
-      return { kind: 'listed', views: await deps.models() };
+      return { kind: 'listed', views: await modelViews() };
     } catch (error) {
       return { kind: 'unreadable', reason: describeFailure(error) };
     }
@@ -407,6 +433,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
           signal: lifetime.signal,
           onEvent: (frame) => {
             if (frame.data.type === 'mode.changed' || frame.data.type === 'model.changed') handleFrame(session, frame, 0);
+            if (!isOpaqueEvent(frame.data) && frame.data.type === 'memory.judged') judged(session, frame.data.memoryId);
           },
         });
       } catch (error) {
@@ -530,7 +557,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   app.onRequest('session/set_config_option', async ({ params }) => {
     const session = sessionOf(params.sessionId);
-    const views = await deps.models();
+    const views = await modelViews();
     if (params.configId === CLASSIFIER_CONFIG_ID) {
       await deps.setClassifier(selectableClassifierOf(views, await deps.classifier(), { configId: params.configId, value: params.value }));
       for (const other of sessions.values()) if (other !== session && !other.lifetime.signal.aborted) other.queue.enqueue(() => sendOptions(other));

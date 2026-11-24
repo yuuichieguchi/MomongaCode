@@ -4,8 +4,9 @@ import { createOutboundDispatcher, findOutboundError, findProgramOnPath, hostPat
 import { withOutboundNetwork } from '../network.ts';
 import type { NetworkCheck, NetworkView } from './commands/network.ts';
 import type { FileCandidates } from '@momonga/foundation';
+import { isOpaqueEvent } from '@momonga/protocol';
 import type { OutputStyle, ReasoningEffort, TrustItemsView } from '@momonga/protocol';
-import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
+import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryJudgementView, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
 import type { EditSettingsResult } from '@momonga/config';
@@ -113,6 +114,9 @@ export type TuiBackend = {
   createFromTemplate(kind: TemplateKind, name: string): Promise<CreatedFile>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
+  memoryJudgement(memoryId: string): Promise<MemoryJudgementView>;
+  memoryJudgements(project: string): Promise<MemoryJudgementView[]>;
+  markMemoryJudgementsShown(memoryIds: readonly string[]): Promise<void>;
   deleteMemory(id: string): Promise<void>;
   memoryHistory(id: string): Promise<MemoryView[]>;
   rules(): Promise<GoverningFactView[]>;
@@ -344,7 +348,7 @@ export const createTuiBackend = (
       withdraw: (id) => runtime().inboxWithdraw(id),
       list: () => runtime().inboxList(current().id),
       successor: (runId) => runtime().runSuccessor(runId),
-      follow: async (sessionId, after, changed, signal) =>
+      follow: async (sessionId, after, handlers, signal) =>
         followSession({
           client: runtime(),
           clock: ports.clock,
@@ -353,8 +357,10 @@ export const createTuiBackend = (
           after,
           reconnectBoundMs: await daemonReadyBoundMs(ports, onNotice),
           restoreConnection: restoreDaemon(ports, paths, onNewer),
+          onOpen: handlers.opened,
           onEvent: (frame) => {
-            if (frame.data.type === 'inbox.changed') changed();
+            if (frame.data.type === 'inbox.changed') handlers.changed();
+            if (!isOpaqueEvent(frame.data) && frame.data.type === 'memory.judged') handlers.memoryJudged(frame.data.memoryId);
           },
           onDaemonStopping: () => undefined,
           signal,
@@ -430,6 +436,9 @@ export const createTuiBackend = (
     createFromTemplate: (kind, name) => createFromTemplate(ports.files, paths.home, kind, name),
     memories: (filter) => runtime().memories(filter),
     memory: (id) => runtime().memory(id),
+    memoryJudgement: (memoryId) => runtime().memoryJudgement(memoryId),
+    memoryJudgements: (project) => runtime().memoryJudgements(project),
+    markMemoryJudgementsShown: (memoryIds) => runtime().markMemoryJudgementsShown(memoryIds),
     deleteMemory: (id) => runtime().deleteMemory(id),
     memoryHistory: (id) => runtime().memoryHistory(id),
     rules: () => runtime().rules(current().cwd),

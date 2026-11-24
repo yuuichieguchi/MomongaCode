@@ -258,7 +258,7 @@ describe('memory history route', () => {
 
 describe('schema', () => {
   it('requires status on a memory view', async () => {
-    const memory = { id: 'm', scope: 'user', origin: 'trusted', project: null, text: 't', source: { kind: 'tool', sessionId: 's', runId: 'r', step: 1, callId: 'c', seq: 1 }, createdAt: 1, keptAt: 1, kind: 'fact', state: 'active', duplicateOf: null, supersedes: [], supersededBy: [], retiredAt: null, evidence: [], contributedAt: null };
+    const memory = { id: 'm', scope: 'user', origin: 'trusted', project: null, text: 't', source: { kind: 'tool', sessionId: 's', runId: 'r', step: 1, callId: 'c', seq: 1 }, createdAt: 1, keptAt: 1, kind: 'fact', state: 'active', duplicateOf: null, supersedes: [], supersededBy: [], retiredAt: null, evidence: [], contributedAt: null, keptByClassifier: null };
     expect(() => expectSchema('MemoryView', memory)).toThrow(/status/);
     expectSchema('MemoryView', { ...memory, status: 'unbound' });
   });

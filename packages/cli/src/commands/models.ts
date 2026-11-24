@@ -419,6 +419,8 @@ const referenceWordOf = (reference: ModelsReference): string => {
       return JOB_WORDS[reference.job ?? ''] ?? String(reference.job);
     case 'classifier':
       return 'the auto-mode classifier';
+    case 'memoryReview':
+      return 'memory auto review';
     case 'billing':
       return 'a billing rule';
   }

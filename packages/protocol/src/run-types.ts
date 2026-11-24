@@ -184,7 +184,7 @@ export const MODEL_REJECTION_REASONS = ['counter_mismatch', 'missing_counter', '
 
 export type ModelRejectionReason = (typeof MODEL_REJECTION_REASONS)[number];
 
-export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer', 'reflection'] as const;
+export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer', 'reflection', 'memory_classifier'] as const;
 
 export type UsageChargePurpose = (typeof USAGE_CHARGE_PURPOSES)[number];
 
@@ -463,7 +463,8 @@ export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }
   | { type: 'model.changed'; model: string; previousModel: string }
   | { type: 'inbox.changed'; pending: InboxChangeRow[] }
-  | ({ type: 'user_shell' } & UserShellRecord);
+  | ({ type: 'user_shell' } & UserShellRecord)
+  | { type: 'memory.judged'; memoryId: string };
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
 
