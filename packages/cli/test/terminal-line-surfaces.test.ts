@@ -8,7 +8,7 @@ import { daemonStatusText } from '../src/commands/daemon.ts';
 import { renderTrace } from '../src/commands/trace.ts';
 import { announceUpdate, startBackgroundCheck } from '../src/update/background.ts';
 import { setupUpdate } from './update-harness.ts';
-import { formatMemory } from '../src/memory/format.ts';
+import { formatMemory, shownModelIn } from '../src/memory/format.ts';
 import { probeEndpointText, probeFmText } from '../src/commands/gateway.ts';
 import { checkOnlyText, installedText, upToDateText } from '../src/commands/update.ts';
 import { reportUnremoved } from '../src/update/install.ts';
@@ -123,7 +123,7 @@ describe('a value a person did not write stays on its own line in command output
       evidence: [],
       keptByClassifier: null,
     } as unknown as MemoryView;
-    const lines = formatMemory(memory).split('\n');
+    const lines = formatMemory(memory, shownModelIn(new Map())).split('\n');
     const body = lines.slice(lines.indexOf('') + 1);
     expect(body).toEqual(['  note\\u0009one', '  status: forged', '  x', '    momonga approve ap1 allow_once']);
   });
@@ -143,7 +143,7 @@ describe('a value a person did not write stays on its own line in command output
       evidence: [],
       keptByClassifier: `c ${FORGED}`,
     } as unknown as MemoryView;
-    const printed = formatMemory(memory);
+    const printed = formatMemory(memory, shownModelIn(new Map()));
     expect(printed.split('\n').filter((line) => line.startsWith('kept by:'))).toEqual([`kept by: auto review, model c ${SHOWN}`]);
     expect(printed).not.toContain('\n  momonga approve');
   });

@@ -2,7 +2,7 @@ import { afterMicrotasks, pollUntil } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { MemoryJudgementView } from '@momonga/protocol';
 import { SESSION } from './fake-backend.ts';
-import { INITIALIZE, memoryJudgedFrame, modeChangedFrame, resultOf, startAgent, updatesOf } from './acp-harness.ts';
+import { INITIALIZE, MODEL_VIEWS, memoryJudgedFrame, modeChangedFrame, resultOf, startAgent, updatesOf } from './acp-harness.ts';
 import type { Harness } from './acp-harness.ts';
 
 const NOTICES = { session: { notices: {} } };
@@ -235,6 +235,105 @@ describe('marking a record shown only after its notice was sent', () => {
 
     expect(judgementCalls(harness)).toEqual(['memoryJudgement mem-1']);
     expect(notices(harness)).toEqual([]);
+    await harness.peer.close();
+  });
+});
+
+const CANON = 'ollama/gemma-3-4b:latest';
+
+const DISPLAY = 'ollama/gemma-3-4b';
+
+const UNCONFIGURED = 'openai/gpt-9';
+
+const WITH_GEMMA = { models: async () => [...MODEL_VIEWS, { canon: CANON, provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest', naming: 'server' as const }] };
+
+describe('the model of a judgement in an ACP notice is named by its display', () => {
+  it.each([
+    ['safe with high confidence', kept({ classifier: CANON }), `auto review kept memory mem-1; model ${DISPLAY} judged it safe with high confidence`],
+    ['safe without high confidence', kept({ outcome: 'left', confidence: 'low', classifier: CANON }), `auto review left memory mem-1 waiting; model ${DISPLAY} judged it safe without high confidence`],
+    ['unsafe', kept({ outcome: 'left', verdict: 'unsafe', classifier: CANON }), `auto review left memory mem-1 waiting; model ${DISPLAY} judged it unsafe`],
+    ['a model not among the configured models, as stored', kept({ outcome: 'left', verdict: 'unsafe', classifier: UNCONFIGURED }), `auto review left memory mem-1 waiting; model ${UNCONFIGURED} judged it unsafe`],
+    ['a classifier failure, as it is', { memoryId: 'mem-1', outcome: 'left', failure: FAILURE, judgedAt: 1, owed: true, closed: false } as MemoryJudgementView, `auto review left memory mem-1 waiting; ${FAILURE}`],
+  ] as const)('shows %s', async (_name, record, line) => {
+    const harness = startAgent(WITH_GEMMA);
+    harness.runtime.judgements.set('mem-1', record);
+    await open(harness);
+
+    harness.emitSessionEvent(memoryJudgedFrame(8, 'mem-1'));
+    await called(harness, 'markMemoryJudgementsShown mem-1');
+
+    expect(notices(harness).map((update) => update['title'])).toEqual([line]);
+    expect(harness.runtime.judgements.get('mem-1')).toEqual(record);
+    await harness.peer.close();
+  });
+});
+
+const GEMMA_VIEW = { canon: CANON, provider: 'ollama', ownName: 'gemma-3-4b:latest', defaultTag: 'latest', naming: 'server' as const };
+
+const KEPT_BY = (model: string): string => `auto review kept memory mem-1; model ${model} judged it safe with high confidence`;
+
+describe('the ACP notice of a judgement when the configured models cannot be read', () => {
+  it('sends the notice with the stored model when the agent never managed to list the models, and marks the record shown after it was sent', async () => {
+    const harness = startAgent({ models: async () => Promise.reject(new Error('the models could not be read')) });
+    harness.runtime.judgements.set('mem-1', kept({ classifier: CANON }));
+    await open(harness);
+
+    harness.emitSessionEvent(memoryJudgedFrame(8, 'mem-1'));
+    await untilNotice(harness, KEPT_BY(CANON));
+    await called(harness, 'markMemoryJudgementsShown mem-1');
+
+    expect(notices(harness)).toEqual([
+      { sessionUpdate: 'notice', severity: 'warning', title: 'the model option is not offered because the model list could not be read: the models could not be read' },
+      { sessionUpdate: 'notice', severity: 'info', title: KEPT_BY(CANON) },
+    ]);
+    expect(judgementCalls(harness)).toEqual(['memoryJudgement mem-1', 'markMemoryJudgementsShown mem-1']);
+    await harness.peer.close();
+  });
+
+  it('sends the notice with the display of the last good listing when a later listing fails, and marks the record shown after it was sent', async () => {
+    let modelsBroken = false;
+    let listings = 0;
+    const harness = startAgent({
+      models: async () => {
+        listings += 1;
+        if (modelsBroken) throw new Error('the models could not be read');
+        return [...MODEL_VIEWS, GEMMA_VIEW];
+      },
+    });
+    harness.runtime.judgements.set('mem-1', kept({ classifier: CANON }));
+    const sessionId = await open(harness);
+    modelsBroken = true;
+    const before = listings;
+    await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: CANON });
+    expect(listings).toBe(before + 1);
+
+    harness.emitSessionEvent(memoryJudgedFrame(8, 'mem-1'));
+    await untilNotice(harness, KEPT_BY(DISPLAY));
+    await called(harness, 'markMemoryJudgementsShown mem-1');
+
+    expect(notices(harness)).toEqual([{ sessionUpdate: 'notice', severity: 'info', title: KEPT_BY(DISPLAY) }]);
+    expect(judgementCalls(harness)).toEqual(['memoryJudgement mem-1', 'markMemoryJudgementsShown mem-1']);
+    await harness.peer.close();
+  });
+
+  it('does not read the models while sending the notice', async () => {
+    let listings = 0;
+    const harness = startAgent({
+      models: async () => {
+        listings += 1;
+        return [...MODEL_VIEWS, GEMMA_VIEW];
+      },
+    });
+    harness.runtime.judgements.set('mem-1', kept({ classifier: CANON }));
+    await open(harness);
+    const before = listings;
+
+    harness.emitSessionEvent(memoryJudgedFrame(8, 'mem-1'));
+    await untilNotice(harness, KEPT_BY(DISPLAY));
+    await called(harness, 'markMemoryJudgementsShown mem-1');
+
+    expect(before).toBeGreaterThan(0);
+    expect(listings).toBe(before);
     await harness.peer.close();
   });
 });

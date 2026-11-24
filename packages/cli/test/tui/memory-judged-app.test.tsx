@@ -1,4 +1,4 @@
-import { pollUntil } from '@momonga/testkit';
+import { SCRIPTED_MODEL, pollUntil } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { MemoryJudgementView } from '@momonga/protocol';
 import { SESSION, runView } from '../fake-backend.ts';
@@ -298,6 +298,74 @@ describe('failures of the reads and of the mark', () => {
     await untilFrame(app, KEPT_LINE);
 
     held.resolve();
+    app.unmount();
+  });
+});
+
+const CANON = 'ollama/gemma-3-4b:latest';
+const DISPLAY = 'ollama/gemma-3-4b';
+const UNCONFIGURED = 'openai/gpt-9';
+const WITH_GEMMA: FakeBackendOptions = { models: [SCRIPTED_MODEL, CANON] };
+
+const BY_CANON = [
+  ['safe with high confidence', judgement('mem-1', { outcome: 'kept', verdict: 'safe', confidence: 'high', classifier: CANON }), `auto review kept memory mem-1; model ${DISPLAY} judged it safe with high confidence`],
+  ['safe without high confidence', judgement('mem-2', { verdict: 'safe', confidence: 'low', classifier: CANON }), `auto review left memory mem-2 waiting; model ${DISPLAY} judged it safe without high confidence`],
+  ['unsafe', judgement('mem-3', { classifier: CANON }), `auto review left memory mem-3 waiting; model ${DISPLAY} judged it unsafe`],
+] as const;
+
+const UNKNOWN = judgement('mem-5', { classifier: UNCONFIGURED });
+const UNKNOWN_LINE = `auto review left memory mem-5 waiting; model ${UNCONFIGURED} judged it unsafe`;
+
+describe('the model of a judgement is named by its display', () => {
+  it.each(BY_CANON)('names the model by its display on memory.judged when %s', async (_name, record, line) => {
+    const { backend, app } = await idle(WITH_GEMMA);
+    backend.judgements.set(record.memoryId, record);
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+
+    backend.judgeMemory(record.memoryId);
+    await seen(backend, `memory-judgements-shown:${record.memoryId}`);
+
+    const shown = await untilFrame(app, `memory ${record.memoryId}`);
+    expect(shown).toContain(line);
+    expect(shown).not.toContain(CANON);
+    expect(backend.judgements.get(record.memoryId)?.classifier).toBe(CANON);
+    app.unmount();
+  });
+
+  it('keeps the failure line as it is on memory.judged', async () => {
+    const { backend, app } = await idle(WITH_GEMMA);
+    backend.judgements.set(FAILED.memoryId, FAILED);
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+
+    backend.judgeMemory(FAILED.memoryId);
+
+    expect(timesShown(await untilFrame(app, FAILED_LINE), FAILED_LINE)).toBe(1);
+    app.unmount();
+  });
+
+  it('names a stored model that is not among the configured models as it is stored on memory.judged', async () => {
+    const { backend, app } = await idle(WITH_GEMMA);
+    backend.judgements.set(UNKNOWN.memoryId, UNKNOWN);
+    await seen(backend, `memory-judgements:${SESSION.cwd}`);
+
+    backend.judgeMemory(UNKNOWN.memoryId);
+
+    expect(timesShown(await untilFrame(app, UNKNOWN_LINE), UNKNOWN_LINE)).toBe(1);
+    app.unmount();
+  });
+
+  it('names every model by its display, a failure as it is and an unconfigured model as stored on the read of the owed records at connect', async () => {
+    const records = [...BY_CANON.map(([, record]) => record), FAILED, UNKNOWN];
+    const { backend, app } = await opened({ ...WITH_GEMMA, memoryJudgements: records, sessionStreamHeld: true });
+
+    backend.connectSessionStream();
+    await pollUntil(() => marked(backend).length === records.length, { ...BOUND, description: 'every owed record is marked shown' });
+    const shown = await untilFrame(app, (now) => now.includes('memory mem-5'));
+
+    for (const [, , line] of BY_CANON) expect(shown).toContain(line);
+    expect(shown).toContain(FAILED_LINE);
+    expect(shown).toContain(UNKNOWN_LINE);
+    expect(shown).not.toContain(CANON);
     app.unmount();
   });
 });

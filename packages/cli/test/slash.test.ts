@@ -358,6 +358,19 @@ describe('/memory', () => {
     expect(infos.at(-1)).not.toContain('kept by:');
   });
 
+  it.each([
+    ['names the model by its display', 'ollama/gemma-3-4b:latest', 'kept by: auto review, model ollama/gemma-3-4b'],
+    ['names a model not among the configured models as it is stored', 'openai/gpt-9', 'kept by: auto review, model openai/gpt-9'],
+  ])('%s on the kept by line', async (_name, classifier, keptBy) => {
+    const kept = { ...MEMORY, keptByClassifier: classifier };
+    const { context, infos, backend } = contextWith({ models: [SESSION.model, 'ollama/gemma-3-4b:latest'], memories: [kept] });
+    const displays = new Map([['ollama/gemma-3-4b:latest', 'ollama/gemma-3-4b']]);
+    await memory?.run('show mem-1', { ...context, shownModel: (model: string) => displays.get(model) ?? model });
+    const lines = (infos.at(-1) ?? '').split('\n');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe(keptBy);
+    expect((await backend.memory('mem-1')).keptByClassifier).toBe(classifier);
+  });
+
   it('prints its usage for anything else', async () => {
     const { context, infos } = contextWith();
     await memory?.run('show', context);

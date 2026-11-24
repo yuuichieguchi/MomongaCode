@@ -1,11 +1,11 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
-import { isOpaqueEvent, messageOf, readMandate, readinessShownText } from '@momonga/protocol';
+import { displayMapOf, isOpaqueEvent, messageOf, readMandate, readinessShownText } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness, SkillsResponse } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
-import { formatMemoryJudgement, memoryJudgementLevel } from '../memory/format.ts';
+import { formatMemoryJudgement, memoryJudgementLevel, shownModelIn } from '../memory/format.ts';
 import { DAEMON_STOPPING_TEXT, isTerminalStatus } from '../run/follow.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { availableCommandsOf } from './commands.ts';
@@ -159,11 +159,19 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     session.queue.enqueue(() => peer().notify('session/update', { sessionId: session.id, update }));
   };
 
+  let listedDisplays: ReadonlyMap<string, string> = new Map();
+
+  const modelViews = async (): Promise<ModelViews> => {
+    const views = await deps.models();
+    listedDisplays = displayMapOf(views);
+    return views;
+  };
+
   const showJudgement = async (session: BridgeSession, memoryId: string): Promise<void> => {
     const judgement = await deps.runtime.memoryJudgement(memoryId);
     session.lifetime.signal.throwIfAborted();
     if (judgement.closed || shownJudgements.has(memoryId)) return;
-    const update = noticeUpdate(clientFeatures(), `${session.id}/memory-judgement/${memoryId}`, memoryJudgementLevel(judgement), formatMemoryJudgement(judgement));
+    const update = noticeUpdate(clientFeatures(), `${session.id}/memory-judgement/${memoryId}`, memoryJudgementLevel(judgement), formatMemoryJudgement(judgement, shownModelIn(listedDisplays)));
     shownJudgements.add(memoryId);
     await session.queue.deliver(() => peer().notify('session/update', { sessionId: session.id, update }));
     await deps.runtime.markMemoryJudgementsShown([memoryId]);
@@ -216,7 +224,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   const listModels = async (): Promise<ModelListing> => {
     try {
-      return { kind: 'listed', views: await deps.models() };
+      return { kind: 'listed', views: await modelViews() };
     } catch (error) {
       return { kind: 'unreadable', reason: describeFailure(error) };
     }
@@ -545,7 +553,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
 
   app.onRequest('session/set_config_option', async ({ params }) => {
     const session = sessionOf(params.sessionId);
-    const views = await deps.models();
+    const views = await modelViews();
     const model = selectableModelOf(views, { configId: params.configId, value: params.value });
     const view = await viaRunApi(deps.runtime.setModel(session.id, model));
     applyModel(session, view.model);

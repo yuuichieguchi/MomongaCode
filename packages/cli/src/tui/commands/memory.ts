@@ -75,7 +75,7 @@ export const memoryCommand: SlashCommand = {
       return;
     }
     if (action === 'show' && id !== undefined) {
-      context.info(formatMemory(await context.backend.memory(id)));
+      context.info(formatMemory(await context.backend.memory(id), context.shownModel));
       return;
     }
     if (action === 'delete' && id !== undefined) {

@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { MemoryJudgementView, MemoryView } from '@momonga/protocol';
 import * as format from '../src/memory/format.ts';
-import { formatMemory } from '../src/memory/format.ts';
+import { formatMemory, shownModelIn } from '../src/memory/format.ts';
+import type { ShownModel } from '../src/memory/format.ts';
 
 type Judgement = MemoryJudgementView;
 
-const formatter = (): ((judgement: Judgement) => string) => {
+const AS_STORED = shownModelIn(new Map());
+
+const formatter = (shownModel: ShownModel = AS_STORED): ((judgement: Judgement) => string) => {
   const found = (format as Record<string, unknown>)['formatMemoryJudgement'];
   if (typeof found !== 'function') throw new Error('memory/format.ts does not export formatMemoryJudgement');
-  return found as (judgement: Judgement) => string;
+  return (judgement) => (found as (judgement: Judgement, shownModel: ShownModel) => string)(judgement, shownModel);
 };
 
 const leveller = (): ((judgement: Judgement) => 'info' | 'warning') => {
@@ -106,11 +109,11 @@ const SHOWN_TODAY = [
 
 describe('memory show of a memory auto review kept', () => {
   it('is as today for a memory no classifier kept', () => {
-    expect(formatMemory(MEMORY)).toBe(SHOWN_TODAY);
+    expect(formatMemory(MEMORY, AS_STORED)).toBe(SHOWN_TODAY);
   });
 
   it('names auto review and the model directly after the kept line', () => {
-    expect(formatMemory({ ...MEMORY, keptByClassifier: CLASSIFIER })).toBe(
+    expect(formatMemory({ ...MEMORY, keptByClassifier: CLASSIFIER }, AS_STORED)).toBe(
       [
         'id: mem-1',
         'scope: project',
@@ -130,10 +133,38 @@ describe('memory show of a memory auto review kept', () => {
 
   it('puts the line before the validity line of a memory that has one', () => {
     const withValidity = { ...MEMORY, validity: { intervals: [{ status: 'unbound', from: 0, to: null }], changes: [] } } as unknown as MemoryView;
-    const before = formatMemory(withValidity).split('\n');
-    const after = formatMemory({ ...withValidity, keptByClassifier: CLASSIFIER }).split('\n');
+    const before = formatMemory(withValidity, AS_STORED).split('\n');
+    const after = formatMemory({ ...withValidity, keptByClassifier: CLASSIFIER }, AS_STORED).split('\n');
     const kept = before.indexOf('kept: 1970-01-01T00:00:01.000Z');
     expect(before[kept + 1]?.startsWith('validity: ')).toBe(true);
     expect(after).toEqual([...before.slice(0, kept + 1), 'kept by: auto review, model openai/gpt-5-mini', ...before.slice(kept + 1)]);
+  });
+});
+
+const CANON = 'ollama/gemma-3-4b:latest';
+
+const DISPLAY = 'ollama/gemma-3-4b';
+
+const UNCONFIGURED = 'openai/gpt-9';
+
+const BY_DISPLAY = shownModelIn(new Map([[CANON, DISPLAY]]));
+
+describe('the model a person sees is named by its display', () => {
+  it.each([
+    ['kept, safe with high confidence', judgement({ outcome: 'kept', classifier: CANON, verdict: 'safe', confidence: 'high' }), `auto review kept memory mem-1; model ${DISPLAY} judged it safe with high confidence`],
+    ['left, safe without high confidence', judgement({ classifier: CANON, verdict: 'safe', confidence: 'low' }), `auto review left memory mem-1 waiting; model ${DISPLAY} judged it safe without high confidence`],
+    ['left, unsafe', judgement({ classifier: CANON, verdict: 'unsafe', confidence: 'high' }), `auto review left memory mem-1 waiting; model ${DISPLAY} judged it unsafe`],
+    ['left, a model missing from the lookup as stored', judgement({ classifier: UNCONFIGURED, verdict: 'unsafe', confidence: 'high' }), `auto review left memory mem-1 waiting; model ${UNCONFIGURED} judged it unsafe`],
+    ['a failure as it is', judgement({ classifier: CANON, failure: NO_CLASSIFIER }), `auto review left memory mem-1 waiting; ${NO_CLASSIFIER}`],
+  ] as const)('on the line of %s', (_name, record, line) => {
+    expect(formatter(BY_DISPLAY)(record)).toBe(line);
+  });
+
+  it.each([
+    ['by its display', CANON, `kept by: auto review, model ${DISPLAY}`],
+    ['as stored when it is missing from the lookup', UNCONFIGURED, `kept by: auto review, model ${UNCONFIGURED}`],
+  ])('on the kept by line %s', (_name, classifier, keptBy) => {
+    const lines = formatMemory({ ...MEMORY, keptByClassifier: classifier }, BY_DISPLAY).split('\n');
+    expect(lines[lines.indexOf('kept: 1970-01-01T00:00:01.000Z') + 1]).toBe(keptBy);
   });
 });

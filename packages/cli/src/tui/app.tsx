@@ -1552,7 +1552,7 @@ export function App(props: AppProps) {
     if (signal.aborted) return Promise.resolve();
     const due = judgements
       .filter((judgement) => !printedJudgements.current.has(judgement.memoryId))
-      .map((judgement) => ({ memoryId: judgement.memoryId, level: memoryJudgementLevel(judgement), text: formatMemoryJudgement(judgement) }));
+      .map((judgement) => ({ memoryId: judgement.memoryId, level: memoryJudgementLevel(judgement), text: formatMemoryJudgement(judgement, shownModel) }));
     if (due.length === 0) return Promise.resolve();
     for (const line of due) {
       printedJudgements.current.add(line.memoryId);

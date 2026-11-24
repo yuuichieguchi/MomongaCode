@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GoverningFactView, MemoryView } from '@momonga/protocol';
 import { formatGovernanceVerification, formatRuleAdded, formatRuleHistory, formatRuleList } from '../src/rule/format.ts';
-import { formatMemory, formatMemoryList } from '../src/memory/format.ts';
+import { formatMemory, formatMemoryList, shownModelIn } from '../src/memory/format.ts';
 import { DEFAULT_SLASH_COMMANDS } from '../src/tui/commands/index.ts';
 import { createSlashRegistry } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
@@ -81,11 +81,11 @@ describe('rule formats', () => {
 describe('memory formats', () => {
   it('shows the status in the list and in show', () => {
     expect(formatMemoryList([MEMORY])).toContain('stale');
-    expect(formatMemory(MEMORY)).toContain('status: stale');
+    expect(formatMemory(MEMORY, shownModelIn(new Map()))).toContain('status: stale');
   });
 
   it('says that a person added a memory, and when', () => {
-    expect(formatMemory({ ...MEMORY, source: { kind: 'command', at: 86_400_000 } })).toContain('source: added by a person with momonga memory add at 1970-01-02T00:00:00.000Z');
+    expect(formatMemory({ ...MEMORY, source: { kind: 'command', at: 86_400_000 } }, shownModelIn(new Map()))).toContain('source: added by a person with momonga memory add at 1970-01-02T00:00:00.000Z');
   });
 });
 
