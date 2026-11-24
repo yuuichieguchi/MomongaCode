@@ -125,6 +125,7 @@ describe('the list of the running subagents (design cli-tui 3.3)', () => {
     let now = 1000;
     const started = await start({}, { now: () => now, tuiSettings: { initial: { theme: 'auto', notify: 'off', screenReader: true, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true }, save: async () => undefined } }, { ...SIZE, screen: 'scrollback' });
     const { app, backend, terminal } = started;
+    await untilOutput(app, 'mode: manual');
     await untilFrame(app, (shown) => shown.includes('>'));
     await runStarted(backend, app, 'go');
     backend.following().onChildStarted('reviewer', 'child-1', 0, SCRIPTED_MODEL, undefined);

@@ -87,7 +87,7 @@ export type TranscriptStore = {
   shown(): TranscriptStore;
 };
 
-type Held = { entries: readonly StoreEntry[]; positions: ReadonlyMap<string, number>; firstId: number; state: TranscriptState; openKey: string | undefined; version: number; epoch: number; startUnread: boolean };
+type Held = { entries: readonly StoreEntry[]; positions: ReadonlyMap<string, number>; firstId: number; state: TranscriptState; openKey: string | undefined; version: number; epoch: number; startHeld: boolean };
 
 const settled = (entry: Entry): boolean => {
   switch (entry.kind) {
@@ -106,7 +106,8 @@ const settled = (entry: Entry): boolean => {
 
 export const isSettled = settled;
 
-const isUnreadStart = (entry: Entry): boolean => entry.kind === 'banner' && entry.banner.model.kind === 'unread';
+const isHoldingStart = (entry: Entry): boolean =>
+  entry.kind === 'banner' && (entry.banner.model.kind === 'unread' || (entry.banner.model.kind === 'connected' && entry.banner.model.reading === true));
 
 export const createTranscriptStore = (): TranscriptStore => {
   let entries: StoreEntry[] = [];
@@ -118,7 +119,7 @@ export const createTranscriptStore = (): TranscriptStore => {
   let epoch = 0;
   let openKey: string | undefined;
   let held: Held | undefined;
-  let unreadStarts = 0;
+  let holdingStarts = 0;
   const listeners = new Set<StoreListener>();
 
   const tell = (entryId: number | undefined, version: number): void => {
@@ -132,19 +133,19 @@ export const createTranscriptStore = (): TranscriptStore => {
     return found;
   };
 
-  const settledIn = (list: readonly StoreEntry[], startUnread: boolean, { entry }: StoreEntry, index: number): boolean => {
-    if (startUnread) return false;
+  const settledIn = (list: readonly StoreEntry[], startHeld: boolean, { entry }: StoreEntry, index: number): boolean => {
+    if (startHeld) return false;
     return entry.kind === 'banner' ? index < list.length - 1 : settled(entry);
   };
 
-  const settledAt = (index: number): boolean => settledIn(entries, unreadStarts > 0, at(index), index);
+  const settledAt = (index: number): boolean => settledIn(entries, holdingStarts > 0, at(index), index);
 
   const changeAt = (position: number, change: (entry: Entry) => Entry): void => {
     const before = at(position);
     const entry = change(before.entry);
     if (entry === before.entry) return;
     const stored: StoreEntry = { id: before.id, version: before.version + 1, entry };
-    unreadStarts += Number(isUnreadStart(entry)) - Number(isUnreadStart(before.entry));
+    holdingStarts += Number(isHoldingStart(entry)) - Number(isHoldingStart(before.entry));
     entries[position] = stored;
     tell(stored.id, stored.version);
   };
@@ -161,7 +162,7 @@ export const createTranscriptStore = (): TranscriptStore => {
       const stored: StoreEntry = { id: nextId, version: 0, entry };
       nextId += 1;
       if (key !== undefined) positions.set(key, entries.length);
-      unreadStarts += Number(isUnreadStart(entry));
+      holdingStarts += Number(isHoldingStart(entry));
       entries.push(stored);
       tell(stored.id, stored.version);
       return stored;
@@ -201,7 +202,7 @@ export const createTranscriptStore = (): TranscriptStore => {
     reset: () => {
       firstId = nextId;
       entries = [];
-      unreadStarts = 0;
+      holdingStarts = 0;
       positions = new Map();
       state = { ...freshState(), thoughtWindow: state.thoughtWindow };
       openKey = undefined;
@@ -209,7 +210,7 @@ export const createTranscriptStore = (): TranscriptStore => {
       tell(undefined, storeVersion + 1);
     },
     hold: () => {
-      held = { entries: [...entries], positions: new Map(positions), firstId, state, openKey, version: storeVersion, epoch, startUnread: unreadStarts > 0 };
+      held = { entries: [...entries], positions: new Map(positions), firstId, state, openKey, version: storeVersion, epoch, startHeld: holdingStarts > 0 };
     },
     release: () => {
       if (held === undefined) return;
@@ -237,7 +238,7 @@ export const createTranscriptStore = (): TranscriptStore => {
     },
     open: () => (held === undefined ? openKey : held.openKey),
     state: () => held?.state ?? state,
-    settledAt: (index) => (held === undefined ? settledAt(index) : settledIn(held.entries, held.startUnread, heldAt(held, index), index)),
+    settledAt: (index) => (held === undefined ? settledAt(index) : settledIn(held.entries, held.startHeld, heldAt(held, index), index)),
     version: () => held?.version ?? storeVersion,
     epoch: () => held?.epoch ?? epoch,
     subscribe: (listener) =>

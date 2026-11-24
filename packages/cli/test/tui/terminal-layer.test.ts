@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { HANDOVER_TERMINAL_ENV, KEY_SETTLE_MS, NEGOTIATION_DRAIN_MS, NO_FULLSCREEN_NOTICE, PASTE_ABANDON_BYTES, PASTE_MAX_BYTES, PASTE_TOO_LARGE_NOTICE } from '../../src/tui/terminal/constants.ts';
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { handoverTerminalValue, parseHandoverTerminal, startFromHandover } from '../../src/tui/terminal/handover.ts';
-import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
+import { createTerminalLayer, START_ANSWER_WAIT_MS } from '../../src/tui/terminal/layer.ts';
 import type { DeliverableSignal, ProcessEvent, ProcessSignal, ScreenRequest, TerminalLayerOptions } from '../../src/tui/terminal/layer.ts';
 import { BACKGROUND_QUERY, DEVICE_ATTRIBUTES_QUERY, LEAVE_EVERY_MODE, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
 import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
@@ -916,5 +916,91 @@ describe('the desktop notification through the layer', () => {
     const t = withEveryMode();
     t.layer.bell();
     expect(t.writes).toEqual(['\u0007']);
+  });
+});
+
+describe('waiting for the start query answer before drawing', () => {
+  it('defines START_ANSWER_WAIT_MS as 1000', () => {
+    expect(START_ANSWER_WAIT_MS).toBe(1000);
+  });
+
+  it('resolves startAnswered when OSC 11 background reply arrives, after recording 2026', async () => {
+    const t = fakes();
+    t.layer.start();
+    let done = false;
+    const waiting = t.layer.startAnswered().then(() => {
+      done = true;
+    });
+    t.feed(KITTY_REPLY);
+    t.feed(`${ESC}[?2026;2$y`);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    t.feed(`${ESC}]11;rgb:ffff/ffff/ffff${ESC}\\`);
+    await waiting;
+    expect(done).toBe(true);
+    expect(t.layer.state()).toMatchObject({ synchronizedOutput: true, backgroundColor: 'rgb:ffff/ffff/ffff' });
+  });
+
+  it('resolves startAnswered when DA1 arrives without OSC 11', async () => {
+    const t = fakes();
+    t.layer.start();
+    let done = false;
+    const waiting = t.layer.startAnswered().then(() => {
+      done = true;
+    });
+    t.feed(DA1_REPLY);
+    await waiting;
+    expect(done).toBe(true);
+    expect(t.layer.state().backgroundColor).toBeUndefined();
+  });
+
+  it('resolves startAnswered at START_ANSWER_WAIT_MS when no answer arrives', async () => {
+    const t = fakes();
+    t.layer.start();
+    let done = false;
+    const waiting = t.layer.startAnswered().then(() => {
+      done = true;
+    });
+    t.clock.advance(START_ANSWER_WAIT_MS - 1);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    t.clock.advance(1);
+    await waiting;
+    expect(done).toBe(true);
+  });
+
+  it('resolves startAnswered immediately after handover adoption', async () => {
+    const t = fakes();
+    t.layer.adopt({ screen: 'fullscreen', modes: ['alt-screen', 'bracketed-paste', 'kitty-keys'] }, 'kitty');
+    let done = false;
+    await t.layer.startAnswered().then(() => {
+      done = true;
+    });
+    expect(done).toBe(true);
+  });
+
+  it('discards a late start OSC 11 reply before start DA1, even after a focus-in query, and applies the later focus-in OSC 11 reply after start DA1', async () => {
+    const t = fakes();
+    t.layer.start();
+    const waiting = t.layer.startAnswered();
+    t.clock.advance(START_ANSWER_WAIT_MS);
+    await waiting;
+    t.layer.enable('focus');
+    t.feed(`${ESC}[I`);
+    t.feed(`${ESC}]11;rgb:0000/0000/0000${ESC}\\`);
+    expect(t.layer.state().backgroundColor).toBeUndefined();
+    t.feed(DA1_REPLY);
+    t.feed(`${ESC}]11;rgb:ffff/ffff/ffff${ESC}\\${DA1_REPLY}`);
+    expect(t.layer.state().backgroundColor).toBe('rgb:ffff/ffff/ffff');
+  });
+
+  it('resolves startAnswered if closed while waiting', async () => {
+    const t = fakes();
+    t.layer.start();
+    const waiting = t.layer.startAnswered();
+    const closing = t.layer.close();
+    t.clock.advance(NEGOTIATION_DRAIN_MS);
+    await closing;
+    await waiting;
   });
 });

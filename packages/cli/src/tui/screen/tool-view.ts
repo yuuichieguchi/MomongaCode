@@ -31,7 +31,7 @@ import type { Row } from './wrap.ts';
 export const VIEWER_UNIT_BYTES = MARKDOWN_UNIT_BYTES;
 export const TOOL_TICK_MS = 1000;
 
-export type RowFacts = { readonly keys: KeyTable; readonly a11y: A11y };
+export type RowFacts = { readonly keys: KeyTable; readonly a11y: A11y; readonly bannerFigure?: boolean };
 
 const VIEWER_CONTEXTS: readonly KeyContext[] = ['viewer'];
 const CHAT_CONTEXTS: readonly KeyContext[] = ['chat'];

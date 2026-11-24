@@ -11,9 +11,9 @@ import { HELD_PANEL_LINE } from '../transcript.ts';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
 import { currentA11y } from './a11y.ts';
 import { diffRows } from './diff.ts';
-import { EditorView } from './input-box.tsx';
+import { EditorView, editorViewRows } from './input-box.tsx';
 import { styleOf } from './theme.ts';
-import { inertText } from './wrap.ts';
+import { inertText, wrapText } from './wrap.ts';
 
 export const TRUST_CHOICES = [
   { decision: 'trusted', label: 'Yes, I trust this folder' },
@@ -115,6 +115,32 @@ export const fieldHint = (keys: KeyTable): string => {
   const confirm = keys.keyHint('select.decide');
   const leave = keys.keyHint('select.escape');
   return joinHint([...(confirm === '' ? [] : [`${confirm} to confirm the value`]), ...(leave === '' ? [] : [`${leave}: decline or cancel instead`])]);
+};
+
+const FIELD_BORDER_ROWS = 2;
+const FIELD_BORDER_COLUMNS = 4;
+
+const fieldBoxLineCount = (text: string, width: number): number => wrapText(text, Math.max(1, width), { links: false }).length;
+
+/** Compute the exact rendered row height of ElicitationFields synchronously. */
+export const elicitationFieldsRows = ({ elicitation, title, editor, columns, waiting, keys, screenReader = currentA11y().screenReader }: { elicitation: PendingElicitation; title: string; editor: EditorState; columns: number; waiting: number; keys: KeyTable; screenReader?: boolean }): number => {
+  const { flow } = elicitation;
+  const request = currentRequest(flow);
+  const field = currentField(flow);
+  const inner = Math.max(1, columns - (screenReader ? 0 : FIELD_BORDER_COLUMNS));
+  const boxRows =
+    (screenReader ? 0 : FIELD_BORDER_ROWS) +
+    fieldBoxLineCount(inertText(elicitationTitle(elicitation, title, waiting)), inner) +
+    fieldBoxLineCount(inertText(request.message), inner) +
+    (request.mode === 'url' ? fieldBoxLineCount(inertText(`URL: ${request.url}`), inner) : 0) +
+    (field === undefined
+      ? 0
+      : fieldBoxLineCount(inertText(`${field.title} (${field.name}, ${field.kind}${field.required ? ', required' : ', optional: leave empty to skip'})`), inner) +
+        (field.description === undefined ? 0 : fieldBoxLineCount(inertText(field.description), inner)) +
+        field.options.reduce((sum, option, index) => sum + fieldBoxLineCount(inertText(`  ${index + 1}. ${option.label}`), inner), 0)) +
+    (flow.error === undefined ? 0 : fieldBoxLineCount(inertText(flow.error), inner)) +
+    fieldBoxLineCount(fieldHint(keys), inner);
+  return boxRows + editorViewRows(editor, columns, undefined, false, !screenReader);
 };
 
 export function ElicitationFields({ elicitation, title, editor, columns, waiting, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; columns: number; waiting: number; keys: KeyTable }) {

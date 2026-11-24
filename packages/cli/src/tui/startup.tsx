@@ -9,7 +9,7 @@ import type { ShownEffort } from './effort.ts';
 
 export type StartupConfig = { version: string; home: string };
 
-export type BannerModel = { kind: 'connected'; name: string; effort?: ShownEffort } | { kind: 'not-connected'; login: boolean } | { kind: 'unread' };
+export type BannerModel = { kind: 'connected'; name: string; effort?: ShownEffort; reading?: boolean } | { kind: 'not-connected'; login: boolean } | { kind: 'unread' };
 
 export type StartupBanner = { config: StartupConfig; model: BannerModel; cwd: string; notices: readonly string[]; figure: boolean };
 

@@ -44,6 +44,7 @@ export type TranscriptViewHost = {
   keyFacts(): ViewportKeyFacts;
   keys: KeyTable;
   a11y: A11y;
+  bannerFigure?: boolean;
   timers: ScreenTimers;
 };
 
@@ -58,13 +59,13 @@ type Held = { store: TranscriptStore; epoch: number; position: Position; selecti
 export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState => {
   const { store, terminal, width, allocation } = host;
   const height = host.viewport;
-  const { keys } = host;
+  const { keys, bannerFigure } = host;
   const { screenReader, reducedMotion } = host.a11y;
   const [, redraw] = useReducer((count: number) => count + 1, 0);
   const { timers } = host;
   const cache = useMemo(
-    () => createRowCache(rowRenderersOf({ keys, a11y: { screenReader, reducedMotion } }), { defer: (run) => void timers.setTimeout(run, 0), onRows: redraw }),
-    [keys, screenReader, reducedMotion, timers, store],
+    () => createRowCache(rowRenderersOf({ keys, a11y: { screenReader, reducedMotion }, ...(bannerFigure === undefined ? {} : { bannerFigure }) }), { defer: (run) => void timers.setTimeout(run, 0), onRows: redraw }),
+    [keys, screenReader, reducedMotion, bannerFigure, timers, store],
   );
   useEffect(() => () => cache.close(), [cache]);
   const [held] = useState<Held>(() => ({ store, epoch: store.epoch(), position: FOLLOWING, selection: undefined, toast: undefined, drag: undefined }));

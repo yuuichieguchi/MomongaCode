@@ -77,6 +77,7 @@ describe('the screen-reader display', () => {
   it('keeps the terminal\'s own history whatever the screen was, and refuses the full screen', async () => {
     const started = await startWith({ ...READER, screen: { screen: 'fullscreen', columns: 80, rows: 30 } });
     await untilOutput(started.app, 'screen: scrollback');
+    await untilOutput(started.app, 'mode: manual');
     expect(started.terminal.screens).toEqual(['scrollback']);
     await command(started, '/tui fullscreen');
     await untilOutput(started.app, "Screen-reader mode keeps the terminal's own history.");

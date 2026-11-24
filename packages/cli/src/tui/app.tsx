@@ -57,9 +57,11 @@ import type { FooterModel } from './screen/footer.tsx';
 
 const modelFactOf = (model: FooterModel | undefined): { model?: FooterModel } => (model === undefined ? {} : { model });
 import { formatTokens } from '../format-tokens.ts';
-import { HistoryView, useBackgroundAnswered } from './screen/history-view.tsx';
+import { HistoryView } from './screen/history-view.tsx';
 import type { ViewSource } from './screen/viewport.ts';
 import { CHAT_MARK, InputBox, inputContentRows, inputOffsetAt, inputRowsOf, keptDraftLine } from './screen/input-box.tsx';
+import { applyEarlyInput } from './screen/early-input.ts';
+import type { EarlyInput } from './screen/early-input.ts';
 import { untilNextKey } from './screen/input.ts';
 import type { ScreenTerminal } from './screen/input.ts';
 import type { RowRequests } from './screen/layout.ts';
@@ -135,6 +137,7 @@ export type AppProps = {
   colour?: ColourHost;
   tuiSettings?: TuiSettingsPort;
   keySettleMs?: number;
+  earlyInput?: EarlyInput;
   move?: TuiMovePort;
   adoption?: TuiAdoption;
   now(): number;
@@ -221,7 +224,6 @@ export function App(props: AppProps) {
   const { exit, waitUntilRenderFlush } = useApp();
   const { stdout, write: writeThroughInk } = useStdout();
   const terminalState = useSyncExternalStore(terminal.subscribe, terminal.state);
-  const scrollbackReady = useBackgroundAnswered(terminalState.negotiation, props.timers);
   const { columns, rows } = terminalState.size;
   applyAppearance(appearanceOf(props.colour ?? UNREPORTED_COLOUR_HOST, terminalState.backgroundColor));
   const tuiSettings = props.tuiSettings ?? UNSTORED_TUI_SETTINGS;
@@ -292,7 +294,7 @@ export function App(props: AppProps) {
   };
   const slash = createSlashRegistry([...sessionSlashCommands(baseSlash.list(), delegatingFlows), ...skillSlash]);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
-  const [editor, setEditor] = useState<EditorState>(emptyEditor());
+  const [editor, setEditor] = useState<EditorState>(() => applyEarlyInput(emptyEditor(), props.earlyInput?.take() ?? []));
   const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? DEFAULT_PERMISSION_MODE);
   const [bypassAllowed, setBypassAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -305,6 +307,7 @@ export function App(props: AppProps) {
   const effortNotedRef = useRef(false);
   const [entriesVersion, setEntriesVersion] = useState(0);
   const [notices, setNotices] = useState<readonly string[]>([]);
+  const noticesRef = useRef<readonly string[]>(notices);
   const [displays, setDisplays] = useState<ReadonlyMap<string, string>>(new Map());
   const displaysRef = useRef<ReadonlyMap<string, string>>(new Map());
   const [found] = useState(createFoundServers);
@@ -318,7 +321,7 @@ export function App(props: AppProps) {
   const [reconnectingSince, setReconnectingSince] = useState<number | undefined>(undefined);
   const [measuring, setMeasuring] = useState<{ since: number; state: Measuring } | undefined>(undefined);
   const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
-  const [probe, setProbe] = useState<{ sessionId: string | undefined; model: string; retryAfterSeconds: number } | undefined>(undefined);
+  const [probe, setProbe] = useState<{ sessionId: string | undefined; model: string; retryAfterSeconds: number; announce: boolean; seq: number } | undefined>(undefined);
   const [followedSession, setFollowedSession] = useState<{ id: string; after: number; cwd: string } | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
   const [hovered, setHovered] = useState<Hovered | undefined>(undefined);
@@ -330,10 +333,12 @@ export function App(props: AppProps) {
   const sourceRef = useRef<ViewSource | undefined>(undefined);
   const [erased, setErased] = useState(false);
   const phaseRef = useRef<Phase['kind']>('starting');
+  const modelReadSeq = useRef(0);
+  const modelReadingRef = useRef(false);
+  const [modelReading, setModelReading] = useState(false);
   const readingRef = useRef(false);
   const switchingRef = useRef(false);
   const startsFromRecord = useRef(adoption !== undefined);
-  const [panelRows, setPanelRows] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState<Loading | undefined>(undefined);
   const openedSession = useRef<{ id: string; hasRun: boolean } | undefined>(undefined);
   const initialPromptSent = useRef(false);
@@ -348,7 +353,7 @@ export function App(props: AppProps) {
   const betweenRuns = useRef(false);
   const [profiles, setProfiles] = useState<readonly PlanProfileView[]>([]);
   const [servedTarget, setServedTarget] = useState<string | undefined>(undefined);
-  const typedRef = useRef(false);
+  const typedRef = useRef(editor.text !== '' || editor.shell);
   const sessionModelRef = useRef<string | undefined>(undefined);
   const signInFailedRun = useRef<{ text: string; options: StartRunOptions; sessionModel: string } | undefined>(undefined);
   const busyRef = useRef(false);
@@ -447,7 +452,7 @@ export function App(props: AppProps) {
     phaseRef.current = next.kind;
     setPhase(next);
     const shown = store.byKey(BANNER_KEY)?.entry;
-    if (shown?.kind === 'banner') showBanner(bannerModelIn(next.kind, sessionModelRef.current, sessionEffortRef.current), shown.banner.notices, shown.banner.figure);
+    if (shown?.kind === 'banner') showBanner(bannerModelIn(next.kind, sessionModelRef.current, sessionEffortRef.current, modelReadingRef.current), shown.banner.notices, shown.banner.figure);
   };
 
   const renewHistory = (): void => {
@@ -560,9 +565,9 @@ export function App(props: AppProps) {
   const bannerOf = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): StartupBanner | undefined =>
     props.startup === undefined ? undefined : { config: props.startup, model: shownModel, cwd: backend.cwd, notices: shownNotices, figure };
 
-  const connectedModel = (stored: string, chosen?: ReasoningEffort): BannerModel => {
+  const connectedModel = (stored: string, chosen?: ReasoningEffort, reading = modelReadingRef.current): BannerModel => {
     const effort = shownEffort(entriesRef.current, stored, chosen);
-    return { kind: 'connected', name: shownModel(stored), ...(effort === undefined ? {} : { effort }) };
+    return { kind: 'connected', name: shownModel(stored), ...(effort === undefined ? {} : { effort }), ...(reading ? { reading: true } : {}) };
   };
 
   const noteEffortChoice = (model: string, chosen: ReasoningEffort | undefined): void => {
@@ -575,9 +580,62 @@ export function App(props: AppProps) {
     if (text !== undefined) note(text);
   };
 
-  const rereadModel = (): void => {
-    void backend.model().then((entry) => showModel(entry, false), modelUnread);
+  const bannerModelIn = (kind: Phase['kind'], model: string | undefined, effort: ReasoningEffort | undefined, reading = modelReadingRef.current): BannerModel => {
+    if (kind === 'starting' || kind === 'trust') return { kind: 'unread' };
+    return kind === 'ready' && model !== undefined ? connectedModel(model, effort, reading) : { kind: 'not-connected', login: kind === 'unconnected' };
   };
+
+  const showBanner = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): void => {
+    const banner = bannerOf(shownModel, shownNotices, figure);
+    if (banner === undefined) return;
+    if (store.byKey(BANNER_KEY) === undefined) store.append({ kind: 'banner', banner }, BANNER_KEY);
+    else store.change(BANNER_KEY, () => ({ kind: 'banner', banner }));
+  };
+
+  const bannerHanded = (): boolean => {
+    const banner = store.byKey(BANNER_KEY);
+    if (banner === undefined) return false;
+    const index = store.indexOfId(banner.id);
+    return index !== undefined && index < feedRef.current.handed();
+  };
+
+  const setBannerReading = (next: boolean): void => {
+    const value = next && !bannerHanded();
+    modelReadingRef.current = value;
+    setModelReading(value);
+  };
+
+  const syncCurrentBanner = (): void => {
+    const shown = store.byKey(BANNER_KEY)?.entry;
+    if (shown?.kind !== 'banner') return;
+    showBanner(bannerModelIn(phaseRef.current, sessionModelRef.current, sessionEffortRef.current, modelReadingRef.current), noticesRef.current, shown.banner.figure);
+  };
+
+  const endMeasuring = (): void => {
+    setProbe(undefined);
+    setMeasuring(undefined);
+  };
+
+  const beginModelRead = (showAnnounce: boolean, unreadAnnounce = showAnnounce): void => {
+    modelReadSeq.current += 1;
+    const seq = modelReadSeq.current;
+    endMeasuring();
+    setBannerReading(true);
+    syncCurrentBanner();
+    void backend.model().then(
+      (entry) => showModel(entry, showAnnounce, seq),
+      (error: unknown) => modelUnread(error, unreadAnnounce, seq),
+    );
+  };
+
+  const cancelModelRead = (): void => {
+    modelReadSeq.current += 1;
+    endMeasuring();
+    setBannerReading(false);
+    syncCurrentBanner();
+  };
+
+  const rereadModel = (): void => beginModelRead(false, true);
 
   const applyEffort = async (chosen: ReasoningEffort | null): Promise<void> => {
     overlayPorts.closeScreen();
@@ -594,26 +652,20 @@ export function App(props: AppProps) {
     setSessionOutputStyle(session.outputStyle);
   };
 
-  const bannerModelIn = (kind: Phase['kind'], model: string | undefined, effort: ReasoningEffort | undefined): BannerModel => {
-    if (kind === 'starting' || kind === 'trust') return { kind: 'unread' };
-    return kind === 'ready' && model !== undefined ? connectedModel(model, effort) : { kind: 'not-connected', login: kind === 'unconnected' };
-  };
-
-  const showBanner = (shownModel: BannerModel, shownNotices: readonly string[], figure: boolean): void => {
-    const banner = bannerOf(shownModel, shownNotices, figure);
-    if (banner === undefined) return;
-    if (store.byKey(BANNER_KEY) === undefined) store.append({ kind: 'banner', banner }, BANNER_KEY);
-    else store.change(BANNER_KEY, () => ({ kind: 'banner', banner }));
-  };
-
   const resetTranscript = (): void => {
+    if (sessionModelRef.current === undefined) {
+      modelReadSeq.current += 1;
+      endMeasuring();
+      modelReadingRef.current = false;
+      setModelReading(false);
+    }
     const fresh = createAgentViews();
     agentsRef.current = fresh;
     setAgents(fresh);
     chooseRow(undefined);
     store.reset();
     renewHistory();
-    if (sessionModelRef.current !== undefined) showBanner(connectedModel(sessionModelRef.current, sessionEffortRef.current), notices, true);
+    showBanner(bannerModelIn(phaseRef.current, sessionModelRef.current, sessionEffortRef.current, modelReadingRef.current), noticesRef.current, true);
   };
 
   const switchScreen = async (next: ScreenMode): Promise<void> => {
@@ -637,28 +689,29 @@ export function App(props: AppProps) {
     note(autoModeNotice({ view, surface: 'tui', shownModel: displays.get(view.model) ?? view.model }));
   };
 
-  const endMeasuring = (): void => {
-    setProbe(undefined);
-    setMeasuring(undefined);
-  };
-
-  const modelUnread = (error: unknown, announce = true): void => {
+  const modelUnread = (error: unknown, announce = true, seq = modelReadSeq.current): void => {
+    if (seq !== modelReadSeq.current) return;
     endMeasuring();
+    setBannerReading(false);
+    syncCurrentBanner();
     if (announce) warningNote(modelUnreadText(error));
   };
 
-  const showModel = (entry: MomongaModelEntry, announce = true): void => {
+  const showModel = (entry: MomongaModelEntry, announce = true, seq = modelReadSeq.current): void => {
+    if (seq !== modelReadSeq.current) return;
     endMeasuring();
     setModel(entry);
     entriesRef.current = [...entriesRef.current.filter((known) => known.id !== entry.id), entry];
     setEntriesVersion((version) => version + 1);
-    if (announce && entry.id === sessionModelRef.current) noteEffortChoice(entry.id, sessionEffortRef.current);
     const readiness = agentReadiness(entry.capabilities);
     if (readiness.state === 'probing') {
       setMeasuring({ since: now(), state: readiness.measuring });
-      setProbe({ sessionId: openedSession.current?.id, model: entry.id, retryAfterSeconds: readiness.retryAfterSeconds });
+      setProbe({ sessionId: openedSession.current?.id, model: entry.id, retryAfterSeconds: readiness.retryAfterSeconds, announce, seq });
       return;
     }
+    setBannerReading(false);
+    syncCurrentBanner();
+    if (announce && entry.id === sessionModelRef.current) noteEffortChoice(entry.id, sessionEffortRef.current);
     const text = readinessNoticeOf(readiness, 'tui');
     if (text !== undefined && announce) append({ kind: 'notice', level: 'warning', text });
   };
@@ -669,6 +722,8 @@ export function App(props: AppProps) {
     setFollowedSession((before) => (before?.id === session.id ? before : { id: session.id, after: session.lastEventId, cwd: session.cwd }));
     setModeState(session.permissionMode);
     sessionModelRef.current = session.model;
+    modelReadSeq.current += 1;
+    endMeasuring();
     setSessionModel(session.model);
     setSessionEffort(session.effort);
     setSessionOutputStyle(session.outputStyle);
@@ -677,20 +732,22 @@ export function App(props: AppProps) {
     unconfiguredModel.current = !configured;
     sessionEffortRef.current = session.effort;
     effortNotedRef.current = false;
-    showBanner(connectedModel(session.model, session.effort), notices, true);
     const announce = !startsFromRecord.current;
-    if (announce) noteEffortChoice(session.model, session.effort);
-    if (announce) showAutoNotice(session);
-    enterPhase({ kind: 'ready' });
-    endMeasuring();
     if (!configured) {
+      cancelModelRead();
+      showBanner(connectedModel(session.model, session.effort, false), noticesRef.current, true);
+      if (announce) noteEffortChoice(session.model, session.effort);
+      if (announce) showAutoNotice(session);
+      enterPhase({ kind: 'ready' });
       if (announce) append({ kind: 'notice', level: 'warning', text: notConfiguredAnyMoreText(session.model) });
       return;
     }
-    void backend.model().then(
-      (entry) => showModel(entry, announce),
-      (error: unknown) => modelUnread(error, announce),
-    );
+    setBannerReading(true);
+    showBanner(connectedModel(session.model, session.effort, modelReadingRef.current), noticesRef.current, true);
+    if (announce) noteEffortChoice(session.model, session.effort);
+    if (announce) showAutoNotice(session);
+    enterPhase({ kind: 'ready' });
+    beginModelRead(announce);
   };
 
   const enterFirstSession = async (session: SessionView): Promise<void> => {
@@ -700,7 +757,11 @@ export function App(props: AppProps) {
     const history = await backend.loadHistory();
     replaceEditor(withHistory(editorRef.current, history));
     void backend.startupNotices().then(
-      (found) => setNotices((previous) => [...previous, ...found]),
+      (found) => {
+        const next = [...noticesRef.current, ...found];
+        noticesRef.current = next;
+        setNotices(next);
+      },
       (error: unknown) => {
         if (announce) append({ kind: 'notice', level: 'warning', text: `startup notices unavailable: ${errorOf(error).message}` });
       },
@@ -732,9 +793,12 @@ export function App(props: AppProps) {
     sessionEffortRef.current = session.effort;
     setSessionEffort(session.effort);
     unconfiguredModel.current = false;
-    await readDisplays();
+    modelReadSeq.current += 1;
     endMeasuring();
-    void backend.model().then(showModel, modelUnread);
+    setBannerReading(true);
+    syncCurrentBanner();
+    await readDisplays();
+    beginModelRead(true);
     return session;
   };
 
@@ -804,7 +868,7 @@ export function App(props: AppProps) {
       const current = sessionModelRef.current;
       if (current !== undefined) {
         unconfiguredModel.current = !(await readDisplays()).has(current);
-        if (unconfiguredModel.current) endMeasuring();
+        if (unconfiguredModel.current) cancelModelRead();
         else rereadModel();
         return;
       }
@@ -1540,18 +1604,19 @@ export function App(props: AppProps) {
   const modelsUnread = phase.kind === 'trust';
   const syncBanner = useEffectEvent((): void => {
     if (store.byKey(BANNER_KEY) !== undefined || (sessionModel === undefined && (unconnected || beforeConversation)))
-      showBanner(bannerModelIn(phaseRef.current, sessionModel, sessionEffort), notices, figureFits);
+      showBanner(bannerModelIn(phaseRef.current, sessionModel, sessionEffort, modelReadingRef.current), noticesRef.current, true);
   });
 
-  const measured = useEffectEvent((entry: MomongaModelEntry): void => showModel(entry));
-  const measurementFailed = useEffectEvent((error: unknown): void => modelUnread(error));
+  const measured = useEffectEvent((entry: MomongaModelEntry, announce: boolean, seq: number): void => showModel(entry, announce, seq));
+  const measurementFailed = useEffectEvent((error: unknown, announce: boolean, seq: number): void => modelUnread(error, announce, seq));
   useEffect(() => {
     if (probe === undefined) return undefined;
+    const { announce, seq } = probe;
     return followMeasurement(
       { read: () => backend.model(), timers },
       probe.retryAfterSeconds,
-      (entry) => measured(entry),
-      (error) => measurementFailed(error),
+      (entry) => measured(entry, announce, seq),
+      (error) => measurementFailed(error, announce, seq),
       (state) => setMeasuring((before) => (before === undefined ? undefined : { since: before.since, state })),
     );
   }, [probe, backend, timers]);
@@ -2149,7 +2214,17 @@ export function App(props: AppProps) {
     return event.type === 'paste' || event.type === 'key';
   });
 
-  useEffect(() => terminal.input.claim('typing', (event) => onTyped(event)), [terminal]);
+  const stopEarly = useEffectEvent((): void => {
+    const extra = props.earlyInput?.stop() ?? [];
+    if (extra.length === 0) return;
+    typedRef.current = true;
+    replaceEditor(applyEarlyInput(editorRef.current, extra));
+  });
+  useEffect(() => {
+    const stopTyping = terminal.input.claim('typing', (event) => onTyped(event));
+    stopEarly();
+    return stopTyping;
+  }, [terminal]);
 
   const servedMember = model?.chain.find((member) => member.model === servedTarget);
   const servedPlan = servedMember?.billing === 'plan' ? servedMember.plan : undefined;
@@ -2157,7 +2232,8 @@ export function App(props: AppProps) {
   const planRow = phase.kind !== 'ready' || servedProfile === undefined ? undefined : `${sessionModel === undefined ? '' : (displays.get(sessionModel) ?? sessionModel)} · ${servedProfile.messages.planInUseLabel} · ${servedProfile.messages.manageUsageLabel}: ${servedProfile.usageUrl}`;
   const fullscreen = terminalState.screen === 'fullscreen';
   const panelFacts = { trustPath: phase.kind === 'trust' ? phase.path : undefined, ready: phase.kind === 'ready' };
-  const panel = prompts.panel(panelFacts);
+  const shownPanel = prompts.panel(panelFacts);
+  const panel = shownPanel?.view;
   const conversationArea = !beforeConversation;
   const inputShown = conversationArea && panel === undefined;
   const completionOpen = slashMenu.open || atMenu.open;
@@ -2201,7 +2277,7 @@ export function App(props: AppProps) {
     subagents: agentListRequest({ ...listBase, focus: listFocus === undefined ? undefined : 0 }),
     footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
     lines: inputShown ? shownAttachments.length + waitingLines.length : keptDraft === undefined ? 0 : 1,
-    panel: panel === undefined ? undefined : (panelRows ?? 0),
+    panel: shownPanel?.rows,
   };
   const allocation = allocate(rows, rowRequests);
   const listFacts = { ...listBase, rows: fullscreen ? allocation.subagents : rowRequests.subagents };
@@ -2215,13 +2291,13 @@ export function App(props: AppProps) {
   const transcriptAllocation = panel === undefined ? allocation : allocate(rows, { ...rowRequests, panel: 0 });
   const transcriptWidth = fullscreen ? Math.max(1, columns - SCROLLBAR_COLUMNS) : columns;
   const onlyEntry = visible.count() === 1 ? visible.at(0).entry : undefined;
-  const followedStart = panel !== undefined && (phase.kind === 'starting' || beforeConversation) && onlyEntry?.kind === 'banner' ? onlyEntry.banner : undefined;
+  const followedStart = fullscreen && panel !== undefined && (phase.kind === 'starting' || beforeConversation) && onlyEntry?.kind === 'banner' ? onlyEntry.banner : undefined;
   const listFollows = followedStart !== undefined;
-  const figureFits = followedStart === undefined ? conversationArea : panelRows !== undefined && bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
+  const figureFits = followedStart === undefined ? true : bannerRows({ ...followedStart, figure: true }, transcriptWidth).length <= allocation.viewport;
   useEffect(() => {
     syncBanner();
-  }, [sessionModel, sessionEffort, entriesVersion, notices, unconnected, beforeConversation, modelsUnread, displays, figureFits]);
-  const tailPose = useTailWag(!a11y.reducedMotion && !a11y.screenReader && props.reopen === undefined && props.adoption === undefined && loading === undefined && onlyEntry?.kind === 'banner' && figureDrawn(onlyEntry.banner, transcriptWidth), timers);
+  }, [sessionModel, sessionEffort, entriesVersion, notices, unconnected, beforeConversation, modelsUnread, displays, modelReading]);
+  const tailPose = useTailWag(!a11y.reducedMotion && !a11y.screenReader && props.reopen === undefined && props.adoption === undefined && loading === undefined && figureFits && onlyEntry?.kind === 'banner' && figureDrawn(onlyEntry.banner, transcriptWidth), timers);
   const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const view = useTranscriptView({
     store: viewed,
@@ -2242,6 +2318,7 @@ export function App(props: AppProps) {
     keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: slashMenu.isOpen(editorRef.current.text) || atMenu.open, inputEmpty: editorRef.current.text === '' }),
     keys,
     a11y,
+    bannerFigure: figureFits,
     timers,
   });
   const followRows = listFollows ? drawnTranscriptRows(allocation.viewport, view.window.rows.length) : undefined;
@@ -2397,10 +2474,6 @@ export function App(props: AppProps) {
     [timers],
   );
   useEffect(() => {
-    facts.current = { overlay: overlay !== undefined, position: shownAgent === undefined ? view.position : FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush };
-    feedRef.current = feed;
-    listTargetsRef.current = listTargets;
-    sourceRef.current = shownAgent === undefined ? view.source : undefined;
     move?.check();
   });
   useEffect(() => move?.attach(handover.surface), [move, handover]);
@@ -2463,6 +2536,10 @@ export function App(props: AppProps) {
         }
       : undefined;
 
+  facts.current = { overlay: overlay !== undefined, position: shownAgent === undefined ? view.position : FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush };
+  feedRef.current = feed;
+  listTargetsRef.current = listTargets;
+  sourceRef.current = shownAgent === undefined ? view.source : undefined;
   renderedScreen.current = screenNow();
   return (
     <TailPoseContext value={tailPose}>
@@ -2473,7 +2550,6 @@ export function App(props: AppProps) {
         allocation={allocation}
         panel={panel ?? (fullscreen || !toolView.shown ? undefined : toolView.view)}
         panelFollows={followRows}
-        onPanelRows={setPanelRows}
         regions={{
           header:
             headerText === undefined ? null : (
@@ -2486,7 +2562,7 @@ export function App(props: AppProps) {
           ) : fullscreen ? (
             <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={viewed.count()} following={view.position.following} selection={view.selection} hovered={shownHover?.place === 'viewport' ? shownHover : undefined} />
           ) : (
-            <HistoryView key={`${historyGeneration}:${shownAgent?.runId ?? ''}`} store={viewed} source={view.source} feed={shownFeed} ready={scrollbackReady} timers={timers} columns={transcriptWidth} />
+            <HistoryView key={`${historyGeneration}:${shownAgent?.runId ?? ''}`} store={viewed} source={view.source} feed={shownFeed} timers={timers} columns={transcriptWidth} />
           ),
           menu: !menuShown ? null : invitationText.length > 0 ? <InvitationLine rows={fullscreen ? invitationText.slice(0, allocation.menu) : invitationText} /> : atMenu.open ? <AtList labels={atMenu.labels} index={atMenu.index} /> : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
           waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,

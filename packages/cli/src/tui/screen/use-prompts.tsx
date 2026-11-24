@@ -13,9 +13,9 @@ import { editorUnsetHint } from '../external-editor.ts';
 import type { ExternalEditorPort } from '../external-editor.ts';
 import { capturedOf } from '../keys/capture.ts';
 import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
-import { LOADING_HINTS, OverlayView, pickerSpec } from '../picker.tsx';
-import type { KeptScreen, Loaded, LoadingHint, Overlay, OverlayPorts, PickChoice, PickRequest, PickUpdate, WaitingOverlay } from '../picker.tsx';
-import { detailCapacity, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectHover, selectKey, selectLayout, selectRowAt, selectStart, selectText, SelectView, selectWheel, selectWithFilter } from '../select.tsx';
+import { LOADING_HINTS, OverlayView, overlayPanelRows, pickerSpec } from '../picker.tsx';
+import type { KeptScreen, Loaded, LoadingHint, Overlay, OverlayPorts, PanelOverlay, PickChoice, PickRequest, PickUpdate, WaitingOverlay } from '../picker.tsx';
+import { detailCapacity, detailPanelRows, detailTop, DetailView, SELECT_CONTEXTS, selectClick, selectHover, selectKey, selectLayout, selectPanelRows, selectRowAt, selectStart, selectText, SelectView, selectWheel, selectWithFilter } from '../select.tsx';
 import type { SelectFrame, SelectLayout, SelectLine, SelectOutcome, SelectSpec, SelectState, SelectStep, TextRow } from '../select.tsx';
 import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
 import { promptTakesFocus, toolOf, withElicitationFlow } from '../transcript.ts';
@@ -26,7 +26,7 @@ import type { ScreenTerminal } from './input.ts';
 import { regionAt } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
 import type { Invitation } from './menu.tsx';
-import { approvalSpec, approvalWording, decisionChoices, ElicitationFields, elicitationSpec, TRUST_CHOICES, trustSpec } from './prompt-panel.tsx';
+import { approvalSpec, approvalWording, decisionChoices, ElicitationFields, elicitationFieldsRows, elicitationSpec, TRUST_CHOICES, trustSpec } from './prompt-panel.tsx';
 import type { TrustDecision } from './prompt-panel.tsx';
 import type { TranscriptState, TranscriptStore } from './store.ts';
 import { Abandoned, currentScope, currentStep, inScope, untilAbandoned } from '../flow-step.ts';
@@ -93,6 +93,8 @@ export type PromptsHost = {
 
 export type PanelFacts = { trustPath: string | undefined; ready: boolean };
 
+export type DrawnPanel = { readonly view: ReactNode; readonly rows: number };
+
 export type Prompts = {
   overlayPorts: OverlayPorts;
   overlay: Overlay | undefined;
@@ -113,7 +115,7 @@ export type Prompts = {
   overlayKey(event: KeyEvent, keys: KeyTable): boolean;
   runPromptKey(event: KeyEvent, keys: KeyTable): boolean;
   paste(text: string): boolean;
-  panel(facts: PanelFacts): ReactNode | undefined;
+  panel(facts: PanelFacts): DrawnPanel | undefined;
   press(facts: PanelFacts, row: number): void;
   hover(facts: PanelFacts, row: number): boolean;
   wheel(facts: PanelFacts, rows: number): void;
@@ -526,11 +528,23 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     apply(active, { state: selectWheel(active.spec, stateOf(active), rows, layoutOf(active).capacity) });
   };
 
-  const selectView = (active: Active): ReactNode => {
+  const selectView = (active: Active): DrawnPanel => {
+    const frame = frameOf(active);
+    const text = textOf(active);
     const shown = detailOf(active);
-    if (shown !== undefined) return <DetailView text={textOf(active)} frame={frameOf(active)} top={shown.top} keys={host.keys} />;
+    if (shown !== undefined) {
+      return {
+        view: <DetailView text={text} frame={frame} top={shown.top} keys={host.keys} />,
+        rows: detailPanelRows(text, frame, shown.top, host.screenReader),
+      };
+    }
+    const state = stateOf(active);
+    const layout = layoutOf(active);
     const error = errorFor(active);
-    return <SelectView spec={active.spec} state={stateOf(active)} layout={layoutOf(active)} border={frameOf(active).border} sending={active.sending} keys={host.keys} {...(error === undefined ? {} : { error })} />;
+    return {
+      view: <SelectView spec={active.spec} state={state} layout={layout} border={frame.border} sending={active.sending} keys={host.keys} {...(error === undefined ? {} : { error })} />,
+      rows: selectPanelRows(active.spec, state, layout, active.border, error, host.screenReader),
+    };
   };
 
   const markSent = (owner: string): void => {
@@ -844,11 +858,16 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     }
   };
 
-  const keptView = (layer: Layer, kept: Extract<Overlay, { kind: 'kept' }>): ReactNode => {
+  const overlayPanel = (overlay: PanelOverlay, editor: EditorState): DrawnPanel => ({
+    view: <OverlayView overlay={overlay} editor={editor} keys={host.keys} columns={host.columns} rows={host.panelRows} />,
+    rows: overlayPanelRows(overlay, editor, host.keys, { columns: host.columns, rows: host.panelRows }),
+  });
+
+  const keptView = (layer: Layer, kept: Extract<Overlay, { kind: 'kept' }>): DrawnPanel => {
     const { shown } = kept;
-    if (kept.phase !== undefined) return <OverlayView overlay={{ kind: 'loading', title: titleOf(shown), line: kept.phase, hint: LOADING_HINTS.none, cancel: () => undefined }} editor={emptyEditor()} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
+    if (kept.phase !== undefined) return overlayPanel({ kind: 'loading', title: titleOf(shown), line: kept.phase, hint: LOADING_HINTS.none, cancel: () => undefined }, emptyEditor());
     if (shown.kind === 'pick') return selectView(pickActive(layer, shown));
-    return <OverlayView overlay={shown} editor={editorOf(layer)} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
+    return overlayPanel(shown, editorOf(layer));
   };
 
   const runScope = async <T,>(raised: string | undefined, work: () => Promise<T>): Promise<T> => {
@@ -1008,19 +1027,21 @@ export const usePrompts = (host: PromptsHost): Prompts => {
       if (active !== undefined) return selectView(active);
       const top = topLayer();
       if (top?.overlay.kind === 'kept') return keptView(top, top.overlay);
-      if (top !== undefined && top.overlay.kind !== 'pick') return <OverlayView overlay={top.overlay} editor={editorOf(top)} keys={host.keys} columns={host.columns} rows={host.panelRows} />;
+      if (top !== undefined && top.overlay.kind !== 'pick') return overlayPanel(top.overlay, editorOf(top));
       const pending = fieldsShown(facts);
       if (pending === undefined) return undefined;
-      return (
-        <ElicitationFields
-          elicitation={{ ...pending, flow: flowOf(pending) }}
-          title={toolOf(store, pending.callId)?.title ?? pending.callId}
-          editor={elicitEditorRef.current}
-          columns={host.columns}
-          waiting={waitingCount(store.state())}
-          keys={host.keys}
-        />
-      );
+      const fieldsProps = {
+        elicitation: { ...pending, flow: flowOf(pending) },
+        title: toolOf(store, pending.callId)?.title ?? pending.callId,
+        editor: elicitEditorRef.current,
+        columns: host.columns,
+        waiting: waitingCount(store.state()),
+        keys: host.keys,
+      };
+      return {
+        view: <ElicitationFields {...fieldsProps} />,
+        rows: elicitationFieldsRows({ ...fieldsProps, screenReader: host.screenReader }),
+      };
     },
     press: (facts, row) => {
       const active = panelActive(facts);

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { INIT_INSTRUCTION } from '@momonga/runtime';
 import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
 import type { McpServerView } from '@momonga/protocol';
+import { afterMicrotasks } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SLASH_COMMANDS } from '../../src/tui/commands/index.ts';
 import { HOOKS_TITLE, HOOK_COMMAND_TITLE, HOOK_EVENT_TITLE, HOOK_MATCHER_TITLE, HOOK_TIMEOUT_TITLE } from '../../src/tui/commands/hooks.ts';
@@ -358,9 +359,18 @@ describe('/mcp', () => {
     await press(started, KEYS.enter, ADD_HTTP_ROW);
     expect(stored(place.userFile)).toEqual({ mcpServers: { files: { command: 'npx' } }, enabledMcpjsonServers: [OTHER_APPROVAL], disabledMcpjsonServers: ['tracker'] });
     await press(started, '3', '› 3. scratch');
-    const listed = started.backend.calls.filter((call) => call === 'mcpServers').length;
+    const reopened = Promise.withResolvers<void>();
+    const listServers = started.backend.mcpServers;
+    started.backend.mcpServers = async (...args) => {
+      try {
+        return await listServers(...args);
+      } finally {
+        reopened.resolve();
+      }
+    };
     started.app.stdin.write(KEYS.enter);
-    await vi.waitFor(() => expect(started.backend.calls.filter((call) => call === 'mcpServers').length).toBeGreaterThan(listed));
+    await reopened.promise;
+    await afterMicrotasks();
     await untilFrame(started.app, (frame) => frame.includes(sessionServerNote('scratch')) && frame.includes(ADD_HTTP_ROW));
     await press(started, '1', '› 1. files');
     await press(started, KEYS.enter, 'Remove files?');

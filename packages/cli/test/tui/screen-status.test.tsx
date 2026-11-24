@@ -88,6 +88,7 @@ describe('the measuring row ends with its cause (6.2)', () => {
     const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
     const { app, backend } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
     const measuring = linesOf(await untilFrame(app, 'measuring toolCalling'));
+    await pollUntil(() => clock.pending() === 2, { description: 'measuring and spinner timers are scheduled', boundMs: FRAME_BOUND_MS });
     expect(measuring[9]).toMatch(/^⠋ measuring toolCalling of this model, starting 0s · to skip it, declare toolCalling/);
     expect(measuring.join('\n')).not.toContain('target primary is being measured');
     clock.advance(5000);
@@ -107,6 +108,7 @@ describe('the measuring row ends with its cause (6.2)', () => {
     const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
     const { app } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
     await untilFrame(app, 'measuring toolCalling');
+    await pollUntil(() => clock.pending() === 2, { description: 'measuring and spinner timers are scheduled', boundMs: FRAME_BOUND_MS });
     const pending = clock.pending();
     await type(app, '/clear', '> /clear');
     app.stdin.write(KEYS.enter);
@@ -121,6 +123,7 @@ describe('the measuring row ends with its cause (6.2)', () => {
     const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
     const { app } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
     await untilFrame(app, 'measuring toolCalling');
+    await pollUntil(() => clock.pending() === 2, { description: 'measuring and spinner timers are scheduled', boundMs: FRAME_BOUND_MS });
     toolCalling[SESSION.model] = 'native';
     clock.advance(5000);
     const ready = await untilFrame(app, (shown) => !shown.includes('measuring') && shown.includes('context: 0%'));

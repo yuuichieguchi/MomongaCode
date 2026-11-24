@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { Text, render } from 'ink';
 import { describe, expect, it } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
+import { createScreenInput } from '../../src/tui/screen/input.ts';
+import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import { BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE, synchronizedFramesOf } from '../../src/tui/terminal/synchronized.ts';
 
 const fakeTty = () => {
@@ -55,5 +58,38 @@ describe('synchronized output follows the terminal answer to 2026 (2.3)', () => 
     expect(drawn.indexOf(BEGIN_SYNCHRONIZED_UPDATE)).toBeLessThan(drawn.indexOf('second'));
     expect(drawn.indexOf(END_SYNCHRONIZED_UPDATE)).toBeGreaterThan(drawn.indexOf('second'));
     instance.unmount();
+  });
+
+  it('wraps the very first frame in BSU/ESU when 2026 and OSC 11 answer before render()', async () => {
+    const stdin = new EventEmitter();
+    const { stream, writes } = fakeTty();
+    const input = createScreenInput();
+    const layer = createTerminalLayer({
+      input: { setRawMode: () => undefined, resume: () => undefined, pause: () => undefined, on: (event, listener) => stdin.on(event, listener), off: (event, listener) => stdin.off(event, listener) },
+      output: { writeSync: () => undefined, size: () => ({ columns: 80, rows: 24 }), onResize: () => () => undefined },
+      process: { on: () => undefined, off: () => undefined, kill: () => undefined, deliverable: () => true },
+      timers: systemTiming,
+      screen: 'scrollback',
+      screenSetByUser: true,
+      mouse: false,
+      onEvents: input.push,
+      onFailure: (error) => {
+        throw error;
+      },
+    });
+    layer.start();
+    const answered = layer.startAnswered();
+    stdin.emit('data', Buffer.from('\u001b[?2026;1$y\u001b]11;rgb:0000/0000/0000\u001b\\', 'utf8'));
+    await answered;
+    expect(layer.state().backgroundColor).toBe('rgb:0000/0000/0000');
+    const wrapped = synchronizedFramesOf(stream as unknown as NodeJS.WriteStream, () => layer.state().synchronizedOutput);
+    const instance = render(<Text>first</Text>, { stdout: wrapped, interactive: true, patchConsole: false });
+    await waitFor(() => writes.join('').includes('first'), { description: 'first synchronized frame' });
+    const drawn = writes.join('');
+    expect(drawn.indexOf(BEGIN_SYNCHRONIZED_UPDATE)).toBeGreaterThanOrEqual(0);
+    expect(drawn.indexOf(BEGIN_SYNCHRONIZED_UPDATE)).toBeLessThan(drawn.indexOf('first'));
+    expect(drawn.indexOf(END_SYNCHRONIZED_UPDATE)).toBeGreaterThan(drawn.indexOf('first'));
+    instance.unmount();
+    await layer.close();
   });
 });

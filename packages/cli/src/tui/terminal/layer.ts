@@ -8,6 +8,8 @@ import type { NegotiationState } from './negotiation.ts';
 import { createInputParser } from './parser.ts';
 import { BEL, notificationSequence, titleSequence, tmuxPassthrough } from './title.ts';
 
+export const START_ANSWER_WAIT_MS = 1000;
+
 export type TerminalSize = { columns: number; rows: number };
 
 export type TerminalInputPort = {
@@ -72,6 +74,7 @@ export type TerminalLayerOptions = {
 
 export type TerminalLayer = {
   start(): void;
+  startAnswered(): Promise<void>;
   adopt(terminal: HandoverTerminal, negotiation: NegotiationState): void;
   leaveEveryMode(): void;
   restore(): void;
@@ -114,6 +117,20 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   let repliesOwed = 0;
   let leavesWaiting: Array<() => void> = [];
   let drainBound: unknown;
+  type StartBatch = 'none' | 'waiting' | 'answered-bg' | 'expired' | 'done';
+  let startBatch: StartBatch = 'none';
+  let startTimer: unknown;
+  let startWaiters: Array<() => void> = [];
+
+  const resolveStartWait = (): void => {
+    if (startTimer !== undefined) {
+      timers.clearTimeout(startTimer);
+      startTimer = undefined;
+    }
+    const waiting = startWaiters;
+    startWaiters = [];
+    for (const done of waiting) done();
+  };
 
   const leaveNow = (): void => {
     if (drainBound !== undefined) timers.clearTimeout(drainBound);
@@ -270,8 +287,19 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   };
 
   const absorb = (event: TerminalEvent): void => {
-    if (event.type === 'report' && event.kind === 'device-attributes' && repliesOwed > 0) {
-      repliesOwed -= 1;
+    if (event.type === 'report' && event.kind === 'background-color') {
+      if (startBatch === 'expired') return;
+      if (startBatch === 'waiting') {
+        startBatch = 'answered-bg';
+        resolveStartWait();
+      }
+    }
+    if (event.type === 'report' && event.kind === 'device-attributes') {
+      if (repliesOwed > 0) repliesOwed -= 1;
+      if (startBatch !== 'none' && startBatch !== 'done') {
+        startBatch = 'done';
+        resolveStartWait();
+      }
     }
     const before = negotiation;
     negotiation = advance(negotiation, event);
@@ -334,6 +362,8 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     const saved = inTableOrder(enabled);
     restore();
     stopKeySettle();
+    startBatch = 'done';
+    resolveStartWait();
     input.off('data', onData);
     input.pause();
     return async () => {
@@ -368,6 +398,8 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     stopResizeListening?.();
     stopResizeListening = undefined;
     stopKeySettle();
+    startBatch = 'done';
+    resolveStartWait();
     input.off('data', onData);
     input.pause();
   };
@@ -389,6 +421,11 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   const start = (): void => {
     hook();
     setRaw(true);
+    startBatch = 'waiting';
+    if (startTimer !== undefined) {
+      timers.clearTimeout(startTimer);
+      startTimer = undefined;
+    }
     const first: TerminalModeName[] = screen === 'fullscreen' ? ['alt-screen', 'bracketed-paste'] : ['bracketed-paste'];
     output.writeSync(`${enterSequenceOf(first)}${QUERY_BATCH}`);
     repliesOwed += 1;
@@ -408,6 +445,8 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     releasedInk = undefined;
     hook();
     setRaw(true);
+    startBatch = 'done';
+    resolveStartWait();
     screen = terminal.screen;
     for (const name of terminal.modes) enabled.add(name);
     mouseAnswered = enabled.has('mouse');
@@ -419,6 +458,17 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
 
   return {
     start,
+    startAnswered: () => {
+      if (startBatch !== 'waiting') return Promise.resolve();
+      if (startTimer === undefined) {
+        startTimer = timers.setTimeout(() => {
+          startTimer = undefined;
+          if (startBatch === 'waiting') startBatch = 'expired';
+          resolveStartWait();
+        }, START_ANSWER_WAIT_MS);
+      }
+      return new Promise<void>((resolve) => void startWaiters.push(resolve));
+    },
     adopt,
     leaveEveryMode: () => output.writeSync(LEAVE_EVERY_MODE),
     restore,

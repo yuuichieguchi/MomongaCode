@@ -439,6 +439,26 @@ export function MoreRow({ direction, count }: { direction: 'up' | 'down'; count:
 
 export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; keys: KeyTable; error?: string };
 
+/** Compute the exact rendered row height of SelectView synchronously. */
+export const selectPanelRows = (spec: SelectSpec, state: SelectState, layout: SelectLayout, border: boolean, error: string | undefined, screenReader: boolean): number => {
+  const frameBorder = border && !screenReader ? BORDER_ROWS : 0;
+  const highlighted = screenReader && spec.rows[state.index] !== undefined ? 1 : 0;
+  const filterRow = spec.filter ? 1 : 0;
+  const aboveRow = layout.above > 0 ? 1 : 0;
+  const itemsRows = layout.items.length === 0 ? 1 : layout.itemLines.reduce((sum, lines) => sum + lines, 0);
+  const belowRow = layout.below > 0 ? 1 : 0;
+  const confirmRow = state.confirming !== undefined && spec.rows[state.confirming] !== undefined && spec.confirm !== undefined ? 1 : 0;
+  const errorRow = error === undefined ? 0 : 1;
+  return frameBorder + layout.text.length + (layout.moreRow ? 1 : 0) + highlighted + filterRow + aboveRow + itemsRows + belowRow + confirmRow + errorRow + 1;
+};
+
+/** Compute the exact rendered row height of DetailView synchronously. */
+export const detailPanelRows = (text: readonly TextRow[], frame: SelectFrame, top: number, screenReader = currentA11y().screenReader): number => {
+  const from = detailTop(text, frame, top);
+  const shown = Math.min(detailCapacity(frame), Math.max(0, text.length - from));
+  return (frame.border && !screenReader ? BORDER_ROWS : 0) + shown + 1;
+};
+
 export function SelectView({ spec, state, layout, border, sending, keys, error }: SelectViewProps) {
   const { screenReader } = currentA11y();
   const stops = stopsOf(spec, state.filter);

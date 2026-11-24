@@ -2,7 +2,8 @@ import { Box, Text } from 'ink';
 import { escapeTerminalLine } from '@momonga/protocol';
 import { PASTE_LABEL } from '../plan/sign-in.ts';
 import type { EditorState } from './editor.ts';
-import { EditorView } from './screen/input-box.tsx';
+import { EditorView, editorViewRows } from './screen/input-box.tsx';
+import { wrapText } from './screen/wrap.ts';
 import type { KeySpec, KeyTable } from './keys/table.ts';
 import { styleOf } from './screen/theme.ts';
 import { joinHint } from './select.tsx';
@@ -159,6 +160,42 @@ function TextScreen({ overlay, editor, keys, room }: { overlay: Extract<Overlay,
     </Box>
   );
 }
+
+const wrappedLineCount = (text: string, columns: number): number => wrapText(escapeTerminalLine(text), Math.max(1, columns), { links: false }).length;
+
+/** Compute the exact rendered row height of an OverlayView synchronously. */
+export const overlayPanelRows = (overlay: PanelOverlay, editor: EditorState, keys: KeyTable, room: ViewRoom): number => {
+  const { columns } = room;
+  switch (overlay.kind) {
+    case 'capture':
+      return wrappedLineCount(overlay.request.title, columns) + (overlay.problem === undefined ? 0 : wrappedLineCount(overlay.problem, columns));
+    case 'loading':
+      return wrappedLineCount(overlay.title, columns) + (overlay.line === undefined ? 0 : wrappedLineCount(overlay.line, columns)) + (overlay.hint === LOADING_HINTS.none ? 0 : wrappedLineCount(loadingHint(keys), columns));
+    case 'text': {
+      const lines = overlay.request.lines ?? [];
+      const around = TEXT_ROWS_AROUND + lines.length + (overlay.error === undefined ? 0 : 1);
+      return (
+        wrappedLineCount(overlay.request.title, columns) +
+        lines.reduce((sum, line) => sum + wrappedLineCount(line, columns), 0) +
+        editorViewRows(editor, columns, entryRows(room, around), overlay.request.hidden === true, false) +
+        (overlay.error === undefined ? 0 : wrappedLineCount(overlay.error, columns)) +
+        wrappedLineCount(overlay.request.structured === true ? structuredHint(keys) : textHint(keys), columns)
+      );
+    }
+    case 'waiting':
+      if (overlay.delivered) return wrappedLineCount(overlay.view.title, columns) + wrappedLineCount('Finishing the sign-in…', columns) + wrappedLineCount('please wait', columns);
+      return (
+        wrappedLineCount(overlay.view.title, columns) +
+        overlay.view.lines.reduce((sum, line) => sum + wrappedLineCount(line, columns), 0) +
+        1 +
+        wrappedLineCount(PASTE_LABEL, columns) +
+        editorViewRows(editor, columns, entryRows(room, overlay.view.lines.length + WAITING_ROWS_AROUND), false, false) +
+        (overlay.problem === undefined ? 0 : wrappedLineCount(overlay.problem, columns)) +
+        (overlay.status === undefined ? 0 : wrappedLineCount(overlay.status, columns)) +
+        wrappedLineCount(waitingHint(keys), columns)
+      );
+  }
+};
 
 export function OverlayView({ overlay, editor, keys, columns, rows }: { overlay: PanelOverlay; editor: EditorState; keys: KeyTable; columns: number; rows: number }) {
   const room = { columns, rows };

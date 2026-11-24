@@ -5,7 +5,7 @@ export type EventClaim = (event: TerminalEvent) => boolean;
 
 export type EventObserver = (event: TerminalEvent) => void;
 
-export const CLAIM_PRIORITY = ['chord', 'input-caret', 'agent-list', 'prompt-pointer', 'tool-view', 'transcript', 'typing'] as const;
+export const CLAIM_PRIORITY = ['chord', 'input-caret', 'agent-list', 'prompt-pointer', 'tool-view', 'transcript', 'typing', 'early'] as const;
 
 export type ClaimPriority = (typeof CLAIM_PRIORITY)[number];
 

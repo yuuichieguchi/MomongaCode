@@ -1,6 +1,5 @@
 import { Box, renderToString, useStdout } from 'ink';
 import { useEffect, useEffectEvent, useState } from 'react';
-import type { NegotiationState } from '../terminal/negotiation.ts';
 import type { HistoryFeed } from './history-feed.ts';
 import { RowText } from './row-text.tsx';
 import type { TranscriptStore } from './store.ts';
@@ -8,20 +7,7 @@ import type { ScreenTimers } from './timers.ts';
 import type { ViewSource } from './viewport.ts';
 import type { Row } from './wrap.ts';
 
-export const BACKGROUND_ANSWER_WAIT_MS = 1000;
-
 const NEXT_TURN_MS = 0;
-
-export const useBackgroundAnswered = (negotiation: NegotiationState, timers: ScreenTimers): boolean => {
-  const [expired, setExpired] = useState(false);
-  const answered = negotiation !== 'unknown';
-  useEffect(() => {
-    if (answered || expired) return undefined;
-    const timer = timers.setTimeout(() => setExpired(true), BACKGROUND_ANSWER_WAIT_MS);
-    return () => timers.clearTimeout(timer);
-  }, [answered, expired, timers]);
-  return answered || expired;
-};
 
 function Rows({ rows }: { rows: readonly Row[] }) {
   return (
@@ -33,12 +19,12 @@ function Rows({ rows }: { rows: readonly Row[] }) {
   );
 }
 
-export type HistoryViewProps = { store: Pick<TranscriptStore, 'settledAt'>; source: ViewSource; feed: HistoryFeed; ready: boolean; timers: ScreenTimers; columns: number };
+export type HistoryViewProps = { store: Pick<TranscriptStore, 'settledAt'>; source: ViewSource; feed: HistoryFeed; timers: ScreenTimers; columns: number };
 
-export function HistoryView({ store, source, feed, ready, timers, columns }: HistoryViewProps) {
+export function HistoryView({ store, source, feed, timers, columns }: HistoryViewProps) {
   const { write } = useStdout();
   const [turns, setTurns] = useState(0);
-  const pending = ready && feed.pending(source, store.settledAt);
+  const pending = feed.pending(source, store.settledAt);
   const handNext = useEffectEvent((): void => {
     const chunk = feed.next(source, store.settledAt);
     if (chunk.length > 0) write(`${renderToString(<Rows rows={chunk} />, { columns })}\n`);

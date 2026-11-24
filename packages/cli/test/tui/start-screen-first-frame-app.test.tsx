@@ -375,16 +375,92 @@ describe('what the approved change leaves as it is', () => {
     app.unmount();
   });
 
-  it('/clear while unconnected leaves no start screen', async () => {
+  it('/clear while unconnected keeps the start screen', async () => {
     const { app } = await startPlan({ models: [], accounts: [] }, { startup: STARTUP }, TALL);
     await untilRow(app, 'Continue with ChatGPT');
     app.stdin.write(KEYS.escape);
     await untilFrame(app, (shown) => shown.includes(UNCONNECTED_FOOTER) && shown.includes('(use /login)') && shown.split('\n').some((row) => INPUT_ROW.test(row)));
+    app.stdin.write('hello');
+    await untilFrame(app, '> hello');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, 'No model is connected.');
+    app.stdin.write(KEYS.ctrlC);
+    await untilFrame(app, (shown) => shown.split('\n').some((row) => INPUT_ROW.test(row) && !row.includes('hello')));
     app.stdin.write('/clear');
     await untilFrame(app, '> /clear');
     app.stdin.write(KEYS.enter);
-    const cleared = await untilFrame(app, (shown) => !shown.includes(VERSION) && shown.includes(UNCONNECTED_FOOTER));
-    expect(modelLinesOf(cleared)).toEqual([]);
+    const cleared = await untilFrame(app, (shown) => !shown.includes('No model is connected.') && shown.includes(UNCONNECTED_FOOTER));
+    expect(cleared).toContain(VERSION);
+    expect(cleared.split(VERSION)).toHaveLength(2);
+    expect(modelLinesOf(cleared)).toEqual(['model: not connected  (use /login)']);
     app.unmount();
+  });
+});
+
+describe('a launch-time list finalizes the start figure on its very first frame', () => {
+  const firstFrameWith = (frames: readonly string[], needle: string): string => {
+    const found = frames.find((frame) => frame.includes(needle));
+    if (found === undefined) throw new Error(`no frame contained ${needle}`);
+    return found;
+  };
+
+  it('with trustItems at 100x50, the very first frame with the list already has the figure and no frame flickers', async () => {
+    const { app } = launch({ trustItems: PENDING_HOOK }, TALL);
+    await untilFrame(app, APPROVE_ROW);
+    const firstListFrame = firstFrameWith(app.frames, APPROVE_ROW);
+    expect(firstListFrame).toContain(FIGURE);
+    for (const row of HOOK_ROWS) expect(firstListFrame).toContain(row);
+    expect(app.frames.filter((frame) => frame.includes(APPROVE_ROW) && !frame.includes(FIGURE))).toEqual([]);
+    app.unmount();
+  });
+
+  it('with trustItems on a short terminal, the very first frame with the list already drops the figure and shows every row unclipped', async () => {
+    const tall = launch({ trustItems: PENDING_HOOK }, TALL);
+    const measuredFrame = await untilFrame(tall.app, APPROVE_ROW);
+    tall.app.unmount();
+    const needed = rowIndexOf(rowsOf(measuredFrame), NOT_NOW_ROW) + 1;
+    const { app } = launch({ trustItems: PENDING_HOOK }, { columns: 100, rows: needed - 3 });
+    await untilFrame(app, APPROVE_ROW);
+    const firstListFrame = firstFrameWith(app.frames, APPROVE_ROW);
+    expect(firstListFrame).not.toContain(FIGURE);
+    for (const row of HOOK_ROWS) expect(firstListFrame).toContain(row);
+    expect(app.frames.filter((frame) => frame.includes(APPROVE_ROW) && frame.includes(FIGURE))).toEqual([]);
+    app.unmount();
+  });
+
+  it('with checkProposal at 100x50 and short height, the very first frame with the list finalizes the figure and shows every row', async () => {
+    const tall = launch({ checkProposal: { ask: true, checks: [NPM_TEST] } }, TALL);
+    const measuredFrame = await untilFrame(tall.app, DECLINE_CHECK_ROW);
+    const firstTall = firstFrameWith(tall.app.frames, DECLINE_CHECK_ROW);
+    expect(firstTall).toContain(FIGURE);
+    expect(tall.app.frames.filter((frame) => frame.includes(DECLINE_CHECK_ROW) && !frame.includes(FIGURE))).toEqual([]);
+    tall.app.unmount();
+
+    const needed = rowIndexOf(rowsOf(measuredFrame), DECLINE_CHECK_ROW) + 1;
+    const short = launch({ checkProposal: { ask: true, checks: [NPM_TEST] } }, { columns: 100, rows: needed - 3 });
+    await untilFrame(short.app, DECLINE_CHECK_ROW);
+    const firstShort = firstFrameWith(short.app.frames, DECLINE_CHECK_ROW);
+    expect(firstShort).not.toContain(FIGURE);
+    expect(firstShort).toContain(DECLINE_CHECK_ROW);
+    expect(short.app.frames.filter((frame) => frame.includes(DECLINE_CHECK_ROW) && frame.includes(FIGURE))).toEqual([]);
+    short.app.unmount();
+  });
+
+  it('with folder trust at 100x50 and short height, the very first frame with the trust prompt finalizes the figure', async () => {
+    const tall = launch({ trust: { path: CWD, decision: null } }, TALL);
+    const measuredFrame = await untilFrame(tall.app, '1. Yes, I trust this folder');
+    const firstTall = firstFrameWith(tall.app.frames, '1. Yes, I trust this folder');
+    expect(firstTall).toContain(FIGURE);
+    expect(tall.app.frames.filter((frame) => frame.includes('1. Yes, I trust this folder') && !frame.includes(FIGURE))).toEqual([]);
+    tall.app.unmount();
+
+    const needed = rowIndexOf(rowsOf(measuredFrame), 'No, continue without its project settings') + 1;
+    const short = launch({ trust: { path: CWD, decision: null } }, { columns: 100, rows: needed - 3 });
+    await untilFrame(short.app, '1. Yes, I trust this folder');
+    const firstShort = firstFrameWith(short.app.frames, '1. Yes, I trust this folder');
+    expect(firstShort).not.toContain(FIGURE);
+    expect(firstShort).toContain('No, continue without its project settings');
+    expect(short.app.frames.filter((frame) => frame.includes('1. Yes, I trust this folder') && frame.includes(FIGURE))).toEqual([]);
+    short.app.unmount();
   });
 });

@@ -26,6 +26,7 @@ import type { AskedA11y } from './screen/a11y.ts';
 import { shortenHome } from './startup.tsx';
 import { defaultNoticeSources } from './notices.ts';
 import { MAX_FPS } from './screen/constants.ts';
+import { createEarlyInput } from './screen/early-input.ts';
 import { createScreenInput } from './screen/input.ts';
 import { colorLevelOfDepth, noColorAsked } from './screen/theme.ts';
 import { TerminalFrame } from './terminal/frame.tsx';
@@ -172,6 +173,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const inkStdin = createInkStdin();
   const moveFailures: unknown[] = [];
   const input = createScreenInput();
+  const earlyInput = createEarlyInput(input, () => keyBindings.table());
   const layer = createTerminalLayer({
     input: terminal.stdin,
     output: output.port,
@@ -191,9 +193,10 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const externalEditor = terminalExternalEditor(ports, layer, launchOnTerminal);
   const noColor = noColorAsked(ports.env);
   try {
+    await layer.startAnswered();
     const instance = render(
       <TerminalFrame layer={layer}>
-        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, desktopNotification: layer.desktopNotification, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} attentionTerminal={{ osc9: showsOsc9Notifications(ports.env), tmux: insideTmux(ports.env) }} move={moving.port} {...adopted} keyBindings={keyBindings} a11y={asked} copyOnSelect={tuiSettings.initial.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, desktopNotification: layer.desktopNotification, enable: layer.enable, disable: layer.disable, input }} earlyInput={earlyInput} tuiSettings={tuiSettings} attentionTerminal={{ osc9: showsOsc9Notifications(ports.env), tmux: insideTmux(ports.env) }} move={moving.port} {...adopted} keyBindings={keyBindings} a11y={asked} copyOnSelect={tuiSettings.initial.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
           {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           {...(options.reopen === undefined ? {} : { reopen: options.reopen })}
@@ -209,6 +212,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     );
     await instance.waitUntilExit();
   } finally {
+    earlyInput.stop();
     moving.detach();
     await layer.close();
   }
@@ -238,6 +242,7 @@ const repairedStart = async (ports: CliPorts, terminal: Terminal, output: Termin
   const editor = terminalExternalEditor(ports, layer, launchOnTerminal);
   const outcome = Promise.withResolvers<RepairOutcome>();
   try {
+    await layer.startAnswered();
     const instance = render(
       <TerminalFrame layer={layer}>
         <RepairFlow first={first} input={input} keys={DEFAULT_KEY_TABLE} open={editor.open} reread={reread} done={outcome.resolve} failed={outcome.reject} />

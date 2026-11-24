@@ -78,6 +78,18 @@ describe('the transcript store', () => {
     expect([store.settledAt(0), store.settledAt(1), store.settledAt(2)]).toEqual([true, true, true]);
   });
 
+  it('settles nothing while a connected banner is still reading capabilities, and settles once reading finishes', () => {
+    const store = createTranscriptStore();
+    appendEntry(store, bannerOf({ kind: 'connected', name: 'a', reading: true }), 'banner');
+    appendEntry(store, { kind: 'notice', level: 'warning', text: 'later warning' });
+    expect([store.settledAt(0), store.settledAt(1)]).toEqual([false, false]);
+    store.hold();
+    store.change('banner', () => bannerOf({ kind: 'connected', name: 'a' }));
+    expect([store.shown().settledAt(0), store.shown().settledAt(1)]).toEqual([false, false]);
+    store.release();
+    expect([store.settledAt(0), store.settledAt(1)]).toEqual([true, true]);
+  });
+
   it('settles nothing in a held view whose banner had not read its model line, even after the live banner reads it', () => {
     const store = createTranscriptStore();
     appendEntry(store, bannerOf({ kind: 'unread' }), 'banner');

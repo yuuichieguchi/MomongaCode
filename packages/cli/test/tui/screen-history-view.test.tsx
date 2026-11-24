@@ -17,35 +17,36 @@ const turnPassed = (): Promise<void> => new Promise<void>((resolve) => systemTim
 const occurrences = (text: string, part: string): number => text.split(part).length - 1;
 
 describe('the scrollback hand-off of the history view', () => {
-  it('writes no row before the background answer is known, then writes each settled row once, without <Static>', async () => {
+  it('writes each settled row once after it is settled, without <Static>', async () => {
     const store = createTranscriptStore();
     appendEntry(store, { kind: 'info', text: 'alpha row' });
     appendEntry(store, { kind: 'info', text: 'beta row' });
     const source = sourceOf(store, createRowCache(ROW_RENDERERS, ROW_SCHEDULE), 40);
     const feed = createHistoryFeed();
-    const view = (ready: boolean) => <HistoryView store={store} source={source} feed={feed} ready={ready} timers={systemTiming} columns={40} />;
-    const app = renderObservable(view(false));
-    await new Promise<void>((resolve) => systemTiming.setTimeout(resolve, 50));
-    expect(app.frames.join('\n')).not.toContain('alpha row');
-    app.rerender(view(true));
+    const view = () => <HistoryView store={store} source={source} feed={feed} timers={systemTiming} columns={40} />;
+    const app = renderObservable(view());
     await untilOutput(app, 'beta row');
     appendEntry(store, { kind: 'info', text: 'gamma row' });
-    app.rerender(view(true));
+    app.rerender(view());
     await untilOutput(app, 'gamma row');
-    await new Promise<void>((resolve) => systemTiming.setTimeout(resolve, 50));
+    await turnPassed();
     const output = app.frames.join('\n');
     expect([occurrences(output, 'alpha row'), occurrences(output, 'beta row'), occurrences(output, 'gamma row')]).toEqual([1, 1, 1]);
     app.unmount();
   });
 
-  it('hands nothing to the scrollback while the start screen has not read its model line, then writes the start screen first and once, with its model line', async () => {
+  it('hands nothing to the scrollback while the start screen has not read its model line or is reading capabilities, then writes the start screen first and once', async () => {
     const store = createTranscriptStore();
     appendEntry(store, bannerOf({ kind: 'unread' }), 'banner');
     appendEntry(store, { kind: 'notice', level: 'warning', text: 'refused settings file' });
     const source = sourceOf(store, createRowCache(ROW_RENDERERS, ROW_SCHEDULE), 60);
     const feed = createHistoryFeed();
-    const view = () => <HistoryView store={store} source={source} feed={feed} ready={true} timers={systemTiming} columns={60} />;
+    const view = () => <HistoryView store={store} source={source} feed={feed} timers={systemTiming} columns={60} />;
     const app = renderObservable(view());
+    await turnPassed();
+    expect(feed.handed()).toBe(0);
+    store.change('banner', () => bannerOf({ kind: 'connected', name: 'lab/model', reading: true }));
+    app.rerender(view());
     await turnPassed();
     expect(feed.handed()).toBe(0);
     expect(app.lastFrame()).toContain('MomongaCode v1.2.3');
@@ -68,7 +69,7 @@ describe('the scrollback hand-off of the history view', () => {
     appendEntry(store, { kind: 'info', text: 'child two' });
     const source = sourceOf(store, createRowCache(ROW_RENDERERS, ROW_SCHEDULE), 40);
     const feed = createHistoryFeed();
-    const app = renderObservable(<HistoryView store={store} source={source} feed={feed} ready={true} timers={systemTiming} columns={40} />);
+    const app = renderObservable(<HistoryView store={store} source={source} feed={feed} timers={systemTiming} columns={40} />);
     await untilOutput(app, 'child two');
     await turnPassed();
     expect(feed.handed()).toBe(2);

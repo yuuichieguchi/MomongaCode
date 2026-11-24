@@ -1,6 +1,4 @@
-import { Box, measureElement } from 'ink';
-import type { DOMElement } from 'ink';
-import { useLayoutEffect, useRef } from 'react';
+import { Box } from 'ink';
 import type { ReactNode } from 'react';
 import { VIEWPORT_ROWS, panelRowsCap } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
@@ -26,7 +24,6 @@ export type ScreenProps = {
   regions: ScreenRegions;
   panel: ReactNode | undefined;
   panelFollows: number | undefined;
-  onPanelRows(rows: number | undefined): void;
 };
 
 function Region({ rows, children }: { rows: number; children: ReactNode }) {
@@ -49,12 +46,7 @@ function NewestRows({ children }: { children: ReactNode }) {
   );
 }
 
-export function Screen({ view, columns, rows, allocation, regions, panel, panelFollows, onPanelRows }: ScreenProps) {
-  const measuring = useRef<DOMElement>(null);
-  const fullscreen = view === 'fullscreen';
-  useLayoutEffect(() => {
-    onPanelRows(fullscreen && panel !== undefined && measuring.current !== null ? measureElement(measuring.current).height : undefined);
-  });
+export function Screen({ view, columns, rows, allocation, regions, panel, panelFollows }: ScreenProps) {
   if (view === 'blank') return <Box />;
   if (view === 'scrollback') {
     return (
@@ -81,7 +73,7 @@ export function Screen({ view, columns, rows, allocation, regions, panel, panelF
         <Region rows={allocation.input}>{regions.input}</Region>
       ) : (
         <Box maxHeight={panelRowsCap(rows)} flexShrink={0} flexDirection="column" overflow="hidden">
-          <Box ref={measuring} flexDirection="column" flexShrink={0} width={columns}>
+          <Box flexDirection="column" flexShrink={0} width={columns}>
             {panel}
           </Box>
         </Box>

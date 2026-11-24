@@ -89,6 +89,16 @@ const caretPlace = (text: string, cursor: number, hidden: boolean): { text: stri
 
 export type EditorViewProps = { editor: EditorState; columns: number; rows: number | undefined; hidden: boolean; framed: boolean };
 
+/** Compute the exact rendered row height of an EditorView without measuring after commit. */
+export const editorViewRows = (editor: EditorState, columns: number, rows: number | undefined, hidden: boolean, framed: boolean): number => {
+  const shown = caretPlace(editor.text, editor.cursor, hidden);
+  const layout = layoutInput(shown.text, shown.cursor, columns);
+  const visible = rows ?? layout.rows.length;
+  const first = windowTopOf(layout, visible);
+  const drawn = Math.min(visible, Math.max(0, layout.rows.length - first));
+  return drawn + (framed ? INPUT_BOX_FRAME_ROWS : 0);
+};
+
 export function EditorView({ editor, columns, rows, hidden, framed }: EditorViewProps) {
   const shown = caretPlace(editor.text, editor.cursor, hidden);
   const layout = layoutInput(shown.text, shown.cursor, columns);

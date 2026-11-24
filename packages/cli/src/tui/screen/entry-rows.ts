@@ -75,7 +75,9 @@ const plainBannerRows = (banner: Extract<Entry, { kind: 'banner' }>['banner'], w
 export const rowsOfEntry = (entry: Entry, width: number, facts: RowFacts): Row[] => {
   switch (entry.kind) {
     case 'banner':
-      return facts.a11y.screenReader ? plainBannerRows(entry.banner, width) : bannerRows(entry.banner, width);
+      return facts.a11y.screenReader
+        ? plainBannerRows(entry.banner, width)
+        : bannerRows(facts.bannerFigure === undefined ? entry.banner : { ...entry.banner, figure: entry.banner.figure && facts.bannerFigure }, width);
     case 'user':
       return wrapText(shown(entry.text), width, { first: '> ', rest: '  ', token: 'user' });
     case 'assistant':
