@@ -144,6 +144,8 @@ export type AppProps = {
 
 const UNKNOWN_ATTENTION_TERMINAL: AttentionTerminal = { osc9: false, tmux: false };
 
+type DeferredInput = { readonly kind: 'key'; readonly event: KeyEvent; readonly pressed: KeyTable; readonly arrival: number } | { readonly kind: 'paste'; readonly text: string };
+
 const unavailableAutoMode: AutoModePort = {
   check() {
     return Promise.reject(new Error('the auto-mode check is not available in this interface'));
@@ -261,6 +263,9 @@ export function App(props: AppProps) {
   const answerMark = useRef<{ readonly arrival: number; sync: boolean } | undefined>(undefined);
   const followingKeys = useRef<Array<{ readonly event: KeyEvent; readonly pressed: KeyTable; readonly arrival: number }>>([]);
   const drainingKeys = useRef(false);
+  const afterKeptQueue = useRef<DeferredInput[]>([]);
+  const afterKeptScheduled = useRef(false);
+  const afterKeptTimer = useRef<unknown>(undefined);
   const unmounted = useRef(false);
   const activeKeyArrival = useRef<number | undefined>(undefined);
   const pendingQueue = useRef<{ readonly arrival: number; cancel(): void } | undefined>(undefined);
@@ -1949,6 +1954,29 @@ export function App(props: AppProps) {
 
   const isLaunchScreen = (): boolean => drawnScreen.current === undefined || judgedScreen() === 'starting' || judgedScreen() === 'welcome';
 
+  const returningToPrompt = (): boolean => screenNow() === 'prompt' && !isLaunchScreen();
+
+  const applyReturningPromptKey = (event: KeyEvent, pressed: KeyTable): void => {
+    const action = pressed.actionOf(EDITOR_CONTEXTS, event);
+    const typed = pressed.typedOf(event);
+    if (!isEditorAction(action) && (action !== undefined || typed === undefined)) return;
+    disarmExit();
+    setHint(undefined);
+    if (typed !== undefined) {
+      typedRef.current = true;
+      prompts.dismissInvitation();
+    }
+    const current = editorRef.current;
+    if (action === 'editor.deleteBefore' && current.text === '') {
+      if (current.shell) leaveShell();
+      else if (attachmentsRef.current.length > 0) setAttachments(attachmentsRef.current.slice(0, -1));
+      else replaceEditor(applyAction(current, action));
+      return;
+    }
+    if (isEditorAction(action)) replaceEditor(applyAction(current, action));
+    else if (typed !== undefined) replaceEditor(typedIntoDraft(current, typed));
+  };
+
   const followsAnswer = (event: KeyEvent): boolean => {
     const mark = answerMark.current;
     if (!isPlainKey(event, 'escape') || mark === undefined) return false;
@@ -1992,11 +2020,41 @@ export function App(props: AppProps) {
           markAnswer(event, pressed, arrival);
           return;
         }
+        if (returningToPrompt()) {
+          applyReturningPromptKey(event, pressed);
+          return;
+        }
         prompts.undrawnKey(event, pressed);
         return;
       }
       actOnKey(event, pressed);
       markAnswer(event, pressed, arrival);
+    });
+  };
+
+  const flushAfterKept = useEffectEvent((): void => {
+    afterKeptScheduled.current = false;
+    afterKeptTimer.current = undefined;
+    if (unmounted.current) {
+      afterKeptQueue.current = [];
+      return;
+    }
+    const batch = afterKeptQueue.current.splice(0);
+    for (const entry of batch) {
+      if (entry.kind === 'paste') deliverPaste(entry.text);
+      else onImmediateKey(entry.event, entry.pressed, entry.arrival);
+    }
+  });
+
+  const shouldDeferAfterKept = (): boolean => afterKeptQueue.current.length > 0 || (answerMark.current?.sync === true && prompts.overlayKind() === 'kept');
+
+  const deferAfterKept = (item: DeferredInput): void => {
+    afterKeptQueue.current.push(item);
+    if (afterKeptScheduled.current) return;
+    afterKeptScheduled.current = true;
+    queueMicrotask(() => {
+      if (!afterKeptScheduled.current || unmounted.current) return;
+      afterKeptTimer.current = timers.setTimeout(flushAfterKept, 0);
     });
   };
 
@@ -2035,6 +2093,10 @@ export function App(props: AppProps) {
       drainFollowingKeys();
       return;
     }
+    if (shouldDeferAfterKept()) {
+      deferAfterKept({ kind: 'key', event, pressed, arrival });
+      return;
+    }
     onImmediateKey(event, pressed, arrival);
   };
 
@@ -2054,13 +2116,14 @@ export function App(props: AppProps) {
     routeKey(route, event, pressed);
   };
 
-  const onPaste = (text: string): void => {
-    if (screenNow() !== drawnScreen.current) {
+  const deliverPaste = (text: string): void => {
+    const activeScreen = screenNow();
+    if (activeScreen !== drawnScreen.current && !returningToPrompt()) {
       prompts.undrawnPaste(text);
       return;
     }
     if (prompts.paste(text)) return;
-    if (phase.kind === 'trust' || phase.kind === 'welcome' || overlay !== undefined || promptTakesFocus(transcript)) return;
+    if (activeScreen !== 'prompt' && activeScreen !== 'starting') return;
     disarmExit();
     setHint(undefined);
     const paths = imageInput ? pastedImagePaths(text) : undefined;
@@ -2069,6 +2132,14 @@ export function App(props: AppProps) {
       return;
     }
     replaceEditor(insertPaste(editorRef.current, text));
+  };
+
+  const onPaste = (text: string): void => {
+    if (shouldDeferAfterKept()) {
+      deferAfterKept({ kind: 'paste', text });
+      return;
+    }
+    deliverPaste(text);
   };
 
   const onTyped = useEffectEvent((event: TerminalEvent): boolean => {
@@ -2311,8 +2382,19 @@ export function App(props: AppProps) {
       frameWatch.current = undefined;
       followingKeys.current = [];
       drainingKeys.current = false;
+      afterKeptQueue.current = [];
+      afterKeptScheduled.current = false;
     },
     [],
+  );
+  useEffect(
+    () => () => {
+      if (afterKeptTimer.current !== undefined) {
+        timers.clearTimeout(afterKeptTimer.current);
+        afterKeptTimer.current = undefined;
+      }
+    },
+    [timers],
   );
   useEffect(() => {
     facts.current = { overlay: overlay !== undefined, position: shownAgent === undefined ? view.position : FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush };

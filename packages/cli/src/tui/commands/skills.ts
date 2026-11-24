@@ -56,6 +56,7 @@ const namedProblem = (text: string): string | undefined => (isValidSkillName(tex
 const createFile = async (context: SlashContext, kind: TemplateKind, command: string): Promise<void> => {
   const name = await context.overlays.promptText({ title: TEMPLATE_NAME_TITLE, validate: namedProblem });
   if (name === undefined) return;
+  context.overlays.closeScreen();
   const created = await context.backend.createFromTemplate(kind, name);
   if (created.kind === 'exists') {
     context.info(existsAlreadyText(created.file, command));
@@ -67,6 +68,7 @@ const createFile = async (context: SlashContext, kind: TemplateKind, command: st
 const openFile = async (context: SlashContext, file: ListedFile): Promise<void> => {
   const choice = await context.overlays.choose({ title: file.name, lines: [file.location], rows: [{ label: OPEN_IN_EDITOR_ROW }], decideOn: 'enter', escape: 'back', filter: false });
   if (choice === undefined) return;
+  context.overlays.closeScreen();
   await openInEditor(context, file.location);
 };
 
