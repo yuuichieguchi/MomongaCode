@@ -9,8 +9,8 @@ import { docsLayout, groupHeading, hasGroupList, page } from './site/layout.ts';
 import type { Assets, Chrome } from './site/layout.ts';
 import { codeBlock, marked, plainText, renderBlocks, sourceText, squash } from './site/markdown.ts';
 import type { Block } from './site/markdown.ts';
-import { assertDistinctAddresses, linkResolver, readSources, urlOfKey } from './site/pages.ts';
-import type { DocPage, SiteFacts, SourceSet } from './site/pages.ts';
+import { assertDistinctAddresses, groupSources, linkResolver, readSources, urlOfKey } from './site/pages.ts';
+import type { DocPage, SidebarGroup, SiteFacts, SourceSet } from './site/pages.ts';
 import { iconCss, themeCss } from './site/style.ts';
 import { firstSentence, joinLastWords, joinLastWordsOfTokens, sentenceHtml } from './site/sentence.ts';
 import type { Segment } from './site/sentence.ts';
@@ -200,7 +200,7 @@ const sitemap = (urls: readonly string[]): string =>
 
 export const llmsLinkText = (title: string): string => title.replace(/[[\]\\]/g, (character) => `\\${character}`);
 
-const llms = (name: string, description: string, sources: readonly SourceSet[]): string =>
+const llms = (name: string, description: string, groups: readonly SidebarGroup[]): string =>
   [
     `# ${name}`,
     '',
@@ -208,12 +208,12 @@ const llms = (name: string, description: string, sources: readonly SourceSet[]):
     '',
     `- [${llmsLinkText(name)}](${SITE_ORIGIN}/)`,
     `- [Docs](${SITE_ORIGIN}/docs/)`,
-    ...sources.flatMap((source) => [
+    ...groups.flatMap((group) => [
       '',
-      `## ${source.spec.group}`,
+      `## ${group.group}`,
       '',
-      ...(source.spec.home.endsWith('/index.html') ? [`- [${llmsLinkText(source.spec.group)}](${SITE_ORIGIN}${urlOfKey(source.spec.home)})`] : []),
-      ...source.pages.map((each) => `- [${llmsLinkText(each.title)}](${SITE_ORIGIN}${each.url})`),
+      ...(group.home.endsWith('/index.html') ? [`- [${llmsLinkText(group.group)}](${SITE_ORIGIN}${urlOfKey(group.home)})`] : []),
+      ...group.pages.map((each) => `- [${llmsLinkText(each.title)}](${SITE_ORIGIN}${each.url})`),
     ]),
     '',
   ].join('\n');
@@ -223,7 +223,8 @@ const HEADERS = (installers: readonly string[]): string =>
 
 export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8Array>> => {
   const facts: SiteFacts = { root, repo: readEmbeddedReleaseRepo(root), version: readVersion(root) };
-  const sources = readSources(root);
+  const sources = await readSources(root);
+  const groups = groupSources(sources);
   const link = linkResolver(sources, facts);
   const guide = sources.find((source) => source.spec.home === 'index.html');
   if (guide === undefined) throw new Error('no source is the landing page');
@@ -250,7 +251,7 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   const ogBytes = fs.readFileSync(path.join(root, 'site/assets/og.png'));
   const og = { key: `assets/og.${contentHash(ogBytes)}.png`, bytes: ogBytes };
   const assets: Assets = { css: `/${css.key}`, js: `/${js.key}`, searchIndex: `/${index.key}`, ogImage: `/${og.key}` };
-  const chrome: Chrome = { origin: SITE_ORIGIN, siteName: front.name, assets, repo: facts.repo, sources, footer };
+  const chrome: Chrome = { origin: SITE_ORIGIN, siteName: front.name, assets, repo: facts.repo, groups, footer };
 
   const pages = new Map<string, string>();
   pages.set('index.html', landing(chrome, guide, front, facts, link));
@@ -258,7 +259,7 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
     'docs/index.html',
     page(chrome, {
       title: 'Docs',
-      body: docsLayout(chrome, '/docs/', [indexHeading('Docs'), ...sources.map((source) => (hasGroupList(source) ? `${groupHeading(source)}\n${titleList(source.pages)}` : groupHeading(source)))].join('\n'), []),
+      body: docsLayout(chrome, '/docs/', [indexHeading('Docs'), ...groups.map((group) => (hasGroupList(group) ? `${groupHeading(group)}\n${titleList(group.pages)}` : groupHeading(group)))].join('\n'), []),
       menu: true,
       className: 'page-docs',
       meta: { canonical: `${SITE_ORIGIN}/docs/`, ogTitle: `Docs — ${front.name}`, description: front.description, type: 'website' },
@@ -304,7 +305,7 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   files.set(og.key, og.bytes);
   text('_headers', HEADERS(INSTALLERS.map((installer) => installer.file)));
   text('sitemap.xml', sitemap(listed));
-  text('llms.txt', llms(front.name, front.description, sources));
+  text('llms.txt', llms(front.name, front.description, groups));
   text('robots.txt', `User-agent: *\nAllow: /\n\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`);
   return files;
 };

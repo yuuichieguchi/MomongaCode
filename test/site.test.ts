@@ -8,6 +8,7 @@ import { readEmbeddedReleaseRepo } from '../scripts/release-key.ts';
 import { createTempRoot, removeTempRoot } from '../scripts/support/temp.ts';
 import { lexer } from 'marked';
 import type { Tokens } from 'marked';
+import { renderReference } from '../scripts/reference.ts';
 import { buildSite, llmsLinkText, siteOutput, writeSite } from '../scripts/site.ts';
 import { readDocument, renderBlocks } from '../scripts/site/markdown.ts';
 import { firstSentence, joinLastWords, joinLastWordsOfTokens, sentenceHtml } from '../scripts/site/sentence.ts';
@@ -18,9 +19,17 @@ import { STYLE } from '../packages/cli/src/tui/screen/theme.ts';
 
 const VERSION = (JSON.parse(fs.readFileSync(path.join(repoRoot, 'packages/cli/package.json'), 'utf8')) as { version: string }).version;
 const REPO = readEmbeddedReleaseRepo(repoRoot);
-const SOURCE_FILES = ['README.md', 'docs/reference.md', 'docs/threat-model.md'] as const;
+const DISK_SOURCE_FILES = ['site/docs/guide.md', 'site/docs/judging-models.md', 'site/docs/threat-model.md'] as const;
+const REFERENCE_SOURCE = 'site/docs/reference.md' as const;
+const SOURCE_FILES = [...DISK_SOURCE_FILES, REFERENCE_SOURCE] as const;
 type SourceFile = (typeof SOURCE_FILES)[number];
-const sourceOf = (file: SourceFile): string => fs.readFileSync(path.join(repoRoot, file), 'utf8');
+const renderedSources = new Map<SourceFile, string>();
+const sourceOf = (file: SourceFile): string => {
+  const cached = renderedSources.get(file);
+  if (cached !== undefined) return cached;
+  if (file === REFERENCE_SOURCE) throw new Error('reference markdown is populated in beforeAll');
+  return fs.readFileSync(path.join(repoRoot, file), 'utf8');
+};
 
 const INTERFACE_STRINGS = [
   'MomongaCode',
@@ -210,18 +219,26 @@ const headingsOf = (file: SourceFile): Heading[] => {
 };
 
 const pageSlugOf = (title: string): string => githubSlug(shownTitleOf(title));
-const guidePages = (): { title: string; key: string; line: number }[] =>
-  headingsOf('README.md')
+const guideFilePages = (): { title: string; key: string; line: number }[] =>
+  headingsOf('site/docs/guide.md')
     .filter((heading) => heading.level === 2 && /^\d+\.\s/.test(heading.text))
     .map((heading) => ({ title: heading.text, key: `docs/${pageSlugOf(heading.text)}.html`, line: heading.line }));
+const guidePages = (): { title: string; key: string; line: number }[] => {
+  const pages = [...guideFilePages()];
+  const configIndex = pages.findIndex((page) => page.key === 'docs/configuration.html');
+  if (configIndex === -1) throw new Error('site/docs/guide.md has no Configuration section');
+  pages.splice(configIndex + 1, 0, { title: 'Judging models', key: 'docs/judging-models.html', line: 1 });
+  return pages;
+};
 const referencePages = (): { title: string; key: string; line: number }[] =>
-  headingsOf('docs/reference.md')
+  headingsOf('site/docs/reference.md')
     .filter((heading) => heading.level === 2)
     .map((heading) => ({ title: heading.text, key: `docs/reference/${githubSlug(heading.text)}.html`, line: heading.line }));
 
 const pageOfHeading = (file: SourceFile, heading: Heading): string => {
-  if (file === 'docs/threat-model.md') return 'docs/threat-model.html';
-  const pages = file === 'README.md' ? guidePages() : referencePages();
+  if (file === 'site/docs/threat-model.md') return 'docs/threat-model.html';
+  if (file === 'site/docs/judging-models.md') return 'docs/judging-models.html';
+  const pages = file === 'site/docs/guide.md' ? guideFilePages() : referencePages();
   const owner = pages.filter((page) => page.line <= heading.line).at(-1);
   if (owner === undefined) throw new Error(`${file}:${heading.line} is before the first page of the file`);
   return owner.key;
@@ -322,6 +339,7 @@ describe('the website', () => {
 
   beforeAll(async () => {
     root = createTempRoot();
+    renderedSources.set(REFERENCE_SOURCE, await renderReference());
     site = await buildSite(repoRoot);
     second = await buildSite(repoRoot);
   });
@@ -370,8 +388,9 @@ describe('the website', () => {
 
   it('holds exactly the pages of its sources, the files served beside them and hashed assets', () => {
     const pages = ['index.html', 'docs/index.html', 'docs/reference/index.html', 'docs/threat-model.html', '404.html', ...guidePages().map((page) => page.key), ...referencePages().map((page) => page.key)].sort();
-    expect(guidePages()).toHaveLength(11);
+    expect(guidePages()).toHaveLength(12);
     expect(guidePages().map((page) => page.key)).toContain('docs/getting-started.html');
+    expect(guidePages().map((page) => page.key)).toContain('docs/judging-models.html');
     expect(guidePages().map((page) => page.key)).toContain('docs/why-momongacode.html');
     expect(referencePages().map((page) => page.key)).toContain('docs/reference/root-options.html');
     expect(pageKeys()).toEqual(pages);
@@ -379,6 +398,18 @@ describe('the website', () => {
     const others = [...site.keys()].filter((key) => !pages.includes(key) && !SERVED_BESIDE_PAGES.includes(key));
     expect(others.length).toBeGreaterThan(0);
     for (const key of others) expect(key).toMatch(/^assets\/[^/]+$/);
+  });
+
+  it('publishes the judging-models guide under /docs/judging-models without relying on docs/reference.md', () => {
+    expect(fs.existsSync(path.join(repoRoot, 'docs/reference.md'))).toBe(false);
+    const pageHtml = text('docs/judging-models.html');
+    expect(pageHtml).toContain('<title>Judging models</title>');
+    expect(pageHtml).toContain('system-one');
+    expect(pageHtml).toContain('autoMode.classifier');
+    expect(pageHtml).toContain('memory.autoReviewModel');
+    expect(pageHtml).toContain('https://openrouter.ai/api/v1');
+    expect(stripTags(pageHtml)).toContain('momonga secret set');
+    expect(text('docs/configuration.html')).toContain('/docs/judging-models');
   });
 
   it('is the same, byte for byte, when built twice', () => {
@@ -543,7 +574,7 @@ describe('the website', () => {
 
   it('keeps every row and cell of the reference tables', () => {
     const built = referencePages().flatMap((page) => tableRowsOfHtml(text(page.key)));
-    const source = tableRowsOfSource(sourceOf('docs/reference.md'));
+    const source = tableRowsOfSource(sourceOf('site/docs/reference.md'));
     expect(source.length).toBeGreaterThan(5);
     expect(built).toEqual(source);
   });
@@ -635,10 +666,10 @@ describe('the website', () => {
     expect(stripTags(text('index.html'))).toContain(`v${VERSION}`);
   });
 
-  it('shows on the landing page the install commands, the first paragraph of the README and the sentence after the commands', () => {
+  it('shows on the landing page the install commands, the first paragraph of the guide and the sentence after the commands', () => {
     const landing = squash(stripTags(text('index.html')));
     for (const installer of INSTALLERS) expect(landing).toContain(installer.command);
-    const lines = sourceOf('README.md').split('\n');
+    const lines = sourceOf('site/docs/guide.md').split('\n');
     const first = lines.findIndex((line, index) => index > 0 && line.trim() !== '' && !line.startsWith('#'));
     const paragraph = lines.slice(first, lines.findIndex((line, index) => index > first && line.trim() === ''));
     expect(landing).toContain(inlineText(paragraph.join(' ')));
@@ -690,9 +721,9 @@ describe('the website', () => {
   const mainOf = (html: string): string => /<main\b[\s\S]*<\/main>/.exec(html)?.[0] ?? '';
 
   const readmeAreaCards = () => {
-    const lines = sourceOf('README.md').split('\n');
-    return headingsOf('README.md')
-      .filter((heading) => heading.level === 3 && pageOfHeading('README.md', heading) === 'docs/why-momongacode.html')
+    const lines = sourceOf('site/docs/guide.md').split('\n');
+    return headingsOf('site/docs/guide.md')
+      .filter((heading) => heading.level === 3 && pageOfHeading('site/docs/guide.md', heading) === 'docs/why-momongacode.html')
       .map((heading) => {
         const title = inlineText(heading.text);
         const paragraph = inlineText(lines.slice(heading.line).find((line) => line.trim() !== '') ?? '');
@@ -702,7 +733,7 @@ describe('the website', () => {
       });
   };
   const readmeFeatureTitles = (): string[] => {
-    const lines = sourceOf('README.md').split('\n');
+    const lines = sourceOf('site/docs/guide.md').split('\n');
     const section = lines.slice(lines.findIndex((line) => line.startsWith('## 4. ')), lines.findIndex((line) => line.startsWith('## 5. ')));
     return section.flatMap((line) => {
       const match = /^- \*\*(.+?)\*\*/.exec(line);
@@ -710,14 +741,14 @@ describe('the website', () => {
     });
   };
 
-  it('shows on the landing page one card per area of README section 2, its heading and first sentence, linked to that heading', () => {
+  it('shows on the landing page one card per area of guide section 2, its heading and first sentence, linked to that heading', () => {
     const html = text('index.html');
     const areaCards = readmeAreaCards();
     expect(areaCards.length).toBeGreaterThan(0);
     const cards = cardsOf(html).filter((card) => card.href.startsWith('/docs/why-momongacode'));
     expect(cards).toEqual(areaCards.map((card) => ({ href: `/docs/why-momongacode#${card.anchor}`, heading: true, title: card.title, text: card.text })));
     for (const card of cards) expect(resolves('index.html', card.href), card.href).toBe(true);
-    const lines = sourceOf('README.md').split('\n');
+    const lines = sourceOf('site/docs/guide.md').split('\n');
     const intro = lines.slice(lines.findIndex((line) => line.startsWith('## 2. ')) + 1).find((line) => line.trim() !== '') as string;
     expect(squash(stripTags(mainOf(html)))).toContain(inlineText(intro));
     for (const card of areaCards) {

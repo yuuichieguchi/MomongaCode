@@ -120,11 +120,15 @@ describe('the third-party notices of the released executable', () => {
     expect(release).not.toContain('cp "$ROOT/$NOTICES_NAME"');
   });
 
-  it('mentions the bundled ripgrep in the License section of the README', () => {
+  it('mentions the bundled ripgrep in the License section of the README and guide', () => {
     const readme = read('README.md');
-    const license = /## 10\. License\n([\s\S]*?)\n## 11\. Disclaimer/.exec(readme)?.[1] ?? '';
-    expect(license).toMatch(/bundles? ripgrep \(MIT or Unlicense\)/i);
-    expect(license).toContain('THIRD-PARTY-NOTICES.md');
+    const readmeLicense = /## License\n([\s\S]*?)\n## Disclaimer/.exec(readme)?.[1] ?? '';
+    expect(readmeLicense).toMatch(/bundles? ripgrep \(MIT or Unlicense\)/i);
+    expect(readmeLicense).toContain('THIRD-PARTY-NOTICES.md');
+    const guide = read('site/docs/guide.md');
+    const guideLicense = /## 10\. License\n([\s\S]*?)\n## 11\. Disclaimer/.exec(guide)?.[1] ?? '';
+    expect(guideLicense).toMatch(/bundles? ripgrep \(MIT or Unlicense\)/i);
+    expect(guideLicense).toContain('THIRD-PARTY-NOTICES.md');
   });
 });
 

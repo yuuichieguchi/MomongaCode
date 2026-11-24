@@ -1,5 +1,5 @@
 import { urlOfKey } from './pages.ts';
-import type { DocPage, SourceSet } from './pages.ts';
+import type { DocPage, SidebarGroup } from './pages.ts';
 import { escapeHtml } from './text.ts';
 import type { TocEntry } from './markdown.ts';
 
@@ -7,7 +7,7 @@ export type Assets = { css: string; js: string; searchIndex: string; ogImage: st
 
 export type PageMeta = { canonical: string; ogTitle: string; description: string; type: 'website' | 'article' };
 
-export type Chrome = { origin: string; siteName: string; assets: Assets; repo: string; sources: readonly SourceSet[]; footer: readonly { label: string; url: string }[] };
+export type Chrome = { origin: string; siteName: string; assets: Assets; repo: string; groups: readonly SidebarGroup[]; footer: readonly { label: string; url: string }[] };
 
 const ui = (tag: string, text: string, attributes = ''): string => `<${tag}${attributes} data-ui>${escapeHtml(text)}</${tag}>`;
 
@@ -103,27 +103,27 @@ const current = (url: string, here: string): string => (url === here ? ' aria-cu
 const groupList = (pages: readonly DocPage[], here: string): string =>
   `<ul>${pages.map((each) => `<li><a href="${escapeHtml(each.url)}"${current(each.url, here)} data-source>${escapeHtml(each.title)}</a></li>`).join('')}</ul>`;
 
-const groupUrl = (source: SourceSet): string | undefined => {
-  if (source.pages.length === 1) return source.pages[0]?.url;
-  return source.spec.home === 'index.html' ? undefined : urlOfKey(source.spec.home);
+const groupUrl = (group: SidebarGroup): string | undefined => {
+  if (group.pages.length === 1) return group.pages[0]?.url;
+  return group.home === 'index.html' ? undefined : urlOfKey(group.home);
 };
 
-const groupLabel = (source: SourceSet, here: string): string => {
-  const url = groupUrl(source);
-  return url === undefined ? ui('p', source.spec.group, ' class="group"') : ui('a', source.spec.group, ` class="group" href="${escapeHtml(url)}"${current(url, here)}`);
+const groupLabel = (group: SidebarGroup, here: string): string => {
+  const url = groupUrl(group);
+  return url === undefined ? ui('p', group.group, ' class="group"') : ui('a', group.group, ` class="group" href="${escapeHtml(url)}"${current(url, here)}`);
 };
 
-export const groupHeading = (source: SourceSet): string => {
-  const url = groupUrl(source);
-  return url === undefined ? ui('h2', source.spec.group) : `<h2>${ui('a', source.spec.group, ` href="${escapeHtml(url)}"`)}</h2>`;
+export const groupHeading = (group: SidebarGroup): string => {
+  const url = groupUrl(group);
+  return url === undefined ? ui('h2', group.group) : `<h2>${ui('a', group.group, ` href="${escapeHtml(url)}"`)}</h2>`;
 };
 
-export const hasGroupList = (source: SourceSet): boolean => source.pages.length !== 1;
+export const hasGroupList = (group: SidebarGroup): boolean => group.pages.length !== 1;
 
 const sidebar = (chrome: Chrome, here: string): string =>
   [
     '<nav id="sidebar" class="sidebar">',
-    ...chrome.sources.map((source) => `<div class="sidebar-group">${groupLabel(source, here)}${hasGroupList(source) ? groupList(source.pages, here) : ''}</div>`),
+    ...chrome.groups.map((group) => `<div class="sidebar-group">${groupLabel(group, here)}${hasGroupList(group) ? groupList(group.pages, here) : ''}</div>`),
     '</nav>',
   ].join('\n');
 

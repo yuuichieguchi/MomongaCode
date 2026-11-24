@@ -19,7 +19,7 @@ export const bannedUsesOfSource = (source: ParsedSource, file: string): BannedUs
 export const bannedUsesOfDocument = (file: string, text: string): BannedUseSite[] =>
   text.split('\n').flatMap((line, index) => bannedVariantsIn(line).map((use) => ({ file, line: index + 1, variant: use.variant, word: use.word, text: line })));
 
-export const SCANNED_DOCUMENTS: readonly string[] = ['README.md'];
+export const SCANNED_DOCUMENTS: readonly string[] = ['README.md', 'site/docs/guide.md', 'site/docs/judging-models.md'];
 
 export const VOCABULARY_TABLE_FILE = 'packages/protocol/src/vocabulary.ts';
 

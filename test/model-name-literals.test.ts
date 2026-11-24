@@ -55,7 +55,7 @@ const pairsOf = (files: readonly string[], rules: readonly Rule[]): string[] =>
     })
     .sort();
 
-const namePairs = (): string[] => pairsOf([...sourceFiles(), ...filesUnder(path.join(root, 'scripts')), path.join(root, 'README.md')], NAME_RULES);
+const namePairs = (): string[] => pairsOf([...sourceFiles(), ...filesUnder(path.join(root, 'scripts')), ...filesUnder(path.join(root, 'site', 'docs')), path.join(root, 'README.md')], NAME_RULES);
 
 const listedPairs = (): string[] => ALLOWED_UNTIL.map((entry) => `${entry.file}: ${entry.token}`).sort();
 

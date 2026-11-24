@@ -4,10 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { INSTALLERS } from '../scripts/site-target.ts';
 
 const README = fs.readFileSync(path.join(import.meta.dirname, '..', 'README.md'), 'utf8');
+const GUIDE = fs.readFileSync(path.join(import.meta.dirname, '..', 'site/docs/guide.md'), 'utf8');
 
-const sectionOne = (): string => {
-  const start = README.search(/^## 1\. /m);
-  const rest = README.slice(start);
+const installationSection = (markdown: string): string => {
+  const start = markdown.search(/^## (?:1\. )?Installation$/m);
+  const rest = markdown.slice(start);
   const end = rest.slice(1).search(/^## /m);
   return end === -1 ? rest : rest.slice(0, end + 1);
 };
@@ -37,11 +38,13 @@ describe('README section 1 and the installers of the site', () => {
     ]);
   });
 
-  it('carries each installer command in a fenced block led by its tab and a colon', () => {
-    expect(blocksOf(sectionOne())).toEqual(INSTALLERS.map((installer) => ({ leadIn: `${installer.tab}:`, language: installer.language, command: installer.command })));
+  it('carries each installer command in a fenced block led by its tab and a colon in README and guide', () => {
+    expect(blocksOf(installationSection(README))).toEqual(INSTALLERS.map((installer) => ({ leadIn: `${installer.tab}:`, language: installer.language, command: installer.command })));
+    expect(blocksOf(installationSection(GUIDE))).toEqual(INSTALLERS.map((installer) => ({ leadIn: `${installer.tab}:`, language: installer.language, command: installer.command })));
   });
 
   it('does not say that no release has been published', () => {
     expect(README).not.toMatch(/no release has been published/i);
+    expect(GUIDE).not.toMatch(/no release has been published/i);
   });
 });

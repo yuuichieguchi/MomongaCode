@@ -23,62 +23,79 @@ const commandPathOf = (written: string): string => {
 
 const ENVIRONMENT_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 
+const DOC_FILES = ['README.md', 'site/docs/guide.md', 'site/docs/judging-models.md'] as const;
+
 describe('the generated reference', () => {
-  it('docs/reference.md is what scripts/reference.ts generates from the product now', async () => {
-    expect(read('docs/reference.md')).toBe(await renderReference());
+  it('docs/reference.md is removed and scripts/reference.ts renders all reference sections from the product', async () => {
+    expect(fs.existsSync(path.join(root, 'docs/reference.md'))).toBe(false);
+    const rendered = await renderReference();
+    for (const heading of ['## Slash commands', '## Root options', '## Commands', '## Settings keys', '## Environment variables', '## Exit codes', '## Key bindings', '## Built-in tools']) {
+      expect(rendered).toContain(heading);
+    }
   });
 
-  it('every command, settings key and environment variable the README names is one the reference lists', async () => {
+  it('every command, settings key and environment variable the documentation names is one the reference lists', async () => {
     const names = await referenceNames();
     const unknown: string[] = [];
-    for (const written of inlineCode(read('README.md'))) {
-      if (written.startsWith('momonga ')) {
-        const command = commandPathOf(written);
-        if (command !== '' && !names.commands.has(command)) unknown.push(`command ${command}`);
-        continue;
+    for (const file of DOC_FILES) {
+      for (const written of inlineCode(read(file))) {
+        if (written.startsWith('momonga ')) {
+          const command = commandPathOf(written);
+          if (command !== '' && !names.commands.has(command)) unknown.push(`${file}: command ${command}`);
+          continue;
+        }
+        const [name = ''] = written.split('=');
+        if (ENVIRONMENT_NAME.test(name)) {
+          if (!names.environment.has(name)) unknown.push(`${file}: environment variable ${name}`);
+          continue;
+        }
+        const [first = ''] = written.split('.');
+        if (/^[a-zA-Z.]+$/.test(written) && written.includes('.') && names.topLevelSettings.has(first) && !names.settings.has(written)) unknown.push(`${file}: settings key ${written}`);
       }
-      const [name = ''] = written.split('=');
-      if (ENVIRONMENT_NAME.test(name)) {
-        if (!names.environment.has(name)) unknown.push(`environment variable ${name}`);
-        continue;
-      }
-      const [first = ''] = written.split('.');
-      if (/^[a-zA-Z.]+$/.test(written) && written.includes('.') && names.topLevelSettings.has(first) && !names.settings.has(written)) unknown.push(`settings key ${written}`);
     }
     expect(unknown).toEqual([]);
   });
 
-  it('every option the README writes after a momonga command is one that command or the root takes', async () => {
+  it('every option the documentation writes after a momonga command is one that command or the root takes', async () => {
     const names = await referenceNames();
-    const shellLines = [...read('README.md').matchAll(/^ *```(?:sh|text)?\n([\s\S]*?)^ *```$/gm)].flatMap((block) => (block[1] ?? '').split('\n').map((line) => line.trim()));
-    const written = [...inlineCode(read('README.md')), ...shellLines].filter((text) => text.startsWith('momonga '));
-    const unknown = written.flatMap((text) => {
+    const written = DOC_FILES.flatMap((file) => {
+      const content = read(file);
+      const shellLines = [...content.matchAll(/^ *```(?:sh|text)?\n([\s\S]*?)^ *```$/gm)].flatMap((block) => (block[1] ?? '').split('\n').map((line) => line.trim()));
+      return [...inlineCode(content), ...shellLines]
+        .filter((text) => text.startsWith('momonga '))
+        .map((text) => ({ file, text }));
+    });
+    const unknown = written.flatMap(({ file, text }) => {
       const command = commandPathOf(text);
       const taken = names.options.get(command) ?? new Set<string>();
       return text
         .split(/\s+/)
         .map((word) => word.replace(/^\[/, '').replace(/[\]|].*$/, '').split('=')[0] ?? '')
         .filter((flag) => /^--?[a-zA-Z]/.test(flag) && !taken.has(flag))
-        .map((flag) => `${text}: ${flag}`);
+        .map((flag) => `${file}: ${text}: ${flag}`);
     });
     expect(unknown).toEqual([]);
   });
 
-  it('the README names exactly the settings keys a project or local settings file cannot set', async () => {
+  it('the guide names exactly the settings keys a project or local settings file cannot set', async () => {
     const names = await referenceNames();
-    const line = read('README.md').split('\n').find((text) => text.startsWith('Project and local settings cannot set'));
+    const line = read('site/docs/guide.md').split('\n').find((text) => text.startsWith('Project and local settings cannot set'));
     expect(line).toBeDefined();
     const sentence = (line ?? '').split(';')[0] ?? '';
     const listed = [...sentence.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? '');
     expect([...listed].sort()).toEqual([...names.userOnlySettings].sort());
   });
 
-  it('every slash command the README names is one the interactive session offers', async () => {
+  it('every slash command the documentation names is one the interactive session offers', async () => {
     const names = await referenceNames();
-    const written = inlineCode(read('README.md')).flatMap((text) => text.split(/,\s*/)).flatMap((text) => {
-      const match = /^\/([a-z][a-z-]*)(?:\s|$)/.exec(text);
-      return match === null ? [] : [match[1] ?? ''];
-    });
+    const written = DOC_FILES.flatMap((file) =>
+      inlineCode(read(file))
+        .flatMap((text) => text.split(/,\s*/))
+        .flatMap((text) => {
+          const match = /^\/([a-z][a-z-]*)(?:\s|$)/.exec(text);
+          return match === null ? [] : [match[1] ?? ''];
+        }),
+    );
     expect(written.length).toBeGreaterThan(20);
     expect(written.filter((name) => !names.slashCommands.has(name))).toEqual([]);
   });

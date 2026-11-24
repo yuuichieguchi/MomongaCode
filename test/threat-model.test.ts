@@ -9,7 +9,7 @@ import { OWNER_ONLY_SECRET_BYTES } from '../packages/foundation/src/platform/own
 
 const root = path.resolve(import.meta.dirname, '..');
 const read = (file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
-const doc = read('docs/threat-model.md');
+const doc = read('site/docs/threat-model.md');
 
 const sectionOf = (heading: string): string => {
   const lines = doc.split('\n');

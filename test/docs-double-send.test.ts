@@ -15,12 +15,12 @@ const sectionOf = (text: string, heading: string): string => {
 };
 
 describe('the documents state that a model request can be sent twice (Q20 B3)', () => {
-  const readme = sectionOf(read('README.md'), '### Models');
-  const threat = sectionOf(read('docs/threat-model.md'), '## A model request can be sent twice');
+  const guide = sectionOf(read('site/docs/guide.md'), '### Models');
+  const threat = sectionOf(read('site/docs/threat-model.md'), '## A model request can be sent twice');
 
   it.for([
-    ['README.md', readme],
-    ['docs/threat-model.md', threat],
+    ['site/docs/guide.md', guide],
+    ['site/docs/threat-model.md', threat],
   ] as const)('%s states the double send, its record, and the setting that prevents it', ([, text]) => {
     expect(text).toContain('sent twice');
     expect(text).toMatch(/after a crash/i);
@@ -30,8 +30,8 @@ describe('the documents state that a model request can be sent twice (Q20 B3)', 
     expect(text).toMatch(/trace/);
   });
 
-  it('the README points to the threat model from the Models section', () => {
-    expect(readme).toContain('docs/threat-model.md');
+  it('the guide points to the threat model from the Models section', () => {
+    expect(guide).toContain('threat-model.md');
   });
 
   it('the threat model says what a server without such a header does with the second request', () => {
@@ -40,6 +40,6 @@ describe('the documents state that a model request can be sent twice (Q20 B3)', 
   });
 
   it('neither text calls a model an alias or a target', () => {
-    expect(`${readme}\n${threat}`).not.toMatch(/\balias|\btarget/i);
+    expect(`${guide}\n${threat}`).not.toMatch(/\balias|\btarget/i);
   });
 });

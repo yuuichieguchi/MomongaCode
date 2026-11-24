@@ -65,6 +65,7 @@ const scannedFiles = (): string[] =>
       .filter((name) => fs.existsSync(path.join(packagesDir, name, 'src')))
       .flatMap((name) => filesUnder(path.join(packagesDir, name, 'src'))),
     ...filesUnder(path.join(root, 'scripts')),
+    ...filesUnder(path.join(root, 'site', 'docs')),
     path.join(root, 'README.md'),
   ].filter((file) => !file.endsWith(GENERATED_BUNDLE_SUFFIX));
 

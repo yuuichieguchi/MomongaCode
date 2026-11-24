@@ -23,6 +23,7 @@ const productFiles = (): string[] => [
     return fs.existsSync(source) ? filesUnder(source) : [];
   }),
   ...filesUnder(path.join(root, 'docs')),
+  ...filesUnder(path.join(root, 'site', 'docs')),
   path.join(root, 'README.md'),
 ];
 

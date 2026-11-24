@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Token, Tokens } from "marked";
+import { renderReference } from "../reference.ts";
 import { marked, plainText, readDocument, squash } from "./markdown.ts";
 import type { Block, LinkTarget, SourceDocument } from "./markdown.ts";
 import { githubSlug, shownTitle } from "./text.ts";
@@ -11,25 +12,36 @@ export type SourceSpec = {
   splitDepth: number;
   keyPrefix: string;
   home: string;
+  afterPage?: string;
+  render?: () => Promise<string>;
 };
 
 const SOURCES: readonly SourceSpec[] = [
   {
-    file: "README.md",
+    file: "site/docs/guide.md",
     group: "Guide",
     splitDepth: 2,
     keyPrefix: "docs/",
     home: "index.html",
   },
   {
-    file: "docs/reference.md",
+    file: "site/docs/judging-models.md",
+    group: "Guide",
+    splitDepth: 1,
+    keyPrefix: "docs/",
+    home: "docs/judging-models.html",
+    afterPage: "docs/configuration.html",
+  },
+  {
+    file: "site/docs/reference.md",
     group: "Reference",
     splitDepth: 2,
     keyPrefix: "docs/reference/",
     home: "docs/reference/index.html",
+    render: renderReference,
   },
   {
-    file: "docs/threat-model.md",
+    file: "site/docs/threat-model.md",
     group: "Threat model",
     splitDepth: 1,
     keyPrefix: "docs/",
@@ -119,13 +131,47 @@ export const assertDistinctAddresses = (
       );
 };
 
-export const readSources = (root: string): SourceSet[] =>
-  SOURCES.map((spec) =>
-    splitSource(
-      spec,
-      readDocument(
-        spec.file,
-        fs.readFileSync(path.join(root, spec.file), "utf8"),
+export type SidebarGroup = {
+  group: string;
+  home: string;
+  pages: readonly DocPage[];
+};
+
+export const groupSources = (sources: readonly SourceSet[]): SidebarGroup[] => {
+  const groups: { group: string; home: string; pages: DocPage[] }[] = [];
+  for (const source of sources) {
+    const existing = groups.find((entry) => entry.group === source.spec.group);
+    if (existing === undefined) {
+      if (source.spec.afterPage !== undefined) {
+        throw new Error(`${source.spec.file}: afterPage requires an earlier source in group ${source.spec.group}`);
+      }
+      groups.push({ group: source.spec.group, home: source.spec.home, pages: [...source.pages] });
+      continue;
+    }
+    if (source.spec.afterPage === undefined) {
+      existing.pages.push(...source.pages);
+      continue;
+    }
+    const afterIndex = existing.pages.findIndex((page) => page.key === source.spec.afterPage);
+    if (afterIndex === -1) {
+      throw new Error(`${source.spec.file}: afterPage ${source.spec.afterPage} was not found in group ${source.spec.group}`);
+    }
+    existing.pages.splice(afterIndex + 1, 0, ...source.pages);
+  }
+  return groups;
+};
+
+export const readSources = async (root: string): Promise<SourceSet[]> =>
+  Promise.all(
+    SOURCES.map(async (spec) =>
+      splitSource(
+        spec,
+        readDocument(
+          spec.file,
+          spec.render === undefined
+            ? fs.readFileSync(path.join(root, spec.file), "utf8")
+            : await spec.render(),
+        ),
       ),
     ),
   );
