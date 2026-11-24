@@ -26,14 +26,14 @@ export const NOT_CONNECTED_MODEL = 'not connected';
 
 export const LOGIN_POINTER = '  (use /login)';
 
-const modelLines = (model: BannerModel): string[] => {
+const modelLines = (model: BannerModel): [model: string, effort: string] => {
   switch (model.kind) {
     case 'unread':
-      return [];
+      return ['', ''];
     case 'not-connected':
-      return [`model: ${model.login ? `${NOT_CONNECTED_MODEL}${LOGIN_POINTER}` : NOT_CONNECTED_MODEL}`];
+      return [`model: ${model.login ? `${NOT_CONNECTED_MODEL}${LOGIN_POINTER}` : NOT_CONNECTED_MODEL}`, ''];
     case 'connected':
-      return [`model: ${model.name}`, ...(model.effort === undefined ? [] : [effortLine(model.effort, 'full')])];
+      return [`model: ${model.name}`, model.effort === undefined ? '' : effortLine(model.effort, 'full')];
   }
 };
 
