@@ -259,6 +259,15 @@ describe('the references a user sets', () => {
     expect(modelsOf(home).billingChanges).toEqual([{ from: 'local', to: 'plan' }]);
   });
 
+  it('setClassifier inherit writes the literal inherit, also over a written model, and null then deletes the key', async () => {
+    const home = homeWith({ ...BASE, autoMode: { classifier: DEVSTRAL_MODEL } });
+    const written = await editModels(home, [op('setClassifier', { model: 'inherit' })]);
+    expect(documentOf(home)['autoMode']).toEqual({ classifier: 'inherit' });
+    expect(written.summaries).toEqual(["The auto-mode classifier is now the session's model."]);
+    await editModels(home, [op('setClassifier', { model: null })]);
+    expect(documentOf(home)).not.toHaveProperty('autoMode');
+  });
+
   it('setRole and setClassifier write a full reference under their key, and null deletes the key', async () => {
     const home = homeWith(BASE);
     await editModels(home, [op('setRole', { job: 'compaction', model: QWEN_MODEL }), op('setRole', { job: 'analysis', model: LMSTUDIO_GEMMA }), op('setClassifier', { model: DEVSTRAL_MODEL })]);
@@ -480,6 +489,7 @@ describe('what the writer never does', () => {
     ['setRole analysis', op('setRole', { job: 'analysis', model: LMSTUDIO_GEMMA }), 'Analysis now uses lmstudio/gemma-3-4b.'],
     ['setClassifier', op('setClassifier', { model: LMSTUDIO_GEMMA }), 'The auto-mode classifier is now lmstudio/gemma-3-4b.'],
     ['setClassifier cleared', op('setClassifier', { model: null }), "The auto-mode classifier is now the session's model."],
+    ['setClassifier inherit', op('setClassifier', { model: 'inherit' }), "The auto-mode classifier is now the session's model."],
     ['setModelField', op('setModelField', { model: DEVSTRAL_MODEL, path: ['capabilities', 'contextWindow'], value: 65536 }), 'Set Context window of ollama/devstral-small-2 to 65536.'],
     ['setModelField cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['toolCalling'], value: undefined }), 'Cleared Tool calling of lmstudio/gemma-3-4b.'],
     ['setModelField effort cleared', op('setModelField', { model: LMSTUDIO_GEMMA, path: ['effort'], value: undefined }), 'Cleared Reasoning effort of lmstudio/gemma-3-4b.'],

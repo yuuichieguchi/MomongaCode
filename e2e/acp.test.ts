@@ -90,7 +90,7 @@ describe('acp: momonga acp', () => {
     });
     const created = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
     expect(created.modes?.currentModeId).toBe('manual');
-    expect(created.modes?.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan']);
+    expect(created.modes?.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto']);
     await acp.agent.request('session/set_mode', { sessionId: created.sessionId, modeId: 'acceptEdits' });
 
     const result = await acp.agent.request('session/prompt', textPrompt(created.sessionId, 'Update the greeting'));
@@ -240,8 +240,12 @@ describe('acp: momonga acp', () => {
       { sessionUpdate: 'current_mode_update', currentModeId: 'acceptEdits' },
     ]);
     expect(await codeOf(acp.agent.request('session/set_mode', { sessionId, modeId: 'bypassPermissions' }))).toBe(-32602);
-    expect(await codeOf(acp.agent.request('session/set_mode', { sessionId, modeId: 'auto' }))).toBe(-32602);
     expect(await codeOf(acp.agent.request('session/set_mode', { sessionId, modeId: 'nonsense' }))).toBe(-32602);
+    await acp.agent.request('session/set_mode', { sessionId, modeId: 'auto' });
+    await acp.untilUpdate(
+      (notification) => notification.update.sessionUpdate === 'current_mode_update' && notification.update.currentModeId === 'auto',
+      'the announcement of the auto mode a session with no named classifier may use',
+    );
     expect(await acp.finish()).toEqual({ code: 0, signal: null });
   });
 

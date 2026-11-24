@@ -17,10 +17,10 @@ describe('describeFailure', () => {
   });
 
   it('states mode_unavailable plainly, without the request that was refused', () => {
-    const body = JSON.stringify({ error: { type: 'invalid_request_error', code: 'mode_unavailable', message: 'auto mode needs a classifier model alias: set autoMode.classifier in the user settings' } });
+    const body = JSON.stringify({ error: { type: 'invalid_request_error', code: 'mode_unavailable', message: 'the auto mode classifier model "guard" is not known to the gateway' } });
     const refused = new RunApiError('POST /v1/sessions', 409, body);
 
-    expect(describeFailure(refused)).toBe('permission mode unavailable: auto mode needs a classifier model alias: set autoMode.classifier in the user settings');
+    expect(describeFailure(refused)).toBe('permission mode unavailable: the auto mode classifier model "guard" is not known to the gateway');
   });
 
   it('prints a thrown non-error value as text', () => {

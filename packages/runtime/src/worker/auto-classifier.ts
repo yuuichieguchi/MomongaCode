@@ -1,8 +1,8 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, defineProductSchema, jsonReplyInstructions, readJsonReply, sha256Hex } from '@momonga/foundation';
 import type { RolePort } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputReserveFor, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
-import type { CallTiming, ClassifierVerdict, CreateResponseBody, RunEventPayload, UsageChargePurpose } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputReserveFor, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, unknownClassifierMessage } from '@momonga/protocol';
+import type { CallTiming, ClassifierVerdict, CreateResponseBody, ModelView, ModelViews, RunEventPayload, UsageChargePurpose } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import type { GatewayCallOptions, GatewayPort } from '../ports.ts';
@@ -17,6 +17,7 @@ import { retireDecisionOf } from './gateway-policy.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { outputBoundOf } from './output-bound.ts';
+import { parentPinsOf } from './pins.ts';
 
 const CLASSIFIER_TASK = [
   'You are a security reviewer for an autonomous coding agent. Decide whether one proposed tool call is safe to run without asking the person.',
@@ -32,8 +33,6 @@ export const CLASSIFIER_INSTRUCTIONS = jsonReplyInstructions(CLASSIFIER_TASK, { 
 const validateVerdict = defineProductSchema<ClassifierVerdict>('runtime/classifier-verdict', { ...CLASSIFIER_VERDICT_SCHEMA });
 
 export const AUTO_CLASSIFIER_CODE = { instructions: CLASSIFIER_INSTRUCTIONS, verdictSchema: CLASSIFIER_VERDICT_SCHEMA } as const;
-
-export const NO_CLASSIFIER_FAILURE = 'no classifier model is configured: set autoMode.classifier in the user settings, or run /auto-mode and choose one';
 
 export type ClassifierCharge<P extends UsageChargePurpose> = Extract<RunEventPayload, { type: 'usage.charged' }> & { purpose: P };
 
@@ -134,22 +133,33 @@ export const callResolvedClassifier = async <P extends UsageChargePurpose>(optio
   }
 };
 
-export const resolveClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>, configured: string): Promise<ResolvedClassifier | ClassifierCall<P> | undefined> => {
+export type ClassifierDesignation = { name: string; resolve: (views: ModelViews) => ModelView | undefined };
+
+const typedDesignationOf = (name: string): ClassifierDesignation => ({
+  name,
+  resolve: (views) => {
+    const resolution = resolveTypedModelRef(typedModelText(name), views);
+    return resolution.kind === 'found' ? resolution.model : undefined;
+  },
+});
+
+const resolveDesignated = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>, designation: ClassifierDesignation): Promise<ResolvedClassifier | ClassifierCall<P> | undefined> => {
   let views;
   try {
     ({ views } = await options.gateway.listing({ signal: options.signal }));
   } catch (error) {
     return gatewayFailureOf(options, error);
   }
-  const resolution = resolveTypedModelRef(typedModelText(configured), views);
-  if (resolution.kind !== 'found') return undefined;
-  return { canon: resolution.model.canon, display: displayOf(resolution.model, views) };
+  const model = designation.resolve(views);
+  return model === undefined ? undefined : { canon: model.canon, display: displayOf(model, views) };
 };
 
-export const callClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P> & { configured: string | undefined }): Promise<ClassifierCall<P>> => {
-  if (options.configured === undefined) return failed(NO_CLASSIFIER_FAILURE);
-  const resolved = await resolveClassifier(options, options.configured);
-  if (resolved === undefined) return failed(AUTO_MODE_UNAVAILABLE.message);
+export const resolveClassifier = <P extends UsageChargePurpose>(options: ClassifierCallOptions<P>, configured: string): Promise<ResolvedClassifier | ClassifierCall<P> | undefined> =>
+  resolveDesignated(options, typedDesignationOf(configured));
+
+export const callClassifier = async <P extends UsageChargePurpose>(options: ClassifierCallOptions<P> & { designation: ClassifierDesignation }): Promise<ClassifierCall<P>> => {
+  const resolved = await resolveDesignated(options, options.designation);
+  if (resolved === undefined) return failed(unknownClassifierMessage(options.designation.name));
   if ('kind' in resolved) return resolved;
   return callResolvedClassifier(options, resolved);
 };
@@ -184,9 +194,14 @@ const userPromptOf = (ctx: ClaimContext, cwd: string, request: AutoClassifierReq
 
 type ClassifiedEvent = Omit<Extract<RunEventPayload, { type: 'tool.permission.classified' }>, 'type' | 'callId' | 'subjectDigest' | 'outcome'>;
 
-export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: number): AutoClassifier => {
+const designationOf = (ctx: ClaimContext): ClassifierDesignation => {
   const configured = ctx.options.settings.autoModeClassifier();
-  return {
+  if (configured !== undefined) return typedDesignationOf(configured);
+  const rootModel = parentPinsOf(ctx.options.store, rootRunIdOf(ctx)).model;
+  return { name: rootModel, resolve: (views) => resolveStoredModelRef(storedModelRef(rootModel), views) };
+};
+
+export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: number): AutoClassifier => ({
     classify: async (request) => {
       const recorded = ctx.journal.state.pendingCalls[request.callId]?.classification;
       if (recorded?.subjectDigest === request.subjectDigest) return recorded.outcome;
@@ -194,7 +209,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
         gateway: ctx.options.gateway,
         role: ctx.options.role,
         timers: ctx.options.timers,
-        configured,
+        designation: designationOf(ctx),
         account: ctx.budget,
         instructions: CLASSIFIER_INSTRUCTIONS,
         prompt: () => userPromptOf(ctx, cwd, request),
@@ -227,5 +242,4 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       ]);
       return outcome;
     },
-  };
-};
+});

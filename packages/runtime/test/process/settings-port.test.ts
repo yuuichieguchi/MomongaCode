@@ -98,7 +98,29 @@ describe('settings composition hooks and auto mode', () => {
     const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
     const created = await composition.sessionCreateSettings(f.temp.project, signalNever());
     expect(created.autoModeClassifier).toBe('apple/system');
-    expect(created.autoModeKey).toBeUndefined();
+    expect(created).not.toHaveProperty('autoModeKey');
+  });
+
+  it('gives the measurement key of a configured model and none, without throwing, for a model the user models do not hold', async () => {
+    const f = await makeRuntimeFixture();
+    writeUserSettings(f.temp.home, chatTargetSettings(DECLARED_CREDENTIAL));
+    await f.cache.load(signalNever());
+    expect(await f.composition.autoModeKey('fake/x', signalNever())).toMatchObject({ classifier: expect.any(String), codeDigest: expect.any(String), datasetDigest: expect.any(String) });
+    expect(await f.composition.autoModeKey('fake/removed-model', signalNever())).toBeUndefined();
+  });
+
+  it.each([
+    ['absent', {}],
+    ['inherit', { autoMode: { classifier: 'inherit' } }],
+  ])('hands the worker and the session no classifier when autoMode.classifier is %s, never the text inherit', async (_label, written) => {
+    const f = await makeRuntimeFixture();
+    writeUserSettings(f.temp.home, { ...chatTargetSettings(DECLARED_CREDENTIAL), ...written });
+    await f.cache.load(signalNever());
+    expect(f.composition.settings.autoModeClassifier()).toBeUndefined();
+    const created = await f.composition.sessionCreateSettings(f.temp.project, signalNever());
+    expect(created).not.toHaveProperty('autoModeClassifier');
+    const read = await f.composition.sessionReadSettings(f.temp.project, signalNever());
+    expect(read).not.toHaveProperty('autoModeClassifier');
   });
 
   it('reports no classifier when the user settings name none', async () => {

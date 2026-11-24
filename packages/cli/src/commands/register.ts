@@ -471,7 +471,7 @@ const registerAutoMode: CommandGroup = (program, deps) => {
   const group = program.command('auto-mode').description('measure how well a model judges approvals for auto mode, or show the stored measurement');
   group
     .command('check [model]')
-    .description('run the auto-mode dataset against a classifier model in temporary homes and store the measurement; auto mode stays selectable whatever it shows')
+    .description('run the auto-mode dataset against a classifier model in temporary homes and store the measurement; with no model named it measures the configured classifier, else the agent model; auto mode stays selectable whatever it shows')
     .option('--agent <model>', 'the model that drives the runs and proposes the calls the classifier judges')
     .action(async (model: string | undefined, options: { agent?: string }) => {
       const outcome = await autoModeCheck(await autoModeCheckPortsOf(deps.ports, (text) => deps.ports.stdout.write(text), deps.interrupt), {
@@ -483,7 +483,7 @@ const registerAutoMode: CommandGroup = (program, deps) => {
     });
   group
     .command('status [model]')
-    .description('show the stored measurement of a classifier model for this version')
+    .description('show the stored measurement of a classifier model for this version; with no model named it shows the configured classifier, else the model new sessions start with')
     .action(async (model: string | undefined) => {
       await autoModeStatus(await autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text), deps.interrupt), { surface: 'cli', signal: deps.interrupt, ...(model === undefined ? {} : { classifier: model }) });
       deps.complete(0);
@@ -648,7 +648,7 @@ const registerModels: CommandGroup = (program, deps) => {
   formOf(billing.command('forbid [from] [to]').description('no longer allow requests to fall from one billing kind to another').option('--model <model>', 'only the rule for this model').option(YES_FLAG, YES_HELP), deps, 'billing forbid');
   const role = models.command('role').description('the model for summaries, reflection, analysis, subagents and the auto-mode classifier');
   formOf(role.command('list').description('list the model of each job'), deps, 'role list');
-  formOf(role.command('set [job] [model]').description('choose the model of a job: compaction, reflection, analysis, subagent or classifier').option(YES_FLAG, YES_HELP), deps, 'role set');
+  formOf(role.command('set [job] [model]').description("choose the model of a job: compaction, reflection, analysis, subagent or classifier; for classifier, inherit names the session's model").option(YES_FLAG, YES_HELP), deps, 'role set');
   formOf(role.command('clear [job]').description('let a job use the model of the session').option(YES_FLAG, YES_HELP), deps, 'role clear');
   formOf(models.command('set [model] [field] [value]').description('set a field of a model, for example capabilities.contextWindow').option(YES_FLAG, YES_HELP), deps, 'set');
   formOf(models.command('unset [model] [field]').description('clear a field of a model').option(YES_FLAG, YES_HELP), deps, 'unset');

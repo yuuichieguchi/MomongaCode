@@ -334,13 +334,6 @@ const listingHeld = async (options: FakeBackendOptions): Promise<{ backend: Fake
   return { ...started, answer: () => held.resolve() };
 };
 
-const autoModeHeld = async (options: FakeBackendOptions): Promise<{ backend: FakeBackend; app: Instance; answer: () => void }> => {
-  const held = Promise.withResolvers<void>();
-  const started = await startStillStarting({ ...WITH_GEMMA, ...options, autoModeHeld: held.promise }, {}, WIDE);
-  await seen(started.backend, `session-stream-open:${SESSION.id}`);
-  return { ...started, answer: () => held.resolve() };
-};
-
 describe('the model of a judgement is named by its display', () => {
   it.each(BY_CANON)('names the model by its display on memory.judged when %s', async (_name, record, line) => {
     const { backend, app } = await idle(WITH_GEMMA);
@@ -451,42 +444,6 @@ describe('the model of a judgement is named by its display', () => {
     expect(shown.indexOf(firstLine)).toBeLessThan(shown.indexOf(secondLine));
     expect(shown.indexOf(secondLine)).toBeLessThan(shown.indexOf(eventLine));
     for (const line of [firstLine, secondLine, eventLine]) expect(timesShown(shown, line)).toBe(1);
-    app.unmount();
-  });
-
-  it('prints an owed record read at connect while the auto mode check has not answered only after the model listing answered, by its display, once, and marks it shown after', async () => {
-    const [, record, line] = BY_CANON[0];
-    const { backend, app, answer } = await autoModeHeld({ memoryJudgements: [record] });
-    await seen(backend, `memory-judgements:${SESSION.cwd}`);
-    await watched(app);
-
-    expect(namingStored(app)).toEqual([]);
-    expect(marked(backend)).toEqual([]);
-    answer();
-    await untilOutput(app, line);
-    await seen(backend, `memory-judgements-shown:${record.memoryId}`);
-
-    expect(namingStored(app)).toEqual([]);
-    expect(timesShown(await untilFrame(app, line), line)).toBe(1);
-    app.unmount();
-  });
-
-  it('prints a memory.judged arriving while the auto mode check has not answered only after the model listing answered, by its display, once', async () => {
-    const [, record, line] = BY_CANON[2];
-    const { backend, app, answer } = await autoModeHeld({ memoryJudgements: [] });
-    await seen(backend, `memory-judgements:${SESSION.cwd}`);
-    backend.judgements.set(record.memoryId, record);
-
-    backend.judgeMemory(record.memoryId);
-    await seen(backend, `memory-judgement:${record.memoryId}`);
-    await watched(app);
-
-    expect(namingStored(app)).toEqual([]);
-    answer();
-    await seen(backend, `memory-judgements-shown:${record.memoryId}`);
-
-    expect(namingStored(app)).toEqual([]);
-    expect(timesShown(await untilFrame(app, line), line)).toBe(1);
     app.unmount();
   });
 });

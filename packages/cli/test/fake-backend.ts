@@ -20,7 +20,7 @@ import type { DetectRequest } from '../src/commands/models.ts';
 import { freshHome } from './fresh-home.ts';
 import { listingOf } from './models-shell-harness.ts';
 import { PROBING_PLAN } from './fake-models-listing.ts';
-import type { AgentView, McpServerView } from '@momonga/protocol';
+import type { AgentView, AutoClassifierView, McpServerView } from '@momonga/protocol';
 import { createFromTemplate } from '../src/tui/file-templates.ts';
 import { pendingProjectServerOf } from '../src/tui/project-items.ts';
 import type { NetworkCheck, NetworkView } from '../src/tui/commands/network.ts';
@@ -129,7 +129,7 @@ export type FakeBackendOptions = {
   detect?: (request: DetectRequest) => Promise<readonly LocalServerDetection[]>;
   programModel?: string;
   startupNotices?: readonly string[];
-  autoModeAvailable?: boolean;
+  classifierViews?: Readonly<Record<string, AutoClassifierView | null>>;
   modelPending?: Promise<void>;
   modelFailure?: Error;
   modelOfFailures?: Readonly<Record<string, Error>>;
@@ -139,7 +139,6 @@ export type FakeBackendOptions = {
   sessionModelFailures?: Readonly<Record<string, Error>>;
   models?: readonly string[];
   modelsHeld?: () => Promise<void> | undefined;
-  autoModeHeld?: Promise<void>;
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
   reasoning?: Readonly<Record<string, ReasoningCapability>>;
@@ -471,10 +470,6 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (text === undefined) throw new Error(`the fake holds no stored result for ${runId}/${callId}`);
       return { text, offset, next: null, totalBytes: new TextEncoder().encode(text).length };
     },
-    autoModeAvailable: async () => {
-      await options.autoModeHeld;
-      return options.autoModeAvailable ?? false;
-    },
     models: async () => {
       await answerLater();
       await options.modelsHeld?.();
@@ -525,6 +520,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (options.setModelFailure !== undefined) throw options.setModelFailure;
       const { effort: _dropped, ...rest } = session;
       session = model === session.model && effort === undefined ? { ...session } : { ...rest, model, ...(effort === undefined ? {} : { effort }) };
+      const classifierView = options.classifierViews?.[model];
+      if (classifierView !== undefined) {
+        const { autoClassifier: _replaced, ...unviewed } = session;
+        session = classifierView === null ? unviewed : { ...unviewed, autoClassifier: classifierView };
+      }
       return session;
     },
     setMode: async (mode: PermissionMode) => {

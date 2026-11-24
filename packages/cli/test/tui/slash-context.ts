@@ -27,7 +27,6 @@ export const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions:
     toast: (text) => void recorded.toasts.push(text),
     refreshConnection: async () => undefined,
     bypassAllowed: true,
-    autoAvailable: true,
     commands: DEFAULT_SLASH_COMMANDS,
     backend,
     startRun: async () => undefined,

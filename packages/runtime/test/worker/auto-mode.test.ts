@@ -84,16 +84,17 @@ describe('auto mode in the worker', () => {
     expect(classified?.failure).toContain(fragment);
   });
 
-  it('asks the person when no classifier model is configured', async () => {
-    const { env, write } = await setup(null);
-    env.gateway.script.push(write);
+  it('asks the model of the run when no classifier model is configured, and runs the call on a safe verdict', async () => {
+    const { env, target, write } = await setup(null);
+    env.gateway.listed = [env.session.model];
+    env.gateway.script.push(write, textStep(verdict()), textStep('Written.'));
     const run = await env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
-    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    const [classified] = env.ofType(run.id, 'tool.permission.classified');
-    expect(classified).toMatchObject({ outcome: 'ask' });
-    expect(classified).not.toHaveProperty('model');
-    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.streams.map((stream) => stream.role)).toEqual([undefined, 'classifier', undefined]);
+    expect(env.gateway.streams[1]?.body).toMatchObject({ model: env.session.model, instructions: CLASSIFIER_INSTRUCTIONS });
+    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', model: env.session.model, verdict: 'safe', confidence: 'high' }]);
+    expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 
   it('calls the classifier and allows a safe plain-text verdict when its model has no structured output', async () => {

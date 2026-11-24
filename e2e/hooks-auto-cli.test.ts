@@ -6,7 +6,7 @@ import { skipCase, titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, upstreamModelRef, withClassifierModel, writeSettingsFile } from './support/stack.ts';
+import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, startUpstream, upstreamModelRef, withClassifierModel, withStructuredSessionModel, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -63,14 +63,35 @@ describe('momonga -p with hooks and auto mode', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('written\n');
   });
 
-  it(titleOf('cli-auto-unavailable'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
-    const { home, fake } = await prepare(false, () => ({ script: [textReply('never reached')] }));
+  it(titleOf('cli-auto-session-model'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, fake } = await prepare(false, (created) => ({
+      script: [toolCallReply('Write', { file_path: path.join(created.project, 'allowed.txt'), content: 'written\n' }), verdictReply('safe', 'high'), textReply('written')],
+      settings: withStructuredSessionModel,
+    }));
 
-    const result = await runCli(home, ['-p', 'Say hello', '--permission-mode', 'auto']);
+    const result = await runCli(home, ['-p', 'Write the file', '--permission-mode', 'auto']);
 
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('momonga: permission mode unavailable: auto mode needs a classifier model: set autoMode.classifier in the user settings, or run /auto-mode and choose one\n');
-    expect(chatCompletions(fake)).toHaveLength(0);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain(`momonga: auto mode allowed Write allowed.txt; classifier ${UPSTREAM_MODEL_REF} judged Write allowed.txt safe with high confidence: scripted safe/high\n`);
+    expect(result.stderr).not.toContain('mode_unavailable');
+    expect(fs.readFileSync(path.join(home.project, 'allowed.txt'), 'utf8')).toBe('written\n');
+    const requests = chatCompletions(fake);
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests[1]?.body)).toContain('<proposed_tool_call>');
+  });
+
+  it(titleOf('cli-auto-default-mode-session-model'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, fake } = await prepare(false, (created) => ({
+      script: [toolCallReply('Write', { file_path: path.join(created.project, 'allowed.txt'), content: 'written\n' }), verdictReply('safe', 'high'), textReply('written')],
+      settings: (base) => ({ ...withStructuredSessionModel(base), permissions: { defaultMode: 'auto' } }),
+    }));
+
+    const result = await runCli(home, ['-p', 'Write the file']);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain(`momonga: auto mode allowed Write allowed.txt; classifier ${UPSTREAM_MODEL_REF} judged Write allowed.txt safe with high confidence: scripted safe/high\n`);
+    expect(fs.readFileSync(path.join(home.project, 'allowed.txt'), 'utf8')).toBe('written\n');
+    expect(chatCompletions(fake)).toHaveLength(3);
   });
 
   it.skipIf(skipCase('cli-user-prompt-blocked'))(titleOf('cli-user-prompt-blocked'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {

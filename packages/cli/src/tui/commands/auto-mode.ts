@@ -47,7 +47,7 @@ export const autoModeCommand: SlashCommand = {
     }
     const classifier = parsed.classifier === undefined ? {} : { classifier: parsed.classifier };
     if (action === 'status') {
-      await context.wait(READING_MEASUREMENT_PHASE, (signal) => context.autoMode.status({ ...classifier, surface: 'tui', signal }, context.info));
+      await context.wait(READING_MEASUREMENT_PHASE, (signal) => context.autoMode.status({ ...classifier, ...(context.model === undefined ? {} : { sessionModel: context.model }), surface: 'tui', signal }, context.info));
       return;
     }
     const agent = parsed.agent ?? context.model;

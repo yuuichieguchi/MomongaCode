@@ -1,5 +1,5 @@
 import { nodeFileSystemSync, systemRandom } from '@momonga/foundation';
-import { ConfigError, ModelsEditRefused, resolvedBillingOf, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, modelNamingOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
+import { ConfigError, INHERITED_CLASSIFIER, ModelsEditRefused, resolvedBillingOf, durationText, editModelsSettings, emptyUserModels, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, modelNamingOf, serverNameFromCommand, serverRegistryOf, settableFieldPath } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
 import { EXIT_FAILURE, EXIT_USAGE, currentSocketResolver, isRecord, parseOutsideJson, resolveLayoutLocks, layoutProcessInspector } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch, KernelLockMechanism } from '@momonga/foundation';
@@ -690,6 +690,9 @@ const proposeRoleSet = async (_shell: ModelsHost, edit: ModelsEdit, input: FormI
   const job = argument(input, 0);
   const text = argument(input, 1);
   roleOperationOf(job, null);
+  if (job === CLASSIFIER_JOB && text === INHERITED_CLASSIFIER) {
+    return { operations: [roleOperationOf(job, INHERITED_CLASSIFIER)], confirm: () => `Use ${SESSION_MODEL_TEXT} for ${JOB_WORDS[job]}?` };
+  }
   const model = canonOfTyped(edit, text);
   return { operations: [roleOperationOf(job, model)], confirm: () => `Use ${displayIn(edit, model)} for ${JOB_WORDS[job]}?` };
 };

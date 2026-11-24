@@ -69,13 +69,17 @@ const slashContext = (overrides: Partial<SlashContext> & Record<string, unknown>
     return running;
   };
   const checks: Record<string, unknown>[] = [];
+  const statuses: Record<string, unknown>[] = [];
   const release = Promise.withResolvers<{ measurement: 'did_not_pass' }>();
   const autoMode = {
     check: async (options: Record<string, unknown>) => {
       checks.push(options);
       return release.promise;
     },
-    status: async () => ({ measurement: 'not_measured' as const }),
+    status: async (options: Record<string, unknown>) => {
+      statuses.push(options);
+      return { measurement: 'not_measured' as const };
+    },
   };
   const context = {
     mode: 'manual',
@@ -85,7 +89,6 @@ const slashContext = (overrides: Partial<SlashContext> & Record<string, unknown>
     toast: () => undefined,
     refreshConnection: async () => undefined,
     bypassAllowed: false,
-    autoAvailable: true,
     commands: DEFAULT_SLASH_COMMANDS,
     backend: fakeBackend(),
     startRun: async () => undefined,
@@ -98,7 +101,7 @@ const slashContext = (overrides: Partial<SlashContext> & Record<string, unknown>
     autoMode,
     ...overrides,
   } as unknown as SlashContext;
-  return { context, infos, checks, signals, controller, release, pending };
+  return { context, infos, checks, statuses, signals, controller, release, pending };
 };
 
 const runSlash = (line: string, context: SlashContext) => {
@@ -160,6 +163,31 @@ describe('/auto-mode in the TUI', () => {
     expect(checks[0]?.['classifier']).toBeUndefined();
     release.resolve({ measurement: 'did_not_pass' });
     await Promise.all(pending);
+  });
+});
+
+describe('/auto-mode status in the TUI', () => {
+  it("passes the session's model for the case that no classifier is configured, and names no classifier", async () => {
+    const { context, statuses } = slashContext();
+    await runSlash('/auto-mode status', context);
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({ sessionModel: 'session-model', surface: 'tui' });
+    expect(statuses[0]?.['classifier']).toBeUndefined();
+  });
+
+  it('passes a named classifier as before', async () => {
+    const { context, statuses } = slashContext();
+    await runSlash('/auto-mode status guard', context);
+    expect(statuses[0]).toMatchObject({ classifier: 'guard', surface: 'tui' });
+  });
+});
+
+describe('momonga auto-mode status outside the TUI', () => {
+  it('passes no session model, so the model new sessions start with is used when no classifier is configured', async () => {
+    await programWith(new AbortController().signal).parseAsync(['auto-mode', 'status'], { from: 'user' });
+    const options = (spies.status.mock.calls.at(-1) as unknown as [unknown, Record<string, unknown>])[1];
+    expect(options['classifier']).toBeUndefined();
+    expect(options['sessionModel']).toBeUndefined();
   });
 });
 

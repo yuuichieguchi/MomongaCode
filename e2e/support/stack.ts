@@ -169,6 +169,14 @@ export const withClassifierModel = (settings: Readonly<Record<string, unknown>>,
   autoMode: { classifier: upstreamModelRef(id) },
 });
 
+export const withStructuredSessionModel = (settings: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+  withUpstreamEntry(settings, (entry) => ({ ...entry, capabilities: { ...entry.capabilities, structuredOutput: 'json_schema' } }));
+
+export const withInheritedClassifier = (settings: Readonly<Record<string, unknown>>): Record<string, unknown> => ({
+  ...withStructuredSessionModel(settings),
+  autoMode: { classifier: 'inherit' },
+});
+
 export type StructuredRole = 'reflection' | 'analysis';
 
 export const withStructuredRole = (settings: Readonly<Record<string, unknown>>, role: StructuredRole, id: string): Record<string, unknown> => {

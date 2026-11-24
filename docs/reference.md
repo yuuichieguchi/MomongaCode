@@ -283,8 +283,8 @@ momonga [options] [prompt]
 | `momonga eval compare <baseline> <candidate>` | print the paired differences of two context reports and pass or fail the candidate against the gate |
 | `momonga eval bench <directory>` | run every task of the benchmark in the directory on one model, each trial in a fresh copy of its repository, check each with the oracle of its task, and print the reliability report; with --validate, check the benchmark itself without a model |
 | `momonga auto-mode` | measure how well a model judges approvals for auto mode, or show the stored measurement |
-| `momonga auto-mode check [model]` | run the auto-mode dataset against a classifier model in temporary homes and store the measurement; auto mode stays selectable whatever it shows |
-| `momonga auto-mode status [model]` | show the stored measurement of a classifier model for this version |
+| `momonga auto-mode check [model]` | run the auto-mode dataset against a classifier model in temporary homes and store the measurement; with no model named it measures the configured classifier, else the agent model; auto mode stays selectable whatever it shows |
+| `momonga auto-mode status [model]` | show the stored measurement of a classifier model for this version; with no model named it shows the configured classifier, else the model new sessions start with |
 | `momonga context` | improve how the context is compacted, from the failures a benchmark shows |
 | `momonga context improve` | analyse the scenarios that pass without compaction and fail with it, sample candidate guidelines for the compaction summary, benchmark each against the guideline in force, print the winner and its full text, and write the outcome to a file; nothing is stored |
 | `momonga context guideline` | inspect, adopt and roll back the compaction guideline |
@@ -312,7 +312,7 @@ momonga [options] [prompt]
 | `momonga models billing forbid [from] [to]` | no longer allow requests to fall from one billing kind to another |
 | `momonga models role` | the model for summaries, reflection, analysis, subagents and the auto-mode classifier |
 | `momonga models role list` | list the model of each job |
-| `momonga models role set [job] [model]` | choose the model of a job: compaction, reflection, analysis, subagent or classifier |
+| `momonga models role set [job] [model]` | choose the model of a job: compaction, reflection, analysis, subagent or classifier; for classifier, inherit names the session's model |
 | `momonga models role clear [job]` | let a job use the model of the session |
 | `momonga models set [model] [field] [value]` | set a field of a model, for example capabilities.contextWindow |
 | `momonga models unset [model] [field]` | clear a field of a model |
@@ -869,7 +869,7 @@ The layer column names the settings files that may set the key: the user file `~
 | `hooks.<name>[].hooks[].command` | string (not empty) |  |  | user, project, local |
 | `hooks.<name>[].hooks[].timeout` | integer (at least 1) | `600`; `UserPromptSubmit`: `30` | seconds | user, project, local |
 | `autoMode` | object |  |  | user |
-| `autoMode.classifier` | string (not empty) |  |  | user |
+| `autoMode.classifier` | string (not empty) | `"inherit"` |  | user |
 | `enabledMcpjsonServers` | array of string or object |  |  | user, project, local |
 | `disabledMcpjsonServers` | array of string |  |  | user, project, local |
 | `enableAllProjectMcpServers` | boolean | `false` |  | user, project, local |

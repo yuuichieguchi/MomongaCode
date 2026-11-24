@@ -42,7 +42,7 @@ import { cachedProgramSearch, copyThroughRoutes, readClipboardThroughRoutes } fr
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
 import { pendingProjectServerOf } from './project-items.ts';
-import { autoModeConfigured, connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
+import { connectSessionRuntime, environmentSnapshot, reopenedAsTyped, runBoundsOf } from '../run/open-session.ts';
 import type { RunBounds, SessionOptions } from '../run/open-session.ts';
 import { fileLinkRootsOf, openFileLink, resolveFileLinks } from './screen/file-links.ts';
 import type { FileLinkPlace, FileLinkPorts, FileLinks } from './screen/file-links.ts';
@@ -94,7 +94,6 @@ export type TuiBackend = {
   setModel(model: string, effort?: ReasoningEffort): Promise<SessionView>;
   setEffort(effort: ReasoningEffort | null): Promise<SessionView>;
   setOutputStyle?(outputStyle: OutputStyle | null): Promise<SessionView>;
-  autoModeAvailable(): Promise<boolean>;
   startRun(text: string, options?: StartRunOptions): Promise<RunView>;
   compact(instructions?: string): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
@@ -323,7 +322,6 @@ export const createTuiBackend = (
       session = await runtime().setOutputStyle(current().id, outputStyle);
       return session;
     },
-    autoModeAvailable: () => autoModeConfigured(ports, closing.signal),
     startRun: async (text, runOptions = {}) => (await runtime().createRun(current().id, text, { history: 'inherit', ...runBoundsOf(options), ...runOptions })).run,
     compact: (instructions) => runtime().compact(current().id, instructions),
     follow: async (runId, handlers) =>

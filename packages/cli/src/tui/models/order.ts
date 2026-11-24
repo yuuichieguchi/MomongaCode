@@ -1,4 +1,4 @@
-import { durationText, editModelsSettings, writeMemoryAutoReview } from '@momonga/config';
+import { INHERITED_CLASSIFIER, durationText, editModelsSettings, writeMemoryAutoReview } from '@momonga/config';
 import type { ModelsEditResult } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { TargetBilling } from '@momonga/protocol';
@@ -147,12 +147,15 @@ export const runBillingFlow = async (context: ModelsFlowContext): Promise<void> 
 
 type Job = (typeof ROLE_ROWS)[number]['job'];
 
+const sessionModelChoice = (opened: Opened, context: ModelsFlowContext, job: Job): Promise<ModelsEditResult | undefined> =>
+  job === 'classifier' ? proposeAndWrite(opened, context, 'role set', { args: [job, INHERITED_CLASSIFIER], options: {} }) : proposeAndWrite(opened, context, 'role clear', { args: [job], options: {} });
+
 export const chooseRoleModel = async (context: ModelsFlowContext, opened: Opened, job: Job, label: string): Promise<boolean> => {
   const { edit } = opened;
   const canons = canonsOf(edit);
   const acted = await chosenThen(context, { title: label, rows: [...canons.map((canon) => ({ label: displayIn(edit, canon) })), { label: SESSION_MODEL_ROW }] }, async (index) => {
     const canon = canons[index];
-    const written = canon === undefined ? await proposeAndWrite(opened, context, 'role clear', { args: [job], options: {} }) : await proposeAndWrite(opened, context, 'role set', { args: [job, canon], options: {} });
+    const written = canon === undefined ? await sessionModelChoice(opened, context, job) : await proposeAndWrite(opened, context, 'role set', { args: [job, canon], options: {} });
     return written !== undefined;
   });
   return acted?.value === true;

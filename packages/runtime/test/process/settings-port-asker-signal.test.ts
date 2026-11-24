@@ -23,23 +23,25 @@ const outcomeOf = (promise: Promise<unknown>): Promise<{ value: unknown } | { er
     (error: unknown) => ({ error }),
   );
 
-const compositionWithAManagedClassifier = async (): Promise<{ composition: runtime.SettingsComposition; project: string }> => {
+const compositionWithAManagedClassifier = async (): Promise<{ composition: runtime.SettingsComposition; classifier: string }> => {
   const f = await makeRuntimeFixture();
   const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
   fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   writeUserSettings(f.temp.home, { autoMode: { classifier: 'system' }, models: { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] } });
   const composition = runtime.createSettingsComposition({ lock: testKernelLock(), home: f.temp.home, platform: 'darwin', cache: makeCache(f.temp.home), store: f.store });
-  return { composition, project: f.temp.project };
+  const { autoModeClassifier } = await composition.sessionReadSettings(f.temp.project, new AbortController().signal);
+  if (autoModeClassifier === undefined) throw new Error('the fixture names no classifier');
+  return { composition, classifier: autoModeClassifier };
 };
 
 describe('the classifier key read of a session ends with the request that asked', () => {
-  it.each(['sessionCreateSettings', 'sessionReadSettings'] as const)('%s rejects with the reason of its request when the request ends while the OS build is unanswered', async (ask) => {
-    const { composition, project } = await compositionWithAManagedClassifier();
+  it('autoModeKey rejects with the reason of its request when the request ends while the OS build is unanswered', async () => {
+    const { composition, classifier } = await compositionWithAManagedClassifier();
     const request = new AbortController();
     const ended = new Error('the request ended');
     const asked = unanswered.calls.length;
 
-    const outcome = outcomeOf(composition[ask](project, request.signal));
+    const outcome = outcomeOf(composition.autoModeKey(classifier, request.signal));
     await vi.waitFor(() => expect(unanswered.calls.length).toBe(asked + 1));
     request.abort(ended);
 
@@ -47,16 +49,16 @@ describe('the classifier key read of a session ends with the request that asked'
   });
 
   it('gives a second request its own wait on the reading the first request left', async () => {
-    const { composition, project } = await compositionWithAManagedClassifier();
+    const { composition, classifier } = await compositionWithAManagedClassifier();
     const first = new AbortController();
     const second = new AbortController();
     const firstEnded = new Error('the first request ended');
     const secondEnded = new Error('the second request ended');
     const asked = unanswered.calls.length;
 
-    const firstOutcome = outcomeOf(composition.sessionReadSettings(project, first.signal));
+    const firstOutcome = outcomeOf(composition.autoModeKey(classifier, first.signal));
     await vi.waitFor(() => expect(unanswered.calls.length).toBe(asked + 1));
-    const secondOutcome = outcomeOf(composition.sessionReadSettings(project, second.signal));
+    const secondOutcome = outcomeOf(composition.autoModeKey(classifier, second.signal));
     first.abort(firstEnded);
     expect(await firstOutcome).toEqual({ error: firstEnded });
     second.abort(secondEnded);

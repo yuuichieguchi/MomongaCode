@@ -39,7 +39,7 @@ const gate = (): Gate => {
   return { held: held.promise, entered: entered.promise, enter: () => entered.resolve(), release: () => held.resolve() };
 };
 
-type Held = { boot?: boolean; autoMode?: boolean; displays?: boolean };
+type Held = { boot?: boolean; opening?: boolean; displays?: boolean };
 
 const settings = (given: Partial<ResolvedTuiSettings>): TuiSettingsPort => ({
   initial: { theme: 'auto', notify: 'off', screenReader: false, reducedMotion: true, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true, ...given },
@@ -49,7 +49,7 @@ const settings = (given: Partial<ResolvedTuiSettings>): TuiSettingsPort => ({
 const launch = (options: FakeBackendOptions = {}, screen: FakeScreenSize = TALL, held: Held = {}, tui: Partial<ResolvedTuiSettings> = {}) => {
   const base = fakeBackend(options);
   const boot = gate();
-  const autoMode = gate();
+  const opening = gate();
   const displays = gate();
   let modelReads = 0;
   const backend = {
@@ -59,10 +59,10 @@ const launch = (options: FakeBackendOptions = {}, screen: FakeScreenSize = TALL,
       if (held.boot === true) await boot.held;
       return base.boot();
     },
-    autoModeAvailable: async () => {
-      autoMode.enter();
-      if (held.autoMode === true) await autoMode.held;
-      return base.autoModeAvailable();
+    openSession: async (...args: Parameters<typeof base.openSession>) => {
+      opening.enter();
+      if (held.opening === true) await opening.held;
+      return base.openSession(...args);
     },
     models: async () => {
       modelReads += 1;
@@ -77,10 +77,10 @@ const launch = (options: FakeBackendOptions = {}, screen: FakeScreenSize = TALL,
   );
   const releaseAll = (): void => {
     boot.release();
-    autoMode.release();
+    opening.release();
     displays.release();
   };
-  return { app, backend: base, boot, autoMode, displays, releaseAll };
+  return { app, backend: base, boot, opening, displays, releaseAll };
 };
 
 const rowsOf = (frame: string): string[] => frame.split('\n');
@@ -153,10 +153,9 @@ describe('the first frame written at launch holds the start screen together with
 });
 
 describe('the model line of the start screen follows the phase only', () => {
-  it('while the session opens at launch and its auto-mode answer is held, the start screen is shown with no model line', async () => {
-    const { app, backend, autoMode, releaseAll } = launch({}, TALL, { autoMode: true });
-    await backend.called('openSession');
-    await autoMode.entered;
+  it('while the session-opening call at launch is held, the start screen is shown with no model line', async () => {
+    const { app, opening, releaseAll } = launch({}, TALL, { opening: true });
+    await opening.entered;
     const frame = app.lastFrame() ?? '';
     expect(frame).toContain(VERSION);
     expect(modelLinesOf(frame)).toEqual([]);
@@ -181,11 +180,21 @@ describe('the model line of the start screen follows the phase only', () => {
     const ADDRESS = 'http://127.0.0.1:11434';
     const ollama: LocalServerDetection = { kind: 'ollama', provider: 'ollama', address: ADDRESS, models: [{ id: 'llama3.2:latest', tools: 'yes', ceiling: 131072 }] };
     const { app, backend } = await startPlan({ models: [], accounts: [], detected: [ollama] }, { startup: STARTUP }, TALL);
-    const autoMode = Promise.withResolvers<boolean>();
+    const displays = Promise.withResolvers<void>();
     const asked = Promise.withResolvers<void>();
-    backend.autoModeAvailable = async () => {
+    let opened = false;
+    const openSession = backend.openSession;
+    backend.openSession = async (...args: Parameters<typeof openSession>) => {
+      const session = await openSession(...args);
+      opened = true;
+      return session;
+    };
+    const models = backend.models;
+    backend.models = async () => {
+      if (!opened) return models();
       asked.resolve();
-      return autoMode.promise;
+      await displays.promise;
+      return models();
     };
     await choose(app, 'Use a local server');
     await choose(app, `ollama  ·  ${ADDRESS}`);
@@ -198,7 +207,7 @@ describe('the model line of the start screen follows the phase only', () => {
     expect(frame).toContain(VERSION);
     expect(modelLinesOf(frame)).toEqual(['model: not connected']);
     expect(app.frames.filter((shown) => shown.includes('llama3.2') && shown.includes('model: ollama'))).toEqual([]);
-    autoMode.resolve(false);
+    displays.resolve();
     const ready = await untilFrame(app, (shown) => shown.includes('mode: manual') && shown.includes('model: ollama'));
     expect(ready.split(VERSION)).toHaveLength(2);
     app.unmount();
@@ -323,8 +332,8 @@ describe('a launch-time list in the starting phase is drawn under the start scre
 
 describe('scrollback mode settles nothing before the start screen has its model line', () => {
   it('with a refused warning while the session opens, the start screen is written first, once, with its model line, then the warning', async () => {
-    const { app, autoMode, releaseAll } = launch({ trustItems: { items: [], refused: [REFUSED] } }, { columns: 100, rows: 30, screen: 'scrollback' }, { autoMode: true });
-    await autoMode.entered;
+    const { app, opening, releaseAll } = launch({ trustItems: { items: [], refused: [REFUSED] } }, { columns: 100, rows: 30, screen: 'scrollback' }, { opening: true });
+    await opening.entered;
     const held = app.lastFrame() ?? '';
     expect(held).toContain(VERSION);
     expect(held.indexOf(VERSION)).toBeLessThan(held.indexOf(REFUSED));

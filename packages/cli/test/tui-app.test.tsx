@@ -214,21 +214,8 @@ describe('App run rendering', () => {
 });
 
 describe('App input', () => {
-  it('cycles the permission modes with shift+tab and never offers bypassPermissions to a session that may not use it', async () => {
+  it('cycles the permission modes with shift+tab through auto and never offers bypassPermissions to a session that may not use it', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: manual');
-    app.stdin.write(KEYS.shiftTab);
-    await untilFrame(app, 'mode: acceptEdits');
-    app.stdin.write(KEYS.shiftTab);
-    await untilFrame(app, 'mode: plan');
-    app.stdin.write(KEYS.shiftTab);
-    await untilFrame(app, 'mode: manual');
-    expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:acceptEdits', 'mode:plan', 'mode:manual']);
-    app.unmount();
-  });
-
-  it('includes auto in the cycle only when a classifier is configured', async () => {
-    const { backend, app } = await start({ autoModeAvailable: true });
     await untilFrame(app, 'mode: manual');
     for (const mode of ['acceptEdits', 'plan', 'auto', 'manual']) {
       app.stdin.write(KEYS.shiftTab);
@@ -239,7 +226,7 @@ describe('App input', () => {
   });
 
   it('shows the one-line toast of what each mode does when shift+tab changes it', async () => {
-    const { app } = await start({ autoModeAvailable: true, session: { bypassAllowed: true } });
+    const { app } = await start({ session: { bypassAllowed: true } });
     await untilFrame(app, 'mode: manual');
     for (const mode of ['acceptEdits', 'plan', 'auto', 'bypassPermissions', 'manual'] as const) {
       app.stdin.write(KEYS.shiftTab);
@@ -248,12 +235,14 @@ describe('App input', () => {
     app.unmount();
   });
 
-  it('includes bypassPermissions in the cycle when the session may use it', async () => {
+  it('puts bypassPermissions after auto in the cycle when the session may use it', async () => {
     const { backend, app } = await start({ session: { permissionMode: 'plan', bypassAllowed: true } });
     await untilFrame(app, 'mode: plan');
     app.stdin.write(KEYS.shiftTab);
+    await untilFrame(app, 'mode: auto');
+    app.stdin.write(KEYS.shiftTab);
     await untilFrame(app, 'mode: bypassPermissions');
-    expect(backend.calls).toContain('mode:bypassPermissions');
+    expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:auto', 'mode:bypassPermissions']);
     app.unmount();
   });
 
@@ -333,6 +322,17 @@ describe('App slash commands', () => {
     await type(app, '/mode nonsense', '> /mode nonsense');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'unknown permission mode nonsense');
+    app.unmount();
+  });
+
+  it('/mode auto enters auto mode in a session with no classifier configured', async () => {
+    const { backend, app } = await start();
+    await untilFrame(app, 'mode: manual');
+    await type(app, '/mode auto', '> /mode auto');
+    app.stdin.write(KEYS.enter);
+    await untilFrame(app, 'mode: auto');
+    expect(backend.calls).toContain('mode:auto');
+    expect(app.frames.join('\n')).not.toContain('unknown permission mode');
     app.unmount();
   });
 

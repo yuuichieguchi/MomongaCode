@@ -14,7 +14,7 @@ import { createMapperState, mapChildEvent, mapRunEvent, noticeUpdate } from './e
 import type { ClientFeatures, Effect, MapperState, Phase } from './events.ts';
 import { mcpServersOf } from './mcp-servers.ts';
 import { modeStateOf, selectableModeOf } from './modes.ts';
-import { modelOptionOf, selectableModelOf } from './models.ts';
+import { CLASSIFIER_CONFIG_ID, classifierOptionOf, modelOptionOf, selectableClassifierOf, selectableModelOf } from './models.ts';
 import { promptInputOf } from './prompt-input.ts';
 import { stopReasonOf } from './stop-reason.ts';
 import { createOrderedQueue, createTaskGroup } from './tasks.ts';
@@ -42,7 +42,8 @@ export type AcpDeps = {
   readinessOf(model: string): Promise<Readiness>;
   models(): Promise<ModelViews>;
   environment(): Promise<Record<string, string>>;
-  autoModeAvailable(): Promise<boolean>;
+  classifier(): Promise<string | undefined>;
+  setClassifier(value: string): Promise<void>;
   canonicalCwd(cwd: string): Promise<string>;
   daemonReady(): Promise<void>;
   retryAfterRestore<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T>;
@@ -57,7 +58,6 @@ type BridgeSession = {
   readonly id: string;
   model: string;
   readonly bypassAllowed: boolean;
-  readonly autoAvailable: boolean;
   skills: Promise<SkillsResponse['skills']> | undefined;
   readonly queue: OrderedQueue;
   readonly tasks: TaskGroup;
@@ -230,8 +230,15 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     }
   };
 
-  const configOptionsOf = (listing: ModelListing, session: BridgeSession): SessionConfigOption[] =>
-    listing.kind === 'listed' ? [modelOptionOf(listing.views, session.model)] : [];
+  const optionsOf = async (views: ModelViews, session: BridgeSession): Promise<SessionConfigOption[]> => [modelOptionOf(views, session.model), classifierOptionOf(views, await deps.classifier())];
+
+  const configOptionsOf = async (listing: ModelListing, session: BridgeSession): Promise<SessionConfigOption[]> => (listing.kind === 'listed' ? optionsOf(listing.views, session) : []);
+
+  const sendOptions = async (session: BridgeSession): Promise<void> => {
+    const listing = await listModels();
+    await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'config_option_update', configOptions: await configOptionsOf(listing, session) } });
+    for (const update of unreadableNoticeOf(session, listing)) await peer().notify('session/update', { sessionId: session.id, update });
+  };
 
   const unreadableNoticeOf = (session: BridgeSession, listing: ModelListing): SessionUpdate[] =>
     listing.kind === 'listed'
@@ -318,9 +325,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       case 'model':
         session.queue.enqueue(async () => {
           applyModel(session, effect.model);
-          const listing = await listModels();
-          await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'config_option_update', configOptions: configOptionsOf(listing, session) } });
-          for (const update of unreadableNoticeOf(session, listing)) await peer().notify('session/update', { sessionId: session.id, update });
+          await sendOptions(session);
         });
         return;
       case 'permission':
@@ -399,7 +404,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     await caughtUp.promise;
   };
 
-  const register = (view: SessionView, autoAvailable: boolean): BridgeSession => {
+  const register = (view: SessionView): BridgeSession => {
     const lifetime = new AbortController();
     const failed = (error: unknown): void => {
       deps.report(`session ${view.id} failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -409,7 +414,6 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       id: view.id,
       model: view.model,
       bypassAllowed: view.bypassAllowed,
-      autoAvailable,
       skills: undefined,
       queue: createOrderedQueue(),
       tasks: createTaskGroup(failed),
@@ -476,7 +480,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
   const adoptSession = async (id: string, seen: Readonly<Record<string, number>>): Promise<void> => {
     await deps.daemonReady();
     const view = await deps.runtime.getSession(id);
-    const session = register(view, await deps.autoModeAvailable());
+    const session = register(view);
     await skillsOf(session);
     for (const run of await deps.runtime.listRuns(view.id)) {
       const through = seen[run.id] ?? 0;
@@ -513,9 +517,9 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     await deps.daemonReady();
     const created = await viaRunApi(deps.runtime.createSession({ cwd: params.cwd, env: await deps.environment(), mcpServers, terminalUi: false }));
     const listing = await listModels();
-    const session = register(created.session, await deps.autoModeAvailable());
+    const session = register(created.session);
     announceAfterResponse(session, listing, created.trustNotice === undefined ? [] : [noticeUpdate(clientFeatures(), `${session.id}/trust`, 'warning', created.trustNotice)]);
-    return { sessionId: session.id, modes: modeStateOf({ ...session, permissionMode: created.session.permissionMode }), configOptions: configOptionsOf(listing, session) };
+    return { sessionId: session.id, modes: modeStateOf({ ...session, permissionMode: created.session.permissionMode }), configOptions: await configOptionsOf(listing, session) };
   });
 
   app.onRequest('session/load', async ({ params }) => {
@@ -531,7 +535,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     }
     const view = await viaRunApi(deps.runtime.setMcpServers(existing.id, mcpServers));
     const listing = await listModels();
-    const session = register(view, await deps.autoModeAvailable());
+    const session = register(view);
     try {
       for (const run of await deps.runtime.listRuns(view.id)) await replayRun(session, run);
       await session.queue.settled();
@@ -541,7 +545,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
       throw error;
     }
     announceAfterResponse(session, listing, []);
-    return { modes: modeStateOf({ ...session, permissionMode: view.permissionMode }), configOptions: configOptionsOf(listing, session) };
+    return { modes: modeStateOf({ ...session, permissionMode: view.permissionMode }), configOptions: await configOptionsOf(listing, session) };
   });
 
   app.onRequest('session/set_mode', async ({ params }) => {
@@ -554,10 +558,15 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
   app.onRequest('session/set_config_option', async ({ params }) => {
     const session = sessionOf(params.sessionId);
     const views = await modelViews();
+    if (params.configId === CLASSIFIER_CONFIG_ID) {
+      await deps.setClassifier(selectableClassifierOf(views, await deps.classifier(), { configId: params.configId, value: params.value }));
+      for (const other of sessions.values()) if (other !== session && !other.lifetime.signal.aborted) other.queue.enqueue(() => sendOptions(other));
+      return { configOptions: await optionsOf(views, session) };
+    }
     const model = selectableModelOf(views, { configId: params.configId, value: params.value });
     const view = await viaRunApi(deps.runtime.setModel(session.id, model));
     applyModel(session, view.model);
-    return { configOptions: [modelOptionOf(views, view.model)] };
+    return { configOptions: await optionsOf(views, session) };
   });
 
   app.onRequest('session/prompt', async ({ params, signal }) => {

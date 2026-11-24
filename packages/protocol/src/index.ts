@@ -624,6 +624,7 @@ export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
 export {
   AUTO_MODE_UNAVAILABLE,
+  unknownClassifierMessage,
   CLASSIFIER_CONFIDENCES,
   CLASSIFIER_VERDICTS,
   CLASSIFIER_VERDICT_SCHEMA,

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { INHERITED_CLASSIFIER } from './settings-schema.ts';
 import { askedPaths, endpointHostOf, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import type { PathAsking } from '@momonga/foundation';
 import {
@@ -544,7 +545,7 @@ const resolveReferences = (models: ModelsSettings | undefined, { classifier, mem
     fallback,
     roles,
     billingChanges,
-    classifier: classifier === undefined ? undefined : canonAt('autoMode.classifier', classifier),
+    classifier: classifier === undefined || classifier === INHERITED_CLASSIFIER ? undefined : canonAt('autoMode.classifier', classifier),
     memoryReviewModel: memoryReviewModel === undefined ? undefined : canonAt('memory.autoReviewModel', memoryReviewModel),
   };
 };
