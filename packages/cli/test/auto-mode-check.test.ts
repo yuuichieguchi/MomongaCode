@@ -7,7 +7,7 @@ import { momongaPaths, nodeFileSystem, publishCurrentGeneration } from '@momonga
 import type { MomongaPaths } from '@momonga/foundation';
 import { createFakeKernelLock, createTempDir } from '@momonga/testkit';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { messageOf } from '@momonga/protocol';
+import { messageOf, sessionModelNotConfiguredText } from '@momonga/protocol';
 import { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '@momonga/runtime';
 import { autoModeCheck, autoModeStatus } from '../src/commands/auto-mode.ts';
 import type { AutoModeCheckPorts, AutoModeCheckOptions, AutoModeStatusPorts } from '../src/commands/auto-mode.ts';
@@ -492,5 +492,17 @@ describe('auto-mode status picks the classifier like the check', () => {
   it('with no model configured at all and none named, fails with the no-model sentence', async () => {
     const { ports } = statusPortsFor(userModelsOf({ connections: [] }), undefined);
     await expect(autoModeStatus(ports, { surface: 'cli', signal: NEVER_INTERRUPTED })).rejects.toThrow(messageOf('noModelConnected', 'cli'));
+  });
+
+  it('in the TUI with no classifier named or configured, says the session model is not configured any more when it was removed from settings', async () => {
+    const { ports } = statusPortsFor(userModelsOf({ connections: [LOCAL_CONNECTION], start: WORKER_MODEL }), undefined);
+    await expect(autoModeStatus(ports, { sessionModel: 'p/removed-model', surface: 'tui', signal: NEVER_INTERRUPTED })).rejects.toThrow(sessionModelNotConfiguredText('p/removed-model'));
+  });
+
+  it('in the TUI with a named unknown model, keeps the model-not-configured message with configured choices', async () => {
+    const { ports } = statusPortsFor(userModelsOf({ connections: [LOCAL_CONNECTION], start: WORKER_MODEL }), undefined);
+    await expect(autoModeStatus(ports, { classifier: 'missing-model', sessionModel: PLAIN, surface: 'tui', signal: NEVER_INTERRUPTED })).rejects.toThrow(
+      /The model "missing-model" is not configured\. Configured models:/,
+    );
   });
 });

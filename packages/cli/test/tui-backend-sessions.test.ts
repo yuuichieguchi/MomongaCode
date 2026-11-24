@@ -47,6 +47,7 @@ describe('the session methods of the real TUI backend, against a real runtime (t
     expect((await backend.setMode('acceptEdits')).permissionMode).toBe('acceptEdits');
     expect((await backend.setModel(OTHER_MODEL_ID)).model).toBe(OTHER_MODEL_ID);
     expect(await runtime.client.getSession(session.id)).toMatchObject({ model: OTHER_MODEL_ID, permissionMode: 'acceptEdits' });
+    expect(await backend.session()).toMatchObject({ id: session.id, model: OTHER_MODEL_ID, permissionMode: 'acceptEdits' });
   });
 
   it('offers no session that has no run, resumes one by id, and refuses to continue when no session of the folder has worked', async () => {

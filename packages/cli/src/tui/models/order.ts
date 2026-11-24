@@ -173,10 +173,10 @@ export const runRoleFlow = async (context: ModelsFlowContext): Promise<void> => 
   }
 };
 
-export const runClassifierFlow = async (context: ModelsFlowContext): Promise<void> => {
+export const runClassifierFlow = async (context: ModelsFlowContext): Promise<boolean> => {
   const row = ROLE_ROWS.find((candidate) => candidate.job === 'classifier');
   if (row === undefined) throw new TypeError('the roles hold no classifier row');
-  await chooseRoleModel(context, await openEdit(context), row.job, row.label);
+  return chooseRoleModel(context, await openEdit(context), row.job, row.label);
 };
 
 export const memoryReviewStateOf = (edit: ModelsEdit): MemoryAutoReviewState => {

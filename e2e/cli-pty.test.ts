@@ -5,7 +5,7 @@ import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import { answerTrust, spawnPty, untilRunEnds } from './support/pty.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startUpstream, upstreamModelRef, withStructuredModel, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
@@ -140,5 +140,60 @@ describe('cli: interactive TUI through a pty', () => {
 
     const [row] = readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs');
     expect(row?.status).toBe('RUNNING');
+  });
+
+  it(titleOf('cli-pty-classifier-notice'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const secondModel = 'guard-model';
+    const secondRef = upstreamModelRef(secondModel);
+    const sessionRef = upstreamModelRef('system');
+    await startUpstream(home, { home, script: [textReply('ok')] });
+    writeSettingsFile(home, withStructuredModel(baseSettings(home, sandboxChoiceOf({ home }).kind), secondModel));
+
+    const pty = await spawnPty(home, []);
+    await answerTrust(pty, 'trust');
+    await pty.waitFor({ shows: 'mode: manual', in: 'footer' });
+
+    await pty.type('/mode auto');
+    await pty.key('enter', { until: [{ shows: 'mode: auto', in: 'footer' }, { shows: `auto: classifier ${sessionRef} has not been measured for this version`, in: 'transcript' }] });
+
+    await pty.type('/auto-mode');
+    await pty.key('enter', { until: { shows: 'Auto-mode classifier', in: 'input' } });
+    await pty.key('down', { until: { shows: `› 2. ${secondRef}`, in: 'input' } });
+    await pty.key('enter', { until: { shows: `Use ${secondRef} for the auto-mode classifier?`, in: 'input' } });
+    await pty.key('down', { until: { shows: '› 2. Yes', in: 'input' } });
+    const afterSecond = await pty.key('enter', {
+      until: [
+        { shows: `The auto-mode classifier is now ${secondRef}.`, in: 'transcript' },
+        { shows: `auto: classifier ${secondRef} has not been measured for this version`, in: 'transcript' },
+        { shows: /^>$/, in: 'input' },
+      ],
+    });
+    const transcriptSecond = afterSecond.region('transcript').join('\n').replace(/\s+/g, ' ');
+    expect(transcriptSecond.indexOf(`The auto-mode classifier is now ${secondRef}.`)).toBeLessThan(
+      transcriptSecond.indexOf(`auto: classifier ${secondRef} has not been measured for this version`),
+    );
+
+    await pty.type('/auto-mode');
+    await pty.key('enter', { until: { shows: 'Auto-mode classifier', in: 'input' } });
+    await pty.key('down', { until: { shows: `› 2. ${secondRef}`, in: 'input' } });
+    await pty.key('down', { until: { shows: "› 3. Use the session's model", in: 'input' } });
+    await pty.key('enter', { until: { shows: "Use the session's model for the auto-mode classifier?", in: 'input' } });
+    await pty.key('down', { until: { shows: '› 2. Yes', in: 'input' } });
+    const afterInherit = await pty.key('enter', {
+      until: [
+        { shows: "The auto-mode classifier is now the session's model.", in: 'transcript' },
+        { shows: new RegExp(`The auto-mode classifier is now the session's model\\.[\\s\\S]*auto: classifier ${sessionRef} has not been measured for this version`), in: 'transcript' },
+        { shows: /^>$/, in: 'input' },
+      ],
+    });
+    const transcriptInherit = afterInherit.region('transcript').join('\n').replace(/\s+/g, ' ');
+    const inheritResultPos = transcriptInherit.lastIndexOf("The auto-mode classifier is now the session's model.");
+    const inheritNoticePos = transcriptInherit.lastIndexOf(`auto: classifier ${sessionRef} has not been measured for this version`);
+    expect(inheritResultPos).toBeGreaterThanOrEqual(0);
+    expect(inheritResultPos).toBeLessThan(inheritNoticePos);
+
+    await pty.key('ctrlD', { until: 'Press ctrl+d again to exit' });
+    expect((await pty.key('ctrlD', { until: 'exit' })).status).toEqual({ code: 0, signal: null });
   });
 });

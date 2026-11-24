@@ -1445,6 +1445,7 @@ export function App(props: AppProps) {
         showAutoNotice(session);
       },
       setModel: applyModel,
+      showAutoNotice,
     });
     await ran;
     return true;

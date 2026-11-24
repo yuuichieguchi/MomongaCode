@@ -36,7 +36,8 @@ export const autoModeCommand: SlashCommand = {
   ],
   run: async (args, context) => {
     if (args.trim() === '') {
-      await runClassifierFlow(context);
+      const written = await runClassifierFlow(context);
+      if (written && context.mode === 'auto') context.showAutoNotice(await context.backend.session());
       return;
     }
     const [action, ...rest] = args.split(/\s+/).filter((part) => part !== '');
