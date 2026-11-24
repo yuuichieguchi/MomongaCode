@@ -2,7 +2,7 @@ import { DAEMON_STOPPING_TEXT } from '../src/run/follow.ts';
 import { describe, expect, it } from 'vitest';
 import type { ModelViews, PermissionOption } from '@momonga/protocol';
 import { SESSION, runView } from './fake-backend.ts';
-import { INITIALIZE, MODEL_OPTIONS, MODEL_VIEWS, OTHER_MODEL, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, modelChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
+import { CLASSIFIER_OPTION, CONFIG_OPTIONS, INITIALIZE, MODEL_OPTION, MODEL_OPTIONS, MODEL_VIEWS, OTHER_MODEL, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, modelChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
 import type { EventPayload, Harness } from './acp-harness.ts';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import { DaemonUnreachable, retryAfterRestore } from '../src/run/follow.ts';
@@ -105,6 +105,7 @@ describe('session/new', () => {
           { id: 'manual', name: 'manual', description: 'asks before every file change and command' },
           { id: 'acceptEdits', name: 'acceptEdits', description: 'accepts file edits inside the workspace, asks before commands' },
           { id: 'plan', name: 'plan', description: 'read-only tools, the agent proposes a plan' },
+          { id: 'auto', name: 'auto', description: 'an automatic classifier decides which calls are allowed' },
         ],
       },
       configOptions: [
@@ -115,6 +116,13 @@ describe('session/new', () => {
           type: 'select',
           currentValue: SESSION.model,
           options: MODEL_OPTIONS,
+        },
+        {
+          id: 'classifier',
+          name: 'Auto-mode classifier',
+          type: 'select',
+          currentValue: 'inherit',
+          options: [...MODEL_OPTIONS, { value: 'inherit', name: "Use the session's model" }],
         },
       ],
     });
@@ -137,7 +145,7 @@ describe('session/new', () => {
 
     const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { modes: { availableModes: { id: string }[] } };
 
-    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'bypassPermissions']);
+    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
     await harness.peer.close();
   });
 
@@ -845,7 +853,7 @@ describe('session/set_mode', () => {
     await harness.peer.close();
   });
 
-  it.each([['auto'], ['bypassPermissions'], ['nonsense']])('refuses the mode %s that the session does not offer', async (modeId) => {
+  it.each([['bypassPermissions'], ['nonsense']])('refuses the mode %s that the session does not offer', async (modeId) => {
     const harness = startAgent();
     const sessionId = await open(harness);
 
@@ -865,8 +873,8 @@ describe('session/set_mode', () => {
     await harness.peer.close();
   });
 
-  it('offers auto between plan and bypassPermissions only when a classifier is configured, and applies it', async () => {
-    const harness = startAgent({ autoModeAvailable: async () => true });
+  it('offers auto between plan and bypassPermissions with no classifier configured, and applies it', async () => {
+    const harness = startAgent();
     harness.runtime.session = { ...SESSION, bypassAllowed: true };
     await harness.peer.request('initialize', INITIALIZE);
 
@@ -875,6 +883,30 @@ describe('session/set_mode', () => {
     expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
     expect(resultOf(await harness.peer.request('session/set_mode', { sessionId: result.sessionId, modeId: 'auto' }))).toEqual({});
     expect(harness.runtime.calls).toContain(`setPermissionMode ${result.sessionId} auto`);
+    await harness.peer.close();
+  });
+
+  it('offers auto and applies it when the session may not bypass and no classifier is configured', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+
+    expect(resultOf(await harness.peer.request('session/set_mode', { sessionId, modeId: 'auto' }))).toEqual({});
+    expect(harness.runtime.calls).toContain(`setPermissionMode ${sessionId} auto`);
+    await harness.peer.close();
+  });
+
+  it.each([
+    ['session/new', (sessionId: string) => ({ cwd: SESSION.cwd, mcpServers: [], sessionId })],
+    ['session/load', (sessionId: string) => ({ cwd: SESSION.cwd, mcpServers: [], sessionId })],
+  ] as const)('opens a %s session that starts in auto in auto, with no classifier configured', async (method, paramsOf) => {
+    const harness = startAgent();
+    harness.runtime.session = { ...SESSION, permissionMode: 'auto' };
+    await harness.peer.request('initialize', INITIALIZE);
+
+    const result = resultOf(await harness.peer.request(method, paramsOf(SESSION.id))) as { modes: { currentModeId: string; availableModes: { id: string }[] } };
+
+    expect(result.modes.currentModeId).toBe('auto');
+    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto']);
     await harness.peer.close();
   });
 
@@ -889,15 +921,6 @@ describe('session/set_mode', () => {
 });
 
 describe('model selection', () => {
-  const modelOption = (currentValue: string) => ({
-    id: 'model',
-    name: 'Model',
-    category: 'model',
-    type: 'select',
-    currentValue,
-    options: MODEL_OPTIONS,
-  });
-
   const configUpdates = (harness: Harness) => updatesOf(harness.peer.received).filter((update) => update.sessionUpdate === 'config_option_update');
 
   it('offers the configured models as the model config option of a new session, the current one selected', async () => {
@@ -906,7 +929,7 @@ describe('model selection', () => {
 
     const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { configOptions: unknown };
 
-    expect(result.configOptions).toEqual([modelOption(SESSION.model)]);
+    expect(result.configOptions).toEqual(CONFIG_OPTIONS(SESSION.model));
     await harness.peer.close();
   });
 
@@ -917,7 +940,7 @@ describe('model selection', () => {
 
     const result = resultOf(await harness.peer.request('session/load', { sessionId: SESSION.id, ...NEW_SESSION })) as { configOptions: unknown };
 
-    expect(result.configOptions).toEqual([modelOption(OTHER_MODEL)]);
+    expect(result.configOptions).toEqual(CONFIG_OPTIONS(OTHER_MODEL));
     await harness.peer.close();
   });
 
@@ -974,7 +997,7 @@ describe('model selection', () => {
 
       const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { configOptions: unknown };
 
-      expect(result.configOptions).toEqual([modelOption(SESSION.model)]);
+      expect(result.configOptions).toEqual(CONFIG_OPTIONS(SESSION.model));
       expect(warningTexts(harness)).toEqual([]);
       await harness.peer.close();
     });
@@ -986,7 +1009,7 @@ describe('model selection', () => {
 
     const response = resultOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: OTHER_MODEL }));
 
-    expect(response).toEqual({ configOptions: [modelOption(OTHER_MODEL)] });
+    expect(response).toEqual({ configOptions: CONFIG_OPTIONS(OTHER_MODEL) });
     expect(harness.runtime.calls).toContain(`setModel ${sessionId} ${OTHER_MODEL}`);
     await harness.peer.close();
   });
@@ -998,7 +1021,7 @@ describe('model selection', () => {
     harness.emitSessionEvent(modelChangedFrame(5, OTHER_MODEL, SESSION.model));
     await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'config_option_update');
 
-    expect(configUpdates(harness)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: [modelOption(OTHER_MODEL)] }]);
+    expect(configUpdates(harness)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: CONFIG_OPTIONS(OTHER_MODEL) }]);
     await harness.peer.close();
   });
 
@@ -1010,6 +1033,9 @@ describe('model selection', () => {
     const unknownModel = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'not-a-model' }));
 
     expect(unknownOption.code).toBe(-32602);
+    expect(unknownOption.message).toContain('temperature');
+    expect(unknownOption.message).toContain('model');
+    expect(unknownOption.message).toContain('classifier');
     expect(unknownModel.code).toBe(-32602);
     expect(unknownModel.message).toContain('The model "not-a-model" is not one of the configured models: scripted-model, apple/fm-large.');
     expect(harness.runtime.calls.some((call) => call.startsWith('setModel'))).toBe(false);
@@ -1025,6 +1051,149 @@ describe('model selection', () => {
       code: -32602,
       data: { code: 'model_unavailable' },
     });
+    await harness.peer.close();
+  });
+});
+
+describe('classifier selection', () => {
+  const UNLISTED = 'ollama/not-listed-yet';
+  const configUpdateMessagesTo = (harness: Harness, sessionId: string) =>
+    harness.peer.received.filter(
+      (message) => 'method' in message && message.method === 'session/update' && typeof message.params === 'object' && message.params !== null && 'sessionId' in message.params && message.params.sessionId === sessionId && updatesOf([message])[0]?.sessionUpdate === 'config_option_update',
+    );
+  const configUpdatesTo = (harness: Harness, sessionId: string) => configUpdateMessagesTo(harness, sessionId).map((message) => updatesOf([message])[0]);
+  const openSecond = async (harness: Harness): Promise<string> => {
+    harness.runtime.session = { ...SESSION, id: 'session-second' };
+    const created = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { sessionId: string };
+    return created.sessionId;
+  };
+
+  it('lists a configured classifier the model list does not hold, after the listed models and before inherit, and selects it', async () => {
+    const harness = startAgent();
+    harness.classifier.configured = UNLISTED;
+    await harness.peer.request('initialize', INITIALIZE);
+
+    const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { configOptions: { id: string; currentValue: string; options: { value: string }[] }[] };
+
+    const classifier = result.configOptions.find((option) => option.id === 'classifier');
+    expect(classifier?.options).toEqual([...MODEL_OPTIONS, { value: UNLISTED, name: UNLISTED }, { value: 'inherit', name: "Use the session's model" }]);
+    expect(classifier?.options.map((option) => option.value)).toContain(classifier?.currentValue);
+    await harness.peer.close();
+  });
+
+  it('accepts the configured unlisted classifier and refuses another unlisted value', async () => {
+    const harness = startAgent();
+    harness.classifier.configured = UNLISTED;
+    const sessionId = await open(harness);
+
+    const accepted = resultOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'classifier', value: UNLISTED }));
+    const refused = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'classifier', value: 'ollama/other-unlisted' }));
+
+    expect(accepted).toEqual({
+      configOptions: [
+        MODEL_OPTION(SESSION.model),
+        { ...CLASSIFIER_OPTION(UNLISTED), options: [...MODEL_OPTIONS, { value: UNLISTED, name: UNLISTED }, { value: 'inherit', name: "Use the session's model" }] },
+      ],
+    });
+    expect(refused.code).toBe(-32602);
+    expect(harness.classifier.writes).toEqual([UNLISTED]);
+    await harness.peer.close();
+  });
+
+  it('sends the new classifier option to every other session of the bridge once, and none to the session that set it', async () => {
+    const harness = startAgent();
+    const first = await open(harness);
+    const second = await openSecond(harness);
+
+    await harness.peer.request('session/set_config_option', { sessionId: first, configId: 'classifier', value: OTHER_MODEL });
+    const flushed = await harness.peer.request('session/set_mode', { sessionId: second, modeId: 'plan' });
+
+    expect(configUpdatesTo(harness, second)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: CONFIG_OPTIONS(SESSION.model, OTHER_MODEL) }]);
+    const [update] = configUpdateMessagesTo(harness, second);
+    expect(update === undefined ? -1 : harness.peer.received.indexOf(update)).toBeGreaterThanOrEqual(0);
+    expect(harness.peer.received.indexOf(flushed)).toBeGreaterThan(update === undefined ? Number.MAX_SAFE_INTEGER : harness.peer.received.indexOf(update));
+    expect(configUpdatesTo(harness, first)).toEqual([]);
+    await harness.peer.close();
+  });
+
+  it('sends nothing to any session when the write fails', async () => {
+    const harness = startAgent({
+      setClassifier: async () => {
+        throw new Error('the settings file is locked');
+      },
+    });
+    const first = await open(harness);
+    const second = await openSecond(harness);
+
+    const failure = errorOf(await harness.peer.request('session/set_config_option', { sessionId: first, configId: 'classifier', value: OTHER_MODEL }));
+    await harness.peer.request('session/set_mode', { sessionId: second, modeId: 'plan' });
+
+    expect(failure).toBeDefined();
+    expect(configUpdatesTo(harness, first)).toEqual([]);
+    expect(configUpdatesTo(harness, second)).toEqual([]);
+    await harness.peer.close();
+  });
+
+  const peerRequests = (harness: Harness) => harness.peer.received.filter((message) => typeof message === 'object' && message !== null && 'method' in message && 'id' in message);
+
+  it('selects the configured classifier by its canonical name', async () => {
+    const harness = startAgent();
+    harness.classifier.configured = OTHER_MODEL;
+    await harness.peer.request('initialize', INITIALIZE);
+
+    const result = resultOf(await harness.peer.request('session/new', { cwd: SESSION.cwd, mcpServers: [] })) as { configOptions: unknown };
+
+    expect(result.configOptions).toEqual(CONFIG_OPTIONS(SESSION.model, OTHER_MODEL));
+    await harness.peer.close();
+  });
+
+  it('offers the classifier option again when a session is loaded', async () => {
+    const harness = startAgent();
+    harness.classifier.configured = OTHER_MODEL;
+    await harness.peer.request('initialize', INITIALIZE);
+
+    const result = resultOf(await harness.peer.request('session/load', { sessionId: SESSION.id, cwd: SESSION.cwd, mcpServers: [] })) as { configOptions: unknown };
+
+    expect(result.configOptions).toEqual(CONFIG_OPTIONS(SESSION.model, OTHER_MODEL));
+    await harness.peer.close();
+  });
+
+  it('writes a configured model to the user setting without asking and answers the updated options', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+
+    const response = resultOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'classifier', value: OTHER_MODEL }));
+
+    expect(response).toEqual({ configOptions: CONFIG_OPTIONS(SESSION.model, OTHER_MODEL) });
+    expect(harness.classifier.writes).toEqual([OTHER_MODEL]);
+    expect(harness.runtime.calls.some((call) => call.startsWith('setModel'))).toBe(false);
+    expect(peerRequests(harness)).toEqual([]);
+    await harness.peer.close();
+  });
+
+  it('writes inherit to the user setting when the session model is chosen', async () => {
+    const harness = startAgent();
+    harness.classifier.configured = OTHER_MODEL;
+    const sessionId = await open(harness);
+
+    const response = resultOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'classifier', value: 'inherit' }));
+
+    expect(response).toEqual({ configOptions: CONFIG_OPTIONS(SESSION.model, 'inherit') });
+    expect(harness.classifier.writes).toEqual(['inherit']);
+    expect(peerRequests(harness)).toEqual([]);
+    await harness.peer.close();
+  });
+
+  it('refuses a value that is neither a configured model nor inherit, naming the choices, and writes nothing', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+
+    const failure = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'classifier', value: 'not-a-model' }));
+
+    expect(failure.code).toBe(-32602);
+    expect(failure.message).toContain('not-a-model');
+    expect(failure.message).toContain('scripted-model, apple/fm-large');
+    expect(harness.classifier.writes).toEqual([]);
     await harness.peer.close();
   });
 });

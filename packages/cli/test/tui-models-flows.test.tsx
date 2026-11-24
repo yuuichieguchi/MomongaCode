@@ -7,7 +7,7 @@ import type { TuiBackend } from '../src/tui/backend.ts';
 import { folderTrustFakes } from './fake-backend.ts';
 import { runAddFlow } from '../src/tui/models/add.ts';
 import { runModelsHub } from '../src/tui/models/hub.ts';
-import { runBillingFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from '../src/tui/models/order.ts';
+import { runBillingFlow, runClassifierFlow, runFallbackFlow, runRoleFlow, runStartFlow, runTimeoutsFlow } from '../src/tui/models/order.ts';
 import { ADD_TITLE, HUB_ACTIONS } from '../src/tui/models/texts.ts';
 import { createPlanFlows } from '../src/tui/plan-flows.ts';
 import { runSettingsScreen, settingsFileLines } from '../src/tui/settings-screen.tsx';
@@ -516,5 +516,53 @@ describe('the flows of the Models screen, one per row of 4.9.1', () => {
     const cancelled = flowOf(context, threeModels(), [], { found: (request) => untilAborted(request.signal), cancelPhase: CHECKING, holdHealth: true });
     await runModelsHub(cancelled.context);
     expect(cancelled.picks()).toEqual([]);
+  });
+});
+
+describe("the session's model row of the role lists (chooseRoleModel, shared by /auto-mode and Models for other roles)", () => {
+  const SESSION_ROW = "Use the session's model";
+  const CLASSIFIER_CONFIRM = "Use the session's model for the auto-mode classifier?";
+  const CLASSIFIER_SUMMARY = "The auto-mode classifier is now the session's model.";
+  const ROWS = ['ollama/gemma-3-4b', 'ollama/qwen3.8:27b', 'lmstudio/gemma-3-4b', SESSION_ROW];
+  const withClassifier = () => ({ ...threeModels(), autoMode: { classifier: 'ollama/qwen3.8:27b' } });
+
+  it('on /auto-mode, writes inherit as the classifier when no classifier is configured', async (context) => {
+    const harness = flowOf(context, threeModels(), [{ pick: SESSION_ROW }, YES]);
+    await runClassifierFlow(harness.context);
+    expect(harness.picks()[0]?.rows).toEqual(ROWS);
+    expect(harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title)).toEqual([CLASSIFIER_CONFIRM]);
+    expect(writtenOf(harness).autoMode).toEqual({ classifier: 'inherit' });
+    expect(harness.infos).toEqual([CLASSIFIER_SUMMARY]);
+  });
+
+  it('on /auto-mode, replaces a configured classifier with inherit', async (context) => {
+    const harness = flowOf(context, withClassifier(), [{ pick: SESSION_ROW }, YES]);
+    await runClassifierFlow(harness.context);
+    expect(writtenOf(harness).autoMode).toEqual({ classifier: 'inherit' });
+    expect(harness.infos).toEqual([CLASSIFIER_SUMMARY]);
+  });
+
+  it('on the Auto-mode classifier row of Models for other roles, writes inherit as the classifier', async (context) => {
+    const harness = flowOf(context, withClassifier(), [{ pick: /^Auto-mode classifier/ }, { pick: SESSION_ROW }, YES]);
+    await runRoleFlow(harness.context);
+    expect(harness.picks()[1]?.rows).toEqual(ROWS);
+    expect(harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title)).toEqual([CLASSIFIER_CONFIRM]);
+    expect(writtenOf(harness).autoMode).toEqual({ classifier: 'inherit' });
+    expect(harness.infos).toEqual([CLASSIFIER_SUMMARY]);
+  });
+
+  it.for([
+    ['Summaries', 'compaction', 'summaries', 'Summaries'],
+    ['Reflection', 'reflection', 'reflection', 'Reflection'],
+    ['Analysis', 'analysis', 'analysis', 'Analysis'],
+    ['Subagents', 'subagent', 'subagents', 'Subagents'],
+  ] as const)('on the %s row of Models for other roles, still clears the role', async ([row, job, words, summaryHead], context) => {
+    const roles = { compaction: 'ollama/qwen3.8:27b', reflection: 'ollama/qwen3.8:27b', analysis: 'ollama/qwen3.8:27b', subagent: 'ollama/qwen3.8:27b' };
+    const harness = flowOf(context, threeModels({ roles }), [{ pick: new RegExp(`^${row}`) }, { pick: SESSION_ROW }, YES]);
+    await runRoleFlow(harness.context);
+    expect(harness.picks().filter((pick) => pick.rows.join() === 'No,Yes').map((pick) => pick.title)).toEqual([`Use the session's model for ${words}?`]);
+    const { [job]: _cleared, ...kept } = roles as Record<string, string>;
+    expect(writtenOf(harness).models['roles']).toEqual(kept);
+    expect(harness.infos).toEqual([`${summaryHead} now uses the session's model.`]);
   });
 });

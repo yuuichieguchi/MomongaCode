@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { appendPermissionRule, approveProjectItems, autoFitKeyOf, readClassifierProbeKeys, ConfigError, settingsWriterPorts, systemFileLockPorts, credentialNamesOf, loadSettings, stripCredentialEnv } from '@momonga/config';
+import { INHERITED_CLASSIFIER, appendPermissionRule, approveProjectItems, autoFitKeyOf, readClassifierProbeKeys, ConfigError, settingsWriterPorts, systemFileLockPorts, credentialNamesOf, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, FlagApproval, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import { createBinaryHashCache, createHeldHostReadings, createHostExec, hostPaths, settledOrAborted } from '@momonga/foundation';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -26,6 +26,7 @@ export type SettingsComposition = {
   settings: SettingsPort;
   sessionCreateSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   sessionReadSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
+  autoModeKey(model: string, signal: AbortSignal): Promise<AutoFitKey | undefined>;
   keptLayers(use: SettingsUse): KeptLayers;
   recordFlagApprovals(projectDir: string, approved: readonly FlagApproval[], signal: AbortSignal): Promise<void>;
   envFor(session: Pick<Session, 'env' | 'cwd'>, signal: AbortSignal): Promise<ToolEnv>;
@@ -46,9 +47,8 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
 
   const classifierKeyPorts = { exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
 
-  const autoFitKeyFor = async (resolved: ResolvedSettings, signal: AbortSignal): Promise<AutoFitKey | undefined> => {
-    const { classifier } = resolved.models;
-    if (classifier === undefined) return undefined;
+  const autoFitKeyFor = async (resolved: ResolvedSettings, classifier: string, signal: AbortSignal): Promise<AutoFitKey | undefined> => {
+    if (!resolved.models.chains.has(classifier)) return undefined;
     const probeKeys = await readClassifierProbeKeys(resolved.models, classifier, { ...classifierKeyPorts, signal });
     const result = autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE, probeKeys);
     return result.kind === 'known' ? result.key : undefined;
@@ -90,11 +90,10 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     return loaded.settings.sandboxNetwork;
   };
 
-  const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult, signal: AbortSignal): Promise<SessionCreateSettings> => {
+  const sessionSettingsFrom = (snapshot: UserSnapshot, loaded: LoadSettingsResult): SessionCreateSettings => {
     const { permissions } = loaded.settings;
     const origin = permissions.defaultModeOrigin;
     const { classifier } = snapshot.settings.models;
-    const autoModeKey = await autoFitKeyFor(snapshot.settings, signal);
     return {
       ...(permissions.defaultMode === undefined ? {} : { defaultMode: permissions.defaultMode }),
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),
@@ -102,19 +101,20 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
       credentialEnvNames: credentialNamesOf(snapshot.settings),
       ...(hasCredentialRules(credentialRulesOf(snapshot.settings.credentials)) ? { credentials: credentialRulesOf(snapshot.settings.credentials) } : {}),
       ...(classifier === undefined ? {} : { autoModeClassifier: classifier }),
-      ...(autoModeKey === undefined ? {} : { autoModeKey }),
     };
   };
 
   const sessionCreateSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const snapshot = await admitUserSnapshot(signal);
-    return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit', signal)), signal);
+    return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit', signal)));
   };
 
   const sessionReadSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const snapshot = await userSnapshot(signal);
-    return sessionSettingsFrom(snapshot, await settingsFor(cwd, snapshot, 'read', signal), signal);
+    return sessionSettingsFrom(snapshot, await settingsFor(cwd, snapshot, 'read', signal));
   };
+
+  const autoModeKey = async (model: string, signal: AbortSignal): Promise<AutoFitKey | undefined> => autoFitKeyFor((await userSnapshot(signal)).settings, model, signal);
 
   const sessionEnvOf = async (session: Pick<Session, 'env' | 'cwd'>, snapshot: UserSnapshot, signal: AbortSignal): Promise<Record<string, string>> => {
     const { settings: sessionSettings } = await loadSessionSettings(session.cwd, snapshot, signal);
@@ -138,7 +138,10 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
     context: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.context,
     tools: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.tools,
     output: async (session, signal) => (await currentSessionSettings(session.cwd, signal)).settings.output,
-    autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
+    autoModeClassifier: () => {
+      const written = takeUserSnapshot().settings.autoMode?.classifier;
+      return written === INHERITED_CLASSIFIER ? undefined : written;
+    },
     appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ lock, ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
     trusted: async (session, signal) => (await settledOrAborted(store.trust.decisionAsked(session.cwd, signal), signal)).decision === 'trusted',
     approvedProjectAgents: async (session, signal) => {
@@ -151,5 +154,5 @@ export const createSettingsComposition = ({ home, platform, cache, store, lock }
   const recordFlagApprovals = (projectDir: string, approved: readonly FlagApproval[], signal: AbortSignal): Promise<void> =>
     approveProjectItems(home, projectDir, approved.map((item) => ({ kind: 'mcp', name: item.name, config: item.config, digest: item.digest })), settingsWriterPorts(home, { lock, ports: systemFileLockPorts, signal }));
 
-  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, recordFlagApprovals, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, sandboxNetwork: sessionSandboxNetwork, trustOracle, admitted };
+  return { settings, sessionCreateSettings, sessionReadSettings, autoModeKey, keptLayers, recordFlagApprovals, envFor, referenceEnvFor, takeUserSnapshot, userSnapshot, admitUserSnapshot, loadSessionSettings, sandboxNetwork: sessionSandboxNetwork, trustOracle, admitted };
 };

@@ -1,4 +1,5 @@
-import { hostPaths } from '@momonga/foundation';
+import { editModelsSettings, loadUserModels } from '@momonga/config';
+import { hostPaths, resolveLayoutLocks } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
@@ -7,7 +8,7 @@ import { daemonReadyBoundMs, ensureDaemon, restoreDaemon, ensureSessionDaemon } 
 import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { DaemonUnreachable, followRun, followSession, retryAfterRestore } from '../run/follow.ts';
-import { autoModeConfigured, connectSessionRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { connectSessionRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { HANDOVER_FORMAT, recordFileOf } from '../handover/record.ts';
 import { adoptionOf, refuseStart } from '../handover/start.ts';
@@ -34,7 +35,10 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     readinessOf: async (model) => agentReadiness(await gateway.capabilitiesOf(model)),
     models: async () => listingViewsOf(await gateway.models()),
     environment: () => environmentSnapshot(ports, interrupt),
-    autoModeAvailable: () => autoModeConfigured(ports, interrupt),
+    classifier: async () => (await loadUserModels({ home: paths.home, signal: interrupt })).autoModeClassifier,
+    setClassifier: async (model) => {
+      await editModelsSettings(paths.home, paths.settingsFile, [{ kind: 'setClassifier', model }], { lock: resolveLayoutLocks(paths).mechanism, signal: interrupt });
+    },
     canonicalCwd: (cwd) => hostPaths(interrupt).canonicalPath(cwd),
     daemonReady: async () => {
       await ensureSessionDaemon(ports, paths, { signal: interrupt, ...(onNewer === undefined ? {} : { onNewer }) });

@@ -57,36 +57,39 @@ describe('mcpServersOf', () => {
 });
 
 describe('modeStateOf', () => {
-  it('offers default, acceptEdits and plan, and never auto', () => {
-    const state = modeStateOf({ permissionMode: 'acceptEdits', bypassAllowed: false, autoAvailable: false });
+  it('offers manual, acceptEdits, plan and auto', () => {
+    const state = modeStateOf({ permissionMode: 'acceptEdits', bypassAllowed: false });
 
     expect(state.currentModeId).toBe('acceptEdits');
-    expect(state.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan']);
+    expect(state.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto']);
     for (const mode of state.availableModes) expect(mode.description).toBeTruthy();
   });
 
-  it('adds auto after plan when a classifier is configured', () => {
-    const state = modeStateOf({ permissionMode: 'auto', bypassAllowed: false, autoAvailable: true });
+  it('opens in auto with no classifier configured', () => {
+    const state = modeStateOf({ permissionMode: 'auto', bypassAllowed: false });
 
     expect(state.currentModeId).toBe('auto');
     expect(state.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto']);
   });
 
-  it('adds bypassPermissions when the session may use it', () => {
-    expect(modeStateOf({ permissionMode: 'manual', bypassAllowed: true, autoAvailable: false }).availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'bypassPermissions']);
+  it('adds bypassPermissions after auto when the session may use it', () => {
+    expect(modeStateOf({ permissionMode: 'manual', bypassAllowed: true }).availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
   });
 });
 
 describe('selectableModeOf', () => {
   it('returns a mode the session offers', () => {
-    expect(selectableModeOf({ bypassAllowed: false, autoAvailable: false }, 'plan')).toBe('plan');
-    expect(selectableModeOf({ bypassAllowed: true, autoAvailable: false }, 'bypassPermissions')).toBe('bypassPermissions');
+    expect(selectableModeOf({ bypassAllowed: false }, 'plan')).toBe('plan');
+    expect(selectableModeOf({ bypassAllowed: true }, 'bypassPermissions')).toBe('bypassPermissions');
+  });
+
+  it('returns auto with no classifier configured', () => {
+    expect(selectableModeOf({ bypassAllowed: false }, 'auto')).toBe('auto');
   });
 
   it.each([
-    [{ bypassAllowed: false, autoAvailable: false }, 'bypassPermissions'],
-    [{ bypassAllowed: true, autoAvailable: false }, 'auto'],
-    [{ bypassAllowed: true, autoAvailable: false }, 'nonsense'],
+    [{ bypassAllowed: false }, 'bypassPermissions'],
+    [{ bypassAllowed: true }, 'nonsense'],
   ])('refuses %j %s with invalid params', (source, modeId) => {
     expect(() => selectableModeOf(source, modeId)).toThrow(RequestError);
     expect(() => selectableModeOf(source, modeId)).toThrow(`the mode ${modeId} is not available in this session`);
@@ -113,7 +116,7 @@ describe('availableCommandsOf', () => {
 
 describe('the ACP mode ids are the mode names (design 8.2 row 15)', () => {
   it('lists manual first, named Manual, with the descriptions of the one table', () => {
-    const state = modeStateOf({ permissionMode: 'manual', bypassAllowed: true, autoAvailable: true });
+    const state = modeStateOf({ permissionMode: 'manual', bypassAllowed: true });
     expect(state.currentModeId).toBe('manual');
     expect(state.availableModes).toEqual([
       { id: 'manual', name: 'manual', description: 'asks before every file change and command' },
@@ -125,7 +128,7 @@ describe('the ACP mode ids are the mode names (design 8.2 row 15)', () => {
   });
 
   it('refuses the mode id default like any unknown id', () => {
-    expect(selectableModeOf({ bypassAllowed: true, autoAvailable: true }, 'manual')).toBe('manual');
-    expect(() => selectableModeOf({ bypassAllowed: true, autoAvailable: true }, 'default')).toThrow('the mode default is not available in this session');
+    expect(selectableModeOf({ bypassAllowed: true }, 'manual')).toBe('manual');
+    expect(() => selectableModeOf({ bypassAllowed: true }, 'default')).toThrow('the mode default is not available in this session');
   });
 });

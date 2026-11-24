@@ -67,11 +67,6 @@ export const environmentSnapshot = async (ports: Pick<CliPorts, 'env' | 'home'>,
   return stripCredentialEnv(defined, credentialEnvNames(settings.models), settings.credentials).env;
 };
 
-export const autoModeConfigured = async (ports: Pick<CliPorts, 'env' | 'home'>, signal: AbortSignal): Promise<boolean> => {
-  const { settings } = await loadUserSettings({ env: ports.env, home: ports.home, signal });
-  return settings.autoMode?.classifier !== undefined;
-};
-
 export const connectRuntime = (ports: Pick<CliPorts, 'clock' | 'personCapability'>, paths: MomongaPaths): RuntimeClient =>
   createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime'), clock: ports.clock, personCapability: () => ports.personCapability(paths.home), surface: 'cli' });
 

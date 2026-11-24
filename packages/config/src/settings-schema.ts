@@ -5,6 +5,8 @@ import { DEFAULT_UPDATE_STALL_TIMEOUT_MS, defaultContextSettings, defaultMemoryS
 import { DEFAULT_AUTO_UPDATES, DEFAULT_CAPTURE_MESSAGE_CONTENT, DEFAULT_ENABLE_ALL_PROJECT_MCP_SERVERS, DEFAULT_NETWORK_ENVIRONMENT, DEFAULT_PLAINTEXT_TOKEN_FILES, DEFAULT_RETENTION_DAYS, FIVE_MINUTES_MS, defaultSandboxSetting, defaultTuiSettings } from './setting-defaults.ts';
 import type { ManagedDeclarableField } from '@momonga/protocol';
 
+export const INHERITED_CLASSIFIER = 'inherit';
+
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis', 'subagent'] as const;
 
 export const BASH_ON_TIMEOUT = ['background', 'kill'] as const;
@@ -517,7 +519,7 @@ export const SETTINGS_SCHEMA = {
     hooks: { type: 'object', additionalProperties: { type: 'array', items: HOOK_MATCHER_GROUP_SCHEMA } },
     autoMode: {
       type: 'object',
-      properties: { classifier: { type: 'string', minLength: 1 } },
+      properties: { classifier: { type: 'string', minLength: 1, default: INHERITED_CLASSIFIER } },
       additionalProperties: false,
     },
     enabledMcpjsonServers: {

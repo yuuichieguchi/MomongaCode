@@ -119,7 +119,7 @@ Tool outputs (including file contents), attached files, and `!` command outputs 
 
 ## Auto mode
 
-In `auto` mode, a classifier model decides whether to approve a tool call without prompting you. Because the proposed call comes from the working model and the user request may contain injected text, the classifier is instructed to treat both as data—but classifiers can still be misled. Deny rules, protected secret paths, and the OS sandbox remain your hard boundaries.
+In `auto` mode, a classifier model decides whether to approve a tool call without prompting you. Because the proposed call comes from the working model and the user request may contain injected text, the classifier is instructed to treat both as data—but classifiers can still be misled. By default, the session's model judges every call of a run, including the calls its subagents propose; that model may be the one that proposed the call, and it can be misled the same way. Set a separate classifier model with `/auto-mode` or `autoMode.classifier` in the user settings. Deny rules, protected secret paths, and the OS sandbox remain your hard boundaries.
 
 ## Git and forge credentials
 

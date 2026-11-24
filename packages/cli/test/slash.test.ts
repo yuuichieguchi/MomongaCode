@@ -97,7 +97,6 @@ describe('built-in commands', () => {
       toast: () => undefined,
       refreshConnection: async () => undefined,
       bypassAllowed: false,
-      autoAvailable: false,
       commands: BUILTIN_SLASH_COMMANDS,
       backend: fakeBackend(backendOptions),
       startRun: async () => undefined,
@@ -126,18 +125,25 @@ describe('built-in commands', () => {
   };
   const run = (name: string, args: string, context: SlashContext) => createSlashRegistry(BUILTIN_SLASH_COMMANDS).find(name)?.run(args, context);
 
-  it('/mode without an argument offers the selectable modes in a picker, without auto when no classifier is configured', async () => {
+  it('/mode without an argument offers every selectable mode in a picker, auto included', async () => {
     const asked: string[][] = [];
     const { context } = contextOf({ mode: 'plan', overlays: { ...unusedOverlays, choose: async (request) => void asked.push(request.rows.map((row) => row.label.split('  ')[0] ?? '')) } });
     await run('mode', '', context);
-    expect(asked).toEqual([['manual', 'acceptEdits', 'plan']]);
+    expect(asked).toEqual([['manual', 'acceptEdits', 'plan', 'auto']]);
   });
 
-  it('/mode offers auto when a classifier is configured', async () => {
+  it('/mode without an argument offers bypassPermissions after auto when the session may use it', async () => {
     const asked: string[][] = [];
-    const { context } = contextOf({ autoAvailable: true, overlays: { ...unusedOverlays, choose: async (request) => void asked.push(request.rows.map((row) => row.label.split('  ')[0] ?? '')) } });
+    const { context } = contextOf({ bypassAllowed: true, overlays: { ...unusedOverlays, choose: async (request) => void asked.push(request.rows.map((row) => row.label.split('  ')[0] ?? '')) } });
     await run('mode', '', context);
-    expect(asked).toEqual([['manual', 'acceptEdits', 'plan', 'auto']]);
+    expect(asked).toEqual([['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']]);
+  });
+
+  it('/mode auto sets the auto mode', async () => {
+    const { context, infos, modes } = contextOf();
+    await run('mode', 'auto', context);
+    expect(modes).toEqual(['auto']);
+    expect(infos).toEqual([]);
   });
 
   it('/mode sets a known mode and refuses an unknown one', async () => {
@@ -145,7 +151,7 @@ describe('built-in commands', () => {
     await run('mode', 'acceptEdits', context);
     await run('mode', 'turbo', context);
     expect(modes).toEqual(['acceptEdits']);
-    expect(infos).toEqual(['unknown permission mode turbo; available: manual, acceptEdits, plan']);
+    expect(infos).toEqual(['unknown permission mode turbo; available: manual, acceptEdits, plan, auto']);
   });
 
   it('/mode shows the description table of the modes and no permission mode toast', async () => {
@@ -164,7 +170,7 @@ describe('built-in commands', () => {
     await run('mode', 'manual', context);
     await run('mode', 'default', context);
     expect(modes).toEqual(['manual']);
-    expect(infos).toEqual(['unknown permission mode default; available: manual, acceptEdits, plan']);
+    expect(infos).toEqual(['unknown permission mode default; available: manual, acceptEdits, plan, auto']);
   });
 
   it('/model switches to a listed model by its typed name and refuses one that is not configured with the sentence of the resolver', async () => {
@@ -229,7 +235,6 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     toast: () => undefined,
     refreshConnection: async () => undefined,
     bypassAllowed: false,
-    autoAvailable: false,
     commands: DEFAULT_SLASH_COMMANDS,
     backend,
     info: (text) => void infos.push(text),

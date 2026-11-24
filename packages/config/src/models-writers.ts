@@ -25,7 +25,7 @@ import { endpointKeyOf } from './probe-record-key.ts';
 import { providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
 import type { ProviderNameInput } from './provider-name.ts';
 import { serverRegistryOf } from './server-registry.ts';
-import { MODEL_ROLES } from './settings-schema.ts';
+import { INHERITED_CLASSIFIER, MODEL_ROLES } from './settings-schema.ts';
 import { assertSettings } from './settings.ts';
 import type { ConnectionDraft, ModelEntry, ModelRole } from './settings.ts';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -439,6 +439,10 @@ const setClassifier = (document: Json, state: State, operation: Extract<ModelsOp
       delete written['classifier'];
       dropIfEmpty(document, 'autoMode');
     }
+    return { summary: () => `The auto-mode classifier is now ${SESSION_MODEL_TEXT}.` };
+  }
+  if (model === INHERITED_CLASSIFIER) {
+    recordAt(document, 'autoMode')['classifier'] = INHERITED_CLASSIFIER;
     return { summary: () => `The auto-mode classifier is now ${SESSION_MODEL_TEXT}.` };
   }
   recordAt(document, 'autoMode')['classifier'] = requireConfigured(state, model);

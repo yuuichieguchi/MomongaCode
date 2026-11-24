@@ -13,7 +13,7 @@ describe('auto mode classifier verdict', () => {
     expect(allowed.map((entry) => classifierAllows({ ...entry, rationale: '' }))).toEqual([true, false, false, false, false]);
   });
 
-  it('carries the unavailable code', () => {
-    expect(AUTO_MODE_UNAVAILABLE.code).toBe('mode_unavailable');
+  it('carries the unavailable code and no sentence that says auto needs a classifier model', () => {
+    expect(AUTO_MODE_UNAVAILABLE).toEqual({ code: 'mode_unavailable' });
   });
 });

@@ -70,7 +70,6 @@ const slashContext = () => {
     toast: () => undefined,
     refreshConnection: async () => undefined,
     bypassAllowed: false,
-    autoAvailable: false,
     commands: DEFAULT_SLASH_COMMANDS,
     backend: fakeBackend(),
     info: (text: string) => void infos.push(text),

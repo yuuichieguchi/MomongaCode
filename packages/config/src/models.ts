@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { INHERITED_CLASSIFIER } from './settings-schema.ts';
 import { askedPaths, endpointHostOf, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import type { PathAsking } from '@momonga/foundation';
 import {
@@ -537,7 +538,7 @@ const resolveReferences = (models: ModelsSettings | undefined, classifier: strin
   const billingChanges = (models?.billingChanges ?? []).map((change, index) =>
     change.model === undefined ? { from: change.from, to: change.to } : { from: change.from, to: change.to, model: canonAt(`models.billingChanges[${index}].model`, change.model) },
   );
-  return { start, fallback, roles, billingChanges, classifier: classifier === undefined ? undefined : canonAt('autoMode.classifier', classifier) };
+  return { start, fallback, roles, billingChanges, classifier: classifier === undefined || classifier === INHERITED_CLASSIFIER ? undefined : canonAt('autoMode.classifier', classifier) };
 };
 
 const checkBillingChanges = (changes: readonly BillingChange[], source: string): void => {

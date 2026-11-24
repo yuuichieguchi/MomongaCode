@@ -169,8 +169,8 @@ describe('--model <model>', () => {
     expect(evalContext).toContain('--model <model> the model every session of a live run uses');
     expect(check).toContain('check [options] [model]');
     expect(check).toContain('--agent <model> the model that drives the runs and proposes the calls the classifier judges');
-    expect(autoMode).toContain('run the auto-mode dataset against a classifier model in temporary homes and store the measurement; auto mode stays selectable whatever it shows');
-    expect(autoMode).toContain('show the stored measurement of a classifier model for this version');
+    expect(autoMode).toContain('run the auto-mode dataset against a classifier model in temporary homes and store the measurement; with no model named it measures the configured classifier, else the agent model; auto mode stays selectable whatever it shows');
+    expect(autoMode).toContain('show the stored measurement of a classifier model for this version; with no model named it shows the configured classifier, else the model new sessions start with');
     expect(improve).toContain('--model <model> the model of the benchmark sessions and of the analysis and candidate calls');
     expect(models).toContain('list the configured models with the capabilities they declare');
     expect([root, evalContext, autoMode, check, improve, models].join(' ')).not.toMatch(/alias/i);

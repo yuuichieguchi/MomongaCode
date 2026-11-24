@@ -45,6 +45,9 @@
       "packages/gateway/src/plan/session.ts": {
         "limit": 1
       },
+      "packages/protocol/src/auto-mode.ts": {
+        "gateway": 1
+      },
       "packages/protocol/src/model-settings.ts": {
         "limit": 1
       },
@@ -557,7 +560,7 @@
         "project": 1
       },
       "packages/runtime/src/service/app.ts": {
-        "gateway": 3
+        "gateway": 2
       },
       "packages/runtime/src/service/delegation.ts": {
         "limit": 1

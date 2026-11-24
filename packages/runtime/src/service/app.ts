@@ -6,7 +6,7 @@ import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
 import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
-import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf, approvalEndingText, SURFACES, SURFACE_HEADER } from '@momonga/protocol';
+import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, unknownClassifierMessage, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf, approvalEndingText, SURFACES, SURFACE_HEADER } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
 import type { IssueReference, Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RetentionStatusView, RunStatus, RunTraceView, CompactSessionRequest, Surface } from '@momonga/protocol';
@@ -103,7 +103,6 @@ export type SessionCreateSettings = {
   credentialEnvNames: readonly string[];
   credentials?: CredentialRules;
   autoModeClassifier?: string;
-  autoModeKey?: AutoFitKey;
 };
 
 export type RunAppDeps = {
@@ -116,6 +115,7 @@ export type RunAppDeps = {
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
+  autoModeKey: (model: string, signal: AbortSignal) => Promise<AutoFitKey | undefined>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
@@ -230,11 +230,8 @@ const requestedModelOf = (text: string, views: ModelViews): string => {
 const displayIn = (views: ModelViews, model: string): string => displayMapOf(views).get(model) ?? model;
 
 const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, views: ModelViews): void => {
-  if (mode === 'auto') {
-    if (autoModeClassifier === undefined) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
-    if (resolveStoredModelRef(storedModelRef(autoModeClassifier), views) === undefined) {
-      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier model "${autoModeClassifier}" is not known to the gateway`);
-    }
+  if (mode === 'auto' && autoModeClassifier !== undefined && resolveStoredModelRef(storedModelRef(autoModeClassifier), views) === undefined) {
+    throw conflict(AUTO_MODE_UNAVAILABLE.code, unknownClassifierMessage(autoModeClassifier));
   }
   if (mode === 'bypassPermissions' && !bypassAllowed) {
     throw modeNotAllowed('this session may not use the bypassPermissions mode');
@@ -364,8 +361,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const view = toSessionView(store, listedSessionOf(session.id));
     if (session.permissionMode !== 'auto') return view;
     const settings = loaded ?? (await sessionReadSettingsOf(session.cwd, signal));
-    if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
-    const autoClassifier = await readAutoClassifierView({ model: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
+    const model = settings.autoModeClassifier ?? session.model;
+    const key = await deps.autoModeKey(model, signal);
+    if (key === undefined) return view;
+    const autoClassifier = await readAutoClassifierView({ model, key, directory: autoFitDirectoryOf(deps.home) });
     return { ...view, autoClassifier };
   };
 

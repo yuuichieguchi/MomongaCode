@@ -31,6 +31,8 @@ describe('cli: interactive TUI through a pty', () => {
 
     await pty.key('shiftTab', { until: { shows: 'mode: acceptEdits', in: 'footer' } });
     await pty.key('shiftTab', { until: { shows: 'mode: plan', in: 'footer' } });
+    const entered = await pty.key('shiftTab', { until: [{ shows: 'mode: auto', in: 'footer' }, { shows: 'measured for this version', in: 'transcript' }] });
+    expect(entered.region('transcript').join('\n').replace(/\s+/g, ' ')).toMatch(/auto: classifier \S+ has not been measured for this version/);
     await pty.key('shiftTab', { until: { shows: 'mode: manual', in: 'footer' } });
 
     await pty.type('change the greeting');
@@ -100,6 +102,7 @@ describe('cli: interactive TUI through a pty', () => {
 
     await pty.type('/mode plan');
     await pty.key('enter', { until: { shows: 'mode: plan', in: 'footer' } });
+    await pty.key('shiftTab', { until: { shows: 'mode: auto', in: 'footer' } });
     await pty.key('shiftTab', { until: { shows: 'mode: manual', in: 'footer' } });
 
     await pty.type('line one\\');

@@ -285,7 +285,6 @@ export function App(props: AppProps) {
   const [editor, setEditor] = useState<EditorState>(emptyEditor());
   const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? DEFAULT_PERMISSION_MODE);
   const [bypassAllowed, setBypassAllowed] = useState(false);
-  const [autoAvailable, setAutoAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
   const [sessionModel, setSessionModel] = useState<string | undefined>(undefined);
@@ -651,7 +650,6 @@ export function App(props: AppProps) {
     setSessionEffort(session.effort);
     setSessionOutputStyle(session.outputStyle);
     setBypassAllowed(session.bypassAllowed);
-    setAutoAvailable(await backend.autoModeAvailable());
     const configured = (await readDisplays()).has(session.model);
     unconfiguredModel.current = !configured;
     sessionEffortRef.current = session.effort;
@@ -703,7 +701,7 @@ export function App(props: AppProps) {
     prompts.flow(work).catch(reportFlowError);
   };
 
-  const switchModel = async (chosen: string, effort: ReasoningEffort | undefined): Promise<string> => {
+  const switchModel = async (chosen: string, effort: ReasoningEffort | undefined): Promise<SessionView> => {
     const session = await backend.setModel(chosen, effort);
     modelChosen(store);
     sessionModelRef.current = session.model;
@@ -714,14 +712,15 @@ export function App(props: AppProps) {
     await readDisplays();
     endMeasuring();
     void backend.model().then(showModel, modelUnread);
-    return session.model;
+    return session;
   };
 
-  const noteModelSwitch = async (model: string, previous: string | undefined): Promise<void> => {
+  const noteModelSwitch = async (model: string, previous: string | undefined, switched: SessionView | undefined): Promise<void> => {
     const name = shownModel(model);
     const shown = shownEffort(await backend.models(), model, sessionEffortRef.current);
     const named = shown === undefined ? name : modelWithEffort(name, effortLine(shown, 'short'));
     note(busyRef.current ? `model: ${named}; the run that is working keeps ${previous === undefined ? previous : shownModel(previous)}, the next run uses ${name}` : `model: ${named}; applies from the next run`);
+    if (switched !== undefined) showAutoNotice(switched);
   };
 
   const changeSessionModel = <T,>(work: () => Promise<T>, signal = new AbortController().signal): Promise<T> =>
@@ -730,7 +729,8 @@ export function App(props: AppProps) {
   const applyModel = (chosen: string, effort?: ReasoningEffort): Promise<void> =>
     changeSessionModel(async () => {
       const previous = sessionModelRef.current;
-      await noteModelSwitch(await switchModel(chosen, effort), previous);
+      const switched = await switchModel(chosen, effort);
+      await noteModelSwitch(switched.model, previous, switched);
     });
 
   const rememberProfiles = (listed: PlanAccountsResponse): void => {
@@ -745,27 +745,31 @@ export function App(props: AppProps) {
         await openSession(chosen);
         return;
       }
-      await noteModelSwitch(await switchModel(chosen, undefined), previous);
+      const switched = await switchModel(chosen, undefined);
+      await noteModelSwitch(switched.model, previous, switched);
     }, signal));
   };
 
   const switchModelThen = async (chosen: string, effort: ReasoningEffort | undefined, then: () => Promise<void>): Promise<void> => {
     overlayPorts.closeScreen();
-    const { model, previous } = await runCancellable((signal) => changeSessionModel(async () => {
+    const { model, previous, switched } = await runCancellable((signal) => changeSessionModel(async (): Promise<{ model: string; previous: string | undefined; switched: SessionView | undefined }> => {
       const previous = sessionModelRef.current;
-      if (previous !== undefined) return { model: await switchModel(chosen, effort), previous };
+      if (previous !== undefined) {
+        const switched = await switchModel(chosen, effort);
+        return { model: switched.model, previous, switched };
+      }
       await openSession(chosen, effort);
-      return { model: chosen, previous };
+      return { model: chosen, previous, switched: undefined };
     }, signal));
     const failure = await then().then(
       () => undefined,
       (error: unknown) => ({ error }),
     );
     if (failure === undefined) {
-      await noteModelSwitch(model, previous);
+      await noteModelSwitch(model, previous, switched);
       return;
     }
-    await noteModelSwitch(model, previous).then(
+    await noteModelSwitch(model, previous, switched).then(
       () => Promise.reject(failure.error),
       () => Promise.reject(failure.error),
     );
@@ -1366,7 +1370,6 @@ export function App(props: AppProps) {
       toast: (text) => view.showToast(text),
       refreshConnection,
       bypassAllowed,
-      autoAvailable,
       commands: slash.list(),
       backend,
       info: note,
@@ -1499,7 +1502,7 @@ export function App(props: AppProps) {
 
   const cycleMode = (): void => {
     backend
-      .setMode(nextMode({ current: mode, bypassAllowed, autoAvailable }))
+      .setMode(nextMode({ current: mode, bypassAllowed }))
       .then((session) => {
         setModeState(session.permissionMode);
         view.showToast(modeToastText(session.permissionMode));

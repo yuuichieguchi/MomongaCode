@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
 import { DECLARED_CREDENTIAL, MODEL_ID, OTHER_MODEL_ID, SERVICE_PID, SERVICE_VERSION, STARTED_AT, START_MS, expectError, expectSchema, startService } from './helpers.ts';
 
 const SECRET = 'hunter2-value';
@@ -246,11 +245,15 @@ describe('session permission mode rules', () => {
     expect(session).toMatchObject({ permissionMode: 'bypassPermissions', bypassAllowed: true });
   });
 
-  it('rejects auto with 409 mode_unavailable', async () => {
+  it('accepts auto at creation and by PATCH when no classifier model is configured', async () => {
     const env = await startService();
-    const response = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'auto' } });
-    expectError(response, 409, AUTO_MODE_UNAVAILABLE.code);
-    expect(response.json).toMatchObject({ error: { message: AUTO_MODE_UNAVAILABLE.message } });
+    const created = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'auto' } });
+    expect(created.status).toBe(201);
+    expect(created.json.session.permissionMode).toBe('auto');
+    const other = await env.createSession();
+    const patched = await env.http('PATCH', `/v1/sessions/${other.id}`, { body: { permissionMode: 'auto' } });
+    expect(patched.status).toBe(200);
+    expect(patched.json.session.permissionMode).toBe('auto');
   });
 
   it('accepts auto at creation and by PATCH when a known classifier model is configured', async () => {
@@ -268,8 +271,13 @@ describe('session permission mode rules', () => {
     const env = await startService();
     env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: 'missing-model' });
     const response = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'auto' } });
-    expectError(response, 409, AUTO_MODE_UNAVAILABLE.code);
-    expect(response.json).toMatchObject({ error: { message: expect.stringContaining('missing-model') } });
+    expectError(response, 409, 'mode_unavailable');
+    expect(response.json).toMatchObject({ error: { message: 'the auto mode classifier model "missing-model" is not known to the gateway' } });
+    const other = await env.createSession();
+    const patched = await env.http('PATCH', `/v1/sessions/${other.id}`, { body: { permissionMode: 'auto' } });
+    expectError(patched, 409, 'mode_unavailable');
+    expect(patched.json).toMatchObject({ error: { message: 'the auto mode classifier model "missing-model" is not known to the gateway' } });
+    expect(env.store.getSession(other.id)?.permissionMode).toBe('manual');
   });
 
   it('rejects an unknown mode with 400', async () => {
@@ -345,9 +353,10 @@ describe('session PATCH', () => {
     const env = await startService();
     const session = await env.createSession();
     expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'bypassPermissions' } }), 403, 'mode_not_allowed');
+    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: 'missing-model' });
     const autoResponse = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'auto' } });
-    expectError(autoResponse, 409, AUTO_MODE_UNAVAILABLE.code);
-    expect(autoResponse.json).toMatchObject({ error: { message: AUTO_MODE_UNAVAILABLE.message } });
+    expectError(autoResponse, 409, 'mode_unavailable');
+    expect(autoResponse.json).toMatchObject({ error: { message: 'the auto mode classifier model "missing-model" is not known to the gateway' } });
     expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'plan', extra: true } }), 400, 'invalid_request');
     expectError(await env.http('PATCH', '/v1/sessions/ses_missing', { body: { permissionMode: 'plan' } }), 404, 'not_found');
     expect(env.store.getSession(session.id)?.permissionMode).toBe('manual');

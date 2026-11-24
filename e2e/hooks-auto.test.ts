@@ -12,7 +12,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient, framesOfType, personCapabilityOfHome } from './support/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
-import { baseSettings, startStack, upstreamModelRef, withClassifierModel } from './support/stack.ts';
+import { UPSTREAM_MODEL_REF, baseSettings, startStack, upstreamModelRef, withClassifierModel, withInheritedClassifier, withStructuredSessionModel } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '../packages/runtime/src/memory/reflection-bound.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait } from './support/wait.ts';
@@ -99,6 +99,35 @@ describe('hooks and auto mode against real processes', () => {
       await runtime.close();
     }
   });
+
+  const sessionModelJudges = async (configure: (settings: Record<string, unknown>) => Record<string, unknown>): Promise<void> => {
+    const home = await createE2eHome();
+    const target = path.join(home.project, 'allowed.txt');
+    const stack = await startStack({ home, settings: configure({ models: baseSettings(home, 'none')['models'] }), script: [writeCall(target), verdictReply('safe', 'high'), textReply('written')] });
+    const runtime = createRuntimeClient(home);
+    try {
+      const { session } = await runtime.createSession({ permissionMode: 'auto' });
+      expect(session.permissionMode).toBe('auto');
+      expect(session.model).toBe(UPSTREAM_MODEL_REF);
+      const runId = (await runtime.createRun(session.id, 'Write the file')).run.id;
+      const frames = await runToEnd(runtime, runId);
+      expect(frames.at(-1)?.data['to']).toBe('COMPLETED');
+      expect(framesOfType(frames, 'tool.permission.requested')).toEqual([]);
+      expect(framesOfType(frames, 'tool.permission.classified').map((frame) => frame.data)).toMatchObject([
+        { outcome: 'allow', model: UPSTREAM_MODEL_REF, verdict: 'safe', confidence: 'high' },
+      ]);
+      expect(fs.readFileSync(target, 'utf8')).toBe('written\n');
+      const requests = chatCompletions(stack.fake);
+      expect(requests).toHaveLength(3);
+      expect(JSON.stringify(requests[1]?.body)).toContain('<proposed_tool_call>');
+    } finally {
+      await runtime.close();
+    }
+  };
+
+  it(titleOf('auto-session-model'), { timeout: E2E_TEST_TIMEOUT_MS }, () => sessionModelJudges(withStructuredSessionModel));
+
+  it(titleOf('auto-inherit'), { timeout: E2E_TEST_TIMEOUT_MS }, () => sessionModelJudges(withInheritedClassifier));
 
   it(titleOf('auto-fallback'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();

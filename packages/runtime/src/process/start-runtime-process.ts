@@ -781,6 +781,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           return admittedSettings;
         },
         sessionReadSettings: settingsComposition.sessionReadSettings,
+        autoModeKey: settingsComposition.autoModeKey,
         skills: skillsPort,
         agents: agentsPort,
         permissionRules: (session, requestSignal) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session, requestSignal),

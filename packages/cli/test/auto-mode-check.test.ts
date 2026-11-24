@@ -7,9 +7,10 @@ import { momongaPaths, nodeFileSystem, publishCurrentGeneration } from '@momonga
 import type { MomongaPaths } from '@momonga/foundation';
 import { createFakeKernelLock, createTempDir } from '@momonga/testkit';
 import type { PublicRunEvent } from '@momonga/protocol';
+import { messageOf } from '@momonga/protocol';
 import { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '@momonga/runtime';
-import { autoModeCheck } from '../src/commands/auto-mode.ts';
-import type { AutoModeCheckPorts, AutoModeCheckOptions } from '../src/commands/auto-mode.ts';
+import { autoModeCheck, autoModeStatus } from '../src/commands/auto-mode.ts';
+import type { AutoModeCheckPorts, AutoModeCheckOptions, AutoModeStatusPorts } from '../src/commands/auto-mode.ts';
 import type { ContextHostEffects, ContextRuntime, ContextLiveInput } from '../src/eval/context-host.ts';
 import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_MODEL, PLAN_TARGET, PRODUCT_WRITTEN_PLAN_CONNECTION, absentGatewaySocket, listingEntry, modelsFailureOn, serveModelsListing, productWrittenPlanModels } from './fake-models-listing.ts';
 import { userModelsOf } from './user-models.ts';
@@ -240,13 +241,37 @@ describe('auto-mode check over the embedded dataset', () => {
     expect(output.join('')).toContain('did not pass');
   });
 
-  it('with no classifier named or configured, refuses with the command and the setting that give one', async () => {
+  it('with no classifier named or configured, measures the model of --agent as the classifier', async () => {
     const state = fake();
-    const { ports } = portsFor(state.effects);
-    const { configuredClassifier: _configured, ...unconfigured } = ports;
-    await expect(autoModeCheck({ ...unconfigured, configuredClassifier: undefined }, { agent: WORKER, signal: NEVER_INTERRUPTED })).rejects.toThrow(
-      'no classifier model: name one with momonga auto-mode check <model>, or set autoMode.classifier in the user settings (/config in a session)',
-    );
+    const { ports, output, home } = portsFor(state.effects);
+    await autoModeCheck({ ...ports, configuredClassifier: undefined }, { agent: WORKER, signal: NEVER_INTERRUPTED });
+    expect(output.join('')).toContain(`auto-mode check: classifier ${WORKER_MODEL}, agent ${WORKER_MODEL}, ${AUTO_MODE_RUNS} runs`);
+    expect(output.join('')).not.toContain('no classifier model');
+    expect(recordsIn(home)).toEqual([expect.objectContaining({ key: expect.objectContaining({ classifier: expect.stringContaining(`"model":"${WORKER}"`) }), agentModel: WORKER_MODEL })]);
+  });
+
+  it('with no classifier named or configured and no --agent, measures the model new sessions start with as the classifier and the agent', async () => {
+    const state = fake();
+    const { ports, output, home } = portsFor(state.effects);
+    const startingWithGuard = userModelsOf({ connections: [LOCAL_CONNECTION], start: GUARD_MODEL });
+    await autoModeCheck({ ...ports, models: startingWithGuard, configuredClassifier: undefined }, { signal: NEVER_INTERRUPTED });
+    expect(output.join('')).toContain(`auto-mode check: classifier ${GUARD_MODEL}, agent ${GUARD_MODEL}, ${AUTO_MODE_RUNS} runs`);
+    expect(recordsIn(home)).toEqual([expect.objectContaining({ key: expect.objectContaining({ classifier: expect.stringContaining(`"model":"${GUARD}"`) }), agentModel: GUARD_MODEL })]);
+  });
+
+  it('with a classifier configured and no classifier named, measures the configured one, not the agent', async () => {
+    const state = fake();
+    const { ports, output } = portsFor(state.effects);
+    await autoModeCheck(ports, { agent: WORKER, signal: NEVER_INTERRUPTED });
+    expect(output.join('')).toContain(`auto-mode check: classifier ${GUARD_MODEL}, agent ${WORKER_MODEL}, ${AUTO_MODE_RUNS} runs`);
+  });
+
+  it('with no model configured at all and none named, fails with the no-model sentence and opens no home', async () => {
+    const state = fake();
+    const { ports, home } = portsFor(state.effects);
+    await expect(autoModeCheck({ ...ports, models: userModelsOf({ connections: [] }), configuredClassifier: undefined }, { signal: NEVER_INTERRUPTED })).rejects.toThrow(messageOf('noModelConnected', 'cli'));
+    expect(state.roots.size).toBe(0);
+    expect(recordsIn(home)).toEqual([]);
   });
 
   it('defaults the classifier to the configured autoMode.classifier', async () => {
@@ -421,5 +446,51 @@ describe('auto-mode check with a plan model relays through the gateway of the ga
     expect((failure as Error).message).toBe(expected.message);
     expect(state.roots.size).toBe(0);
     expect(recordsIn(home)).toEqual([]);
+  });
+});
+
+describe('auto-mode status picks the classifier like the check', () => {
+  const statusPortsFor = (models: UserModels, configuredClassifier: string | undefined): { ports: AutoModeStatusPorts; output: string[] } => {
+    const home = createTempDir();
+    homes.push(home);
+    const output: string[] = [];
+    return { ports: { models, configuredClassifier, home, platform: process.platform, write: (text) => void output.push(text) }, output };
+  };
+
+  it('shows the stored measurement of the named classifier', async () => {
+    const { ports, output } = statusPortsFor(userModels(), undefined);
+    const outcome = await autoModeStatus(ports, { classifier: GUARD, surface: 'cli', signal: NEVER_INTERRUPTED });
+    expect(outcome).toEqual({ measurement: 'not_measured' });
+    expect(output.join('')).toContain(`auto: classifier ${GUARD_MODEL} has not been measured for this version`);
+  });
+
+  it('shows the stored measurement of the configured classifier when none is named', async () => {
+    const { ports, output } = statusPortsFor(userModelsOf({ connections: [LOCAL_CONNECTION], start: WORKER_MODEL }), GUARD_MODEL);
+    await autoModeStatus(ports, { surface: 'cli', signal: NEVER_INTERRUPTED });
+    expect(output.join('')).toContain(`auto: classifier ${GUARD_MODEL} has not been measured for this version`);
+  });
+
+  it('with no classifier named or configured, shows the stored measurement of the model new sessions start with', async () => {
+    const { ports, output } = statusPortsFor(userModelsOf({ connections: [LOCAL_CONNECTION], start: GUARD_MODEL }), undefined);
+    const outcome = await autoModeStatus(ports, { surface: 'cli', signal: NEVER_INTERRUPTED });
+    expect(outcome).toEqual({ measurement: 'not_measured' });
+    expect(output.join('')).toContain(`auto: classifier ${GUARD_MODEL} has not been measured for this version`);
+  });
+
+  it('with no classifier named or configured, shows the stored measurement of the session model the TUI passes', async () => {
+    const { ports, output } = statusPortsFor(userModelsOf({ connections: [LOCAL_CONNECTION], start: GUARD_MODEL }), undefined);
+    await autoModeStatus(ports, { sessionModel: PLAIN, surface: 'tui', signal: NEVER_INTERRUPTED });
+    expect(output.join('')).toContain(`auto: classifier p/${PLAIN} has not been measured for this version`);
+  });
+
+  it('with a classifier configured, shows it even when the TUI passes its session model', async () => {
+    const { ports, output } = statusPortsFor(userModelsOf({ connections: [LOCAL_CONNECTION] }), GUARD_MODEL);
+    await autoModeStatus(ports, { sessionModel: PLAIN, surface: 'tui', signal: NEVER_INTERRUPTED });
+    expect(output.join('')).toContain(`auto: classifier ${GUARD_MODEL} has not been measured for this version`);
+  });
+
+  it('with no model configured at all and none named, fails with the no-model sentence', async () => {
+    const { ports } = statusPortsFor(userModelsOf({ connections: [] }), undefined);
+    await expect(autoModeStatus(ports, { surface: 'cli', signal: NEVER_INTERRUPTED })).rejects.toThrow(messageOf('noModelConnected', 'cli'));
   });
 });

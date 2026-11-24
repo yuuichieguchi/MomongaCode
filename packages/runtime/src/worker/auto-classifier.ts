@@ -1,6 +1,6 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, defineProductSchema, jsonReplyInstructions, readJsonReply, sha256Hex } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputReserveFor, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputReserveFor, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, unknownClassifierMessage } from '@momonga/protocol';
 import type { CallTiming, ClassifierVerdict, CreateResponseBody, ModelView, ModelViews, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -12,6 +12,7 @@ import { ceilingOf, streamAdmitted, unpaidMessage, withAdmission } from './admit
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { outputBoundOf } from './output-bound.ts';
+import { parentPinsOf } from './pins.ts';
 import { elapsedMsSince } from '../service/timers.ts';
 
 const CLASSIFIER_TASK = [
@@ -66,8 +67,21 @@ type Outcome = {
 
 const asked = (event: Outcome['event']): Outcome => ({ outcome: 'ask', event });
 
-export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: number): AutoClassifier => {
+const typedViewOf = (text: string, views: ModelViews): ModelView | undefined => {
+  const resolution = resolveTypedModelRef(typedModelText(text), views);
+  return resolution.kind === 'found' ? resolution.model : undefined;
+};
+
+type Designation = { name: string; resolve: (views: ModelViews) => ModelView | undefined };
+
+const designationOf = (ctx: ClaimContext): Designation => {
   const configured = ctx.options.settings.autoModeClassifier();
+  if (configured !== undefined) return { name: configured, resolve: (views) => typedViewOf(configured, views) };
+  const rootModel = parentPinsOf(ctx.options.store, rootRunIdOf(ctx)).model;
+  return { name: rootModel, resolve: (views) => resolveStoredModelRef(storedModelRef(rootModel), views) };
+};
+
+export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: number): AutoClassifier => {
   const { gateway } = ctx.options;
   const judge = async (request: AutoClassifierRequest, view: ModelView, views: ModelViews): Promise<Outcome> => {
     const classifier = view.canon;
@@ -142,24 +156,21 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
     classify: async (request) => {
       const recorded = ctx.journal.state.pendingCalls[request.callId]?.classification;
       if (recorded?.subjectDigest === request.subjectDigest) return recorded.outcome;
+      const designation = designationOf(ctx);
       let result: Outcome;
-      if (configured === undefined) {
-        result = asked({ failure: 'no classifier model is configured: set autoMode.classifier in the user settings, or run /auto-mode and choose one' });
-      } else {
-        let classifier: string | undefined;
-        try {
-          const { views } = await gateway.listing({ signal: ctx.control.signal });
-          const resolution = resolveTypedModelRef(typedModelText(configured), views);
-          if (resolution.kind === 'found') {
-            classifier = resolution.model.canon;
-            result = await judge(request, resolution.model, views);
-          } else {
-            result = asked({ failure: AUTO_MODE_UNAVAILABLE.message });
-          }
-        } catch (error) {
-          if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError) || (await retireDecisionOf(error, ctx.options.role)) === 'retire-yield') throw error;
-          result = asked({ ...(classifier === undefined ? {} : { model: classifier }), failure: `${error.code}: ${error.message}` });
+      let classifier: string | undefined;
+      try {
+        const { views } = await gateway.listing({ signal: ctx.control.signal });
+        const view = designation.resolve(views);
+        if (view === undefined) {
+          result = asked({ failure: unknownClassifierMessage(designation.name) });
+        } else {
+          classifier = view.canon;
+          result = await judge(request, view, views);
         }
+      } catch (error) {
+        if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError) || (await retireDecisionOf(error, ctx.options.role)) === 'retire-yield') throw error;
+        result = asked({ ...(classifier === undefined ? {} : { model: classifier }), failure: `${error.code}: ${error.message}` });
       }
       ctx.journal.append([
         ...(result.spend === undefined ? [] : [result.spend]),

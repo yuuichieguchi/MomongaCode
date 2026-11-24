@@ -415,6 +415,18 @@ export const MODEL_OPTIONS = [
   { value: OTHER_MODEL, name: 'apple/fm-large' },
 ];
 
+export const MODEL_OPTION = (currentValue: string) => ({ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue, options: MODEL_OPTIONS });
+
+export const CLASSIFIER_OPTION = (currentValue: string) => ({
+  id: 'classifier',
+  name: 'Auto-mode classifier',
+  type: 'select',
+  currentValue,
+  options: [...MODEL_OPTIONS, { value: 'inherit', name: "Use the session's model" }],
+});
+
+export const CONFIG_OPTIONS = (model: string, classifier = 'inherit') => [MODEL_OPTION(model), CLASSIFIER_OPTION(classifier)];
+
 export type Harness = {
   readonly bridge: AcpBridge;
   readonly runtime: FakeRuntime;
@@ -424,6 +436,7 @@ export type Harness = {
   readonly sessionStreams: readonly FollowSessionRequest[];
   scripts: Map<string, RunScript>;
   contextWindows: Map<string, number>;
+  readonly classifier: { configured: string | undefined; readonly writes: string[] };
   emitSessionEvent(frame: RunEventFrame): void;
   failSessionStream(error: Error): void;
 };
@@ -437,6 +450,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?
   const sessionStreams: FollowSessionRequest[] = [];
   const failures: ((error: Error) => void)[] = [];
   let nextEventId = 1;
+  const classifier: { configured: string | undefined; readonly writes: string[] } = { configured: undefined, writes: [] };
   runtime.modeChanged = (mode) => {
     const request = sessionStreams.at(-1);
     if (request === undefined) throw new Error('the session event stream is not open');
@@ -460,7 +474,11 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?
     },
     readinessOf: async () => ({ state: 'ready' }),
     environment: async () => ({ HOME: '/h' }),
-    autoModeAvailable: async () => false,
+    classifier: async () => classifier.configured,
+    setClassifier: async (value) => {
+      classifier.writes.push(value);
+      classifier.configured = value === 'inherit' ? undefined : value;
+    },
     canonicalCwd: async (cwd) => cwd,
     daemonReady: async () => undefined,
     retryAfterRestore: (operation) => operation(),
@@ -493,6 +511,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?
     sessionStreams,
     scripts,
     contextWindows,
+    classifier,
     emitSessionEvent: (frame) => {
       const request = sessionStreams.at(-1);
       if (request === undefined) throw new Error('the session event stream is not open');

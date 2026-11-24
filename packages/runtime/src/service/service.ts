@@ -11,7 +11,7 @@ import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER }
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RetentionStatusView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import type { PermissionRule } from '@momonga/config';
+import type { AutoFitKey, PermissionRule } from '@momonga/config';
 import { asError } from '../process/as-error.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
@@ -59,6 +59,7 @@ export type RunServiceOptions = {
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
+  autoModeKey: (model: string, signal: AbortSignal) => Promise<AutoFitKey | undefined>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
@@ -175,6 +176,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     modelCapabilities: options.modelCapabilities,
     sessionCreateSettings: options.sessionCreateSettings,
     sessionReadSettings: options.sessionReadSettings,
+    autoModeKey: options.autoModeKey,
     skills: options.skills,
     agents: options.agents,
     permissionRules: options.permissionRules,

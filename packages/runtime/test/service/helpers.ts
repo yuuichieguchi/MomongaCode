@@ -117,6 +117,8 @@ export type FakePorts = {
   modelListing: () => Promise<{ views: ModelViews; start: string | null }>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
+  unkeyedModels: Set<string>;
+  autoModeKey: (model: string, signal: AbortSignal) => Promise<{ classifier: string; codeDigest: string; datasetDigest: string } | undefined>;
 };
 
 export const createFakePorts = (): FakePorts => {
@@ -127,6 +129,7 @@ export const createFakePorts = (): FakePorts => {
   const listed: string[] = [MODEL_ID, OTHER_MODEL_ID];
   const start: { model: string | null | undefined } = { model: undefined };
   const shown: { views?: ModelViews } = {};
+  const unkeyedModels = new Set<string>();
   const settingsOf = (cwd: string): SessionCreateSettingsResult => {
     const real = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
     const entry = settingsByCwd.get(real) ?? {};
@@ -162,6 +165,8 @@ export const createFakePorts = (): FakePorts => {
       settingsCalls.push(cwd);
       return settingsOf(cwd);
     },
+    unkeyedModels,
+    autoModeKey: async (model) => (unkeyedModels.has(model) ? undefined : { classifier: `fake|${model}`, codeDigest: 'fake-code-digest', datasetDigest: 'fake-dataset-digest' }),
   };
 };
 
@@ -596,6 +601,7 @@ export const serviceOptions = (
   },
   sessionCreateSettings: base.ports.sessionCreateSettings,
   sessionReadSettings: base.ports.sessionReadSettings,
+  autoModeKey: base.ports.autoModeKey,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   permissionRules: overrides.permissionRules ?? (async () => []),

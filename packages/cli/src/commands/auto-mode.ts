@@ -38,7 +38,7 @@ export type AutoModeCheckOutcome = { measurement: 'passed' | 'did_not_pass' | 'u
 
 export type AutoModeStatusPorts = { models: UserModels; configuredClassifier: string | undefined; home: string; platform: NodeJS.Platform; write(text: string): void };
 
-export type AutoModeStatusOptions = { classifier?: string; surface: AutoModeSurface; signal: AbortSignal };
+export type AutoModeStatusOptions = { classifier?: string; sessionModel?: string; surface: AutoModeSurface; signal: AbortSignal };
 
 export type AutoModeStatusOutcome = { measurement: AutoClassifierView['measurement'] };
 
@@ -49,17 +49,17 @@ const typedModelOf = (models: UserModels, text: string): string => {
   return resolution.model.canon;
 };
 
-const classifierOf = (models: UserModels, configured: string | undefined, named: string | undefined): string => {
-  if (named !== undefined) return typedModelOf(models, named);
-  if (configured === undefined) throw new AutoModeCheckError('no classifier model: name one with momonga auto-mode check <model>, or set autoMode.classifier in the user settings (/config in a session)');
-  return configured;
-};
-
-const agentOf = (models: UserModels, named: string | undefined): string => {
-  if (named !== undefined) return typedModelOf(models, named);
+const startModelOf = (models: UserModels): string => {
   if (models.resolved.start === undefined) throw new AutoModeCheckError(messageOf('noModelConnected', 'cli'));
   return models.resolved.start;
 };
+
+const classifierOf = (models: UserModels, configured: string | undefined, named: string | undefined, sessionModel: () => string): string => {
+  if (named !== undefined) return typedModelOf(models, named);
+  return configured ?? sessionModel();
+};
+
+const agentOf = (models: UserModels, named: string | undefined): string => (named === undefined ? startModelOf(models) : typedModelOf(models, named));
 
 const displayOf = (models: UserModels, canon: string): string => displayMapOf(models.resolved.views).get(canon) ?? canon;
 
@@ -85,8 +85,8 @@ const progressOf = (dataset: GoldenDataset, write: (text: string) => void): ((ca
 export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoModeCheckOptions): Promise<AutoModeCheckOutcome> => {
   const { signal } = options;
   signal.throwIfAborted();
-  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier);
   const agent = agentOf(ports.models, options.agent);
+  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier, () => agent);
   const classifierName = displayOf(ports.models, classifier);
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
   const key = await classifierKeyOf(ports.models, classifier, ports.effects.platform, signal);
@@ -142,7 +142,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
 };
 
 export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoModeStatusOptions): Promise<AutoModeStatusOutcome> => {
-  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier);
+  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier, () => (options.sessionModel === undefined ? startModelOf(ports.models) : typedModelOf(ports.models, options.sessionModel)));
   const key = await classifierKeyOf(ports.models, classifier, ports.platform, options.signal);
   const view = await readAutoFitView(autoFitDirectoryOf(ports.home), classifier, key);
   ports.write(`${autoModeNotice({ view, surface: options.surface, shownModel: displayOf(ports.models, view.model) })}\n`);
