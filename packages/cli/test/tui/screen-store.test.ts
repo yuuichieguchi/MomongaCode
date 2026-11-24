@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
+import type { BannerModel } from '../../src/tui/startup.tsx';
 import { appendEntry, foldEvent, sessionTokens, subagentEnded, subagentStarted } from '../../src/tui/transcript.ts';
 import { eventOf, fold, foldChild, plainOf, seeded, storeOf, ROW_RENDERERS, ROW_SCHEDULE } from './screen-fakes.ts';
 
@@ -10,6 +11,7 @@ vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers, ROW_SCHEDULE);
 
 const call = { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Read', kind: 'read', title: 'Read /a', rawInput: {} };
+const bannerOf = (model: BannerModel) => ({ kind: 'banner' as const, banner: { config: { version: '1', home: '/h' }, model, cwd: '/h', notices: [], figure: true } });
 const delta = (itemId: string, text: string) => ({ type: 'agent.message.delta', attempt: 0, itemId, text });
 
 describe('the transcript store', () => {
@@ -64,6 +66,41 @@ describe('the transcript store', () => {
     expect([store.settledAt(0), store.settledAt(1)]).toEqual([true, false]);
     storeOf([{ type: 'tool.completed', callId: 'c1', status: 'completed', output: '' }, delta('a', 'x')], store);
     expect([store.settledAt(1), store.settledAt(2)]).toEqual([true, false]);
+  });
+
+  it('settles nothing while the banner has not read its model line, and settles as before once it has', () => {
+    const store = createTranscriptStore();
+    appendEntry(store, bannerOf({ kind: 'unread' }), 'banner');
+    appendEntry(store, { kind: 'notice', level: 'warning', text: 'refused' });
+    appendEntry(store, { kind: 'info', text: 'later' });
+    expect([store.settledAt(0), store.settledAt(1), store.settledAt(2)]).toEqual([false, false, false]);
+    store.change('banner', () => bannerOf({ kind: 'not-connected', login: false }));
+    expect([store.settledAt(0), store.settledAt(1), store.settledAt(2)]).toEqual([true, true, true]);
+  });
+
+  it('settles nothing in a held view whose banner had not read its model line, even after the live banner reads it', () => {
+    const store = createTranscriptStore();
+    appendEntry(store, bannerOf({ kind: 'unread' }), 'banner');
+    appendEntry(store, { kind: 'info', text: 'later' });
+    store.hold();
+    store.change('banner', () => bannerOf({ kind: 'connected', name: 'a' }));
+    const shown = store.shown();
+    expect([shown.settledAt(0), shown.settledAt(1)]).toEqual([false, false]);
+    expect([store.settledAt(0), store.settledAt(1)]).toEqual([true, true]);
+    store.release();
+    expect([shown.settledAt(0), shown.settledAt(1)]).toEqual([true, true]);
+  });
+
+  it('settles the read banner of a held view once a later entry exists, as before', () => {
+    const store = createTranscriptStore();
+    appendEntry(store, bannerOf({ kind: 'not-connected', login: true }), 'banner');
+    store.hold();
+    expect(store.shown().settledAt(0)).toBe(false);
+    store.release();
+    appendEntry(store, { kind: 'info', text: 'later' });
+    store.hold();
+    expect([store.shown().settledAt(0), store.shown().settledAt(1)]).toEqual([true, true]);
+    store.release();
   });
 
   it('sums the tokens of the session over its runs and adds the live run', () => {
