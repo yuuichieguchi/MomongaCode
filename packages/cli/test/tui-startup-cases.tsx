@@ -123,11 +123,40 @@ export const startupCases = (forceColor: 'set' | 'cleared'): void => {
   });
 
   it('says that no model is connected on the model line', () => {
-    expect(textLines(config(), { kind: 'not-connected', login: true }, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected  (use /login)', '~/p']);
+    expect(textLines(config(), { kind: 'not-connected', login: true }, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected  (use /login)', '', '~/p']);
   });
 
   it('names no command on the model line before the person can type one', () => {
-    expect(textLines(config(), { kind: 'not-connected', login: false }, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected', '~/p']);
+    expect(textLines(config(), { kind: 'not-connected', login: false }, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected', '', '~/p']);
+  });
+
+  it.each([
+    ['unread', { kind: 'unread' }, ['MomongaCode v1.2.3', '', '', '~/p']],
+    ['not connected before the person can type', { kind: 'not-connected', login: false }, ['MomongaCode v1.2.3', 'model: not connected', '', '~/p']],
+    ['not connected with the /login pointer', { kind: 'not-connected', login: true }, ['MomongaCode v1.2.3', 'model: not connected  (use /login)', '', '~/p']],
+    ['connected before its capabilities are read', { kind: 'connected', name: 'scripted-model' }, ['MomongaCode v1.2.3', 'model: scripted-model', '', '~/p']],
+    ['connected with its effort', { kind: 'connected', name: 'scripted-model', effort: { kind: 'sent', level: 'medium' } }, ['MomongaCode v1.2.3', 'model: scripted-model', 'effort: medium', '~/p']],
+  ] as const)('holds four text lines at fixed places for a model that is %s', (_name, model, expected) => {
+    expect(textLines(config(), model, '/Users/ada/p')).toEqual(expected);
+  });
+
+  it.each([
+    ['with the figure', 80],
+    ['without the figure', 38],
+  ] as const)('draws the same number of rows with the folder on the same row for every model kind %s', (_name, columns) => {
+    const models = [
+      { kind: 'unread' },
+      { kind: 'not-connected', login: false },
+      { kind: 'not-connected', login: true },
+      { kind: 'connected', name: 'scripted-model' },
+      { kind: 'connected', name: 'scripted-model', effort: { kind: 'sent', level: 'medium' } },
+    ] as const;
+    const drawn = models.map((model) => bannerRows({ config: config(), model, cwd: '/Users/ada/p', notices: [], figure: true }, columns));
+    expect(drawn.map((rows) => rows.some((row) => row.text.includes('∩')))).toEqual(models.map(() => columns === 80));
+    expect(drawn.map((rows) => rows.length)).toEqual(models.map(() => drawn[0]?.length));
+    const folderRows = drawn.map((rows) => rows.findIndex((row) => row.text.includes('~/p')));
+    expect(folderRows).toEqual(models.map(() => 4));
+    if (columns !== 80) expect(drawn.map((rows) => rows.length)).toEqual(models.map(() => 6));
   });
 
   it('drops the art, rather than wrapping it, below the width its own size and the text need', async () => {
