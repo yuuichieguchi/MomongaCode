@@ -9,6 +9,7 @@ export type RunNotifier = {
   subscribe(listener: () => void): Unsubscribe;
   wakeAll(): void;
   subscriberCount(): number;
+  watchedSessionIds(): string[];
 };
 
 type Registry = Map<string, Set<() => void>>;
@@ -72,5 +73,6 @@ export const createRunNotifier = (): RunNotifier => {
       fire(listeners);
     },
     subscriberCount: () => watching,
+    watchedSessionIds: () => [...bySession.keys()],
   };
 };

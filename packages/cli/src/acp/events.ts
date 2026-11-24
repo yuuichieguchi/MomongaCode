@@ -300,6 +300,7 @@ const mapKnownEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, 
     case 'model.changed':
       return phase === 'live' ? [{ kind: 'model', model: event.model }] : [];
     case 'inbox.changed':
+    case 'memory.judged':
     case 'user_shell':
       return [];
     case 'attempt.failed':

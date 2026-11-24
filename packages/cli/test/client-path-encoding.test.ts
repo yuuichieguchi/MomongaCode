@@ -52,6 +52,7 @@ const ID_ROUTES: Readonly<Record<string, Call>> = {
   pendingUserShell: (client, id) => client.pendingUserShell(id),
   runAnsweredBy: (client, id) => client.runAnsweredBy(id),
   memory: (client, id) => client.memory(id),
+  memoryJudgement: (client, id) => (client as RuntimeClient & { memoryJudgement(memoryId: string): Promise<unknown> }).memoryJudgement(id),
   retireRule: (client, id) => client.retireRule(id),
 };
 

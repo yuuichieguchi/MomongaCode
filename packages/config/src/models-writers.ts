@@ -40,6 +40,7 @@ export type ModelsOperation =
   | { kind: 'forbidBillingChange'; from: TargetBilling; to: TargetBilling; model?: string }
   | { kind: 'setRole'; job: ModelRole; model: string | null }
   | { kind: 'setClassifier'; model: string | null }
+  | { kind: 'setMemoryReviewModel'; model: string }
   | { kind: 'setModelField'; model: string; path: readonly string[]; value: unknown }
   | { kind: 'setConnectionField'; provider: string; path: readonly string[]; value: unknown }
   | { kind: 'setProvider'; provider: string; name: string | null }
@@ -56,7 +57,7 @@ export type ModelsEditRefusalCode = 'would_not_load' | 'unresolved' | 'name_take
 
 export type ModelsEditRefusal = { code: ModelsEditRefusalCode; message: string };
 
-export type ModelsReference = { kind: 'start' | 'fallback' | 'role' | 'classifier' | 'billing'; position?: number; job?: string };
+export type ModelsReference = { kind: 'start' | 'fallback' | 'role' | 'classifier' | 'memoryReview' | 'billing'; position?: number; job?: string };
 
 export type ModelsEditPlan = { document: Record<string, unknown>; references: ModelsReference[]; warnings: string[]; summaries: string[]; model?: string } | { refused: ModelsEditRefusal };
 
@@ -254,6 +255,8 @@ const rewriteReferences = (document: Json, state: State, moves: Moves): ModelsRe
   if (isRecord(roles) && Object.keys(roles).filter((job) => rewrite(roles, job, { kind: 'role', job })).length > 0) dropIfEmpty(models, 'roles');
   const autoMode = document['autoMode'];
   if (isRecord(autoMode) && rewrite(autoMode, 'classifier', { kind: 'classifier' })) dropIfEmpty(document, 'autoMode');
+  const memory = document['memory'];
+  if (isRecord(memory) && rewrite(memory, 'autoReviewModel', { kind: 'memoryReview' })) dropIfEmpty(document, 'memory');
   rewriteList('billingChanges', (change) => {
     const target = isRecord(change) ? movedTo(change['model']) : undefined;
     if (target === undefined) return undefined;
@@ -443,6 +446,11 @@ const setClassifier = (document: Json, state: State, operation: Extract<ModelsOp
   }
   recordAt(document, 'autoMode')['classifier'] = requireConfigured(state, model);
   return { summary: (after) => `The auto-mode classifier is now ${displayIn(after, model)}.` };
+};
+
+const setMemoryReviewModel = (document: Json, state: State, { model }: Extract<ModelsOperation, { kind: 'setMemoryReviewModel' }>): Applied => {
+  recordAt(document, 'memory')['autoReviewModel'] = requireConfigured(state, model);
+  return { summary: (after) => `The memory auto review model is now ${displayIn(after, model)}.` };
 };
 
 type FieldKind = 'toggle' | 'duration' | 'plain';
@@ -770,6 +778,8 @@ const apply = (document: Json, state: State, operation: ModelsOperation, ports: 
       return setRole(document, state, operation);
     case 'setClassifier':
       return setClassifier(document, state, operation);
+    case 'setMemoryReviewModel':
+      return setMemoryReviewModel(document, state, operation);
     case 'setModelField':
       return setModelField(document, state, operation, ports);
     case 'setConnectionField':

@@ -5,12 +5,13 @@ export type MemorySweeperOptions = {
   intervalMs: number;
   upkeep(signal: AbortSignal): Promise<unknown>;
   reflect(signal: AbortSignal): Promise<unknown>;
+  judge(signal: AbortSignal): Promise<unknown>;
   onError: (error: unknown) => void;
 };
 
 const isAbort = (error: unknown): boolean => error instanceof Error && error.name === 'AbortError';
 
-export const startMemorySweeper = ({ timers, intervalMs, upkeep, reflect, onError }: MemorySweeperOptions): { close(): Promise<void> } => {
+export const startMemorySweeper = ({ timers, intervalMs, upkeep, reflect, judge, onError }: MemorySweeperOptions): { close(): Promise<void> } => {
   const closing = new AbortController();
   let handle: unknown;
   let inFlight: Promise<void> = Promise.resolve();
@@ -22,7 +23,7 @@ export const startMemorySweeper = ({ timers, intervalMs, upkeep, reflect, onErro
   };
 
   const tick = async (): Promise<void> => {
-    for (const work of [upkeep, reflect]) {
+    for (const work of [upkeep, reflect, judge]) {
       try {
         await work(closing.signal);
       } catch (error) {

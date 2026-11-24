@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
 import type { RunFactsView } from '@momonga/protocol';
-import { anchorsOf, enqueue, harness, newSession, rawDb } from '../helpers.ts';
+import { anchorsOf, cancelToEnd, enqueue, harness, newSession, rawDb } from '../helpers.ts';
 import { finishedRun, indexAll, redactor } from '../search-fixture.ts';
 import { awaitingApproval } from '../approval-fixture.ts';
 import { appendForeignSessionEvent, recordNewerMigration } from './fixtures.ts';
@@ -36,6 +36,16 @@ const savedMemory = async () => {
     evidence: [{ kind: 'commit', sha: 'a'.repeat(40) }],
   })).memory;
   env.store.memories.observe(memory.id, 'verified');
+  return { ...env, memory };
+};
+
+const judgedMemory = async () => {
+  const env = harness();
+  const session = newSession(env.store, '/work/a');
+  const run = await enqueue(env.store, session.id);
+  await cancelToEnd(env.store, run.id);
+  const memory = env.store.memories.saveCandidate({ scope: 'project', origin: 'trusted', project: '/work/a', text: 'tests live in test/', runId: run.id, ordinal: 0, kind: 'fact', evidence: [] }).memory;
+  env.store.memoryJudgements.commit({ memoryId: memory.id, outcome: 'left', classifier: 'openai/gpt-5-mini', verdict: 'unsafe', confidence: 'high', openSessionIds: [] });
   return { ...env, memory };
 };
 
@@ -85,6 +95,22 @@ describe('memory columns this build does not know (11.4)', () => {
     writeUnknown(dbPath, 'memories', 'scope', 'id', memory.id);
     const page = store.memories.recallPage({ trusted: true, project: '/work/a' }, { terms: [], after: null, limit: 100 });
     expect(page.memories.map((entry) => entry.id)).not.toContain(memory.id);
+  });
+});
+
+describe('memory judgement columns this build does not know (11.4)', () => {
+  it.each(['outcome', 'verdict', 'confidence'] as const)('memory_judgements.%s decodes as unknown on a newer database', async (column) => {
+    const { store, dbPath, memory } = await judgedMemory();
+    markNewer(dbPath);
+    writeUnknown(dbPath, 'memory_judgements', column, 'memory_id', memory.id);
+    expect(store.memoryJudgements.get(memory.id)?.[column]).toBe('unknown');
+    expect(store.memoryJudgements.owed('/work/a').map((record) => record[column])).toEqual(['unknown']);
+  });
+
+  it.each(['outcome', 'verdict', 'confidence'] as const)('memory_judgements.%s throws as corruption when the database is not newer', async (column) => {
+    const { store, dbPath, memory } = await judgedMemory();
+    writeUnknown(dbPath, 'memory_judgements', column, 'memory_id', memory.id);
+    expect(() => store.memoryJudgements.get(memory.id)).toThrow(new RegExp(`column ${column} has unexpected value "${UNKNOWN}"`));
   });
 });
 

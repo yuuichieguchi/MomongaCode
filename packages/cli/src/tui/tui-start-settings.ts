@@ -1,4 +1,4 @@
-import { ConfigError, defaultTuiSettings, loadSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
+import { ConfigError, defaultTuiSettings, honouredPartOf, loadSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
 import type { ResolvedTuiSettings } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { SettingSource } from './settings-screen.tsx';
@@ -35,7 +35,7 @@ export const readTuiStart = async ({ env, home, projectDir, userFile, signal, is
   const merged = settings;
   const sourceOf = (key: TuiKey): SettingSource => {
     for (const view of snapshot.layers.toReversed()) {
-      const tui = isRecord(view.document) ? view.document['tui'] : undefined;
+      const tui = honouredPartOf(view.layer, view.document)['tui'];
       if (isRecord(tui) && Object.hasOwn(tui, key) && tui[key] === merged[key]) return view.layer;
     }
     return 'default';

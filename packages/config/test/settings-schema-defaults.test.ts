@@ -48,6 +48,7 @@ const DEFAULTS: readonly [string, unknown][] = [
   ['memory.reflection.enabled', memory.reflection.enabled],
   ['memory.forgetAfterDays', memory.forgetAfterDays],
   ['memory.repositoryFacts', memory.repositoryFacts],
+  ['memory.autoReview', false],
   ['verification.manifests', verification.manifests],
   ['verification.required', verification.required],
   ...Object.entries(context).map(([key, value]): [string, unknown] => [`context.${key}`, value]),

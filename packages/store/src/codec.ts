@@ -202,7 +202,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   notice: true,
 };
 
-const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true, 'model.changed': true, 'inbox.changed': true, user_shell: true };
+const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true, 'model.changed': true, 'inbox.changed': true, user_shell: true, 'memory.judged': true };
 
 const isToolFile = (value: unknown): boolean =>
   isRecord(value) &&
@@ -323,6 +323,11 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
     return { type: 'inbox.changed', pending: pending.map((row) => inboxChangeRowOf(context, identity, row)), ...envelope };
   }
   if (type === 'user_shell') return { type: 'user_shell', ...userShellRecordOf(identity, payload), ...envelope };
+  if (type === 'memory.judged') {
+    const { memoryId } = payload;
+    if (typeof memoryId !== 'string') throw corrupt('events', identity, 'payload_json memoryId must be a string');
+    return { type: 'memory.judged', memoryId, ...envelope };
+  }
   const mode = payload['mode'];
   if (typeof mode !== 'string') throw corrupt('events', identity, 'payload_json mode must be a string');
   return { type: 'mode.changed', mode: storedOneOf(context, 'events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };

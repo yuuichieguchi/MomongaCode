@@ -136,7 +136,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   }
   const adoption = adoptionOf(ports.handover?.started, ['tui']);
   if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr, terminal: { output: output.port, input: terminal.stdin } }, adoption);
-  const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
+  const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update, () => resolveLayoutLocks(paths).mechanism));
   const tasks = createBackgroundTasks();
   const autoMode: AutoModePort = {
     check: async (checkOptions, write) => autoModeCheck(await autoModeCheckPortsOf(ports, write, checkOptions.signal), checkOptions),

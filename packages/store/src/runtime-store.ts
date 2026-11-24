@@ -32,6 +32,7 @@ import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
 import { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 import { createPermissionReviewsStore } from './permission-reviews.ts';
+import { createMemoryJudgementsStore } from './memory-judgements.ts';
 import { createRunFactsStore } from './run-facts.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
@@ -500,7 +501,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const blobs = createBlobStore(db, clock, blobDirectoryOf(options.path), { fileSystem, fileSystemSync: options.fileSystemSync, random, lock: options.lock });
   const decodeContext = decodeContextOf(db);
   const approvalOps = createApprovalStore(db, clock, random, decodeContext);
-  const memories = createMemoryStore(db, clock, random, decodeContext);
+  const { keepByClassifier, ...memories } = createMemoryStore(db, clock, random, decodeContext);
   const contextCharges = createContextChargeStore(db, clock, decodeContext);
   const reflection = createReflectionStore(db, clock, { memories, endedRun: { append: (runId, payloads) => appendToEndedRun(runId, payloads) } }, decodeContext);
   const governing = createGoverningFactStore(db, clock, random, decodeContext);
@@ -2087,6 +2088,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       newest: (sessionId, limit) => derivedReads.read({ sessionId }, (view) => view.touchedNewest(sessionId, limit)),
     },
     reflection,
+    memoryJudgements: createMemoryJudgementsStore(db, clock, decodeContext, {
+      transaction,
+      memories: { get: memories.get, candidates: memories.candidates, keepByClassifier },
+      endedRun: { append: appendToEndedRun },
+      sessionEvent: { append: (sessionId, payload) => insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload }) },
+    }),
     contextCharges,
     guidelines: createGuidelineStore(db, clock),
     governing,

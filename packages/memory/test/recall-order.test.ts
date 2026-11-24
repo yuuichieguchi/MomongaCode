@@ -19,6 +19,7 @@ const memory = (id: string, overrides: Partial<MemoryRecord> = {}): MemoryRecord
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   observedStatus: 'unbound',
   ...overrides,
 });

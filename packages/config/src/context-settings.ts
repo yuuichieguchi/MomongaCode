@@ -3,7 +3,7 @@ import type { OutputFormatterName } from '@momonga/protocol';
 import type { AcceptedCheck } from './declared-checks.ts';
 import type { BashOnTimeout, ContextSettings, MemorySettings, RipgrepSetting, ToolsSettings, VerificationSettings } from './settings.ts';
 
-export type ResolvedMemorySettings = { reflection: { enabled: boolean; maxTokens?: number }; forgetAfterDays: number; repositoryFacts: boolean };
+export type ResolvedMemorySettings = { reflection: { enabled: boolean; maxTokens?: number }; forgetAfterDays: number; repositoryFacts: boolean; autoReview: boolean; autoReviewModel?: string };
 
 export type ResolvedVerificationSettings = { commands?: string[]; manifests: string[]; conditions: string[]; required: boolean };
 
@@ -54,6 +54,7 @@ export const defaultMemorySettings = (): ResolvedMemorySettings => ({
   reflection: { enabled: true },
   forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS,
   repositoryFacts: true,
+  autoReview: false,
 });
 
 export const defaultVerificationSettings = (): ResolvedVerificationSettings => ({
@@ -92,10 +93,13 @@ export const defaultToolsSettings = (): ResolvedToolsSettings => ({
 export const mergeMemorySettings = (base: ResolvedMemorySettings, layer: MemorySettings | undefined): ResolvedMemorySettings => {
   if (layer === undefined) return base;
   const maxTokens = layer.reflection?.maxTokens ?? base.reflection.maxTokens;
+  const autoReviewModel = layer.autoReviewModel ?? base.autoReviewModel;
   return {
     reflection: { enabled: layer.reflection?.enabled ?? base.reflection.enabled, ...(maxTokens === undefined ? {} : { maxTokens }) },
     forgetAfterDays: layer.forgetAfterDays ?? base.forgetAfterDays,
     repositoryFacts: layer.repositoryFacts ?? base.repositoryFacts,
+    autoReview: layer.autoReview ?? base.autoReview,
+    ...(autoReviewModel === undefined ? {} : { autoReviewModel }),
   };
 };
 

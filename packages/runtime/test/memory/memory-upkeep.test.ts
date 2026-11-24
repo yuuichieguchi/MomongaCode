@@ -309,6 +309,7 @@ describe('startMemorySweeper', () => {
         seen.push('reflect');
         return 'idle';
       },
+      judge: async () => 'idle',
       onError: (error: unknown) => errors.push(error),
     });
     timers.advance(1000);
@@ -339,6 +340,7 @@ describe('startMemorySweeper', () => {
           signals.push(signal);
           signal.addEventListener('abort', () => reject(signal.reason), { once: true });
         }),
+      judge: async () => 'idle',
       onError: (error: unknown) => errors.push(error),
     });
     timers.advance(1000);
@@ -366,6 +368,7 @@ describe('startMemorySweeper', () => {
         });
       },
       reflect: async () => 'idle',
+      judge: async () => 'idle',
       onError: () => undefined,
     });
     timers.advance(1000);
@@ -392,6 +395,7 @@ describe('startMemorySweeper', () => {
         if (turns === 1) throw failure;
         return 'idle';
       },
+      judge: async () => 'idle',
       onError: (error: unknown) => errors.push(error),
     });
     timers.advance(1000);

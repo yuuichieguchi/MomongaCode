@@ -25,6 +25,7 @@ const memoryOf = (text: string): MemoryView => ({
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
 });
 

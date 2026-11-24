@@ -4,7 +4,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalSt
 import { Text, useApp, useStdout } from 'ink';
 import { createKeyedSerializer } from '@momonga/foundation';
 import { DEFAULT_PERMISSION_MODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, displayMapOf, escapeTerminalLine, isNotListedCapabilities, isOpaqueEvent, messageOf, PLAN_DISABLED_STATE } from '@momonga/protocol';
-import type { OutputStyle, ReasoningEffort, ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { OutputStyle, ReasoningEffort, ChainCapabilities, ImageAttachment, InboxDelivery, Measuring, InboxRowView, MemoryJudgementView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
@@ -20,6 +20,7 @@ import type { StartRunOptions, TuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
 import type { BackgroundTasks } from './background-tasks.ts';
 import { autoNoticeDue } from './notices.ts';
+import { formatMemoryJudgement, memoryJudgementLevel } from '../memory/format.ts';
 import type { AutoNoticePair } from './notices.ts';
 import { DEFAULT_SLASH_COMMANDS, sessionSlashCommands } from './commands/index.ts';
 import { createFoundServers } from './models/context.ts';
@@ -314,7 +315,7 @@ export function App(props: AppProps) {
   const [measuring, setMeasuring] = useState<{ since: number; state: Measuring } | undefined>(undefined);
   const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
   const [probe, setProbe] = useState<{ sessionId: string | undefined; model: string; retryAfterSeconds: number } | undefined>(undefined);
-  const [followedSession, setFollowedSession] = useState<{ id: string; after: number } | undefined>(undefined);
+  const [followedSession, setFollowedSession] = useState<{ id: string; after: number; cwd: string } | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
   const [hovered, setHovered] = useState<Hovered | undefined>(undefined);
   const hoveredRef = useRef<Hovered | undefined>(undefined);
@@ -530,7 +531,20 @@ export function App(props: AppProps) {
 
   const shownModel = (stored: string): string => displaysRef.current.get(stored) ?? stored;
 
-  const readDisplays = async (): Promise<ReadonlyMap<string, string>> => {
+  const displaysSettled = useRef<Promise<void>>(Promise.resolve());
+
+  const readDisplays = (): Promise<ReadonlyMap<string, string>> => readDisplaysAfter(Promise.resolve());
+
+  const readDisplaysAfter = (before: Promise<unknown>): Promise<ReadonlyMap<string, string>> => {
+    const reading = before.then(listDisplays);
+    displaysSettled.current = reading.then(
+      () => undefined,
+      () => undefined,
+    );
+    return reading;
+  };
+
+  const listDisplays = async (): Promise<ReadonlyMap<string, string>> => {
     const entries = await backend.models();
     entriesRef.current = entries;
     setEntriesVersion((version) => version + 1);
@@ -649,15 +663,17 @@ export function App(props: AppProps) {
 
   const showSession = async (session: SessionView): Promise<void> => {
     openedSession.current = { id: session.id, hasRun: session.latestRunId !== null };
-    setFollowedSession((before) => (before?.id === session.id ? before : { id: session.id, after: session.lastEventId }));
+    const available = backend.autoModeAvailable();
+    const reading = readDisplaysAfter(available);
+    setFollowedSession((before) => (before?.id === session.id ? before : { id: session.id, after: session.lastEventId, cwd: session.cwd }));
     setModeState(session.permissionMode);
     sessionModelRef.current = session.model;
     setSessionModel(session.model);
     setSessionEffort(session.effort);
     setSessionOutputStyle(session.outputStyle);
     setBypassAllowed(session.bypassAllowed);
-    setAutoAvailable(await backend.autoModeAvailable());
-    const configured = (await readDisplays()).has(session.model);
+    setAutoAvailable(await available);
+    const configured = (await reading).has(session.model);
     unconfiguredModel.current = !configured;
     sessionEffortRef.current = session.effort;
     effortNotedRef.current = false;
@@ -1551,12 +1567,57 @@ export function App(props: AppProps) {
     refreshInbox().catch(reportError);
   });
   const inboxStreamLost = useEffectEvent((error: unknown): void => reportError(error));
+  const printedJudgements = useRef(new Set<string>());
+  const judgementsPrinted = useRef<Promise<void>>(Promise.resolve());
+  const printJudgements = useEffectEvent((judgements: readonly MemoryJudgementView[], signal: AbortSignal): Promise<void> => {
+    const settled = displaysSettled.current;
+    const printed = judgementsPrinted.current.then(() => settled).then(() => printDueJudgements(judgements, signal));
+    judgementsPrinted.current = printed.then(
+      () => undefined,
+      () => undefined,
+    );
+    return printed.then((memoryIds) => (memoryIds.length === 0 ? undefined : backend.markMemoryJudgementsShown(memoryIds)));
+  });
+  const printDueJudgements = (judgements: readonly MemoryJudgementView[], signal: AbortSignal): readonly string[] => {
+    if (signal.aborted) return [];
+    const due = judgements
+      .filter((judgement) => !printedJudgements.current.has(judgement.memoryId))
+      .map((judgement) => ({ memoryId: judgement.memoryId, level: memoryJudgementLevel(judgement), text: formatMemoryJudgement(judgement, shownModel) }));
+    if (due.length === 0) return [];
+    for (const line of due) {
+      printedJudgements.current.add(line.memoryId);
+      append({ kind: 'notice', level: line.level, text: line.text });
+    }
+    return due.map((line) => line.memoryId);
+  };
   useEffect(() => {
     if (followedSession === undefined) return undefined;
     const following = new AbortController();
-    backend.inbox.follow(followedSession.id, followedSession.after, () => inboxChanged(), following.signal).catch((error: unknown) => {
+    const lost = (error: unknown): void => {
       if (!following.signal.aborted) inboxStreamLost(error);
-    });
+    };
+    backend.inbox
+      .follow(
+        followedSession.id,
+        followedSession.after,
+        {
+          changed: () => inboxChanged(),
+          opened: () => {
+            backend
+              .memoryJudgements(followedSession.cwd)
+              .then((judgements) => printJudgements(judgements.filter((judgement) => judgement.owed), following.signal))
+              .catch(lost);
+          },
+          memoryJudged: (memoryId) => {
+            backend
+              .memoryJudgement(memoryId)
+              .then((judgement) => printJudgements(judgement.closed ? [] : [judgement], following.signal))
+              .catch(lost);
+          },
+        },
+        following.signal,
+      )
+      .catch(lost);
     return () => following.abort();
   }, [followedSession, backend]);
 

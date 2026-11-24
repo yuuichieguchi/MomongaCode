@@ -132,6 +132,7 @@ describe('migration v13', () => {
       contributed_at: null,
       source_kind: 'tool',
       observed_status: null,
+      kept_by_classifier: null,
     });
   });
 

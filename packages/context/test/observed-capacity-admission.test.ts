@@ -35,6 +35,7 @@ const memoryOf = (index: number): MemoryView => ({
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  keptByClassifier: null,
   status: 'unbound',
 });
 

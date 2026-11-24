@@ -172,7 +172,7 @@ describe('the editing keys on the screen', () => {
     app.stdin.write(KEYS.tab);
     app.stdin.write(KEYS.escape);
     await type(app, '!', '> draft!');
-    expect(backend.calls).toEqual(['boot', 'openSession']);
+    expect(backend.calls).toEqual(['boot', 'openSession', 'session-stream-open:session-1', 'memory-judgements:/work/project']);
     app.unmount();
   });
 });

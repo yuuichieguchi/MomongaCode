@@ -20,7 +20,7 @@ The interactive session that `momonga` opens takes these commands at the start o
 | `/style [standard\|concise\|explanatory] [--session] \| reset` | choose the output style (standard, concise, or explanatory), saved or for this session only; reset restores standard |
 | `/polish [<file>] [--audience <reader>]` | run bounded clarity and codebase-factuality revision on the last answer or a file (default audience: developers of this repository) |
 | `/markers ignore <marker name>` | tell MomongaCode to stop blocking calls because of a process an earlier command left running |
-| `/memory [list\|open\|show <id>\|delete <id>\|add <text>\|history <id>\|review\|restore <id>\|promote <id> --skill <name>]` | list, show, add, review, restore, promote or retire the memories of this folder and of all folders |
+| `/memory [list\|open\|show <id>\|delete <id>\|add <text>\|history <id>\|review\|restore <id>\|promote <id> --skill <name>\|auto [on\|off\|model]]` | list, show, add, review, restore, promote or retire the memories of this folder and of all folders |
 | `/rule [list\|add <target> <text>\|retire <id>\|history <id>]` | list, add, retire or show the history of the standing rules of this folder |
 | `/tui [fullscreen\|scrollback\|mouse on\|off\|copy-on-select on\|off]` | show or switch the screen mode (fullscreen, or scrollback: the terminal's own history), and turn the mouse or copy on select on or off |
 | `/theme [auto\|dark\|light\|dark-colorblind\|light-colorblind]` | choose the colours of the screen from the five built-in sets |
@@ -108,6 +108,7 @@ The interactive session that `momonga` opens takes these commands at the start o
 | `/memory review reject <id>` | reject one memory under review |
 | `/memory restore <id>` | restore a retired memory |
 | `/memory promote <id> --skill <name>` | promote a memory into a skill |
+| `/memory auto [on\|off\|model]` | turn memory auto review on or off, or choose its model |
 
 ### /rule
 
@@ -912,6 +913,8 @@ The layer column names the settings files that may set the key: the user file `~
 | `memory.reflection.maxTokens` | integer (at least 16) |  |  | user, project, local |
 | `memory.forgetAfterDays` | integer (at least 1) | `90` | days | user, project, local |
 | `memory.repositoryFacts` | boolean | `true` |  | user, project, local |
+| `memory.autoReview` | boolean | `false` |  | user |
+| `memory.autoReviewModel` | string (not empty) |  |  | user |
 | `verification` | object |  |  | user, project, local |
 | `verification.commands` | array of string (not empty) |  |  | user, project, local |
 | `verification.manifests` | array of string (not empty) | `["package.json","pnpm-lock.yaml","Cargo.toml","pyproject.toml","go.mod","Package.swift","Makefile"]` |  | user, project, local |

@@ -8,7 +8,7 @@ import { settingsWriterPorts } from './file-lock.ts';
 import { appendPermissionRule } from './append-rule.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { readJsonFile } from './json-file.ts';
-import { repositoryLayerFrom, userSettingsFile } from './layers.ts';
+import { honouredBelowUserTrust, repositoryLayerFrom, userSettingsFile } from './layers.ts';
 import { mergingLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
@@ -159,12 +159,14 @@ const layersAbove = (place: SettingsPlace, layer: SettingsLayer, trusted: boolea
   return [];
 };
 
+export const honouredPartOf = (layer: SettingsLayer, document: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => (layer === 'user' ? document : honouredBelowUserTrust(document));
+
 const shadowOf = async (place: SettingsPlace, layer: SettingsLayer, trusted: boolean, operation: SettingsOperation, asker: Asker): Promise<SettingsShadow | undefined> => {
   const keys = pathOf(operation);
   if (keys === undefined) return undefined;
   for (const above of layersAbove(place, layer, trusted)) {
     const { file } = await locate(place, above, asker);
-    if (isLeafValue(leafAt(await documentOf(file, asker), keys))) return { layer: above, file };
+    if (isLeafValue(leafAt(honouredPartOf(above, await documentOf(file, asker)), keys))) return { layer: above, file };
   }
   return undefined;
 };

@@ -55,6 +55,7 @@ type RequestSchemaName =
   | 'AddRuleRequest'
   | 'PolicyVerifyRequest'
   | 'PromoteMemoryRequest'
+  | 'MarkMemoryJudgementsShownRequest'
   | 'AddMemoryRequest'
   | 'AdoptGuidelineRequest'
   | 'RecordContextChargeRequest';
@@ -75,6 +76,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),
   PolicyVerifyRequest: requestValidator(RUN_API_SCHEMAS.PolicyVerifyRequest),
   PromoteMemoryRequest: requestValidator(RUN_API_SCHEMAS.PromoteMemoryRequest),
+  MarkMemoryJudgementsShownRequest: requestValidator(RUN_API_SCHEMAS.MarkMemoryJudgementsShownRequest),
   AddMemoryRequest: requestValidator(RUN_API_SCHEMAS.AddMemoryRequest),
   AdoptGuidelineRequest: requestValidator(RUN_API_SCHEMAS.AdoptGuidelineRequest),
   RecordContextChargeRequest: requestValidator(RUN_API_SCHEMAS.RecordContextChargeRequest),

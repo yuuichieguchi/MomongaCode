@@ -29,7 +29,7 @@ describe('token settings defaults', () => {
   });
 
   it('turns reflection and repository facts on', async () => {
-    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
+    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true, autoReview: false });
   });
 });
 
@@ -51,7 +51,7 @@ describe('token settings values', () => {
       unboundedOutputReserve: true,
     });
     expect(settings.tools).toEqual(ON_TOOLS);
-    expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
+    expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true, autoReview: false });
   });
 
   it('lets a later layer win each key and keeps the keys it does not set', async () => {

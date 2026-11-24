@@ -18,9 +18,10 @@ import type { PrefixEvent } from './prefix-events.ts';
 import { BILLING_CHANGE_REASONS } from './fallback-cause.ts';
 import type { FallbackCause, SpanFallbackCause } from './fallback-cause.ts';
 import { TARGET_BILLINGS } from './capabilities.ts';
-import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
+import { MEMORY_JUDGEMENT_OUTCOMES, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ChargeViewPurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
+import { CLASSIFIER_CONFIDENCES, CLASSIFIER_VERDICTS } from './auto-mode.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { BUDGET_CAUSES, BUDGET_DIMENSIONS, HELD_OUTCOMES, MAX_COST_USD } from './budget.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
@@ -774,6 +775,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   'model.changed': { properties: { model: { type: 'string', minLength: 1 }, previousModel: { type: 'string', minLength: 1 } }, required: ['model', 'previousModel'] },
   'inbox.changed': { properties: { pending: { type: 'array', items: inboxChangeRow, maxItems: INBOX_MAX_PENDING } }, required: ['pending'] },
   user_shell: { properties: { command: string, exitCode: nullable(integer), output: string, include: boolean }, required: ['command', 'exitCode', 'output', 'include'] },
+  'memory.judged': { properties: { memoryId: string }, required: ['memoryId'] },
   'usage.updated': {
     properties: { inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger },
     required: ['inputTokens', 'outputTokens', 'totalTokens'],
@@ -892,7 +894,7 @@ const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
   const schema: PayloadSchema<typeof type> = PAYLOAD_SCHEMAS[type];
   const { properties, required } = schema;
   const exclusive = schema.exclusive === undefined ? {} : atMostOneOf(schema.exclusive);
-  if (type === 'mode.changed' || type === 'model.changed' || type === 'inbox.changed' || type === 'user_shell') {
+  if (type === 'mode.changed' || type === 'model.changed' || type === 'inbox.changed' || type === 'user_shell' || type === 'memory.judged') {
     return closed(
       { id: integer, sessionId: string, createdAt: integer, type: constant(type), ...properties },
       ['id', 'sessionId', 'createdAt', 'type', ...required],
@@ -1225,6 +1227,7 @@ const memoryView = closed(
     evidence: { type: 'array', items: memoryEvidence },
     status: enumOf(MEMORY_STATUSES),
     contributedAt: nullable(integer),
+    keptByClassifier: nullable(string),
     observedStatus: nullable(storedEnumOf(MEMORY_STATUSES)),
     validity: memoryValidity,
   },
@@ -1246,7 +1249,23 @@ const memoryView = closed(
     'evidence',
     'status',
     'contributedAt',
+    'keptByClassifier',
   ],
+);
+
+const memoryJudgementView = closed(
+  {
+    memoryId: string,
+    outcome: storedEnumOf(MEMORY_JUDGEMENT_OUTCOMES),
+    classifier: string,
+    verdict: storedEnumOf(CLASSIFIER_VERDICTS),
+    confidence: storedEnumOf(CLASSIFIER_CONFIDENCES),
+    failure: string,
+    judgedAt: integer,
+    owed: boolean,
+    closed: boolean,
+  },
+  ['memoryId', 'outcome', 'judgedAt', 'owed', 'closed'],
 );
 
 const reflectionJobView = closed(
@@ -1822,6 +1841,9 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView }, queuedAhead: nonNegativeInteger }, ['job', 'charges', 'queuedAhead'])),
+  MemoryJudgementsResponse: root(closed({ judgements: { type: 'array', items: memoryJudgementView } }, ['judgements'])),
+  MemoryJudgementResponse: root(closed({ judgement: memoryJudgementView }, ['judgement'])),
+  MarkMemoryJudgementsShownRequest: root(closed({ memoryIds: { type: 'array', items: string } }, ['memoryIds'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
   AddMemoryRequest: root(

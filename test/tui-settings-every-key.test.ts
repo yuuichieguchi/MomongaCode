@@ -4,7 +4,7 @@ import { DEFAULT_SLASH_COMMANDS } from '../packages/cli/src/tui/commands/index.t
 import { SETTINGS_LINKS, SETTINGS_REACHED_BY_LINK, SETTING_ROWS, SETTING_SECTIONS, settingLeaves } from '../packages/cli/src/tui/settings-screen.tsx';
 import { SCREEN_MODES } from '../packages/cli/src/tui/terminal/modes.ts';
 
-const EDITED_ON_THE_MODELS_SCREEN = ['autoMode.classifier', 'models.connections', 'models.start', 'models.fallback', 'models.servers', 'models.billingChanges', 'models.roles.compaction', 'models.roles.reflection', 'models.roles.analysis', 'models.roles.subagent', 'models.headersTimeoutMs', 'models.idleTimeoutMs'];
+const EDITED_ON_THE_MODELS_SCREEN = ['autoMode.classifier', 'memory.autoReviewModel', 'models.connections', 'models.start', 'models.fallback', 'models.servers', 'models.billingChanges', 'models.roles.compaction', 'models.roles.reflection', 'models.roles.analysis', 'models.roles.subagent', 'models.headersTimeoutMs', 'models.idleTimeoutMs'];
 
 const wayOf = (key: string): string[] => [...(SETTING_ROWS[key] === undefined ? [] : ['row']), ...(SETTINGS_REACHED_BY_LINK[key] === undefined ? [] : ['link'])];
 
@@ -22,6 +22,8 @@ describe('every key of the settings schema a person may change has its way in th
     expect(keys).not.toContain('models.targets');
     expect(keys).not.toContain('models.aliases');
     expect(keys).not.toContain('memory.reflection');
+    expect(keys).toContain('memory.autoReview');
+    expect(keys).toContain('memory.autoReviewModel');
     expect(new Set(keys.map((key) => key.split('.')[0]))).toEqual(new Set(Object.keys(SETTINGS_SCHEMA.properties)));
   });
 
@@ -54,6 +56,11 @@ describe('every key of the settings schema a person may change has its way in th
 
   it('lists the keys the Models screen edits, and none of them names the old shape', () => {
     expect(Object.keys(SETTINGS_REACHED_BY_LINK).filter((key) => SETTINGS_REACHED_BY_LINK[key] === 'models')).toEqual(EDITED_ON_THE_MODELS_SCREEN);
+  });
+
+  it('shows memory.autoReview as the toggle row Auto review of the section Memory, and reaches memory.autoReviewModel through the Models screen', () => {
+    expect(SETTING_ROWS['memory.autoReview']).toEqual({ label: 'Auto review', section: 'Memory' });
+    expect(SETTINGS_REACHED_BY_LINK['memory.autoReviewModel']).toBe('models');
   });
 
   it('stores the screen modes the terminal layer has', () => {

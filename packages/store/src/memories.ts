@@ -90,6 +90,7 @@ const decodeMemory = (context: DecodeContext, row: Row, evidence: StoredMemoryEv
     retiredAt: reader.nullableNumber('retired_at'),
     contributedAt: reader.nullableNumber('contributed_at'),
     observedStatus: decodeObservedStatus(context, identity, reader),
+    keptByClassifier: reader.nullableString('kept_by_classifier'),
     evidence,
   };
 };
@@ -130,7 +131,9 @@ const cursorOf = (part: RecallCursor['part'], row: Row): RecallCursor => {
   return { part, tier: reader.number('recall_tier'), contributed: reader.number('recall_contributed'), kept: reader.number('recall_kept'), id: reader.string('id') };
 };
 
-export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random, context: DecodeContext): MemoryStore => {
+export type MemoryKeeper = { keepByClassifier(id: string, classifier: string): boolean };
+
+export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random, context: DecodeContext): MemoryStore & MemoryKeeper => {
   const derived = createDerivedSnapshot(db, context);
   const insert = db.prepare(
     `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, kept_at, kind, supersedes_json)
@@ -204,8 +207,14 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random
   const candidateRows = db.prepare("SELECT * FROM memories WHERE state = 'candidate' ORDER BY created_at, id");
   const candidateRowsOfProject = db.prepare("SELECT * FROM memories WHERE state = 'candidate' AND project = :project ORDER BY created_at, id");
   const moveState = db.prepare(
-    'UPDATE memories SET state = :to, duplicate_of = :duplicateOf, kept_at = CASE WHEN :kept = 1 THEN :now ELSE kept_at END WHERE id = :id AND state = :from',
+    `UPDATE memories SET state = :to, duplicate_of = :duplicateOf, kept_at = CASE WHEN :kept = 1 THEN :now ELSE kept_at END,
+       kept_by_classifier = CASE WHEN :forgetClassifier = 1 THEN NULL ELSE kept_by_classifier END
+     WHERE id = :id AND state = :from`,
   );
+  const keepCandidate = db.prepare(
+    "UPDATE memories SET state = 'active', kept_at = :now, kept_by_classifier = :classifier WHERE id = :id AND state = 'candidate' AND retired_at IS NULL",
+  );
+  const closeJudgement = db.prepare('UPDATE memory_judgements SET closed_at = :now WHERE memory_id = :id AND closed_at IS NULL');
   const newestObservation = db.prepare('SELECT status, ordinal FROM memory_observations WHERE memory_id = :id ORDER BY ordinal DESC LIMIT 1');
   const insertObservation = db.prepare('INSERT INTO memory_observations (memory_id, ordinal, status, observed_at) VALUES (:id, :ordinal, :status, :now)');
   const observationsOf = db.prepare('SELECT status, observed_at FROM memory_observations WHERE memory_id = :id ORDER BY ordinal');
@@ -231,11 +240,16 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random
     from: MemoryState,
     to: MemoryState,
     outcome: { done: Done; refused: Refused },
-    options: { duplicateOf?: string; kept?: boolean } = {},
+    options: { duplicateOf?: string; kept?: boolean; decidedByPerson?: boolean; forgetClassifier?: boolean } = {},
   ): MemoryChange<Done, Refused> =>
     immediateTx(db, () => {
       if (byId.get({ id }) === undefined) return { kind: 'not_found' };
-      const moved = Number(moveState.run({ id, from, to, duplicateOf: options.duplicateOf ?? null, kept: options.kept === true ? 1 : 0, now: clock.now() }).changes) === 1;
+      const now = clock.now();
+      const moved =
+        Number(
+          moveState.run({ id, from, to, duplicateOf: options.duplicateOf ?? null, kept: options.kept === true ? 1 : 0, forgetClassifier: options.forgetClassifier === true ? 1 : 0, now }).changes,
+        ) === 1;
+      if (moved && options.decidedByPerson === true) closeJudgement.run({ id, now });
       const row = byId.get({ id });
       if (row === undefined) throw new Error(`memory ${id} vanished after it was changed`);
       if (moved) revision += 1;
@@ -423,14 +437,14 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random
         return decodeMemory(context, row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(context, id, evidenceRow)), []);
       }),
     candidates: (filter = {}) => (filter.project === undefined ? candidateRows.all() : candidateRowsOfProject.all({ project: filter.project })).map(decode),
-    accept: (id) => change(id, 'candidate', 'active', { done: 'accepted', refused: 'not_candidate' }, { kept: true }),
-    reject: (id) => change(id, 'candidate', 'rejected', { done: 'rejected', refused: 'not_candidate' }),
+    accept: (id) => change(id, 'candidate', 'active', { done: 'accepted', refused: 'not_candidate' }, { kept: true, decidedByPerson: true }),
+    reject: (id) => change(id, 'candidate', 'rejected', { done: 'rejected', refused: 'not_candidate' }, { decidedByPerson: true }),
     markDuplicate: (id, of) => {
       if (byId.get({ id: of }) === undefined) throw new RangeError(`memory ${of} cannot be the original of ${id}: it does not exist`);
       return change(id, 'active', 'duplicate', { done: 'marked', refused: 'not_active' }, { duplicateOf: of });
     },
     archive: (id) => change(id, 'active', 'archived', { done: 'archived', refused: 'not_active' }),
-    restore: (id) => change(id, 'archived', 'active', { done: 'restored', refused: 'not_archived' }, { kept: true }),
+    restore: (id) => change(id, 'archived', 'active', { done: 'restored', refused: 'not_archived' }, { kept: true, forgetClassifier: true }),
     get: (id) => {
       const row = byId.get({ id });
       return row === undefined ? undefined : decode(row);
@@ -500,7 +514,9 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random
       immediateTx(db, () => {
         const before = byId.get({ id });
         if (before === undefined) return undefined;
-        const retired = Number(retireOnce.run({ id, now: clock.now() }).changes) === 1;
+        const now = clock.now();
+        const retired = Number(retireOnce.run({ id, now }).changes) === 1;
+        if (retired) closeJudgement.run({ id, now });
         const row = byId.get({ id });
         if (row === undefined) throw new Error(`memory ${id} vanished after it was retired`);
         if (retired) revision += 1;
@@ -524,6 +540,11 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, random: Random
         const reader = readerFor('memory_observations', id, row);
         return { status: storedOneOf(context, 'memory_observations', id, 'status', MEMORY_STATUSES, reader.string('status')), observedAt: reader.number('observed_at') };
       }),
+    keepByClassifier: (id, classifier) => {
+      const kept = Number(keepCandidate.run({ id, classifier, now: clock.now() }).changes) === 1;
+      if (kept) revision += 1;
+      return kept;
+    },
     stampContributed: (ids, at) => {
       for (const id of ids) stamp.run({ id, at });
     },

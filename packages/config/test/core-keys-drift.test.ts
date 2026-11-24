@@ -6,7 +6,7 @@ type SchemaNode = { type?: string; properties?: Record<string, SchemaNode>; item
 
 const CORE_SECTIONS = ['context', 'tools', 'memory'] as const;
 
-const NON_CORE_SETTING_KEYS: readonly string[] = ['tools.ripgrep', 'context.compactAt', 'memory.forgetAfterDays', 'memory.reflection.maxTokens', 'tools.bash.defaultTimeoutMs', 'tools.bash.maxTimeoutMs', 'tools.bash.onTimeout', 'tools.bash.backgroundTimeoutMs', 'tools.bash.maxBackgroundTimeoutMs', 'tools.bash.drainIdleMs', 'tools.search.timeoutMs', 'tools.operations.timeoutMs'];
+const NON_CORE_SETTING_KEYS: readonly string[] = ['tools.ripgrep', 'context.compactAt', 'memory.autoReview', 'memory.autoReviewModel', 'memory.forgetAfterDays', 'memory.reflection.maxTokens', 'tools.bash.defaultTimeoutMs', 'tools.bash.maxTimeoutMs', 'tools.bash.onTimeout', 'tools.bash.backgroundTimeoutMs', 'tools.bash.maxBackgroundTimeoutMs', 'tools.bash.drainIdleMs', 'tools.search.timeoutMs', 'tools.operations.timeoutMs'];
 
 const leavesOf = (node: SchemaNode, prefix: string): { key: string; node: SchemaNode }[] =>
   Object.entries(node.properties ?? {}).flatMap(([name, child]) =>
@@ -29,7 +29,7 @@ describe('every switch of the core sections is core and on, or named non-core (d
   it('names autoCompact as core and ripgrep, forgetAfterDays and reflection.maxTokens as non-core', () => {
     expect(CORE_SETTING_KEYS).toContain('context.autoCompact');
     expect(CORE_SETTING_KEYS).not.toContain('context.compactAt');
-    expect([...NON_CORE_SETTING_KEYS].sort()).toEqual(['context.compactAt', 'memory.forgetAfterDays', 'memory.reflection.maxTokens', 'tools.bash.backgroundTimeoutMs', 'tools.bash.defaultTimeoutMs', 'tools.bash.drainIdleMs', 'tools.bash.maxBackgroundTimeoutMs', 'tools.bash.maxTimeoutMs', 'tools.bash.onTimeout', 'tools.operations.timeoutMs', 'tools.ripgrep', 'tools.search.timeoutMs']);
+    expect([...NON_CORE_SETTING_KEYS].sort()).toEqual(['context.compactAt', 'memory.autoReview', 'memory.autoReviewModel', 'memory.forgetAfterDays', 'memory.reflection.maxTokens', 'tools.bash.backgroundTimeoutMs', 'tools.bash.defaultTimeoutMs', 'tools.bash.drainIdleMs', 'tools.bash.maxBackgroundTimeoutMs', 'tools.bash.maxTimeoutMs', 'tools.bash.onTimeout', 'tools.operations.timeoutMs', 'tools.ripgrep', 'tools.search.timeoutMs']);
   });
 
   it('names the eleven keys of the token policy overlay as core', () => {
