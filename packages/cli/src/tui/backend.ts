@@ -6,7 +6,7 @@ import type { NetworkCheck, NetworkView } from './commands/network.ts';
 import type { FileCandidates } from '@momonga/foundation';
 import { isOpaqueEvent } from '@momonga/protocol';
 import type { OutputStyle, ReasoningEffort, TrustItemsView } from '@momonga/protocol';
-import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, Mandate, MemoryJudgementView, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
+import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, InspectorContextExcludeRequest, InspectorMemoryControlRequest, InspectorMemoryRetrievalTrace, InspectorSnapshot, Mandate, MemoryJudgementView, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView, ToolResultPage, AgentsResponse } from '@momonga/protocol';
 import { createFromTemplate } from './file-templates.ts';
 import type { CreatedFile, TemplateKind } from './file-templates.ts';
 import type { EditSettingsResult } from '@momonga/config';
@@ -118,8 +118,16 @@ export type TuiBackend = {
   memoryJudgement(memoryId: string): Promise<MemoryJudgementView>;
   memoryJudgements(project: string): Promise<MemoryJudgementView[]>;
   markMemoryJudgementsShown(memoryIds: readonly string[]): Promise<void>;
+  editMemory(id: string, text: string): Promise<MemoryView>;
+  acceptMemory(id: string): Promise<MemoryView>;
+  rejectMemory(id: string): Promise<MemoryView>;
+  restoreMemory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
   memoryHistory(id: string): Promise<MemoryView[]>;
+  inspector(): Promise<InspectorSnapshot>;
+  inspectorExcludeContextItem(request: InspectorContextExcludeRequest): Promise<InspectorSnapshot>;
+  inspectorControlMemory(request: InspectorMemoryControlRequest): Promise<InspectorSnapshot>;
+  inspectorSearchMemories(query: string): Promise<InspectorMemoryRetrievalTrace>;
   rules(): Promise<GoverningFactView[]>;
   addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
   retireRule(id: string): Promise<GoverningFactView>;
@@ -441,8 +449,16 @@ export const createTuiBackend = (
     memoryJudgement: (memoryId) => runtime().memoryJudgement(memoryId),
     memoryJudgements: (project) => runtime().memoryJudgements(project),
     markMemoryJudgementsShown: (memoryIds) => runtime().markMemoryJudgementsShown(memoryIds),
+    editMemory: (id, text) => runtime().editMemory(id, { text }),
+    acceptMemory: (id) => runtime().acceptMemory(id),
+    rejectMemory: (id) => runtime().rejectMemory(id),
+    restoreMemory: (id) => runtime().restoreMemory(id),
     deleteMemory: (id) => runtime().deleteMemory(id),
     memoryHistory: (id) => runtime().memoryHistory(id),
+    inspector: () => runtime().inspector(current().id),
+    inspectorExcludeContextItem: (request) => runtime().inspectorExcludeContextItem(current().id, request),
+    inspectorControlMemory: (request) => runtime().inspectorControlMemory(current().id, request),
+    inspectorSearchMemories: (query) => runtime().inspectorSearchMemories(current().id, { query }),
     rules: () => runtime().rules(current().cwd),
     addRule: (request) => runtime().addRule(request),
     retireRule: (id) => runtime().retireRule(id),

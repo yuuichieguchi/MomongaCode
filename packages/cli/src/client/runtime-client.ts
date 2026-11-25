@@ -3,7 +3,7 @@ import type { McpServerConfig } from '@momonga/config';
 import { GENERATION_STARTING_CODE, HOST_READ_BOUND_MS, MOVED_CODE, createUdsClient, SSE_EVENT_MAX_BYTES, decodeSse, isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { SandboxNetworkSetting, SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT, DAEMON_STOPPING_EVENT, PERSON_CAPABILITY_HEADER, STREAM_FAILED_EVENT, SURFACE_HEADER, WORDS, messageOf } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryJudgementView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, ToolResultPage, Mandate } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PolicyVerifyRequest, PolicyVerifyResponse, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, EditMemoryRequest, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, InspectorContextExcludeRequest, InspectorMemoryControlRequest, InspectorMemoryRetrievalTrace, InspectorMemorySearchRequest, InspectorSnapshot, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryJudgementView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, PublicStreamEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, ReportRecomputePage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage, ToolResultPage, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -19,6 +19,8 @@ import {
   checkInbox,
   checkInboxAdd,
   checkInboxWithdraw,
+  checkInspectorMemorySearch,
+  checkInspectorSnapshot,
   checkJobs,
   checkRunSuccessor,
   checkUserShellFrame,
@@ -211,12 +213,17 @@ export type RuntimeClient = {
   runAnsweredBy(runId: string): Promise<RunAnsweredByView>;
   memory(id: string): Promise<MemoryView>;
   addMemory(request: AddMemoryRequest): Promise<MemoryView>;
+  editMemory(id: string, request: EditMemoryRequest): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
   memoryHistory(id: string): Promise<MemoryView[]>;
   acceptMemory(id: string): Promise<MemoryView>;
   rejectMemory(id: string): Promise<MemoryView>;
   restoreMemory(id: string): Promise<MemoryView>;
   promoteMemory(id: string, skill: string): Promise<string>;
+  inspector(sessionId: string): Promise<InspectorSnapshot>;
+  inspectorExcludeContextItem(sessionId: string, request: InspectorContextExcludeRequest): Promise<InspectorSnapshot>;
+  inspectorControlMemory(sessionId: string, request: InspectorMemoryControlRequest): Promise<InspectorSnapshot>;
+  inspectorSearchMemories(sessionId: string, request: InspectorMemorySearchRequest): Promise<InspectorMemoryRetrievalTrace>;
   memoryJudgements(project: string): Promise<MemoryJudgementView[]>;
   memoryJudgement(memoryId: string): Promise<MemoryJudgementView>;
   markMemoryJudgementsShown(memoryIds: readonly string[]): Promise<void>;
@@ -708,6 +715,36 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkMemory(body, 'POST /v1/memories').memory;
   };
 
+  const editMemory = async (id: string, request: EditMemoryRequest): Promise<MemoryView> => {
+    const path = `/v1/memories/${pathSegment(id)}`;
+    const { body } = await send('PATCH', path, [200], { body: request });
+    return checkMemory(body, `PATCH ${path}`).memory;
+  };
+
+  const inspector = async (sessionId: string): Promise<InspectorSnapshot> => {
+    const path = `/v1/sessions/${pathSegment(sessionId)}/inspector`;
+    const { body } = await send('GET', path, [200]);
+    return checkInspectorSnapshot(body, `GET ${path}`);
+  };
+
+  const inspectorExcludeContextItem = async (sessionId: string, request: InspectorContextExcludeRequest): Promise<InspectorSnapshot> => {
+    const path = `/v1/sessions/${pathSegment(sessionId)}/inspector/context/exclude`;
+    const { body } = await send('POST', path, [200], { body: request });
+    return checkInspectorSnapshot(body, `POST ${path}`);
+  };
+
+  const inspectorControlMemory = async (sessionId: string, request: InspectorMemoryControlRequest): Promise<InspectorSnapshot> => {
+    const path = `/v1/sessions/${pathSegment(sessionId)}/inspector/memory/control`;
+    const { body } = await send('POST', path, [200], { body: request });
+    return checkInspectorSnapshot(body, `POST ${path}`);
+  };
+
+  const inspectorSearchMemories = async (sessionId: string, request: InspectorMemorySearchRequest): Promise<InspectorMemoryRetrievalTrace> => {
+    const path = `/v1/sessions/${pathSegment(sessionId)}/inspector/memory/search`;
+    const { body } = await send('POST', path, [200], { body: request });
+    return checkInspectorMemorySearch(body, `POST ${path}`).trace;
+  };
+
   const deleteMemory = async (id: string): Promise<void> => {
     await send('DELETE', `/v1/memories/${pathSegment(id)}`, [204]);
   };
@@ -984,12 +1021,17 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     runAnsweredBy,
     memory,
     addMemory,
+    editMemory,
     deleteMemory,
     memoryHistory,
     acceptMemory: changeMemory('accept'),
     rejectMemory: changeMemory('reject'),
     restoreMemory: changeMemory('restore'),
     promoteMemory,
+    inspector,
+    inspectorExcludeContextItem,
+    inspectorControlMemory,
+    inspectorSearchMemories,
     memoryJudgements,
     memoryJudgement,
     markMemoryJudgementsShown,

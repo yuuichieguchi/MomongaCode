@@ -98,11 +98,14 @@ const prepareRecall = async (ctx: ClaimContext): Promise<void> => {
   const task = taskOf(ctx);
   const newest = (await ctx.options.store.sessionTouched.newest(session.id, RECALL_TOUCHED_ROWS)).map((entry) => entry.path);
   const recall = recallQueryOf(task.text, newest, session.cwd, RECALL_TOUCHED_ROWS);
+  const overrides = ctx.options.inspectorState?.getOverrides(session.id);
   await ctx.recalled.prepare({
     query: recall.query,
     ...(recall.touchedCap === undefined ? {} : { touchedCap: recall.touchedCap }),
     capacity: { capabilities: withCalibration(ctx.capabilities, ctx.calibration), memoryShare: ctx.memoryShare },
     ...(ctx.token.cachePrefix && ctx.journal.state.memoriesLoaded !== undefined ? { pinnedIds: ctx.journal.state.memoriesLoaded.map((memory) => memory.id) } : {}),
+    ...(overrides === undefined || overrides.excludedMemoryIds.length === 0 ? {} : { excludeIds: overrides.excludedMemoryIds }),
+    ...(overrides === undefined || overrides.pinnedMemoryIds.length === 0 ? {} : { prioritizeIds: overrides.pinnedMemoryIds }),
   });
 };
 
@@ -205,7 +208,7 @@ const offeredInputOf = async (
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
     companions,
-    evicted: new Set(state.evicted),
+    evicted: new Set([...state.evicted, ...(ctx.options.inspectorState?.getOverrides(session.id).excludedCallIds ?? [])]),
     recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths: ctx.touched.probes.witnesses(),
@@ -588,15 +591,38 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
   const firstRanking = ctx.token.cachePrefix && memoriesLoaded === undefined;
   if (firstRanking || canonicalJson(loadedMemories) !== canonicalJson(memoriesLoaded ?? [])) payloads.push({ type: 'context.memories_loaded', memories: loadedMemories });
   if (payloads.length > 0) ctx.journal.append(payloads);
+  const trace = ctx.recalled.lastTrace?.();
+  if (trace !== undefined && ctx.options.inspectorState !== undefined) {
+    const loadedSet = new Set(built.loadedMemoryIds);
+    const refinedCandidates = trace.candidates.map((candidate) => {
+      if (loadedSet.has(candidate.id)) return candidate;
+      if (candidate.decision === 'included') {
+        return { ...candidate, decision: 'excluded' as const, reason: 'context_budget' };
+      }
+      return candidate;
+    });
+    const usedTokens = refinedCandidates.filter((c) => c.decision === 'included').reduce((sum, c) => sum + c.tokens, 0);
+    ctx.options.inspectorState.recordRetrievalTrace(
+      ctx.run.sessionId,
+      {
+        ...trace,
+        usedTokens,
+        selectedCount: built.loadedMemoryIds.length,
+        candidates: refinedCandidates,
+      },
+      built.loadedMemoryIds,
+    );
+  }
 };
 
 const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[]): void => {
   const state = ctx.journal.state;
+  const sessionExcludedCalls = new Set(ctx.options.inspectorState?.getOverrides(ctx.run.sessionId).excludedCallIds ?? []);
   const recordedForms = ctx.token.observedCapacity ? new Map(Object.entries(state.formsSinceCompaction)) : undefined;
   const unreflected = evictions.filter((eviction) => {
     const entry = state.history.find((candidate) => candidate.callId === eviction.callId && candidate.item.type === 'function_call_output');
     if (entry === undefined) return false;
-    if (eviction.kind === 'omitted') return !state.evicted.includes(eviction.callId);
+    if (eviction.kind === 'omitted') return !state.evicted.includes(eviction.callId) && !sessionExcludedCalls.has(eviction.callId);
     if (eviction.kind === 'reference') return true;
     return entry.handle === undefined || (recordedForms !== undefined && recordedForms.get(eviction.callId) !== eviction.keptChars);
   });

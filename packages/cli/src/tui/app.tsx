@@ -81,6 +81,8 @@ import { declaredReasoning, effortChoiceText, effortInForce, effortLine, modelWi
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useToolView } from './screen/tool-view.ts';
+import { useInspector } from './inspector/use-inspector.tsx';
+import type { InspectorController } from './inspector/use-inspector.tsx';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
 import { DAEMON_STOPPING_TEXT, commandPhaseText, loadingText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
@@ -247,6 +249,7 @@ export function App(props: AppProps) {
   const transcript = visible.state();
   const [agents, setAgents] = useState(createAgentViews);
   const agentsRef = useRef(agents);
+  const inspectorRef = useRef<InspectorController | undefined>(undefined);
   useSyncExternalStore(agents.subscribe, agents.version);
   const shownAgent = agents.shown();
   const viewedLive = shownAgent?.store ?? store;
@@ -718,6 +721,7 @@ export function App(props: AppProps) {
 
   const showSession = async (session: SessionView): Promise<void> => {
     openedSession.current = { id: session.id, hasRun: session.latestRunId !== null };
+    inspectorRef.current?.resetSession({ id: session.id, cwd: session.cwd, model: session.model });
     const reading = readDisplays();
     setFollowedSession((before) => (before?.id === session.id ? before : { id: session.id, after: session.lastEventId, cwd: session.cwd }));
     setModeState(session.permissionMode);
@@ -1058,6 +1062,7 @@ export function App(props: AppProps) {
             if (key !== undefined) origins.at(key);
             if (event.type === 'model.responded' && event.target !== undefined) setServedTarget(event.target);
             if (event.type === 'user.message' && event.source !== undefined) refreshInbox().catch(reportError);
+            inspectorRef.current?.ingestEvent(event);
             if (replay === undefined) {
               foldLiveEvent(store, event, first);
               if (isPrompt(event, first)) showPromptNotes();
@@ -1194,6 +1199,7 @@ export function App(props: AppProps) {
   };
 
   const clearScreen = (): void => {
+    inspectorRef.current?.close();
     signInFailedRun.current = undefined;
     resetTranscript();
     if (terminal.state().screen === 'scrollback') stdout.write(CLEAR_SCREEN);
@@ -1432,6 +1438,21 @@ export function App(props: AppProps) {
 
   const runCompaction = (instructions: string | undefined): Promise<void> => runStarted(() => ({ start: () => backend.compact(instructions), resubmit: undefined }));
 
+  const inspector = useInspector({
+    backend,
+    keys,
+    timers,
+    now,
+    columns,
+    rows,
+    fullscreen: terminalState.screen === 'fullscreen',
+    overlays: overlayPorts,
+    compact: runCompaction,
+    isRunning: () => busyRef.current,
+    note,
+  });
+  inspectorRef.current = inspector;
+
   const runSlash = async (line: string): Promise<boolean> => {
     const parsed = parseSlash(line);
     if (parsed === undefined) return false;
@@ -1506,6 +1527,9 @@ export function App(props: AppProps) {
       clipboard: { selected: selectedText, lastAnswer },
       refusedWhileRunning: refusedWhileWorking,
       status: () => statusLines(statusFacts()),
+      openInspector: (tab) => {
+        if (phaseRef.current !== 'starting') inspector.open(tab);
+      },
       setMode: async (chosen) => {
         overlayPorts.closeScreen();
         const session = await runCancellable(() => backend.setMode(chosen));
@@ -1914,6 +1938,8 @@ export function App(props: AppProps) {
     } else if (action === 'editor.up' && waitingRef.current.length > 0 && onFirstLine(current)) runFlow(takeBackWaiting);
     else if (action === 'transcript.detail') {
       if (!starting) toolView.showNewest();
+    } else if (action === 'inspector.open') {
+      if (!starting) inspector.open();
     } else if (action === 'run.stop') {
       const keyArrival = activeKeyArrival.current ?? arrivals.current;
       if (pendingQueue.current?.arrival === keyArrival || working) cancelNewest();
@@ -1941,6 +1967,7 @@ export function App(props: AppProps) {
     trust: phase.kind === 'trust',
     toolView: toolView.shown,
     overlay: prompts.overlayKind(),
+    inspector: inspector.shown,
     welcome: phase.kind === 'welcome',
     prompt: prompts.promptStage(),
     detail: prompts.detailShown(panelFacts),
@@ -1986,6 +2013,9 @@ export function App(props: AppProps) {
       case 'overlay':
         prompts.overlayKey(event, pressed);
         return;
+      case 'inspector':
+        inspector.key(event, pressed);
+        return;
       case 'welcome':
         return;
       case 'agents':
@@ -2010,6 +2040,7 @@ export function App(props: AppProps) {
     if (toolView.shown) return TOOL_VIEW_SCREEN;
     const base = prompts.screenId(phase.kind === 'trust');
     if (base !== 'prompt') return base;
+    if (inspector.shown) return 'inspector';
     if (phase.kind === 'starting') return 'starting';
     if (phase.kind === 'welcome') return 'welcome';
     return base;
@@ -2315,7 +2346,7 @@ export function App(props: AppProps) {
       else backend.openUrl(url, untilNextKey(terminal.input), onFailure);
     },
     reportError,
-    keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: slashMenu.isOpen(editorRef.current.text) || atMenu.open, inputEmpty: editorRef.current.text === '' }),
+    keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown || inspector.shown, menuOpen: slashMenu.isOpen(editorRef.current.text) || atMenu.open, inputEmpty: editorRef.current.text === '' }),
     keys,
     a11y,
     bannerFigure: figureFits,
@@ -2548,7 +2579,7 @@ export function App(props: AppProps) {
         columns={columns}
         rows={rows}
         allocation={allocation}
-        panel={panel ?? (fullscreen || !toolView.shown ? undefined : toolView.view)}
+        panel={panel ?? (fullscreen ? undefined : inspector.shown ? inspector.view : toolView.shown ? toolView.view : undefined)}
         panelFollows={followRows}
         regions={{
           header:
@@ -2557,7 +2588,9 @@ export function App(props: AppProps) {
                 {escapeTerminalLine(headerText)}
               </Text>
             ),
-          transcript: fullscreen && toolView.shown ? (
+          transcript: fullscreen && inspector.shown ? (
+            inspector.view
+          ) : fullscreen && toolView.shown ? (
             toolView.view
           ) : fullscreen ? (
             <TranscriptView window={view.window} height={panel === undefined ? allocation.viewport : followRows ?? drawnTranscriptRows(transcriptAllocation.viewport, view.window.rows.length)} width={transcriptWidth} entries={viewed.count()} following={view.position.following} selection={view.selection} hovered={shownHover?.place === 'viewport' ? shownHover : undefined} />

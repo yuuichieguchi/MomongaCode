@@ -3,7 +3,7 @@ import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { REPORT_SCHEMAS, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ReportCostPage, ReviewPage, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryJudgementResponse, MemoryJudgementsResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PolicyVerifyResponse, PromoteMemoryResponse, PublicRunEvent, PublicStreamEvent, ReflectionResponse, ReportPage, ReportRecomputePage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, ToolResultPage, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, InspectorMemorySearchResponse, InspectorSnapshot, JobsResponse, JsonSchema, MemoriesResponse, MemoryJudgementResponse, MemoryJudgementsResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PolicyVerifyResponse, PromoteMemoryResponse, PublicRunEvent, PublicStreamEvent, ReflectionResponse, ReportPage, ReportRecomputePage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, ToolResultPage, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -79,3 +79,5 @@ export const checkInboxWithdraw = guard<InboxWithdrawResponse>(RUN_API_SCHEMAS.I
 export const checkUserShellPending = guard<UserShellPendingResponse>(RUN_API_SCHEMAS.UserShellPendingResponse);
 export const checkUserShellFrame = guard<UserShellFrame>(RUN_API_SCHEMAS.UserShellFrame);
 export const checkRunSuccessor = guard<{ successor: RunView | null }>(RUN_API_SCHEMAS.RunSuccessorResponse);
+export const checkInspectorSnapshot = guard<InspectorSnapshot>(RUN_API_SCHEMAS.InspectorSnapshot);
+export const checkInspectorMemorySearch = guard<InspectorMemorySearchResponse>(RUN_API_SCHEMAS.InspectorMemorySearchResponse);

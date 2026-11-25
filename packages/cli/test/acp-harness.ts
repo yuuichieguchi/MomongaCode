@@ -363,6 +363,11 @@ export const fakeRuntime = (): FakeRuntime => {
       };
     },
     elicitations: unexpected('elicitations'),
+    editMemory: unexpected('editMemory'),
+    inspector: unexpected('inspector'),
+    inspectorExcludeContextItem: unexpected('inspectorExcludeContextItem'),
+    inspectorControlMemory: unexpected('inspectorControlMemory'),
+    inspectorSearchMemories: unexpected('inspectorSearchMemories'),
     agents: unexpected('agents'),
     jobs: unexpected('jobs'),
     childRuns: unexpected('childRuns'),

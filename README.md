@@ -23,7 +23,7 @@ Open an interactive session in a repository with `momonga`, or run a one-shot pr
 ## Why MomongaCode?
 
 - **Adaptive Agent Memory & Context Orchestration.** Evidence-backed memories decay automatically, recall checks freshness against bound files and commits, and budgeted prompts with verified compaction keep long sessions accurate.
-- **Agent Token Efficiency Engineering.** Prompt cache prefix stability, tool deferral, concise tool descriptions, output formatters, loop guidance, and observed capacity checks are on by default and measurable with `momonga eval`.
+- **Agent Token Efficiency Engineering.** Prompt cache prefix stability, tool deferral, concise tool descriptions, output formatters, loop guidance, and observed capacity checks are on by default and measurable with `momonga eval`, or inspected live in the terminal UI with `/inspect` (`Ctrl+X i`).
 - **Capability-Aware System Prompt Architecture.** Deterministic, capability-driven prompts adapt to each server and model without model-name branches.
 - **Output Clarity Engineering.** Switch response density with `/style` or revise technical answers and files against the codebase with `/polish`.
 - **Safety, permissions, and verifiable completion.** Tool calls run under explicit permission rules, OS sandboxes (`sandbox-exec` on macOS, `bwrap` on Linux), formal rule checks (`momonga policy verify`), optional choice-only judging models (`system-one`), and post-turn verification conditions.

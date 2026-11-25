@@ -1,5 +1,6 @@
+import type { Clock } from '@momonga/foundation';
 import { ESTIMATED_ERROR_BOUND_RATIO, sizingRatioFor, tokensForText } from '@momonga/protocol';
-import type { MemoryRecord, MemoryScope, MemoryView } from '@momonga/protocol';
+import type { InspectorMemoryRetrievalTrace, InspectorRetrievalCandidate, MemoryRecord, MemoryScope, MemoryView } from '@momonga/protocol';
 import { inputCeilingFor, memoryBudgetFor } from '@momonga/context';
 import { recallOrder } from '@momonga/memory';
 import { MEMORY_MATCH_LIMIT } from '@momonga/store';
@@ -21,6 +22,7 @@ export type MemoryPortOptions = {
   settings: Pick<SettingsPort, 'trusted'>;
   evidenceRun: (project: string) => EvidenceRun;
   evidencePorts?: (options: EvidencePortsOptions) => EvidencePorts;
+  clock?: Clock;
 };
 
 export const recallPrefixBudgetOf = (capacity: RecallCapacity): number => memoryBudgetFor(inputCeilingFor(capacity.capabilities), capacity.memoryShare);
@@ -31,7 +33,7 @@ export const recallPrefixTokensOf = (text: string, capacity: RecallCapacity): nu
 const visibleTo = (memory: MemoryRecord, visibility: MemoryVisibility): boolean =>
   visibility.trusted ? (memory.scope === 'user' && memory.origin === 'trusted') || (memory.scope === 'project' && memory.project === visibility.project) : memory.scope === 'user';
 
-export const createMemoryPort = ({ platform, store, settings, evidenceRun, evidencePorts = createEvidencePorts }: MemoryPortOptions): MemoryPort => ({
+export const createMemoryPort = ({ platform, store, settings, evidenceRun, evidencePorts = createEvidencePorts, clock }: MemoryPortOptions): MemoryPort => ({
   load: async (session, signal) => {
     const trusted = await settings.trusted(session, signal);
     const visibility: MemoryVisibility = trusted ? { trusted: true, project: session.cwd } : { trusted: false };
@@ -112,24 +114,107 @@ export const createMemoryPort = ({ platform, store, settings, evidenceRun, evide
     let more = false;
     let capped = false;
     let touchedBound: number | undefined;
+    let trace: InspectorMemoryRetrievalTrace | undefined;
     return {
-      prepare: async ({ query, capacity, pinnedIds = [], touchedCap }) => {
+      prepare: async ({ query, capacity, pinnedIds = [], excludeIds = [], prioritizeIds = [], touchedCap }) => {
+        const startMs = clock?.now();
         const budget = recallPrefixBudgetOf(capacity);
         const terms = termsOfQuery(query);
+        const excludedSet = new Set(excludeIds);
+        const prioritizedSet = new Set(prioritizeIds);
+        const pinnedSet = new Set(pinnedIds);
+        const matchedSet = typeof store.memories.matchingIds === 'function' ? store.memories.matchingIds(visibility, terms) : new Set<string>();
         const read: MemoryView[] = [];
+        const candidates: InspectorRetrievalCandidate[] = [];
+        const seenCandidateIds = new Set<string>();
         let tokens = 0;
         let after: RecallCursor | null = null;
         let hasMore = false;
         let matchCapped = false;
+
+        const addCandidate = (
+          entry: { readonly id: string; readonly text: string; readonly kind: unknown; readonly status: MemoryView['status'] },
+          tier: number,
+          itemTokens: number,
+          decision: 'included' | 'excluded',
+          reason: string,
+        ): void => {
+          if (seenCandidateIds.has(entry.id)) return;
+          seenCandidateIds.add(entry.id);
+          candidates.push({
+            id: entry.id,
+            summary: entry.text.replace(/\s+/g, ' ').trim().slice(0, 100),
+            kind: String(entry.kind),
+            status: entry.status,
+            matched: matchedSet.has(entry.id),
+            tier,
+            rank: candidates.length + 1,
+            tokens: itemTokens,
+            decision,
+            reason,
+            pinned: pinnedSet.has(entry.id) || prioritizedSet.has(entry.id),
+            sessionExcluded: excludedSet.has(entry.id),
+          });
+        };
+
+        const addExcludedRecord = (record: MemoryRecord, tier: number, reason: string): void => {
+          const status: MemoryView['status'] =
+            record.observedStatus === null || record.observedStatus === 'unknown' ? 'unbound' : record.observedStatus;
+          addCandidate(
+            { id: record.id, text: record.text, kind: record.kind, status },
+            tier,
+            recallPrefixTokensOf(record.text, capacity),
+            'excluded',
+            reason,
+          );
+        };
+
+        // Session-prioritized memories are evaluated first within budget.
+        for (const id of prioritizeIds) {
+          if (excludedSet.has(id) || seenCandidateIds.has(id)) continue;
+          const record = store.memories.get(id);
+          if (record === undefined || !visibleTo(record, visibility) || record.state !== 'active' || record.retiredAt !== null) continue;
+          const [view] = await viewsOf([record], signal);
+          if (view === undefined) continue;
+          const itemTokens = recallPrefixTokensOf(record.text, capacity);
+          read.push(view);
+          tokens += itemTokens;
+          addCandidate(view, 0, itemTokens, 'included', 'session_prioritized');
+        }
+
         reading: for (;;) {
           const page = store.memories.recallPage(visibility, { terms, after, limit: MEMORY_PAGE_ROWS, through });
           matchCapped = page.matchCapped;
           for (const [index, record] of page.memories.entries()) {
-            const [view] = await viewsOf([record], signal);
-            if (view === undefined) throw new Error(`memory ${record.id} produced no view`);
-            read.push(view);
-            tokens += recallPrefixTokensOf(record.text, capacity);
+            if (seenCandidateIds.has(record.id)) continue;
+            const itemTokens = recallPrefixTokensOf(record.text, capacity);
+            const tier = matchedSet.has(record.id) ? 1 : 2;
+            if (excludedSet.has(record.id)) {
+              addExcludedRecord(record, tier, 'session_excluded');
+              continue;
+            }
+            if (tokens < budget || read.length === 0) {
+              const [view] = await viewsOf([record], signal);
+              if (view === undefined) throw new Error(`memory ${record.id} produced no view`);
+              read.push(view);
+              tokens += itemTokens;
+              addCandidate(view, tier, itemTokens, 'included', matchedSet.has(record.id) ? 'query_match' : 'recency_fill');
+            } else {
+              addExcludedRecord(record, tier, 'budget_exceeded');
+              for (const tail of page.memories.slice(index + 1, index + 9)) {
+                if (seenCandidateIds.has(tail.id)) continue;
+                const tailTier = matchedSet.has(tail.id) ? 1 : 2;
+                addExcludedRecord(tail, tailTier, excludedSet.has(tail.id) ? 'session_excluded' : 'budget_exceeded');
+              }
+              hasMore = index < page.memories.length - 1 || page.next !== null;
+              break reading;
+            }
             if (tokens >= budget) {
+              for (const tail of page.memories.slice(index + 1, index + 9)) {
+                if (seenCandidateIds.has(tail.id)) continue;
+                const tailTier = matchedSet.has(tail.id) ? 1 : 2;
+                addExcludedRecord(tail, tailTier, excludedSet.has(tail.id) ? 'session_excluded' : 'budget_exceeded');
+              }
               hasMore = index < page.memories.length - 1 || page.next !== null;
               break reading;
             }
@@ -140,19 +225,39 @@ export const createMemoryPort = ({ platform, store, settings, evidenceRun, evide
         const readIds = new Set(read.map((view) => view.id));
         const outside: MemoryRecord[] = [];
         for (const id of pinnedIds) {
+          if (excludedSet.has(id)) continue;
           const record = readIds.has(id) ? undefined : store.memories.get(id);
           if (record !== undefined) outside.push(record);
         }
         pinnedOutside = await viewsOf(outside, signal);
+        for (const view of pinnedOutside) {
+          addCandidate(view, 0, recallPrefixTokensOf(view.text, capacity), 'included', 'cache_prefix_pinned');
+        }
         prefix = read;
         more = hasMore;
         capped = matchCapped;
         touchedBound = touchedCap;
+        const endMs = clock?.now();
+        trace = {
+          query,
+          terms,
+          executedAt: endMs ?? 0,
+          latencyMs: startMs !== undefined && endMs !== undefined ? Math.max(0, endMs - startMs) : null,
+          budgetTokens: budget,
+          usedTokens: tokens,
+          matchCapped,
+          touchedCap: touchedCap ?? null,
+          moreAvailable: hasMore,
+          candidateCount: candidates.length,
+          selectedCount: candidates.filter((c) => c.decision === 'included').length,
+          candidates,
+        };
       },
       ranked: () => [...prefix, ...pinnedOutside],
       hasMore: () => more,
       matchCap: () => (capped ? MEMORY_MATCH_LIMIT : undefined),
       touchedCap: () => touchedBound,
+      lastTrace: () => trace,
       tools: createMemoryTools({ port: toolPort, trusted }),
     };
   },

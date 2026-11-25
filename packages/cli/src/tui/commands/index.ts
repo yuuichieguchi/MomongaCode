@@ -12,6 +12,7 @@ import { configCommand } from './config.ts';
 import { contextCommand } from './context.ts';
 import { hooksCommand } from './hooks.ts';
 import { initCommand } from './init.ts';
+import { inspectCommand } from './inspect.ts';
 import { keybindingsCommand } from './keybindings.ts';
 import { mcpCommand } from './mcp.ts';
 import { networkCommand } from './network.ts';
@@ -29,6 +30,6 @@ import { polishCommand } from './polish.ts';
 import { styleCommand } from './style.ts';
 import { tuiCommand } from './tui.ts';
 
-export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, delegateCommand, resumeCommand, autoModeCommand, effortCommand, styleCommand, polishCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, contextCommand, permissionsCommand, hooksCommand, mcpCommand, initCommand, reportCommand, copyCommand, skillsCommand, agentsCommand, networkCommand, ...shellSlashCommands];
+export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, delegateCommand, resumeCommand, autoModeCommand, effortCommand, styleCommand, polishCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, contextCommand, permissionsCommand, hooksCommand, mcpCommand, initCommand, inspectCommand, reportCommand, copyCommand, skillsCommand, agentsCommand, networkCommand, ...shellSlashCommands];
 
 export const sessionSlashCommands = (base: readonly SlashCommand[], flows: PlanFlows): readonly SlashCommand[] => [...base, modelPickerCommand(flows), ...planSlashCommands(flows)];

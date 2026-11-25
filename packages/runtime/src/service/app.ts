@@ -4,8 +4,8 @@ import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, serverKeyOfLabel, stripCredentialEnv } from '@momonga/config';
 import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
-import { canonicalJson, hostPaths, sha256Hex } from '@momonga/foundation';
-import type { Clock, FileSystem, GenerationRole, PathResolver } from '@momonga/foundation';
+import { canonicalJson, createRedactor, hostPaths, sha256Hex } from '@momonga/foundation';
+import type { Clock, FileSystem, GenerationRole, PathResolver, Redactor } from '@momonga/foundation';
 import { DEFAULT_PERMISSION_MODE, AUTO_MODE_UNAVAILABLE, unknownClassifierMessage, PROMPT_BODY_MAX_BYTES, PROMPT_IMAGE_MAX_BYTES, base64ByteLength, RUN_STATUSES, messageOf, agentReadiness, canDoJob, isTargetProbeFailed, displayMapOf, startModelOf, isTargetProbing, modelJobRefusal, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, POLICY_REFUTED_CODE, USER_SHELL_RUN_ACTIVE_CODE, policyRefutedMessage, refusingRefutations, inboxFullMessage, outputReserveFor, interruptedWorkOf, approvalEndingText, SURFACES, SURFACE_HEADER } from '@momonga/protocol';
 import { ISSUE_PIN } from './issues.ts';
 import type { IssuePort, IssueRead } from './issues.ts';
@@ -20,6 +20,9 @@ import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { registerUserShellRoutes } from './user-shell-routes.ts';
 import { registerToolResultRoutes } from './tool-result-routes.ts';
+import { registerInspectorRoutes } from './inspector-routes.ts';
+import { createSessionInspectorState } from './session-inspector-state.ts';
+import type { SessionInspectorState } from './session-inspector-state.ts';
 import type { UserCommandRegistry } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
@@ -155,6 +158,8 @@ export type RunAppDeps = {
   files: FileSystem;
   onError: (error: unknown) => void;
   delegation?: DelegationPort;
+  redactor?: Redactor;
+  inspectorState?: SessionInspectorState;
 };
 
 export type Handler = (context: Context) => Response | Promise<Response>;
@@ -914,6 +919,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval }, { person: ['POST'] });
   registerReportRoutes(route, { store, now: () => deps.clock.now(), maxBodyBytes: deps.maxBodyBytes, reportCost: deps.reportCost, runTraceContent: deps.runTraceContent, recomputeFacts: deps.recomputeFacts });
+  const inspectorState = deps.inspectorState ?? createSessionInspectorState(deps.clock);
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes, home: deps.home });
   registerMemoryRoutes(route, {
     store,
@@ -924,6 +930,19 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
     home: deps.home,
+    inspectorState,
+  });
+  registerInspectorRoutes(route, {
+    store,
+    clock: deps.clock,
+    redactor: deps.redactor ?? createRedactor({ credentials: [] }),
+    modelCapabilities: deps.modelCapabilities,
+    runCostBreakdown: deps.runCostBreakdown,
+    evidenceRun: deps.evidenceRun,
+    sandboxKind: (signal) => deps.health.sandbox(signal),
+    maxBodyBytes: deps.maxBodyBytes,
+    closeSignal: deps.closeSignal,
+    inspectorState,
   });
   registerGuidelineRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerRuleRoutes(route, {

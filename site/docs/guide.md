@@ -261,6 +261,7 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 | Command | What it does |
 | --- | --- |
 | `/status`, `/jobs` | Show a run with its subagents and the approvals waiting in them, and the background jobs of the session. |
+| `/inspect [tab]` | Open the real-time Agent Inspector (`overview`, `context`, `memory`, `usage`, `execution`) to analyze context, memories, cache, cost and execution. |
 | `/report [run-id]` | Show the verification report of a run: what passed, failed or was not run. |
 | `/cost [--breakdown]` | Show the model cost of a run, a session or this folder. |
 | `/trace [run-id]` | Show the model and tool spans of a run. |

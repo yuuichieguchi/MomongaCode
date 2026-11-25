@@ -38,6 +38,8 @@ describe('the keyboard is routed by one value', () => {
     expect(keyRouteOf({ ...idle, toolView: true, overlay: 'pick' })).toBe('tool-view');
     expect(keyRouteOf({ ...idle, overlay: 'loading', prompt: 'decision' })).toBe('overlay');
     expect(keyRouteOf({ ...idle, overlay: 'kept', prompt: 'decision', menuOpen: true })).toBe('overlay');
+    expect(keyRouteOf({ ...idle, inspector: true, welcome: true, menuOpen: true })).toBe('inspector');
+    expect(keyRouteOf({ ...idle, overlay: 'pick', inspector: true })).toBe('overlay');
     expect(keyRouteOf({ ...idle, welcome: true, menuOpen: true })).toBe('welcome');
     expect(keyRouteOf({ ...idle, prompt: 'decision', shellDraft: true, menuOpen: true })).toBe('prompt');
     expect(keyRouteOf({ ...idle, prompt: 'decision', agentsChosen: true })).toBe('prompt');
@@ -58,6 +60,7 @@ describe('the keyboard is routed by one value', () => {
     expect(chordContextsOf({ ...idle, overlay: 'text' })).toEqual(['select', 'chat']);
     expect(chordContextsOf({ ...idle, overlay: 'capture' })).toEqual([]);
     expect(chordContextsOf({ ...idle, overlay: 'kept' })).toEqual(['select']);
+    expect(chordContextsOf({ ...idle, inspector: true })).toEqual(['inspector', 'global']);
     expect(chordContextsOf({ ...idle, welcome: true })).toEqual([]);
     expect(chordContextsOf({ ...idle, shellDraft: true })).toEqual(['shell', 'viewport', 'chat', 'global']);
     expect(chordContextsOf({ ...idle, agentsChosen: true })).toEqual(['agents', 'viewport', 'chat', 'global']);

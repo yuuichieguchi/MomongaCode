@@ -3,6 +3,7 @@ import type { ContextOverflowError, InstructionReader } from '@momonga/context';
 import type { RuntimeStore } from '@momonga/store';
 import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, RuleVerifierPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerLeases } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
+import type { SessionInspectorState } from '../service/session-inspector-state.ts';
 import type { MandateRunVerification } from '../process/folder-verification.ts';
 import type { SystemPromptContext } from '../system-prompt.ts';
 
@@ -60,6 +61,7 @@ export type WorkerOptions = {
   random: () => number;
   platform: string;
   timers: ServiceTimers;
+  inspectorState?: SessionInspectorState;
 };
 
 export type Worker = {

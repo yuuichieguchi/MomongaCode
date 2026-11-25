@@ -1,3 +1,4 @@
+import { INSPECTOR_REQUEST_SCHEMAS, inspectorMemorySearchResponseSchema, inspectorSnapshotSchema } from './inspector-schema.ts';
 import type { Stored } from './stored-value.ts';
 import { INTERRUPTED_COMMAND_SHOWN_CHARS, INTERRUPTED_WORK_LISTED } from './supervisor-api.ts';
 import type { InterruptedWorkItem, RetentionStatusView } from './supervisor-api.ts';
@@ -1947,6 +1948,9 @@ export const RUN_API_SCHEMAS = {
       ['rows', 'refused'],
     ),
   ),
+  ...INSPECTOR_REQUEST_SCHEMAS,
+  InspectorSnapshot: inspectorSnapshotSchema(memoryView, tokenAnatomy, summaryFidelity),
+  InspectorMemorySearchResponse: inspectorMemorySearchResponseSchema(),
 } as const satisfies Record<string, JsonSchema>;
 
 type ReducedEventType =

@@ -2,7 +2,7 @@ import type { KeyEvent, KeyModifiers } from '../terminal/events.ts';
 import { NEWLINE_HINT } from '../terminal/negotiation.ts';
 import type { NegotiationState } from '../terminal/negotiation.ts';
 
-export const KEY_CONTEXTS = ['chat', 'menu', 'agents', 'select', 'viewport', 'viewer', 'shell', 'global'] as const;
+export const KEY_CONTEXTS = ['chat', 'menu', 'agents', 'select', 'viewport', 'viewer', 'shell', 'inspector', 'global'] as const;
 
 export type KeyContext = (typeof KEY_CONTEXTS)[number];
 
@@ -81,6 +81,29 @@ export const KEYS = [
   { id: 'viewer.older', context: 'viewer', default: ['tab'], description: 'the next older tool output' },
   { id: 'viewer.newer', context: 'viewer', default: ['shift+tab'], description: 'the next newer tool output' },
   { id: 'viewer.close', context: 'viewer', default: ['escape'], description: 'return' },
+  { id: 'inspector.open', context: 'chat', default: ['ctrl+x i'], description: 'open agent inspector' },
+  { id: 'inspector.close', context: 'inspector', default: ['escape', 'q'], description: 'close inspector' },
+  { id: 'inspector.tabNext', context: 'inspector', default: ['tab'], description: 'next tab' },
+  { id: 'inspector.tabPrev', context: 'inspector', default: ['shift+tab'], description: 'previous tab' },
+  { id: 'inspector.tab1', context: 'inspector', default: ['1'], description: 'overview' },
+  { id: 'inspector.tab2', context: 'inspector', default: ['2'], description: 'context' },
+  { id: 'inspector.tab3', context: 'inspector', default: ['3'], description: 'memory' },
+  { id: 'inspector.tab4', context: 'inspector', default: ['4'], description: 'usage' },
+  { id: 'inspector.tab5', context: 'inspector', default: ['5'], description: 'execution' },
+  { id: 'inspector.up', context: 'inspector', default: ['up', 'k'], description: 'move selection up' },
+  { id: 'inspector.down', context: 'inspector', default: ['down', 'j'], description: 'move selection down' },
+  { id: 'inspector.openDetail', context: 'inspector', default: ['enter'], description: 'view detail' },
+  { id: 'inspector.back', context: 'inspector', default: ['backspace'], description: 'close detail' },
+  { id: 'inspector.subView', context: 'inspector', default: ['v'], description: 'switch section' },
+  { id: 'inspector.sort', context: 'inspector', default: ['s'], description: 'cycle sort order' },
+  { id: 'inspector.filter', context: 'inspector', default: ['f'], description: 'cycle filter' },
+  { id: 'inspector.refresh', context: 'inspector', default: ['r'], description: 'refresh snapshot' },
+  { id: 'inspector.compact', context: 'inspector', default: ['c'], description: 'run manual compaction' },
+  { id: 'inspector.exclude', context: 'inspector', default: ['x'], description: 'toggle exclusion' },
+  { id: 'inspector.pin', context: 'inspector', default: ['p'], description: 'toggle pin priority' },
+  { id: 'inspector.search', context: 'inspector', default: ['/'], description: 'search memory' },
+  { id: 'inspector.edit', context: 'inspector', default: ['e'], description: 'edit memory' },
+  { id: 'inspector.delete', context: 'inspector', default: ['d'], description: 'retire memory' },
   { id: 'screen.repaint', context: 'global', default: ['ctrl+l'], description: 'repaint the screen' },
   { id: 'screen.suspend', context: 'global', default: ['ctrl+z'], description: 'suspend' },
 ] as const satisfies readonly KeyRow[];

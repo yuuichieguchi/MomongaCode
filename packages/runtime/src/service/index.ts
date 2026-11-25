@@ -16,3 +16,7 @@ export { startTerminalSweeper } from './terminal-sweeper.ts';
 export type { TerminalSweeper, TerminalSweeperOptions } from './terminal-sweeper.ts';
 export { systemTimers } from './timers.ts';
 export type { ServiceTimers } from './timers.ts';
+export { createSessionInspectorState } from './session-inspector-state.ts';
+export type { SessionInspectorState, SessionInspectorReadState, SessionInspectorOverrides } from './session-inspector-state.ts';
+export { registerInspectorRoutes } from './inspector-routes.ts';
+export type { InspectorRouteDeps, InspectorRouteStore } from './inspector-routes.ts';
