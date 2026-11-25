@@ -881,7 +881,7 @@ export const SECOND_ENTER: Readonly<Record<string, { readonly opened: string; re
   "models add: Type the address of a model server → the address field": { opened: "Address (for example http://127.0.0.1:11434): / >", acted: "Address (for example http://127.0.0.1:11434): / >" },
   "models add: Use a service with an API key → the list of APIs": { opened: "Use a service with an API key / › 1. OpenAI-compatible API", acted: "Address: / >" },
   "models add: Run a program as a model server → the program field": { opened: "Write the full path of the program. / >", acted: "Write the full path of the program. / >" },
-  "models fields: a model of the hub → its fields": { opened: "ollama/qwen3.8:27b · 8.2k tokens · local / › 1. Edit", acted: "Models /  Servers" },
+  "models fields: a model of the hub → its fields": { opened: "ollama/qwen3.8:27b · 8.2k tokens · local · starts new sessions / › 1. Edit", acted: "Models /  Servers" },
   "/login: Add an API key → the list of APIs": { opened: "Use a service with an API key / › 1. OpenAI-compatible API", acted: "Address: / >" },
   "/login: OpenAI-compatible API → Address field": { opened: "Address: / >", acted: "Address: / >" },
   "/login provider flow: Rename account → its text field": { opened: "Rename account chatgpt / > chatgpt", acted: "Rename account chatgpt / > chatgpt" },

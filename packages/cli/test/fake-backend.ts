@@ -1,9 +1,10 @@
 import fs from 'node:fs';
-import { INBOX_FULL_CODE, INBOX_MAX_PENDING, emptyInspectorSnapshot, inboxFullMessage, parseCanon, imageCapability } from '@momonga/protocol';
+import { INBOX_FULL_CODE, INBOX_MAX_PENDING, emptyInspectorSnapshot, inboxFullMessage, modelsForJob, parseCanon, imageCapability } from '@momonga/protocol';
 import { SCRIPTED_MODEL, SCRIPTED_PROVIDER, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
-import type { Capabilities, CapabilityOverride, InspectorContextExcludeRequest, InspectorMemoryControlRequest, InspectorMemoryRetrievalTrace, InspectorSnapshot, LocalServerDetection, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryJudgementView, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, InspectorContextExcludeRequest, InspectorMemoryControlRequest, InspectorMemoryRetrievalTrace, InspectorSnapshot, LocalServerDetection, MomongaModelEntry, MomongaModelList, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryJudgementView, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
+import { listingViewsOf } from '../src/client/gateway-client.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import { isTerminalStatus } from '../src/run/follow.ts';
 import { continuedSession, resolveSession } from '../src/run/resolve-session.ts';
@@ -342,10 +343,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const detections: DetectRequest[] = [];
   const secrets = new Map<string, string>();
   const listings: number[] = [];
-  const writtenEntries = (): MomongaModelEntry[] => {
+  const writtenListing = (): MomongaModelList | undefined => {
     const readHome = modelsHome ?? options.settingsPlace?.home;
-    return readHome !== undefined && fs.existsSync(momongaLayout(readHome, process.platform, {}).settingsFile) ? listingOf(readHome).data : [];
+    return readHome !== undefined && fs.existsSync(momongaLayout(readHome, process.platform, {}).settingsFile) ? listingOf(readHome) : undefined;
   };
+  const writtenEntries = (): MomongaModelEntry[] => writtenListing()?.data ?? [];
   const configuredClassifier = (): string | undefined => {
     const readHome = modelsHome ?? options.settingsPlace?.home;
     if (readHome === undefined) return undefined;
@@ -378,6 +380,12 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     const written = writtenEntries();
     const scripted = (options.models ?? [session.model]).map((id) => ({ ...listedEntryOf(id, options.listedProbing === true || (options.probing?.includes(id) === true && !measured) ? PROBING_PLAN : listedCapabilities(id), options.chains?.[id] ?? options.chain ?? [id]), ...savedEffortOf(id) }));
     return [...scripted, ...written.filter((entry) => !scripted.some((other) => other.id === entry.id))];
+  };
+  const modelListing = async (): Promise<MomongaModelList> => {
+    const written = writtenListing();
+    const data = await listedModels();
+    const start = written?.start ?? modelsForJob(listingViewsOf(data), 'start')[0]?.canon ?? null;
+    return { object: 'list', data, start, roles: written?.roles ?? {} };
   };
 
   const waiters: { call: string; resolve: () => void }[] = [];
@@ -502,7 +510,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     modelList: async () => {
       await answerLater();
       listings.push(listings.length);
-      return { object: 'list', data: await listedModels(), start: null, roles: {} };
+      return modelListing();
     },
     modelsHost: (signal) => ({
       home: homeOfModels(),
@@ -516,7 +524,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         readText: (file) => fs.promises.readFile(file, 'utf8'),
         readTextIfPresent: async (file) => (fs.existsSync(file) ? fs.promises.readFile(file, 'utf8') : undefined),
       },
-      listing: async () => ({ object: 'list', data: await listedModels(), start: null, roles: {} }),
+      listing: modelListing,
       detect: async (request) => {
         detections.push(request);
         return options.detect === undefined ? [...(options.detected ?? [])] : options.detect(request);
