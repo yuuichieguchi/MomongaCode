@@ -140,9 +140,9 @@ describe('the key table', () => {
 
   it.each<[KeyEvent, string]>([
     [named('tab'), 'inspector.tabNext'],
-    [named('right'), 'inspector.tabNext'],
     [named('tab', { shift: true }), 'inspector.tabPrev'],
-    [named('left'), 'inspector.tabPrev'],
+    [named('left'), 'inspector.left'],
+    [named('right'), 'inspector.right'],
   ])('gives %j in inspector context the action %s', (event, action) => {
     expect(DEFAULT_KEY_TABLE.actionOf(['inspector'], event)).toBe(action);
   });

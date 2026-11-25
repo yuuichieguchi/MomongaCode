@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { emptyInspectorSnapshot } from '@momonga/protocol';
 import type { InspectorSnapshot, MemoryView } from '@momonga/protocol';
 import { KEYS, untilFrame } from '../ink-helpers.ts';
-import { frame, start, type } from '../tui-harness.tsx';
+import { start, type } from '../tui-harness.tsx';
 
 const WIDE = { columns: 120, rows: 45 };
 const NARROW = { columns: 50, rows: 18 };
 const READY = 'mode: manual (shift+tab)';
+const CLOSED = (text: string): boolean => !text.includes('AGENT INSPECTOR') && text.includes(READY);
 
 const memView = (fields: Partial<MemoryView> & { id: string; text: string }): MemoryView => ({
   scope: 'user',
@@ -272,11 +273,15 @@ describe('Agent Inspector TUI', () => {
     expect(overview).toContain('74.8%');
     expect(overview).toContain('[PASS] npm test');
 
-    // Switch to Context tab -> Explorer -> toggle exclude on tool output.
+    // Switch to Context tab -> Section bar -> Explorer -> list row -> Detail -> toggle exclude.
     started.app.stdin.write('2');
     await untilFrame(started.app, '[2:Context]');
-    started.app.stdin.write('v');
-    await untilFrame(started.app, 'result:call-big #4');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> Section:');
+    started.app.stdin.write(KEYS.right);
+    await untilFrame(started.app, '[explorer]');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> history.toolOutputs');
     started.app.stdin.write(KEYS.enter);
     await untilFrame(started.app, 'DETAIL VIEW');
     started.app.stdin.write(KEYS.backspace);
@@ -285,12 +290,18 @@ describe('Agent Inspector TUI', () => {
     await started.backend.called('inspector-exclude:call-big:true');
     await untilFrame(started.app, '[EXCL]');
 
-    // Switch to Memory tab -> Active / Trace / Pin.
+    // Switch to Memory tab -> Section bar -> Active list row -> Pin -> back to Section bar -> Trace.
     started.app.stdin.write('3');
     await untilFrame(started.app, 'JWT middleware lives in src/auth.ts');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> Section:');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> verified');
     started.app.stdin.write('p');
     await started.backend.called('inspector-memory-control:mem-1:pin');
-    started.app.stdin.write('v');
+    started.app.stdin.write(KEYS.up);
+    await untilFrame(started.app, '> Section:');
+    started.app.stdin.write(KEYS.right);
     await untilFrame(started.app, 'Query: "auth middleware"');
 
     // Switch to Usage & Execution tabs.
@@ -301,8 +312,8 @@ describe('Agent Inspector TUI', () => {
 
     // Close with Esc and confirm original session prompt & mode footer remain intact.
     started.app.stdin.write(KEYS.escape);
-    await untilFrame(started.app, READY);
-    expect(frame(started.app)).not.toContain('AGENT INSPECTOR');
+    await untilFrame(started.app, CLOSED);
+    expect(started.app.lastFrame()).not.toContain('AGENT INSPECTOR');
   });
 
   it('opens directly from the Ctrl+X i chord and adapts layout cleanly on narrow terminals', async () => {
@@ -317,7 +328,7 @@ describe('Agent Inspector TUI', () => {
     }
 
     started.app.stdin.write(KEYS.escape);
-    await untilFrame(started.app, READY);
+    await untilFrame(started.app, CLOSED);
   });
 
   it('requires explicit confirmation before retiring a persistent memory from Memory Inspector', async () => {
@@ -330,6 +341,12 @@ describe('Agent Inspector TUI', () => {
     await type(started.app, '/inspect memory', '> /inspect memory');
     started.app.stdin.write(KEYS.enter);
     await untilFrame(started.app, 'JWT middleware lives in src/auth.ts');
+
+    // Move focus down into the memory list before retiring.
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> Section:');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> verified');
 
     started.app.stdin.write('d');
     await untilFrame(started.app, 'Retire persistent memory (mem-1)?');
@@ -367,32 +384,131 @@ describe('Agent Inspector TUI', () => {
 
     // Close and verify transcript returns intact.
     started.app.stdin.write(KEYS.escape);
-    await untilFrame(started.app, READY);
+    await untilFrame(started.app, CLOSED);
   });
 
-  it('cycles Agent Inspector tabs with Left and Right arrow keys and shows arrow hints', async () => {
+  it('navigates 2D spatially across tabs, section bars, and lists with arrow keys', async () => {
     const started = await start({ inspectorSnapshot: richSnapshot() }, {}, WIDE);
     await untilFrame(started.app, READY);
 
     await type(started.app, '/inspect', '> /inspect');
     started.app.stdin.write(KEYS.enter);
     const initial = await untilFrame(started.app, '[1:Overview]');
-    expect(initial).toContain('[tab/left/right] Tab');
+    expect(initial).toContain('[left/right] Switch tab');
 
+    // On Overview (no sections), Down does nothing.
+    started.app.stdin.write(KEYS.down);
+    // Left/Right on Tab bar switches tabs cleanly (including wrap).
     started.app.stdin.write(KEYS.right);
-    await untilFrame(started.app, '[2:Context]');
+    await untilFrame(started.app, '>  1:Overview  [2:Context]');
     started.app.stdin.write(KEYS.right);
     await untilFrame(started.app, '[3:Memory]');
-
     started.app.stdin.write(KEYS.left);
     await untilFrame(started.app, '[2:Context]');
+
+    // Down from Tab bar enters Section bar; Left/Right switches sections.
+    started.app.stdin.write(KEYS.down);
+    const sectionBar = await untilFrame(started.app, '> Section: [breakdown]');
+    expect(sectionBar).toContain('[left/right] Switch section');
+    started.app.stdin.write(KEYS.right);
+    await untilFrame(started.app, '> Section: breakdown  [explorer]');
     started.app.stdin.write(KEYS.left);
-    await untilFrame(started.app, '[1:Overview]');
-    started.app.stdin.write(KEYS.left);
-    await untilFrame(started.app, '[5:Execution]');
+    await untilFrame(started.app, '> Section: [breakdown]');
+
+    // Down into list, Left/Right inside list does not jump tabs or sections, Up twice returns to Tab bar.
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> System Prompt');
+    started.app.stdin.write(KEYS.right);
+    expect(started.app.lastFrame()).toContain('> System Prompt');
+    started.app.stdin.write(KEYS.up);
+    await untilFrame(started.app, '> Section: [breakdown]');
+    started.app.stdin.write(KEYS.up);
+    await untilFrame(started.app, '>  1:Overview  [2:Context]');
 
     started.app.stdin.write(KEYS.escape);
+    await untilFrame(started.app, CLOSED);
+  });
+
+  it('shows window-relative percentages with Free space, stops selection on visible rows, and drills down on Enter', async () => {
+    const snap = richSnapshot();
+    const withZeroRow = {
+      ...snap,
+      context: {
+        ...snap.context,
+        categories: [
+          ...snap.context.categories,
+          { key: 'framing' as const, label: 'Framing', tokens: 0, share: 0 },
+        ],
+      },
+    };
+    const started = await start({ inspectorSnapshot: withZeroRow }, {}, WIDE);
     await untilFrame(started.app, READY);
+
+    await type(started.app, '/inspect context', '> /inspect context');
+    started.app.stdin.write(KEYS.enter);
+    const breakdown = await untilFrame(started.app, 'Tool Results');
+    // 24,000 / 128,000 = 18.8%, Free space = 85,200 (66.6%); zero-token row hidden.
+    expect(breakdown).toContain('18.8%');
+    expect(breakdown).toContain('Free space');
+    expect(breakdown).toContain('85,200');
+    expect(breakdown).toContain('66.6%');
+    expect(breakdown).not.toContain('Framing');
+
+    // Enter list and press Down past the end -> stops on the last visible positive category (User Messages).
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> Section: [breakdown]');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> System Prompt');
+    started.app.stdin.write(KEYS.down);
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> Tool Results');
+    started.app.stdin.write(KEYS.down);
+    started.app.stdin.write(KEYS.down);
+    started.app.stdin.write(KEYS.down);
+    const clamped = await untilFrame(started.app, '> User Messages');
+    expect(clamped).not.toContain('> Free space');
+
+    // Move back up to Tool Results and press Enter -> opens Explorer filtered to history.toolOutputs.
+    started.app.stdin.write(KEYS.up);
+    await untilFrame(started.app, '> Tool Results');
+    started.app.stdin.write(KEYS.enter);
+    const explorer = await untilFrame(started.app, 'filter=history.toolOutputs');
+    expect(explorer).toContain('> history.toolOutputs');
+
+    started.app.stdin.write(KEYS.escape);
+    await untilFrame(started.app, CLOSED);
+  });
+
+  it('keeps selection aligned with newest-first rows in Usage requests', async () => {
+    const base = richSnapshot();
+    const twoRequests = {
+      ...base,
+      usage: {
+        ...base.usage,
+        requests: [
+          { ...base.usage.requests[0]!, id: 'req-older', step: 1, model: 'older-model' },
+          { ...base.usage.requests[0]!, id: 'req-newer', step: 2, model: 'newer-model' },
+        ],
+      },
+    };
+    const started = await start({ inspectorSnapshot: twoRequests }, {}, WIDE);
+    await untilFrame(started.app, READY);
+
+    await type(started.app, '/inspect usage', '> /inspect usage');
+    started.app.stdin.write(KEYS.enter);
+    await untilFrame(started.app, '[4:Usage]');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> Section: [tokens]');
+    started.app.stdin.write(KEYS.left);
+    await untilFrame(started.app, '[requests]');
+    started.app.stdin.write(KEYS.down);
+    await untilFrame(started.app, '> s2.1');
+    started.app.stdin.write(KEYS.enter);
+    const detail = await untilFrame(started.app, 'DETAIL VIEW');
+    expect(detail).toContain('ID       : req-newer');
+
+    started.app.stdin.write(KEYS.escape);
+    await untilFrame(started.app, '[4:Usage]');
   });
 
   it('keeps the input box with typed draft dimmed and preserves it while Agent Inspector is open', async () => {

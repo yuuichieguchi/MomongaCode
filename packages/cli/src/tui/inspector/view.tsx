@@ -1,7 +1,6 @@
 import { Box, Text } from 'ink';
 import { escapeTerminalLine, INSPECTOR_TABS } from '@momonga/protocol';
 import type { InspectorDiagnostic, InspectorSnapshot, InspectorTab } from '@momonga/protocol';
-import { shownKey } from '../keys/table.ts';
 import type { KeyTable } from '../keys/table.ts';
 import { borderOf, styleOf } from '../screen/theme.ts';
 import {
@@ -19,8 +18,9 @@ import {
   renderStackedBar,
   truncateText,
   visibleWindow,
+  windowShareOf,
 } from './format.ts';
-import { filteredSortedContextItems, resolveSelectedIndex } from './state.ts';
+import { filteredSortedContextItems, resolveSelectedIndex, tabHasSections } from './state.ts';
 import type { InspectorUiState } from './state.ts';
 
 export type InspectorViewProps = {
@@ -42,65 +42,78 @@ const hintSegment = (keys: KeyTable, action: Parameters<KeyTable['keyHint']>[0],
   return hint === '' ? '' : `[${hint}] ${fallbackLabel}`;
 };
 
-const tabNavSegment = (keys: KeyTable): string => {
-  const next = keys.keysFor('inspector.tabNext').map(shownKey);
-  const prev = keys.keysFor('inspector.tabPrev').map(shownKey);
-  const parts = [next[0], prev[1], next[1]].filter((part): part is string => part !== undefined);
-  return parts.length === 0 ? '' : `[${parts.join('/')}] Tab`;
-};
+const joinHints = (keys: KeyTable, actions: readonly Parameters<KeyTable['keyHint']>[0][]): string =>
+  actions
+    .map((action) => keys.keyHint(action))
+    .filter((hint) => hint !== '')
+    .join('/');
+
+const hasDetailSupport = (ui: InspectorUiState): boolean =>
+  (ui.tab === 'context' && (ui.contextSubView === 'explorer' || ui.contextSubView === 'compactions')) ||
+  (ui.tab === 'memory' && (ui.memorySubView === 'active' || ui.memorySubView === 'all' || ui.memorySubView === 'trace')) ||
+  (ui.tab === 'usage' && ui.usageSubView === 'requests') ||
+  (ui.tab === 'execution' && ui.executionSubView === 'tools');
 
 export const inspectorFooterHints = (keys: KeyTable, ui: InspectorUiState): string => {
-  const base = [
-    tabNavSegment(keys),
-    hintSegment(keys, 'inspector.up', 'Move'),
-    hintSegment(keys, 'inspector.subView', 'Section'),
-  ];
   if (ui.detail !== null) {
-    return [
-      hintSegment(keys, 'inspector.back', 'Back'),
-      hintSegment(keys, 'inspector.close', 'Close'),
-    ]
+    return [hintSegment(keys, 'inspector.back', 'Back'), hintSegment(keys, 'inspector.close', 'Close')]
       .filter((part) => part !== '')
       .join('  ');
   }
-  const extra: string[] = [];
-  if (ui.tab === 'context') {
-    extra.push(hintSegment(keys, 'inspector.openDetail', 'Detail'));
-    extra.push(hintSegment(keys, 'inspector.sort', `Sort(${ui.contextSort})`));
-    extra.push(hintSegment(keys, 'inspector.filter', `Filter(${ui.contextCategoryFilter})`));
-    extra.push(hintSegment(keys, 'inspector.exclude', 'Toggle exclude'));
-    extra.push(hintSegment(keys, 'inspector.compact', 'Compaction'));
-  } else if (ui.tab === 'memory') {
-    extra.push(hintSegment(keys, 'inspector.openDetail', 'Detail'));
-    extra.push(hintSegment(keys, 'inspector.exclude', 'Exclude'));
-    extra.push(hintSegment(keys, 'inspector.pin', 'Pin'));
-    extra.push(hintSegment(keys, 'inspector.search', 'Search'));
-    extra.push(hintSegment(keys, 'inspector.edit', 'Edit'));
-    extra.push(hintSegment(keys, 'inspector.delete', 'Retire'));
-  } else if (ui.tab === 'usage' || ui.tab === 'execution') {
-    extra.push(hintSegment(keys, 'inspector.openDetail', 'Detail'));
-    if (ui.tab === 'execution') extra.push(hintSegment(keys, 'inspector.filter', `Filter(${ui.executionFilter})`));
+  const lr = joinHints(keys, ['inspector.left', 'inspector.right']);
+  const ud = joinHints(keys, ['inspector.up', 'inspector.down']);
+  const parts: string[] = [];
+  if (ui.focus === 'tabs') {
+    if (lr !== '') parts.push(`[${lr}] Switch tab`);
+    const downHint = keys.keyHint('inspector.down');
+    if (downHint !== '' && tabHasSections(ui.tab)) parts.push(`[${downHint}] Sections`);
+  } else if (ui.focus === 'section') {
+    if (lr !== '') parts.push(`[${lr}] Switch section`);
+    if (ud !== '') parts.push(`[${ud}] Tabs / List`);
+  } else {
+    if (ud !== '') parts.push(`[${ud}] Move`);
+    if (ui.tab === 'context' && ui.contextSubView === 'breakdown') {
+      parts.push(hintSegment(keys, 'inspector.openDetail', 'Explorer'));
+    } else if (hasDetailSupport(ui)) {
+      parts.push(hintSegment(keys, 'inspector.openDetail', 'Detail'));
+    }
   }
-  extra.push(hintSegment(keys, 'inspector.refresh', 'Refresh'));
-  extra.push(hintSegment(keys, 'inspector.close', 'Close'));
-  return [...base, ...extra].filter((part) => part !== '').join('  ');
+  if (ui.tab === 'context') {
+    parts.push(hintSegment(keys, 'inspector.sort', `Sort(${ui.contextSort})`));
+    parts.push(hintSegment(keys, 'inspector.filter', `Filter(${ui.contextCategoryFilter})`));
+    if (ui.focus === 'list' && ui.contextSubView === 'explorer') parts.push(hintSegment(keys, 'inspector.exclude', 'Toggle exclude'));
+    parts.push(hintSegment(keys, 'inspector.compact', 'Compaction'));
+  } else if (ui.tab === 'memory') {
+    if (ui.focus === 'list' && ui.memorySubView !== 'lifecycle') {
+      parts.push(hintSegment(keys, 'inspector.exclude', 'Exclude'));
+      parts.push(hintSegment(keys, 'inspector.pin', 'Pin'));
+      parts.push(hintSegment(keys, 'inspector.edit', 'Edit'));
+      parts.push(hintSegment(keys, 'inspector.delete', 'Retire'));
+    }
+    parts.push(hintSegment(keys, 'inspector.search', 'Search'));
+  } else if (ui.tab === 'execution' && ui.executionSubView === 'tools') {
+    parts.push(hintSegment(keys, 'inspector.filter', `Filter(${ui.executionFilter})`));
+  }
+  parts.push(hintSegment(keys, 'inspector.refresh', 'Refresh'));
+  parts.push(hintSegment(keys, 'inspector.close', 'Close'));
+  return parts.filter((part) => part !== '').join('  ');
 };
 
 export const inspectorRowIdsFor = (snapshot: InspectorSnapshot, ui: InspectorUiState): string[] => {
   switch (ui.tab) {
     case 'overview':
-      return snapshot.diagnostics.map((d) => d.id);
+      return [];
     case 'context':
       if (ui.contextSubView === 'compactions') return snapshot.context.compactions.map((c) => c.id);
-      if (ui.contextSubView === 'breakdown') return snapshot.context.categories.map((c) => c.key);
+      if (ui.contextSubView === 'breakdown') return snapshot.context.categories.filter((c) => c.tokens > 0).map((c) => c.key);
       return filteredSortedContextItems(snapshot, ui).map((item) => item.id);
     case 'memory':
       if (ui.memorySubView === 'active') return snapshot.memory.active.map((m) => m.id);
       if (ui.memorySubView === 'trace') return snapshot.memory.retrievalTrace?.candidates.map((c) => c.id) ?? [];
-      if (ui.memorySubView === 'lifecycle') return snapshot.memory.lifecycle.map((e) => e.id);
+      if (ui.memorySubView === 'lifecycle') return [...snapshot.memory.lifecycle].reverse().map((e) => e.id);
       return filteredMemories(snapshot, ui).map((m) => m.id);
     case 'usage':
-      if (ui.usageSubView === 'requests') return snapshot.usage.requests.map((r) => r.id);
+      if (ui.usageSubView === 'requests') return [...snapshot.usage.requests].reverse().map((r) => r.id);
       if (ui.usageSubView === 'cost') return snapshot.usage.cost.byModel.map((m) => `${m.provider}:${m.model}`);
       return [];
     case 'execution':
@@ -143,7 +156,7 @@ const renderDetailPanel = (snapshot: InspectorSnapshot, ui: InspectorUiState, in
       lines.push(`Category : ${item.category}`);
       lines.push(`Label    : ${item.label}`);
       lines.push(`Source   : ${item.source}`);
-      lines.push(`Tokens   : ${formatTokens(item.tokens)} (${formatPercent(item.share)})`);
+      lines.push(`Tokens   : ${formatTokens(item.tokens)} (${formatPercent(windowShareOf(item.tokens, snapshot.context.contextWindow))})`);
       lines.push(`Cached   : ${item.cached}`);
       if (item.seq !== undefined) lines.push(`Seq      : ${item.seq}`);
       if (item.callId !== undefined) lines.push(`Call ID  : ${item.callId}`);
@@ -332,33 +345,72 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
     );
   };
 
-  const renderContext = () => {
-    const subTabs = (['breakdown', 'explorer', 'compactions'] as const).map((sub) =>
-      sub === ui.contextSubView ? `[${sub}]` : sub,
+  const renderSectionHeader = <T extends string>(subs: readonly T[], active: T, extra = '') => {
+    const sectionFocused = ui.focus === 'section' && ui.detail === null;
+    return (
+      <Box flexDirection="row">
+        <Text {...(sectionFocused ? styleOf(['accent', 'bold']) : styleOf(['bold']))}>
+          {sectionFocused ? '> Section: ' : '  Section: '}
+        </Text>
+        {subs.map((sub) => {
+          const isCurrent = sub === active;
+          const label = isCurrent ? `[${sub}]` : sub;
+          const style = isCurrent
+            ? styleOf([sectionFocused ? 'choice.selected' : 'bold'])
+            : styleOf(['dim']);
+          return (
+            <Text key={sub} {...style}>
+              {label}{'  '}
+            </Text>
+          );
+        })}
+        {extra === '' ? null : (
+          <Text {...styleOf(['dim'])} wrap="truncate">
+            {safe(extra, Math.max(8, innerWidth - 42))}
+          </Text>
+        )}
+      </Box>
     );
-    const header = `Section: ${subTabs.join('  ')}   Current: ${formatTokens(snapshot.context.currentTokens)} / ${formatTokens(snapshot.context.contextWindow)} (${formatPercent(snapshot.context.utilization)})`;
+  };
+
+  const renderContext = () => {
+    const currentExtra = `Current: ${formatTokens(snapshot.context.currentTokens)} / ${formatTokens(snapshot.context.contextWindow)} (${formatPercent(snapshot.context.utilization)})`;
 
     if (ui.contextSubView === 'breakdown') {
-      const bar = renderStackedBar(snapshot.context.categories, compact ? 18 : 36);
+      const bar = renderStackedBar(snapshot.context.categories, compact ? 18 : 36, snapshot.context.contextWindow);
       const cats = snapshot.context.categories.filter((c) => c.tokens > 0);
-      const win = visibleWindow(cats, selected, Math.max(3, listRows - 3));
+      const freeTokens =
+        snapshot.context.contextWindow !== null && snapshot.context.currentTokens !== null
+          ? Math.max(0, snapshot.context.contextWindow - snapshot.context.currentTokens)
+          : null;
+      const win = visibleWindow(cats, selected, Math.max(3, listRows - 4));
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
-          <Text wrap="truncate">{safe(`Composition: ${bar}`, innerWidth)}</Text>
+          {renderSectionHeader(['breakdown', 'explorer', 'compactions'] as const, ui.contextSubView, currentExtra)}
+          <Text wrap="truncate">{safe(`  Composition: ${bar}`, innerWidth)}</Text>
           {cats.length === 0 ? (
-            <Text {...styleOf(['dim'])}>No context token breakdown recorded yet.</Text>
+            <Text {...styleOf(['dim'])}>  No context token breakdown recorded yet.</Text>
           ) : (
             win.rows.map((cat, idx) => {
               const absIdx = win.start + idx;
-              const prefix = absIdx === selected ? '>' : ' ';
-              const line = `${prefix} ${cat.label.padEnd(20)} ${formatTokens(cat.tokens).padStart(8)}  ${formatPercent(cat.share).padStart(6)}`;
+              const isRowSelected = ui.focus === 'list' && absIdx === selected;
+              const prefix = isRowSelected ? '>' : ' ';
+              const pct = formatPercent(windowShareOf(cat.tokens, snapshot.context.contextWindow));
+              const line = `${prefix} ${cat.label.padEnd(20)} ${formatTokens(cat.tokens).padStart(8)}  ${pct.padStart(6)}`;
               return (
-                <Text key={cat.key} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+                <Text key={cat.key} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                   {safe(line, innerWidth)}
                 </Text>
               );
             })
+          )}
+          {freeTokens !== null && (
+            <Text {...styleOf(['dim'])} wrap="truncate">
+              {safe(
+                `  ${'Free space'.padEnd(20)} ${formatTokens(freeTokens).padStart(8)}  ${formatPercent(windowShareOf(freeTokens, snapshot.context.contextWindow)).padStart(6)}`,
+                innerWidth,
+              )}
+            </Text>
           )}
           {snapshot.context.suggestions.length > 0 && (
             <Text {...styleOf(['warning'])} wrap="truncate">
@@ -374,20 +426,22 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
       const win = visibleWindow(items, selected, listRows);
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['breakdown', 'explorer', 'compactions'] as const, ui.contextSubView, currentExtra)}
           <Text {...styleOf(['dim'])} wrap="truncate">
-            {safe(`Explorer (${items.length} items, sort=${ui.contextSort}, filter=${ui.contextCategoryFilter})`, innerWidth)}
+            {safe(`  Explorer (${items.length} items, sort=${ui.contextSort}, filter=${ui.contextCategoryFilter})`, innerWidth)}
           </Text>
           {items.length === 0 ? (
-            <Text {...styleOf(['dim'])}>No context items match the current filter.</Text>
+            <Text {...styleOf(['dim'])}>  No context items match the current filter.</Text>
           ) : (
             win.rows.map((item, idx) => {
               const absIdx = win.start + idx;
-              const prefix = absIdx === selected ? '>' : ' ';
+              const isRowSelected = ui.focus === 'list' && absIdx === selected;
+              const prefix = isRowSelected ? '>' : ' ';
               const excludedTag = item.evicted ? ' [EXCL]' : '';
-              const line = `${prefix} ${item.category.padEnd(18)} ${formatTokens(item.tokens).padStart(6)} ${formatPercent(item.share).padStart(6)} ${item.label}${excludedTag}`;
+              const pct = formatPercent(windowShareOf(item.tokens, snapshot.context.contextWindow));
+              const line = `${prefix} ${item.category.padEnd(18)} ${formatTokens(item.tokens).padStart(6)} ${pct.padStart(6)} ${item.label}${excludedTag}`;
               return (
-                <Text key={item.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+                <Text key={item.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                   {safe(line, innerWidth)}
                 </Text>
               );
@@ -401,17 +455,18 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
     const win = visibleWindow(compactions, selected, listRows);
     return (
       <Box flexDirection="column">
-        <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+        {renderSectionHeader(['breakdown', 'explorer', 'compactions'] as const, ui.contextSubView, currentExtra)}
         {compactions.length === 0 ? (
-          <Text {...styleOf(['dim'])}>No compaction events recorded in this session.</Text>
+          <Text {...styleOf(['dim'])}>  No compaction events recorded in this session.</Text>
         ) : (
           win.rows.map((comp, idx) => {
             const absIdx = win.start + idx;
-            const prefix = absIdx === selected ? '>' : ' ';
+            const isRowSelected = ui.focus === 'list' && absIdx === selected;
+            const prefix = isRowSelected ? '>' : ' ';
             const status = comp.rejected ? `[REJECTED]` : `${formatTokens(comp.tokensBefore)} -> ${formatTokens(comp.tokensAfter)}`;
             const line = `${prefix} #${comp.seq} ${comp.reason}  ${status}  saved=${formatTokens(comp.savedTokens)}  ${formatDuration(comp.durationMs)}`;
             return (
-              <Text key={comp.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+              <Text key={comp.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                 {safe(line, innerWidth)}
               </Text>
             );
@@ -422,27 +477,25 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
   };
 
   const renderMemory = () => {
-    const subTabs = (['active', 'trace', 'lifecycle', 'all'] as const).map((sub) =>
-      sub === ui.memorySubView ? `[${sub}]` : sub,
-    );
-    const header = `Section: ${subTabs.join('  ')}   Active: ${snapshot.memory.active.length}   All: ${snapshot.memory.allMemories.length}`;
+    const memoryExtra = `Active: ${snapshot.memory.active.length}  All: ${snapshot.memory.allMemories.length}`;
 
     if (ui.memorySubView === 'active') {
       const items = snapshot.memory.active;
       const win = visibleWindow(items, selected, listRows);
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['active', 'trace', 'lifecycle', 'all'] as const, ui.memorySubView, memoryExtra)}
           {items.length === 0 ? (
-            <Text {...styleOf(['dim'])}>No memories loaded into active context.</Text>
+            <Text {...styleOf(['dim'])}>  No memories loaded into active context.</Text>
           ) : (
             win.rows.map((mem, idx) => {
               const absIdx = win.start + idx;
-              const prefix = absIdx === selected ? '>' : ' ';
+              const isRowSelected = ui.focus === 'list' && absIdx === selected;
+              const prefix = isRowSelected ? '>' : ' ';
               const tags = `${mem.pinned ? '[PIN]' : ''}${mem.excluded ? '[EXCL]' : ''}`;
               const line = `${prefix} ${mem.status.padEnd(10)} ${formatTokens(mem.tokens).padStart(5)}t ${tags} ${mem.summary}`;
               return (
-                <Text key={mem.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+                <Text key={mem.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                   {safe(line, innerWidth)}
                 </Text>
               );
@@ -457,24 +510,25 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
       if (trace === null) {
         return (
           <Box flexDirection="column">
-            <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
-            <Text {...styleOf(['dim'])}>No memory retrieval trace recorded yet. Use search to query memories.</Text>
+            {renderSectionHeader(['active', 'trace', 'lifecycle', 'all'] as const, ui.memorySubView, memoryExtra)}
+            <Text {...styleOf(['dim'])}>  No memory retrieval trace recorded yet. Use search to query memories.</Text>
           </Box>
         );
       }
       const win = visibleWindow(trace.candidates, selected, Math.max(3, listRows - 2));
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['active', 'trace', 'lifecycle', 'all'] as const, ui.memorySubView, memoryExtra)}
           <Text wrap="truncate">
-            {safe(`Query: "${trace.query}" | Candidates: ${trace.candidateCount} | Selected: ${trace.selectedCount} | Latency: ${formatDuration(trace.latencyMs)}`, innerWidth)}
+            {safe(`  Query: "${trace.query}" | Candidates: ${trace.candidateCount} | Selected: ${trace.selectedCount} | Latency: ${formatDuration(trace.latencyMs)}`, innerWidth)}
           </Text>
           {win.rows.map((cand, idx) => {
             const absIdx = win.start + idx;
-            const prefix = absIdx === selected ? '>' : ' ';
+            const isRowSelected = ui.focus === 'list' && absIdx === selected;
+            const prefix = isRowSelected ? '>' : ' ';
             const line = `${prefix} #${cand.rank} T${cand.tier} ${cand.decision.toUpperCase().padEnd(8)} ${cand.reason.padEnd(16)} ${cand.summary}`;
             return (
-              <Text key={cand.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+              <Text key={cand.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                 {safe(line, innerWidth)}
               </Text>
             );
@@ -488,16 +542,17 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
       const win = visibleWindow(items, selected, listRows);
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['active', 'trace', 'lifecycle', 'all'] as const, ui.memorySubView, memoryExtra)}
           {items.length === 0 ? (
-            <Text {...styleOf(['dim'])}>No memory lifecycle events in this session.</Text>
+            <Text {...styleOf(['dim'])}>  No memory lifecycle events in this session.</Text>
           ) : (
             win.rows.map((ev, idx) => {
               const absIdx = win.start + idx;
-              const prefix = absIdx === selected ? '>' : ' ';
+              const isRowSelected = ui.focus === 'list' && absIdx === selected;
+              const prefix = isRowSelected ? '>' : ' ';
               const line = `${prefix} ${formatTimestamp(ev.at)} ${ev.kind.padEnd(16)} ${ev.summary}`;
               return (
-                <Text key={ev.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+                <Text key={ev.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                   {safe(line, innerWidth)}
                 </Text>
               );
@@ -513,17 +568,18 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
     const pinnedSet = new Set(snapshot.memory.sessionControls.pinnedIds);
     return (
       <Box flexDirection="column">
-        <Text {...styleOf(['bold'])} wrap="truncate">{safe(`${header}   filter=${ui.memoryFilter}`, innerWidth)}</Text>
+        {renderSectionHeader(['active', 'trace', 'lifecycle', 'all'] as const, ui.memorySubView, `${memoryExtra}  filter=${ui.memoryFilter}`)}
         {all.length === 0 ? (
-          <Text {...styleOf(['dim'])}>No stored memories match the filter.</Text>
+          <Text {...styleOf(['dim'])}>  No stored memories match the filter.</Text>
         ) : (
           win.rows.map((mem, idx) => {
             const absIdx = win.start + idx;
-            const prefix = absIdx === selected ? '>' : ' ';
+            const isRowSelected = ui.focus === 'list' && absIdx === selected;
+            const prefix = isRowSelected ? '>' : ' ';
             const tags = `${pinnedSet.has(mem.id) ? '[PIN]' : ''}${excludedSet.has(mem.id) ? '[EXCL]' : ''}`;
             const line = `${prefix} ${String(mem.state).padEnd(9)} ${mem.status.padEnd(10)} ${tags} ${mem.text}`;
             return (
-              <Text key={mem.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+              <Text key={mem.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                 {safe(line, innerWidth)}
               </Text>
             );
@@ -534,10 +590,7 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
   };
 
   const renderUsage = () => {
-    const subTabs = (['tokens', 'cache', 'cost', 'requests'] as const).map((sub) =>
-      sub === ui.usageSubView ? `[${sub}]` : sub,
-    );
-    const header = `Section: ${subTabs.join('  ')}   Total: ${formatTokens(snapshot.usage.totals.totalTokens)}   Cost: ${formatUsd(snapshot.usage.cost.totalUsd, snapshot.usage.cost.isEstimated)}`;
+    const usageExtra = `Total: ${formatTokens(snapshot.usage.totals.totalTokens)}  Cost: ${formatUsd(snapshot.usage.cost.totalUsd, snapshot.usage.cost.isEstimated)}`;
     const { totals, cache, cost, requests } = snapshot.usage;
 
     if (ui.usageSubView === 'tokens') {
@@ -555,7 +608,7 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
       ];
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['tokens', 'cache', 'cost', 'requests'] as const, ui.usageSubView, usageExtra)}
           {lines.map((line, i) => (
             <Text key={i} wrap="truncate">
               {safe(line, innerWidth)}
@@ -580,7 +633,7 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
       ];
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['tokens', 'cache', 'cost', 'requests'] as const, ui.usageSubView, usageExtra)}
           {lines.map((line, i) => (
             <Text key={i} wrap="truncate">
               {safe(line, innerWidth)}
@@ -595,25 +648,26 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
       const win = visibleWindow(rowsList, selected, Math.max(3, listRows - 4));
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['tokens', 'cache', 'cost', 'requests'] as const, ui.usageSubView, usageExtra)}
           <Text wrap="truncate">
-            {safe(`Session: ${formatUsd(cost.totalUsd, cost.isEstimated)}  Compaction: ${formatUsd(cost.compactionCostUsd)}  Unpriced: ${cost.unpricedCalls}`, innerWidth)}
+            {safe(`  Session: ${formatUsd(cost.totalUsd, cost.isEstimated)}  Compaction: ${formatUsd(cost.compactionCostUsd)}  Unpriced: ${cost.unpricedCalls}`, innerWidth)}
           </Text>
           {cost.unpricedReasons.length > 0 && (
             <Text {...styleOf(['dim'])} wrap="truncate">
-              {safe(`Unpriced reasons: ${cost.unpricedReasons.join('; ')}`, innerWidth)}
+              {safe(`  Unpriced reasons: ${cost.unpricedReasons.join('; ')}`, innerWidth)}
             </Text>
           )}
-          <Text {...styleOf(['bold'])}>By model</Text>
+          <Text {...styleOf(['bold'])}>  By model</Text>
           {rowsList.length === 0 ? (
-            <Text {...styleOf(['dim'])}>No billed calls recorded yet.</Text>
+            <Text {...styleOf(['dim'])}>  No billed calls recorded yet.</Text>
           ) : (
             win.rows.map((m, idx) => {
               const absIdx = win.start + idx;
-              const prefix = absIdx === selected ? '>' : ' ';
+              const isRowSelected = ui.focus === 'list' && absIdx === selected;
+              const prefix = isRowSelected ? '>' : ' ';
               const line = `${prefix} ${m.model} (${m.provider}) calls=${m.calls} in=${formatTokens(m.inputTokens)} out=${formatTokens(m.outputTokens)} ${formatUsd(m.costUsd, m.costEstimated)}`;
               return (
-                <Text key={`${m.provider}:${m.model}`} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+                <Text key={`${m.provider}:${m.model}`} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                   {safe(line, innerWidth)}
                 </Text>
               );
@@ -627,16 +681,17 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
     const win = visibleWindow(reversed, selected, listRows);
     return (
       <Box flexDirection="column">
-        <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+        {renderSectionHeader(['tokens', 'cache', 'cost', 'requests'] as const, ui.usageSubView, usageExtra)}
         {reversed.length === 0 ? (
-          <Text {...styleOf(['dim'])}>No model requests recorded yet.</Text>
+          <Text {...styleOf(['dim'])}>  No model requests recorded yet.</Text>
         ) : (
           win.rows.map((req, idx) => {
             const absIdx = win.start + idx;
-            const prefix = absIdx === selected ? '>' : ' ';
+            const isRowSelected = ui.focus === 'list' && absIdx === selected;
+            const prefix = isRowSelected ? '>' : ' ';
             const line = `${prefix} s${req.step}.${req.attempt} ${req.status.padEnd(10)} ${req.model} in=${formatTokens(req.inputTokens)} out=${formatTokens(req.outputTokens)} ${formatDuration(req.latencyMs)} ${formatUsd(req.costUsd, req.costEstimated)}`;
             return (
-              <Text key={req.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+              <Text key={req.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                 {safe(line, innerWidth)}
               </Text>
             );
@@ -647,27 +702,25 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
   };
 
   const renderExecution = () => {
-    const subTabs = (['tools', 'verification', 'plan'] as const).map((sub) =>
-      sub === ui.executionSubView ? `[${sub}]` : sub,
-    );
     const { toolSummary } = snapshot.execution;
-    const header = `Section: ${subTabs.join('  ')}   Tools: ${toolSummary.total} ok=${toolSummary.succeeded} fail=${toolSummary.failed} run=${toolSummary.running}`;
+    const execExtra = `Tools: ${toolSummary.total} ok=${toolSummary.succeeded} fail=${toolSummary.failed} run=${toolSummary.running}`;
 
     if (ui.executionSubView === 'tools') {
       const calls = filteredToolCalls(snapshot, ui);
       const win = visibleWindow(calls, selected, listRows);
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(`${header}   filter=${ui.executionFilter}`, innerWidth)}</Text>
+          {renderSectionHeader(['tools', 'verification', 'plan'] as const, ui.executionSubView, `${execExtra}  filter=${ui.executionFilter}`)}
           {calls.length === 0 ? (
-            <Text {...styleOf(['dim'])}>No tool executions match the filter.</Text>
+            <Text {...styleOf(['dim'])}>  No tool executions match the filter.</Text>
           ) : (
             win.rows.map((call, idx) => {
               const absIdx = win.start + idx;
-              const prefix = absIdx === selected ? '>' : ' ';
+              const isRowSelected = ui.focus === 'list' && absIdx === selected;
+              const prefix = isRowSelected ? '>' : ' ';
               const line = `${prefix} ${badgeForToolStatus(call.status)} ${call.name.padEnd(14)} ${formatDuration(call.durationMs).padStart(7)} ${call.argsSummary}`;
               return (
-                <Text key={call.callId} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+                <Text key={call.callId} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                   {safe(line, innerWidth)}
                 </Text>
               );
@@ -682,19 +735,20 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
       const win = visibleWindow(conds, selected, Math.max(3, listRows - 2));
       return (
         <Box flexDirection="column">
-          <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+          {renderSectionHeader(['tools', 'verification', 'plan'] as const, ui.executionSubView, execExtra)}
           <Text {...styleOf(['dim'])} wrap="truncate">
-            {safe(`Requirements: ${snapshot.execution.requirements.length === 0 ? 'none' : snapshot.execution.requirements.join('; ')}`, innerWidth)}
+            {safe(`  Requirements: ${snapshot.execution.requirements.length === 0 ? 'none' : snapshot.execution.requirements.join('; ')}`, innerWidth)}
           </Text>
           {conds.length === 0 ? (
-            <Text {...styleOf(['dim'])}>No completion conditions declared.</Text>
+            <Text {...styleOf(['dim'])}>  No completion conditions declared.</Text>
           ) : (
             win.rows.map((cond, idx) => {
               const absIdx = win.start + idx;
-              const prefix = absIdx === selected ? '>' : ' ';
+              const isRowSelected = ui.focus === 'list' && absIdx === selected;
+              const prefix = isRowSelected ? '>' : ' ';
               const line = `${prefix} ${badgeForCondition(cond.state)} r${cond.rounds} ${formatDuration(cond.durationMs).padStart(7)} ${cond.command}`;
               return (
-                <Text key={cond.id} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+                <Text key={cond.id} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                   {safe(line, innerWidth)}
                 </Text>
               );
@@ -708,17 +762,18 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
     const win = visibleWindow(plan, selected, listRows);
     return (
       <Box flexDirection="column">
-        <Text {...styleOf(['bold'])} wrap="truncate">{safe(header, innerWidth)}</Text>
+        {renderSectionHeader(['tools', 'verification', 'plan'] as const, ui.executionSubView, execExtra)}
         {plan.length === 0 ? (
-          <Text {...styleOf(['dim'])}>No active plan recorded.</Text>
+          <Text {...styleOf(['dim'])}>  No active plan recorded.</Text>
         ) : (
           win.rows.map((entry, idx) => {
             const absIdx = win.start + idx;
-            const prefix = absIdx === selected ? '>' : ' ';
+            const isRowSelected = ui.focus === 'list' && absIdx === selected;
+            const prefix = isRowSelected ? '>' : ' ';
             const badge = entry.status === 'completed' ? '[DONE]' : entry.status === 'in_progress' ? '[WIP ]' : '[TODO]';
             const line = `${prefix} ${badge} (${entry.priority}) ${entry.content}`;
             return (
-              <Text key={absIdx} {...(absIdx === selected ? styleOf(['choice.selected']) : {})} wrap="truncate">
+              <Text key={absIdx} {...(isRowSelected ? styleOf(['choice.selected']) : {})} wrap="truncate">
                 {safe(line, innerWidth)}
               </Text>
             );
@@ -728,13 +783,20 @@ export function InspectorView({ snapshot, ui, keys, columns, rows, fullscreen }:
     );
   };
 
+  const tabsFocused = ui.focus === 'tabs' && ui.detail === null;
   const tabBar = (
     <Box flexDirection="row">
+      <Text {...(tabsFocused ? styleOf(['accent', 'bold']) : styleOf(['dim']))}>
+        {tabsFocused ? '> ' : '  '}
+      </Text>
       {INSPECTOR_TABS.map((tab: InspectorTab, index: number) => {
         const active = tab === ui.tab;
         const label = active ? `[${index + 1}:${INSPECTOR_TAB_TITLES[tab]}]` : ` ${index + 1}:${INSPECTOR_TAB_TITLES[tab]} `;
+        const style = active
+          ? styleOf([tabsFocused ? 'choice.selected' : 'bold'])
+          : styleOf(['dim']);
         return (
-          <Text key={tab} {...(active ? styleOf(['accent', 'bold']) : styleOf(['dim']))}>
+          <Text key={tab} {...style}>
             {label}{' '}
           </Text>
         );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createRedactor } from '@momonga/foundation';
 import { createInspectorAccumulator, emptyInspectorSnapshot } from '@momonga/protocol';
-import type { InspectorSnapshot, InspectorTab, PublicStreamEvent } from '@momonga/protocol';
+import type { ContextCategoryKey, InspectorSnapshot, InspectorTab, PublicStreamEvent } from '@momonga/protocol';
 import type { KeyEvent } from '../terminal/events.ts';
 import type { KeyContext, KeyTable } from '../keys/table.ts';
 import type { ScreenTimers } from '../screen/timers.ts';
@@ -189,6 +189,10 @@ export const useInspector = (options: UseInspectorOptions): InspectorController 
   const handleToggleContextExclude = useCallback(() => {
     const cur = uiRef.current;
     if (cur.tab !== 'context' || cur.contextSubView !== 'explorer') return;
+    if (cur.focus !== 'list') {
+      dispatch({ type: 'status', message: 'Move down into Context Explorer to select an item.' });
+      return;
+    }
     const item = selectedContextItem();
     if (item === undefined || !item.excludable || item.callId === undefined) {
       dispatch({ type: 'status', message: 'Select a tool result item in Context Explorer to exclude.' });
@@ -225,8 +229,12 @@ export const useInspector = (options: UseInspectorOptions): InspectorController 
 
   const handleMemoryControl = useCallback(
     (mode: 'exclude' | 'pin') => {
+      if (uiRef.current.focus !== 'list' || uiRef.current.memorySubView === 'lifecycle') {
+        dispatch({ type: 'status', message: 'Move down to select a memory row first.' });
+        return;
+      }
       const memoryId = selectedMemoryId();
-      if (memoryId === undefined || uiRef.current.memorySubView === 'lifecycle') {
+      if (memoryId === undefined) {
         dispatch({ type: 'status', message: 'Select a memory row first.' });
         return;
       }
@@ -265,8 +273,12 @@ export const useInspector = (options: UseInspectorOptions): InspectorController 
   }, [applySnapshot, backend, overlays, runActionAsync]);
 
   const handleMemoryEdit = useCallback(() => {
+    if (uiRef.current.focus !== 'list' || uiRef.current.memorySubView === 'lifecycle') {
+      dispatch({ type: 'status', message: 'Move down to select a memory row to edit.' });
+      return;
+    }
     const memoryId = selectedMemoryId();
-    if (memoryId === undefined || uiRef.current.memorySubView === 'lifecycle') {
+    if (memoryId === undefined) {
       dispatch({ type: 'status', message: 'Select a memory row to edit.' });
       return;
     }
@@ -292,8 +304,12 @@ export const useInspector = (options: UseInspectorOptions): InspectorController 
   }, [backend, fetchSnapshot, overlays, runActionAsync]);
 
   const handleMemoryRetire = useCallback(() => {
+    if (uiRef.current.focus !== 'list' || uiRef.current.memorySubView === 'lifecycle') {
+      dispatch({ type: 'status', message: 'Move down to select a memory row to retire.' });
+      return;
+    }
     const memoryId = selectedMemoryId();
-    if (memoryId === undefined || uiRef.current.memorySubView === 'lifecycle') {
+    if (memoryId === undefined) {
       dispatch({ type: 'status', message: 'Select a memory row to retire.' });
       return;
     }
@@ -316,13 +332,21 @@ export const useInspector = (options: UseInspectorOptions): InspectorController 
   const openCurrentDetail = useCallback(() => {
     const snap = snapshotRef.current;
     const cur = uiRef.current;
+    if (cur.focus !== 'list') return;
     const ids = inspectorRowIdsFor(snap, cur);
     if (ids.length === 0) return;
     const idx = resolveSelectedIndex(cur, ids);
     const id = ids[idx];
     if (id === undefined) return;
     if (cur.tab === 'context') {
-      if (cur.contextSubView === 'compactions') {
+      if (cur.contextSubView === 'breakdown') {
+        const catKey = id as ContextCategoryKey;
+        if (snap.context.items.some((item) => item.category === catKey)) {
+          dispatch({ type: 'drill_down_category', category: catKey });
+        } else {
+          dispatch({ type: 'status', message: `No individual Explorer items for ${catKey}.` });
+        }
+      } else if (cur.contextSubView === 'compactions') {
         dispatch({ type: 'open_detail', target: { kind: 'compaction', id } });
       } else if (cur.contextSubView === 'explorer') {
         dispatch({ type: 'open_detail', target: { kind: 'context_item', id } });
@@ -373,8 +397,14 @@ export const useInspector = (options: UseInspectorOptions): InspectorController 
         dispatch({ type: 'set_tab', tab: targetTab });
         return true;
       }
-      if (action === 'inspector.subView') {
-        dispatch({ type: 'cycle_sub_view' });
+      if (action === 'inspector.left' || action === 'inspector.right') {
+        if (uiRef.current.detail !== null) return true;
+        const delta = action === 'inspector.right' ? 1 : -1;
+        if (uiRef.current.focus === 'tabs') {
+          dispatch({ type: delta === 1 ? 'next_tab' : 'prev_tab' });
+        } else if (uiRef.current.focus === 'section') {
+          dispatch({ type: 'step_sub_view', delta });
+        }
         return true;
       }
       if (action === 'inspector.sort') {
@@ -386,8 +416,9 @@ export const useInspector = (options: UseInspectorOptions): InspectorController 
         return true;
       }
       if (action === 'inspector.up' || action === 'inspector.down') {
+        if (uiRef.current.detail !== null) return true;
         const ids = inspectorRowIdsFor(snapshotRef.current, uiRef.current);
-        dispatch({ type: 'move_selection', delta: action === 'inspector.up' ? -1 : 1, itemIds: ids });
+        dispatch({ type: 'move_vertical', delta: action === 'inspector.up' ? -1 : 1, itemIds: ids });
         return true;
       }
       if (action === 'inspector.openDetail') {

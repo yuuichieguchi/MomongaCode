@@ -6,6 +6,7 @@ import { parseCanon } from './model-ref.ts';
 import { reportedCachedTokensOf } from './open-responses.ts';
 import type { CacheMissCause } from './prefix-events.ts';
 import type { PublicRunEvent, PublicStreamEvent } from './run-api.ts';
+import { STOP_REASONS } from './run-types.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason, ToolKind } from './run-types.ts';
 import { isOpaqueEvent } from './run-api.ts';
 import type { TokenAnatomy } from './token-anatomy.ts';
@@ -1100,6 +1101,7 @@ export const createInspectorAccumulator = (options: InspectorAccumulatorOptions)
       }
       case 'run.status': {
         const terminal = event.to === 'COMPLETED' || event.to === 'STOPPED' || event.to === 'FAILED' || event.to === 'CANCELLED';
+        const isStopReason = event.reason !== undefined && (STOP_REASONS as readonly string[]).includes(event.reason);
         state = {
           ...state,
           agent: {
@@ -1111,7 +1113,8 @@ export const createInspectorAccumulator = (options: InspectorAccumulatorOptions)
             waitingForTool: event.to === 'WAITING_TOOL',
             waitingForApproval: event.to === 'WAITING_HUMAN',
             ...(terminal ? { retrying: false } : {}),
-            ...(event.reason === undefined ? {} : { stopReason: event.reason as StopReason }),
+            ...(isStopReason ? { stopReason: event.reason as StopReason } : {}),
+            ...(event.to === 'FAILED' && event.reason !== undefined && !isStopReason ? { error: redact(event.reason) } : {}),
             updatedAt: at,
           },
         };

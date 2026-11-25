@@ -1,6 +1,7 @@
 import { CONTEXT_CATEGORY_KEYS, INSPECTOR_TABS } from '@momonga/protocol';
 import type { ContextCategoryKey, InspectorSnapshot, InspectorTab } from '@momonga/protocol';
 
+export type InspectorFocusArea = 'tabs' | 'section' | 'list';
 export type InspectorContextSubView = 'breakdown' | 'explorer' | 'compactions';
 export type InspectorMemorySubView = 'active' | 'trace' | 'lifecycle' | 'all';
 export type InspectorUsageSubView = 'tokens' | 'cache' | 'cost' | 'requests';
@@ -16,9 +17,12 @@ export type InspectorDetailTarget =
   | { readonly kind: 'request'; readonly id: string }
   | { readonly kind: 'tool'; readonly id: string };
 
+export const tabHasSections = (tab: InspectorTab): boolean => tab !== 'overview';
+
 export type InspectorUiState = {
   readonly open: boolean;
   readonly tab: InspectorTab;
+  readonly focus: InspectorFocusArea;
   readonly contextSubView: InspectorContextSubView;
   readonly memorySubView: InspectorMemorySubView;
   readonly usageSubView: InspectorUsageSubView;
@@ -40,6 +44,7 @@ export type InspectorUiState = {
 export const INITIAL_INSPECTOR_UI_STATE: InspectorUiState = {
   open: false,
   tab: 'overview',
+  focus: 'tabs',
   contextSubView: 'breakdown',
   memorySubView: 'active',
   usageSubView: 'tokens',
@@ -64,11 +69,12 @@ export type InspectorUiAction =
   | { readonly type: 'set_tab'; readonly tab: InspectorTab }
   | { readonly type: 'next_tab' }
   | { readonly type: 'prev_tab' }
-  | { readonly type: 'cycle_sub_view' }
+  | { readonly type: 'step_sub_view'; readonly delta: 1 | -1 }
   | { readonly type: 'set_sub_view'; readonly subView: InspectorContextSubView | InspectorMemorySubView | InspectorUsageSubView | InspectorExecutionSubView }
+  | { readonly type: 'drill_down_category'; readonly category: ContextCategoryKey }
   | { readonly type: 'cycle_sort' }
   | { readonly type: 'cycle_filter' }
-  | { readonly type: 'move_selection'; readonly delta: number; readonly itemIds: readonly string[] }
+  | { readonly type: 'move_vertical'; readonly delta: 1 | -1; readonly itemIds: readonly string[] }
   | { readonly type: 'sync_items'; readonly itemIds: readonly string[] }
   | { readonly type: 'open_detail'; readonly target: InspectorDetailTarget }
   | { readonly type: 'close_detail' }
@@ -116,6 +122,7 @@ export const reduceInspectorUi = (state: InspectorUiState, action: InspectorUiAc
       return {
         ...state,
         open: true,
+        focus: 'tabs',
         ...(action.tab === undefined ? {} : { tab: action.tab, detail: null, scrollOffset: 0 }),
         error: null,
       };
@@ -130,6 +137,7 @@ export const reduceInspectorUi = (state: InspectorUiState, action: InspectorUiAc
       return {
         ...state,
         tab: action.tab,
+        focus: 'tabs',
         detail: null,
         scrollOffset: 0,
         statusMessage: null,
@@ -138,6 +146,7 @@ export const reduceInspectorUi = (state: InspectorUiState, action: InspectorUiAc
       return {
         ...state,
         tab: cycleNext(INSPECTOR_TABS, state.tab, 1),
+        focus: 'tabs',
         detail: null,
         scrollOffset: 0,
         statusMessage: null,
@@ -146,37 +155,51 @@ export const reduceInspectorUi = (state: InspectorUiState, action: InspectorUiAc
       return {
         ...state,
         tab: cycleNext(INSPECTOR_TABS, state.tab, -1),
+        focus: 'tabs',
         detail: null,
         scrollOffset: 0,
         statusMessage: null,
       };
-    case 'cycle_sub_view':
+    case 'step_sub_view':
       switch (state.tab) {
         case 'overview':
           return state;
         case 'context':
-          return { ...state, contextSubView: cycleNext(CONTEXT_SUBVIEWS, state.contextSubView), detail: null, scrollOffset: 0 };
+          return { ...state, focus: 'section', contextSubView: cycleNext(CONTEXT_SUBVIEWS, state.contextSubView, action.delta), detail: null, scrollOffset: 0, statusMessage: null };
         case 'memory':
-          return { ...state, memorySubView: cycleNext(MEMORY_SUBVIEWS, state.memorySubView), detail: null, scrollOffset: 0 };
+          return { ...state, focus: 'section', memorySubView: cycleNext(MEMORY_SUBVIEWS, state.memorySubView, action.delta), detail: null, scrollOffset: 0, statusMessage: null };
         case 'usage':
-          return { ...state, usageSubView: cycleNext(USAGE_SUBVIEWS, state.usageSubView), detail: null, scrollOffset: 0 };
+          return { ...state, focus: 'section', usageSubView: cycleNext(USAGE_SUBVIEWS, state.usageSubView, action.delta), detail: null, scrollOffset: 0, statusMessage: null };
         case 'execution':
-          return { ...state, executionSubView: cycleNext(EXECUTION_SUBVIEWS, state.executionSubView), detail: null, scrollOffset: 0 };
+          return { ...state, focus: 'section', executionSubView: cycleNext(EXECUTION_SUBVIEWS, state.executionSubView, action.delta), detail: null, scrollOffset: 0, statusMessage: null };
       }
     case 'set_sub_view':
       if (state.tab === 'context' && (CONTEXT_SUBVIEWS as readonly string[]).includes(action.subView)) {
-        return { ...state, contextSubView: action.subView as InspectorContextSubView, detail: null };
+        return { ...state, focus: 'section', contextSubView: action.subView as InspectorContextSubView, detail: null };
       }
       if (state.tab === 'memory' && (MEMORY_SUBVIEWS as readonly string[]).includes(action.subView)) {
-        return { ...state, memorySubView: action.subView as InspectorMemorySubView, detail: null };
+        return { ...state, focus: 'section', memorySubView: action.subView as InspectorMemorySubView, detail: null };
       }
       if (state.tab === 'usage' && (USAGE_SUBVIEWS as readonly string[]).includes(action.subView)) {
-        return { ...state, usageSubView: action.subView as InspectorUsageSubView, detail: null };
+        return { ...state, focus: 'section', usageSubView: action.subView as InspectorUsageSubView, detail: null };
       }
       if (state.tab === 'execution' && (EXECUTION_SUBVIEWS as readonly string[]).includes(action.subView)) {
-        return { ...state, executionSubView: action.subView as InspectorExecutionSubView, detail: null };
+        return { ...state, focus: 'section', executionSubView: action.subView as InspectorExecutionSubView, detail: null };
       }
       return state;
+    case 'drill_down_category':
+      return {
+        ...state,
+        tab: 'context',
+        contextSubView: 'explorer',
+        contextCategoryFilter: action.category,
+        focus: 'list',
+        selectedIndex: { ...state.selectedIndex, context: 0 },
+        selectedKey: { ...state.selectedKey, context: null },
+        detail: null,
+        scrollOffset: 0,
+        statusMessage: null,
+      };
     case 'cycle_sort':
       if (state.tab !== 'context') return state;
       return {
@@ -200,9 +223,37 @@ export const reduceInspectorUi = (state: InspectorUiState, action: InspectorUiAc
         return { ...state, executionFilter: cycleNext(EXECUTION_FILTERS, state.executionFilter), executionSubView: 'tools' };
       }
       return state;
-    case 'move_selection': {
-      if (action.itemIds.length === 0) return state;
+    case 'move_vertical': {
+      if (state.focus === 'tabs') {
+        if (action.delta === 1 && tabHasSections(state.tab)) {
+          return { ...state, focus: 'section', statusMessage: null };
+        }
+        return state;
+      }
+      if (state.focus === 'section') {
+        if (action.delta === -1) {
+          return { ...state, focus: 'tabs', statusMessage: null };
+        }
+        if (action.delta === 1 && action.itemIds.length > 0) {
+          return {
+            ...state,
+            focus: 'list',
+            selectedIndex: { ...state.selectedIndex, [state.tab]: 0 },
+            selectedKey: { ...state.selectedKey, [state.tab]: action.itemIds[0] ?? null },
+            statusMessage: null,
+          };
+        }
+        return state;
+      }
+      if (action.itemIds.length === 0) {
+        return action.delta === -1
+          ? { ...state, focus: tabHasSections(state.tab) ? 'section' : 'tabs', statusMessage: null }
+          : state;
+      }
       const current = resolveSelectedIndex(state, action.itemIds);
+      if (action.delta === -1 && current === 0) {
+        return { ...state, focus: tabHasSections(state.tab) ? 'section' : 'tabs', statusMessage: null };
+      }
       const next = Math.max(0, Math.min(action.itemIds.length - 1, current + action.delta));
       const key = action.itemIds[next] ?? null;
       return {

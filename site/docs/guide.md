@@ -271,7 +271,7 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 
 ### Agent Inspector
 
-Run `/inspect` (or press `Ctrl+X i`) during an interactive session to open the live Agent Inspector without interrupting an active run. Switch between the `Overview`, `Context`, `Memory`, `Usage`, and `Execution` tabs with `Tab` / `Shift+Tab`, the Left and Right arrow keys, or `1`–`5`, and close with `Esc` or `q` to return to the session.
+Run `/inspect` (or press `Ctrl+X i`) during an interactive session to open the live Agent Inspector without interrupting an active run. Switch tabs (`Overview`, `Context`, `Memory`, `Usage`, `Execution`) with `Left`/`Right` on the top bar, `1`–`5`, or `Tab`/`Shift+Tab`, press `Down`/`Up` to move between the tab bar, section bar (`Left`/`Right` switches sections), and list rows, and close with `Esc` or `q` to return to the session.
 
 ![MomongaCode Agent Inspector overview showing model, status, context usage, cost, cache hit rate, completion conditions, and warnings](../assets/agent-inspector.png)
 

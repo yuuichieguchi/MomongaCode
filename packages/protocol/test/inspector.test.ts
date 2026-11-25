@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defineProductSchema } from '@momonga/foundation';
 import {
   INSPECTOR_EVENT_BUFFER_LIMIT,
   buildContextCategories,
@@ -7,6 +8,7 @@ import {
   evaluateDiagnostics,
 } from '@momonga/protocol';
 import type { PublicRunEvent, TokenAnatomy } from '@momonga/protocol';
+import { RUN_API_SCHEMAS } from '../src/index.ts';
 
 const sampleAnatomy = (total = 1000): TokenAnatomy => ({
   estimated: true,
@@ -240,5 +242,48 @@ describe('Agent Inspector protocol helpers', () => {
     expect(snap.usage.totals.cachedInputTokens).toBeNull();
     expect(snap.usage.cache.hitRatio).toBeNull();
     expect(snap.usage.cost.totalUsd).toBeNull();
+  });
+
+  it('records non-StopReason FAILED run.status reasons in error instead of stopReason and satisfies InspectorSnapshot schema', () => {
+    const validateSnapshot = defineProductSchema('InspectorSnapshot', RUN_API_SCHEMAS.InspectorSnapshot);
+    const acc = createInspectorAccumulator({ now: () => 1000, redact: (text) => text });
+    acc.resetForSession({ id: 'sess-1', cwd: '/repo', model: 'openai/mock-model' });
+
+    acc.ingestEvent({
+      id: 1,
+      runId: 'run-1',
+      sessionId: 'sess-1',
+      seq: 1,
+      step: 1,
+      createdAt: 1001,
+      type: 'run.status',
+      from: 'RUNNING',
+      to: 'FAILED',
+      reason: 'input_truncated',
+    } as unknown as PublicRunEvent);
+
+    const failedSnap = acc.snapshot();
+    expect(failedSnap.agent.status).toBe('FAILED');
+    expect(failedSnap.agent.stopReason).toBeUndefined();
+    expect(failedSnap.agent.error).toBe('input_truncated');
+    expect(validateSnapshot(failedSnap).valid).toBe(true);
+
+    acc.ingestEvent({
+      id: 2,
+      runId: 'run-2',
+      sessionId: 'sess-1',
+      seq: 2,
+      step: 1,
+      createdAt: 1002,
+      type: 'run.status',
+      from: 'RUNNING',
+      to: 'STOPPED',
+      reason: 'max_steps',
+    } as unknown as PublicRunEvent);
+
+    const stoppedSnap = acc.snapshot();
+    expect(stoppedSnap.agent.status).toBe('STOPPED');
+    expect(stoppedSnap.agent.stopReason).toBe('max_steps');
+    expect(validateSnapshot(stoppedSnap).valid).toBe(true);
   });
 });

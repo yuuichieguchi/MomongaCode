@@ -8,7 +8,7 @@ export const INSPECTOR_TAB_TITLES: Readonly<Record<InspectorTab, string>> = {
   execution: 'Execution',
 };
 
-const STACK_GLYPHS = ['█', '▓', '▒', '░', '▪', '·'] as const;
+const STACK_GLYPHS = ['█', '▓', '▒', '▪', '·'] as const;
 const SPARK_GLYPHS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'] as const;
 
 export const truncateText = (text: string, maxWidth: number): string => {
@@ -24,6 +24,9 @@ export const formatTokens = (value: number | null | undefined): string =>
 
 export const formatPercent = (ratio: number | null | undefined): string =>
   ratio === null || ratio === undefined || !Number.isFinite(ratio) ? 'N/A' : `${(ratio * 100).toFixed(1)}%`;
+
+export const windowShareOf = (tokens: number, contextWindow: number | null | undefined): number | null =>
+  contextWindow !== null && contextWindow !== undefined && contextWindow > 0 ? tokens / contextWindow : null;
 
 export const formatUsd = (amount: number | null | undefined, estimated = false): string => {
   if (amount === null || amount === undefined || !Number.isFinite(amount)) return 'N/A';
@@ -56,22 +59,29 @@ export const renderProgressBar = (ratio: number | null | undefined, width: numbe
   return `[${'█'.repeat(filled)}${'░'.repeat(inner - filled)}] ${(clamped * 100).toFixed(1)}%`;
 };
 
-export const renderStackedBar = (categories: readonly InspectorContextCategory[], width: number): string => {
+export const renderStackedBar = (categories: readonly InspectorContextCategory[], width: number, contextWindow?: number | null): string => {
   const inner = Math.max(10, Math.min(48, width));
+  if (contextWindow === null || contextWindow === undefined || contextWindow <= 0) {
+    return `[${'░'.repeat(inner)}] N/A`;
+  }
   const positive = categories.filter((c) => c.tokens > 0);
   if (positive.length === 0) return `[${'░'.repeat(inner)}]`;
-  const total = positive.reduce((sum, c) => sum + c.tokens, 0);
-  if (total <= 0) return `[${'░'.repeat(inner)}]`;
+
+  const rawSpans = positive.map((cat) => Math.round((cat.tokens / contextWindow) * inner));
+  const sumSpans = rawSpans.reduce((acc, n) => acc + n, 0);
+  if (sumSpans === 0) {
+    let maxIdx = 0;
+    for (let i = 1; i < positive.length; i += 1) {
+      if (positive[i]!.tokens > positive[maxIdx]!.tokens) maxIdx = i;
+    }
+    rawSpans[maxIdx] = 1;
+  }
 
   const chars: string[] = [];
-  let used = 0;
-  for (let i = 0; i < positive.length && used < inner; i += 1) {
-    const cat = positive[i]!;
+  for (let i = 0; i < positive.length && chars.length < inner; i += 1) {
     const glyph = STACK_GLYPHS[i % STACK_GLYPHS.length]!;
-    const rawSpan = i === positive.length - 1 ? inner - used : Math.round((cat.tokens / total) * inner);
-    const span = Math.max(cat.tokens > 0 && rawSpan === 0 && used < inner ? 1 : 0, Math.min(inner - used, rawSpan));
+    const span = Math.min(inner - chars.length, Math.max(0, rawSpans[i]!));
     for (let j = 0; j < span; j += 1) chars.push(glyph);
-    used += span;
   }
   while (chars.length < inner) chars.push('░');
   return `[${chars.join('')}]`;
