@@ -265,6 +265,7 @@ describe('Agent Inspector TUI', () => {
     await type(started.app, '/inspect', '> /inspect');
     started.app.stdin.write(KEYS.enter);
     const overview = await untilFrame(started.app, 'MOMONGACODE / AGENT INSPECTOR');
+    expect(overview).toContain('> esc to return');
     expect(overview).toContain('anthropic/claude-sonnet-4-6');
     expect(overview).toContain('42,800 / 128,000 tokens');
     expect(overview).toContain('$0.082');
@@ -392,5 +393,19 @@ describe('Agent Inspector TUI', () => {
 
     started.app.stdin.write(KEYS.escape);
     await untilFrame(started.app, READY);
+  });
+
+  it('keeps the input box with typed draft dimmed and preserves it while Agent Inspector is open', async () => {
+    const started = await start({ inspectorSnapshot: richSnapshot() }, {}, WIDE);
+    await untilFrame(started.app, READY);
+
+    await type(started.app, 'draft text', '> draft text');
+    started.app.stdin.write(KEYS.ctrlX);
+    started.app.stdin.write('i');
+    const openFrame = await untilFrame(started.app, 'MOMONGACODE / AGENT INSPECTOR');
+    expect(openFrame).toContain('> draft text');
+
+    started.app.stdin.write(KEYS.escape);
+    await untilFrame(started.app, (frame) => !frame.includes('AGENT INSPECTOR') && frame.includes('> draft text'));
   });
 });

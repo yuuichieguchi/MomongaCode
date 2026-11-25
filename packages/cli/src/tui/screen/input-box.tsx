@@ -2,7 +2,7 @@ import { Box, Text, useCursor } from 'ink';
 import { characterEndAfter } from '../editor.ts';
 import type { EditorState } from '../editor.ts';
 import { INPUT_BOX_FRAME_ROWS } from './constants.ts';
-import { borderOf } from './theme.ts';
+import { borderOf, styleOf } from './theme.ts';
 import { displayWidth, inertText, segmentsOf } from './wrap.ts';
 
 const FIRST_PREFIX = '> ';
@@ -127,18 +127,26 @@ export function EditorView({ editor, columns, rows, hidden, framed }: EditorView
 
 export const CHAT_MARK = '>';
 
-export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number; framed: boolean; mark: string };
+export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number; framed: boolean; mark: string; inactiveHint?: string | undefined };
 
-export function InputBox({ editor, columns, rows, top, framed, mark }: InputBoxProps) {
+export function InputBox({ editor, columns, rows, top, framed, mark, inactiveHint }: InputBoxProps) {
   const { setCursorPosition } = useCursor();
   const layout = layoutInput(editor.text, editor.cursor, columns);
   const visible = rows ?? layout.rows.length;
   const first = windowTopOf(layout, visible);
-  setCursorPosition({ x: (framed ? BOX_LEFT_COLUMNS : 0) + FIRST_PREFIX.length + layout.caretCol, y: top + (framed ? BOX_TOP_ROWS : 0) + layout.caretRow - first });
+  const inactive = inactiveHint !== undefined;
+  setCursorPosition(
+    inactive
+      ? undefined
+      : { x: (framed ? BOX_LEFT_COLUMNS : 0) + FIRST_PREFIX.length + layout.caretCol, y: top + (framed ? BOX_TOP_ROWS : 0) + layout.caretRow - first },
+  );
+  const placeholder = inactive && editor.text === '' ? `${mark} ${inactiveHint}` : undefined;
   return (
     <Box flexDirection="column" {...(framed ? { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 } : {})}>
       {layout.rows.slice(first, first + visible).map((row, index) => (
-        <Text key={first + index} wrap="truncate">{`${first + index === 0 ? `${mark} ` : REST_PREFIX}${row.drawn}`}</Text>
+        <Text key={first + index} {...(inactive ? styleOf(['dim']) : {})} wrap="truncate">
+          {placeholder !== undefined && first + index === 0 ? placeholder : `${first + index === 0 ? `${mark} ` : REST_PREFIX}${row.drawn}`}
+        </Text>
       ))}
     </Box>
   );

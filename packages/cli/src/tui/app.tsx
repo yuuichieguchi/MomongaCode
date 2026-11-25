@@ -2390,7 +2390,7 @@ export function App(props: AppProps) {
     menuWheel: (wheelRows) => slashMenu.wheel(wheelRows),
   });
   const onInputPress = useEffectEvent((event: TerminalEvent): boolean => {
-    if (!fullscreen || switching || panel !== undefined || !inputShown) return false;
+    if (!fullscreen || switching || panel !== undefined || !inputShown || inspector.shown) return false;
     if (event.type !== 'mouse' || event.kind !== 'press' || event.button !== 'left') return false;
     const hit = regionAt(allocation, event.row);
     if (hit?.region !== 'input') return false;
@@ -2567,6 +2567,8 @@ export function App(props: AppProps) {
         }
       : undefined;
 
+  const inspectorCloseHint = keys.keyHint('inspector.close');
+  const inspectorInputHint = inspector.shown ? (inspectorCloseHint === '' ? 'inspector open' : `${inspectorCloseHint} to return`) : undefined;
   facts.current = { overlay: overlay !== undefined, position: shownAgent === undefined ? view.position : FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush };
   feedRef.current = feed;
   listTargetsRef.current = listTargets;
@@ -2613,7 +2615,7 @@ export function App(props: AppProps) {
               {keptDraft}
             </Text>
           ),
-          input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(shownFeed.live(view.source, viewed.settledAt).length, rowRequests))} /> : null,
+          input: inputShown ? <InputBox editor={editor} mark={shellDraft ? SHELL_MARK : CHAT_MARK} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={inputTopOf(fullscreen ? allocation : naturalRows(shownFeed.live(view.source, viewed.settledAt).length, rowRequests))} inactiveHint={inspectorInputHint} /> : null,
           footer: (
             <>
               <Footer facts={footerFacts} panelModel={panelModel} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />

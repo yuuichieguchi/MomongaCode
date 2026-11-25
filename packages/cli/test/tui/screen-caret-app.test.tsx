@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { untilFrame } from '../ink-helpers.ts';
-import { start } from '../tui-harness.tsx';
+import { KEYS, untilFrame } from '../ink-helpers.ts';
+import { start, type } from '../tui-harness.tsx';
 
 type CaretPosition = { x: number; y: number } | undefined;
 
@@ -35,6 +35,27 @@ describe('the caret of the input in scrollback mode (P-199)', () => {
     expect(inputRowOf(menu)).toBeGreaterThan(inputRowOf(settled));
     expect(seen.length).toBeGreaterThan(0);
     for (const { row, caretRow, frame } of seen) expect(caretRow, frame).toBe(row);
+    app.unmount();
+  });
+
+  it('keeps InputBox visible with a return hint and clears caret position when Agent Inspector opens in fullscreen, and restores both on close', async () => {
+    const { app } = await start({}, {}, { columns: 100, rows: 30, screen: 'fullscreen' });
+    const settled = await untilFrame(app, 'mode: manual');
+    expect(inputRowOf(settled)).toBeGreaterThanOrEqual(0);
+    expect(caret.latest).toBeDefined();
+
+    await type(app, '/inspect', '> /inspect');
+    app.stdin.write(KEYS.enter);
+    const openFrame = await untilFrame(app, 'MOMONGACODE / AGENT INSPECTOR');
+    expect(inputRowOf(openFrame)).toBeGreaterThanOrEqual(0);
+    expect(openFrame).toContain('> esc to return');
+    expect(caret.latest).toBeUndefined();
+
+    app.stdin.write(KEYS.escape);
+    const closedFrame = await untilFrame(app, (text) => !text.includes('MOMONGACODE / AGENT INSPECTOR') && text.includes('mode: manual'));
+    expect(inputRowOf(closedFrame)).toBeGreaterThanOrEqual(0);
+    expect(closedFrame).not.toContain('esc to return');
+    expect(caret.latest).toBeDefined();
     app.unmount();
   });
 });
