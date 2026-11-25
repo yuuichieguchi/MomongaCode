@@ -1,3 +1,5 @@
+import { watch as watchDirectory } from 'node:fs';
+import type { FSWatcher } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readUserAutoUpdates, readUserUpdateSettings } from '@momonga/config';
@@ -164,6 +166,38 @@ export const nodeDaemonProbe = (paths: MomongaPaths, ports: Pick<CliPorts, 'cloc
 const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 
+const watchTarget = (file: string, onChange: () => void): (() => void) | undefined => {
+  const directory = path.dirname(file);
+  const target = path.basename(file);
+  let watcher: FSWatcher | undefined;
+  let closed = false;
+  const close = (): void => {
+    if (closed || watcher === undefined) return;
+    closed = true;
+    watcher.close();
+    watcher = undefined;
+  };
+  try {
+    watcher = watchDirectory(directory, { persistent: false }, (_eventType, filename) => {
+      if (filename === null || filename === undefined || filename.toString() === target) onChange();
+    });
+    watcher.on('error', close);
+  } catch {
+    return undefined;
+  }
+  return close;
+};
+
+export const nodeUpdateWatch = (paths: Pick<MomongaPaths, 'current' | 'state'>): ((onChange: () => void) => () => void) => {
+  const stateFile = path.join(paths.state, UPDATE_STATE_FILE);
+  return (onChange) => {
+    const stops = [watchTarget(paths.current, onChange), watchTarget(stateFile, onChange)].filter((stop): stop is () => void => stop !== undefined);
+    return () => {
+      for (const stop of stops) stop();
+    };
+  };
+};
+
 export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: KernelLockMechanism = resolveLayoutLocks(paths).mechanism): UpdatePorts => ({
   version: ports.version,
   platform: ports.platform,
@@ -181,4 +215,5 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths, lock: Kern
   autoUpdates: () => readUserAutoUpdates({ env: process.env, home: ports.home, signal: ports.interrupt }),
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,
+  watch: nodeUpdateWatch(paths),
 });

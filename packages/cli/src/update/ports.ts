@@ -45,4 +45,5 @@ export type UpdatePorts = {
   autoUpdates(): Promise<boolean>;
   spawnDetached: SpawnDetached;
   stderr: Sink;
+  watch?(onChange: () => void): () => void;
 };

@@ -420,6 +420,7 @@ export function App(props: AppProps) {
         for (const entry of kept) appendEntry(store, entry);
       },
       say: (text) => appendLocal({ kind: 'info', text }),
+      warn: (text) => appendLocal({ kind: 'notice', level: 'warning', text }),
     };
     return { appendLocal, surface };
   });
@@ -754,14 +755,20 @@ export function App(props: AppProps) {
     beginModelRead(announce);
   };
 
-  const enterFirstSession = async (session: SessionView): Promise<void> => {
+  const enterFirstSession = async (session: SessionView, afterReplay?: Promise<void>): Promise<void> => {
     await showSession(session);
     const announce = !startsFromRecord.current;
     startsFromRecord.current = false;
     const history = await backend.loadHistory();
     replaceEditor(withHistory(editorRef.current, history));
     void backend.startupNotices().then(
-      (found) => {
+      async (found) => {
+        if (found.length === 0) return;
+        if (bannerHanded()) {
+          if (afterReplay !== undefined) await afterReplay;
+          for (const text of found) append({ kind: 'notice', level: 'warning', text });
+          return;
+        }
         const next = [...noticesRef.current, ...found];
         noticesRef.current = next;
         setNotices(next);
@@ -1257,17 +1264,23 @@ export function App(props: AppProps) {
   };
 
   const adoptSession = async ({ record, attached }: TuiAdoption): Promise<void> => {
+    const replayed = Promise.withResolvers<void>();
     const enter = async (session: SessionView): Promise<void> => {
-      await enterFirstSession(session);
+      await enterFirstSession(session, replayed.promise);
       restoreInput(record.input);
     };
     const caughtUp = (): void => {
+      replayed.resolve();
       if (record.toggles !== undefined) restoreToggles(store, record.toggles);
       if (record.view !== undefined) view.place(positionOf(record.view, origins));
       attached();
       restoreAttachments(record.attachments).catch(reportError);
     };
-    await readConversation(await backend.resumeSession(record.session), enter, { notes: record.notes, caughtUp });
+    try {
+      await readConversation(await backend.resumeSession(record.session), enter, { notes: record.notes, caughtUp });
+    } finally {
+      replayed.resolve();
+    }
   };
 
   const openAtLaunch = async (): Promise<void> => {

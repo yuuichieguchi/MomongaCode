@@ -5,11 +5,11 @@ import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { LOCK_DATABASE_SUFFIX, createLockCapability, ensureMomongaDirs, kernelLockNamed, momongaPaths, sidecarOf, systemTiming } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
-import { createTempDir, registerCleanup, removeTempDir, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
+import { createTempDir, pollUntil, registerCleanup, removeTempDir, spawnTracked, testEndpointScope, withTempDir, testKernelLock } from '@momonga/testkit';
 import { afterAll, describe, expect, it } from 'vitest';
 import { daemonReadyBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { MAX_REDIRECTS, STAGING_PREFIX, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, transferOptionsOf } from '../src/update/node-ports.ts';
+import { MAX_REDIRECTS, STAGING_PREFIX, leasedUpdateHttp, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, nodeUpdateWatch, transferOptionsOf } from '../src/update/node-ports.ts';
 import { DEFAULT_UPDATE_STALL_TIMEOUT_MS } from '@momonga/config';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
@@ -159,6 +159,39 @@ describe('update state store', () => {
 
     expect(store.file).toBe(path.join(paths.state, 'update.json'));
     expect(await store.read()).toBe('{ nope');
+  });
+
+  it('notifies nodeUpdateWatch when current or update.json changes and stops after cleanup', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home, process.platform, process.env);
+    await ensureMomongaDirs(paths);
+    let changes = 0;
+    let secondChanges = 0;
+    const stop = nodeUpdateWatch(paths)(() => {
+      changes += 1;
+    });
+    const stopSecond = nodeUpdateWatch(paths)(() => {
+      secondChanges += 1;
+    });
+    try {
+      const store = nodeUpdateState(paths, testKernelLock());
+      await store.write({ checkedAt: 1, outcome: { kind: 'installed', version: '2.0.0' }, announced: false });
+      await pollUntil(() => changes > 0 && secondChanges > 0, { boundMs: 4000, description: 'nodeUpdateWatch update.json notification' });
+
+      const beforeCurrent = changes;
+      fs.writeFileSync(paths.current, JSON.stringify({ generation: 1, version: '2.0.0', sockets: { gateway: 'g', runtime: 'r', supervisor: 's' } }));
+      await pollUntil(() => changes > beforeCurrent, { boundMs: 4000, description: 'nodeUpdateWatch current notification' });
+
+      stop();
+      const afterStop = changes;
+      const beforeSecond = secondChanges;
+      await store.write({ checkedAt: 2, outcome: { kind: 'up_to_date' }, announced: true });
+      await pollUntil(() => secondChanges > beforeSecond, { boundMs: 4000, description: 'second watcher sees write after first stopped' });
+      expect(changes).toBe(afterStop);
+    } finally {
+      stop();
+      stopSecond();
+    }
   });
 });
 

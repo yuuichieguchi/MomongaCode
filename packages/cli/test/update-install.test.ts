@@ -538,6 +538,36 @@ describe('momonga update: the daemon after the update', () => {
 
     expect(harness.runs).toEqual([]);
   });
+
+  it('checks whether the daemon is running after publishing, so a daemon started during download gets restarted and a stopped one stays stopped', async (context) => {
+    const startedDuringDownload = await setupUpdate(context);
+    startedDuringDownload.control.daemonRunning = false;
+    const origPublish = startedDuringDownload.ports.fs.publish;
+    startedDuringDownload.ports.fs.publish = async (staged, target) => {
+      await origPublish(staged, target);
+      startedDuringDownload.control.daemonRunning = true;
+    };
+    publish(startedDuringDownload);
+
+    await update(startedDuringDownload);
+
+    expect(startedDuringDownload.runs.filter((call) => call.args[0] === 'daemon')).toHaveLength(1);
+    expect(startedDuringDownload.stdout.join('')).toContain('The daemon is running the new version.');
+
+    const stoppedDuringDownload = await setupUpdate(context);
+    stoppedDuringDownload.control.daemonRunning = true;
+    const origPublishStopped = stoppedDuringDownload.ports.fs.publish;
+    stoppedDuringDownload.ports.fs.publish = async (staged, target) => {
+      await origPublishStopped(staged, target);
+      stoppedDuringDownload.control.daemonRunning = false;
+    };
+    publish(stoppedDuringDownload);
+
+    await update(stoppedDuringDownload);
+
+    expect(stoppedDuringDownload.runs.some((call) => call.args[0] === 'daemon')).toBe(false);
+    expect(stoppedDuringDownload.stdout.join('')).toContain('No daemon was running');
+  });
 });
 
 describe('momonga update: the release signature', () => {

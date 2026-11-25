@@ -1,6 +1,6 @@
 import { waitFor } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
-import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from '../src/update/background.ts';
+import { UPDATE_CHECK_COMMAND, announceUpdate, installedNewerVersion, runBackgroundCheck, startBackgroundCheck } from '../src/update/background.ts';
 import { CANDIDATE_CHECK_TIMEOUT_MS } from '../src/update/install.ts';
 import { assetNameFor } from '../src/update/source.ts';
 import { DAEMON_READY_BOUND_MS, NEW_BINARY, OLD_BINARY, PUBLIC_KEY, setupUpdate } from './update-harness.ts';
@@ -185,11 +185,57 @@ describe('startBackgroundCheck: what the user command does', () => {
   it('reports on stderr a detached check that could not be started, without failing the command', async (context) => {
     const harness = await setupUpdate(context);
 
-    await startBackgroundCheck(harness.wiring);
+    const handle = await startBackgroundCheck(harness.wiring);
     harness.spawned[0]?.reject(new Error('spawn ENOENT'));
-    await waitFor(() => harness.stderr.length > 0, { description: 'the spawn failure report' });
+    await handle?.done;
 
     expect(harness.stderr).toEqual(['momonga: the background update check could not run: spawn ENOENT\n']);
+  });
+
+  it('returns a handle whose done promise resolves when the detached check exits, and undefined when skipped', async (context) => {
+    const harness = await setupUpdate(context);
+    const handle = await startBackgroundCheck(harness.wiring);
+    expect(handle).toBeDefined();
+    let resolved = false;
+    const waiting = handle?.done.then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    harness.spawned[0]?.resolve({ code: 0, signal: null });
+    await waiting;
+    expect(resolved).toBe(true);
+
+    const held = await setupUpdate(context);
+    held.control.lockHeld = true;
+    expect(await startBackgroundCheck(held.wiring)).toBeUndefined();
+
+    const off = await setupUpdate(context);
+    off.control.autoUpdates = false;
+    expect(await startBackgroundCheck(off.wiring)).toBeUndefined();
+  });
+
+  it('reports an installed newer version only for a newer installed outcome when enabled', async (context) => {
+    const harness = await setupUpdate(context, { version: '1.0.0' });
+    expect(await installedNewerVersion(harness.wiring)).toBeUndefined();
+
+    harness.state.value = { checkedAt: 1, outcome: { kind: 'up_to_date' }, announced: true };
+    expect(await installedNewerVersion(harness.wiring)).toBeUndefined();
+
+    harness.state.value = { checkedAt: 1, outcome: { kind: 'failed', code: 'x', message: 'y' }, announced: false };
+    expect(await installedNewerVersion(harness.wiring)).toBeUndefined();
+
+    harness.state.value = { checkedAt: 1, outcome: { kind: 'installed_not_restarted', version: '2.0.0', code: 'x', message: 'y', remediation: 'z' }, announced: false };
+    expect(await installedNewerVersion(harness.wiring)).toBeUndefined();
+
+    harness.state.value = { checkedAt: 1, outcome: { kind: 'installed', version: '1.0.0' }, announced: false };
+    expect(await installedNewerVersion(harness.wiring)).toBeUndefined();
+
+    harness.state.value = { checkedAt: 1, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+    expect(await installedNewerVersion(harness.wiring)).toBe('2.0.0');
+
+    harness.control.autoUpdates = false;
+    expect(await installedNewerVersion(harness.wiring)).toBeUndefined();
   });
 });
 
@@ -318,5 +364,55 @@ describe('runBackgroundCheck: the detached check itself', () => {
     expect(harness.server.requests).toEqual([]);
     expect(harness.state.writes).toEqual([]);
     expect(harness.targetBytes().equals(OLD_BINARY)).toBe(true);
+  });
+
+  it('does not overwrite an unannounced installed, restart-failed, or failed outcome with up_to_date, until announced', async (context) => {
+    const unannounced = [
+      { kind: 'installed', version: '2.0.0' },
+      { kind: 'installed_not_restarted', version: '2.0.0', code: 'daemon_restart_failed', message: 'failed', remediation: 'run `momonga daemon start`' },
+      { kind: 'failed', code: 'checksum_mismatch', message: 'mismatch' },
+    ] as const;
+
+    for (const outcome of unannounced) {
+      const harness = await setupUpdate(context, { version: '2.0.0' });
+      publish(harness, 'v2.0.0');
+      harness.state.value = { checkedAt: 1, outcome, announced: false };
+
+      await runBackgroundCheck(harness.wiring, interrupt());
+
+      expect(harness.state.value).toEqual({ checkedAt: 1, outcome, announced: false });
+      expect(harness.state.writes).toEqual([]);
+    }
+
+    const announcedHarness = await setupUpdate(context, { version: '2.0.0' });
+    publish(announcedHarness, 'v2.0.0');
+    announcedHarness.state.value = { checkedAt: 1, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+    expect(await announceUpdate(announcedHarness.wiring)).toBe('momonga was updated to 2.0.0 in the background');
+
+    await runBackgroundCheck(announcedHarness.wiring, interrupt());
+
+    expect(announcedHarness.state.value).toEqual({ checkedAt: 0, outcome: { kind: 'up_to_date' }, announced: true });
+  });
+
+  it('overwrites an older unannounced outcome when a newer release or failure occurs', async (context) => {
+    const installedHarness = await setupUpdate(context, { version: '1.0.0' });
+    publish(installedHarness, 'v2.0.0');
+    installedHarness.state.value = { checkedAt: 1, outcome: { kind: 'failed', code: 'old', message: 'old error' }, announced: false };
+
+    await runBackgroundCheck(installedHarness.wiring, interrupt());
+
+    expect(installedHarness.state.value).toMatchObject({ outcome: { kind: 'installed', version: '2.0.0' }, announced: false });
+
+    const failedHarness = await setupUpdate(context, { version: '1.0.0' });
+    failedHarness.state.value = { checkedAt: 1, outcome: { kind: 'installed', version: '1.5.0' }, announced: false };
+    failedHarness.ports.http = {
+      get: async () => {
+        throw new TypeError('offline');
+      },
+    };
+
+    await expect(runBackgroundCheck(failedHarness.wiring, interrupt())).rejects.toMatchObject({ code: 'release_lookup_failed' });
+
+    expect(failedHarness.state.value).toMatchObject({ outcome: { kind: 'failed', code: 'release_lookup_failed' }, announced: false });
   });
 });

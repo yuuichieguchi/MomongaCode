@@ -444,3 +444,50 @@ describe('a handover while a subagent view is shown (cli-tui 3.3)', () => {
     fresh.app.unmount();
   });
 });
+
+describe('version banner and update notices across handover', () => {
+  it('renders the new version in the banner and shows the update completion notice in fullscreen mode', async () => {
+    const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID }, startup: { version: '1.0.0', home: '/home/u' } });
+    await untilFrame(old.app, 'MomongaCode v1.0.0');
+    const snapshot = old.move.surface().snapshot();
+    old.app.unmount();
+
+    const notice = 'momonga: momonga was updated to 2.0.0 in the background';
+    const fresh = await adopt(
+      { conversations: [STREAMING], startupNotices: [notice] },
+      recordOf(snapshot, { fromVersion: '1.0.0', toVersion: '2.0.0' }),
+      { startup: { version: '2.0.0', home: '/home/u' } },
+    );
+    await fresh.attached;
+    const shown = await untilFrame(fresh.app, notice);
+    expect(shown).toContain('MomongaCode v2.0.0');
+    expect(shown).not.toContain('MomongaCode v1.0.0');
+    fresh.app.unmount();
+  });
+
+  it('delivers startup update notices in scrollback mode even when the banner was already printed', async () => {
+    const old = await open({ conversations: [STREAMING] }, { reopen: { kind: 'id', id: SESSION_ID }, startup: { version: '1.0.0', home: '/home/u' } }, { screen: 'scrollback' });
+    await untilFrame(old.app, 'Found two files, now checking');
+    await untilOutput(old.app, 'MomongaCode v1.0.0');
+    await vi.waitFor(() => expect(old.move.surface().quiet('live')).toBe(true), { timeout: 5000 });
+    await old.move.surface().suspend();
+    const snapshot = old.move.surface().snapshot();
+    old.app.unmount();
+    expect(snapshot?.printed).toBeGreaterThan(0);
+
+    const notice = 'momonga: momonga was updated to 2.0.0 in the background';
+    const fresh = await adopt(
+      { conversations: [STREAMING], startupNotices: [notice] },
+      recordOf(snapshot, { fromVersion: '1.0.0', toVersion: '2.0.0' }),
+      { startup: { version: '2.0.0', home: '/home/u' } },
+      { screen: 'scrollback' },
+    );
+    await fresh.attached;
+    await untilOutput(fresh.app, notice);
+    const output = fresh.app.frames.join('\n');
+    expect(output).toContain(notice);
+    expect(output).not.toContain('> list the files');
+    expect(output).not.toContain('Bash ls');
+    fresh.app.unmount();
+  });
+});

@@ -10,6 +10,7 @@ import { registerProductCommands } from './commands/register.ts';
 import { runUpdate } from './commands/update.ts';
 import { describeFailure } from './failure.ts';
 import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from './update/background.ts';
+import type { BackgroundCheckHandle } from './update/background.ts';
 import { probeModel } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
@@ -173,10 +174,12 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
   const deps: ProgramDeps = { ...given, ports: terminalPorts(given.ports) };
   const { ports } = deps;
   const program = new Command();
+  let backgroundCheck: BackgroundCheckHandle | undefined;
   program.configureOutput({ writeOut: (text) => ports.stdout.write(text), writeErr: (text) => ports.stderr.write(text) });
   program.name('momonga').version(ports.version).enablePositionalOptions().showHelpAfterError();
 
   program.hook('preAction', async (_program, action) => {
+    backgroundCheck = undefined;
     if (options.embedded === true || isBackgroundCheckExempt(action.name())) return;
     const wiring = await deps.update();
     try {
@@ -184,7 +187,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         const notice = await announceUpdate(wiring);
         if (notice !== undefined) ports.stderr.write(`momonga: ${notice}\n`);
       }
-      await startBackgroundCheck(wiring);
+      if (ports.handover?.started === undefined) backgroundCheck = await startBackgroundCheck(wiring);
     } catch (error) {
       ports.stderr.write(`momonga: the background update check was not started: ${describeFailure(error)}\n`);
     }
@@ -255,7 +258,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
       }
       colourOffWhenAsked(ports.env, ports.terminal);
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
+      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...bounds, ...session, ...(reopen === undefined ? {} : { reopen }), ...(backgroundCheck === undefined ? {} : { backgroundCheck }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
     });
 
   program

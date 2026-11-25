@@ -354,6 +354,16 @@ export class NewerProgramInstalledError extends DaemonStartError {
   }
 }
 
+export class SessionUpdatedError extends DaemonStartError {
+  readonly installedVersion: string;
+
+  constructor(installedVersion: string, message: string, logFile: string) {
+    super(message, logFile, notPointingAtLog);
+    this.name = 'SessionUpdatedError';
+    this.installedVersion = installedVersion;
+  }
+}
+
 type InstalledProbe = Pick<DaemonPorts, 'self' | 'exec' | 'timers'>;
 
 const answeredWithinBound = async <T>(ports: Pick<DaemonPorts, 'timers'>, boundMs: number, signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>, onBound: () => Error): Promise<T> => {
@@ -619,13 +629,19 @@ export const ensureSessionDaemon = async (ports: DaemonPorts, paths: MomongaPath
   const standing = onNewer === undefined ? 'cannot-move' : await onNewer(newer.version, own === undefined ? 'gone' : 'live');
   if (own !== undefined) return;
   if (standing === 'moves-at-quiet-point' || newer.installedUpdated) {
-    throw new DaemonStartError(sessionEndMessage(newer.version, standing), paths.logFiles.supervisor, notPointingAtLog);
+    const message = sessionEndMessage(newer.version, standing);
+    if (newer.installedUpdated) throw new SessionUpdatedError(newer.version, message, paths.logFiles.supervisor);
+    throw new DaemonStartError(message, paths.logFiles.supervisor, notPointingAtLog);
   }
-  throw new DaemonStartError(
-    await olderClientMessage(ports, paths, newer.version, reopenSessionMessage(newer.version), daemonOptions.signal),
-    paths.logFiles.supervisor,
-    notPointingAtLog,
-  );
+  const installedStanding = await probeInstalledStanding(ports, paths, newer.version, daemonOptions.signal);
+  if (installedStanding === 'updated') {
+    throw new SessionUpdatedError(newer.version, reopenSessionMessage(newer.version), paths.logFiles.supervisor);
+  }
+  const message =
+    installedStanding === 'still-older'
+      ? olderThanRunningDaemonMessage(ports.version, newer.version)
+      : olderThanRunningDaemonUnknownInstalledMessage(ports.version, newer.version);
+  throw new DaemonStartError(message, paths.logFiles.supervisor, notPointingAtLog);
 };
 
 export const restoreDaemon =

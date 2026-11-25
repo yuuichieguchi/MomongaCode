@@ -1,3 +1,4 @@
+import { orderVersions } from '@momonga/foundation';
 import { INTERNAL_COMMANDS, selfInvocation } from '../daemon/launcher.ts';
 import { UpdateError } from './errors.ts';
 import { DAEMON_RESTART_REMEDIATION, installLocked, resolveUpdateTarget } from './install.ts';
@@ -9,6 +10,8 @@ import { parseUpdateState } from './state.ts';
 import type { BackgroundOutcome, UpdateState } from './state.ts';
 
 export const UPDATE_CHECK_COMMAND = INTERNAL_COMMANDS.updateCheck;
+
+export type BackgroundCheckHandle = { readonly done: Promise<void> };
 
 export type UpdateWiring = {
   ports: UpdatePorts;
@@ -63,20 +66,41 @@ export const announceUpdate = async (wiring: UpdateWiring): Promise<string | und
   return notice;
 };
 
-export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<void> => {
+export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<BackgroundCheckHandle | undefined> => {
   const { ports } = wiring;
-  if (!(await isEnabled(wiring))) return;
+  if (!(await isEnabled(wiring))) return undefined;
   await readState(ports);
-  if (await ports.lock.isHeld()) return;
+  if (await ports.lock.isHeld()) return undefined;
   const invocation = selfInvocation(ports.self, UPDATE_CHECK_COMMAND);
   const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });
-  void child.exit.then(undefined, (error: unknown) => {
-    ports.stderr.write(`${escapedLines([`momonga: the background update check could not run: ${error instanceof Error ? error.message : String(error)}`])}\n`);
-  });
+  const done = child.exit.then(
+    () => undefined,
+    (error: unknown) => {
+      ports.stderr.write(`${escapedLines([`momonga: the background update check could not run: ${error instanceof Error ? error.message : String(error)}`])}\n`);
+    },
+  );
+  return { done };
 };
 
-const recordOutcome = (ports: UpdatePorts, checkedAt: number, outcome: BackgroundOutcome): Promise<void> =>
-  ports.state.write({ checkedAt, outcome, announced: outcome.kind === 'up_to_date' } satisfies UpdateState);
+export const installedNewerVersion = async (wiring: UpdateWiring): Promise<string | undefined> => {
+  if (!(await isEnabled(wiring))) return undefined;
+  let state: UpdateState | undefined;
+  try {
+    state = await readState(wiring.ports);
+  } catch {
+    return undefined;
+  }
+  if (state?.outcome.kind !== 'installed') return undefined;
+  return orderVersions(wiring.ports.version, state.outcome.version) === 'older' ? state.outcome.version : undefined;
+};
+
+const recordOutcome = async (ports: UpdatePorts, checkedAt: number, outcome: BackgroundOutcome): Promise<void> => {
+  if (outcome.kind === 'up_to_date') {
+    const existing = await readState(ports);
+    if (existing !== undefined && !existing.announced && existing.outcome.kind !== 'up_to_date') return;
+  }
+  await ports.state.write({ checkedAt, outcome, announced: outcome.kind === 'up_to_date' } satisfies UpdateState);
+};
 
 const failureOutcome = (error: unknown): Extract<BackgroundOutcome, { kind: 'failed' }> => ({
   kind: 'failed',

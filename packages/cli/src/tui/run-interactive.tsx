@@ -11,8 +11,10 @@ import { describeFailure } from '../failure.ts';
 import { createHistoryStore } from '../history-store.ts';
 import type { CliPorts, Terminal } from '../ports.ts';
 import type { RunBounds, SessionOptions } from '../run/open-session.ts';
+import { SessionUpdatedError } from '../daemon/ensure-daemon.ts';
 import type { Reopen } from '../run/resolve-session.ts';
-import type { UpdateWiring } from '../update/background.ts';
+import { announceUpdate, installedNewerVersion } from '../update/background.ts';
+import type { BackgroundCheckHandle, UpdateWiring } from '../update/background.ts';
 import { App } from './app.tsx';
 import type { TuiOutcome } from './app.tsx';
 import type { AutoModePort, ShellPort } from './slash.ts';
@@ -24,7 +26,8 @@ import { createKeyBindings } from './keys/store.ts';
 import { a11yOf } from './screen/a11y.ts';
 import type { AskedA11y } from './screen/a11y.ts';
 import { shortenHome } from './startup.tsx';
-import { defaultNoticeSources } from './notices.ts';
+import { defaultNoticeSources, updateNoticeSource } from './notices.ts';
+import type { NoticeSource } from './notices.ts';
 import { MAX_FPS } from './screen/constants.ts';
 import { createEarlyInput } from './screen/early-input.ts';
 import { createScreenInput } from './screen/input.ts';
@@ -49,26 +52,35 @@ import { adoptionOf, refuseStart } from '../handover/start.ts';
 import type { TuiAdoption, TuiMovePort, TuiSurface } from './handover.ts';
 import type { TuiSettingsPort } from './screen/notify.ts';
 
-export type InteractiveOptions = SessionOptions & RunBounds & { prompt?: string; skill?: string; images?: readonly string[]; reopen?: Reopen; screenReader?: boolean };
+export type InteractiveOptions = SessionOptions & RunBounds & { prompt?: string; skill?: string; images?: readonly string[]; reopen?: Reopen; backgroundCheck?: BackgroundCheckHandle; screenReader?: boolean };
 
 const newerCurrentVersion = async (ports: Pick<CliPorts, 'version'>, paths: MomongaPaths): Promise<string | undefined> => {
   const current = await readCurrentGeneration(paths);
   return current !== undefined && orderVersions(ports.version, current.version) === 'older' ? current.version : undefined;
 };
 
-type MoveWiring = { port: TuiMovePort; detach(): void };
+type MoveWiring = { port: TuiMovePort; detach(): void; probeNow(): Promise<boolean>; warn(text: string): void };
 
-const NO_MOVE: MoveWiring = { port: { attach: () => () => undefined, check: () => undefined, probe: () => undefined }, detach: () => undefined };
+const NO_MOVE: MoveWiring = { port: { attach: () => () => undefined, check: () => undefined, probe: () => undefined }, detach: () => undefined, probeNow: () => Promise.resolve(false), warn: () => undefined };
 
-const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, layer: TerminalLayer, report: (error: unknown) => void): MoveWiring => {
+const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, layer: TerminalLayer, update: UpdateWiring, report: (error: unknown) => void): MoveWiring => {
   const mover = ports.handover?.mover;
   if (mover === undefined) return NO_MOVE;
   let surface: TuiSurface | undefined;
   let released: { terminal: HandoverTerminal; negotiation: NegotiationState } | undefined;
-  let probing = false;
+  let activeProbe: Promise<boolean> | undefined;
+  let pendingWarnings: string[] = [];
   const attached = (): TuiSurface => {
     if (surface === undefined) throw new Error('the interface has attached no surface to move');
     return surface;
+  };
+  const deliverWarn = (text: string): void => {
+    if (surface === undefined) {
+      pendingWarnings.push(text);
+      return;
+    }
+    if (surface.warn !== undefined) surface.warn(text);
+    else surface.say(text);
   };
   const detach = mover.attach({
     surface: 'tui',
@@ -101,19 +113,26 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
     },
     say: (text) => attached().say(text),
   });
-  const probe = async (): Promise<void> => {
-    probing = true;
-    try {
-      const newer = await newerCurrentVersion(ports, paths);
-      if (newer !== undefined) await mover.learned(newer, 'live');
-    } finally {
-      probing = false;
-    }
+  const checkForNewer = async (): Promise<boolean> => {
+    const newer = (await newerCurrentVersion(ports, paths)) ?? (await installedNewerVersion(update));
+    if (newer === undefined) return false;
+    await mover.learned(newer, 'live');
+    return true;
+  };
+  const probeNow = (): Promise<boolean> => {
+    if (activeProbe !== undefined) return activeProbe;
+    activeProbe = checkForNewer().finally(() => {
+      activeProbe = undefined;
+    });
+    return activeProbe;
   };
   return {
     port: {
       attach: (next) => {
         surface = next;
+        const queued = pendingWarnings;
+        pendingWarnings = [];
+        for (const text of queued) deliverWarn(text);
         return () => {
           if (surface === next) surface = undefined;
         };
@@ -122,10 +141,12 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
         mover.check().catch(report);
       },
       probe: () => {
-        if (!probing) probe().catch(report);
+        if (activeProbe === undefined) probeNow().catch(report);
       },
     },
     detach,
+    probeNow,
+    warn: deliverWarn,
   };
 };
 
@@ -137,7 +158,15 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   }
   const adoption = adoptionOf(ports.handover?.started, ['tui']);
   if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr, terminal: { output: output.port, input: terminal.stdin } }, adoption);
-  const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update, () => resolveLayoutLocks(paths).mechanism));
+  let updateNoticeCheck: Promise<readonly string[]> | undefined;
+  const trackedUpdateSource: NoticeSource = (context) => (updateNoticeCheck ??= updateNoticeSource(update)(context));
+  const backend = createTuiBackend(
+    ports,
+    paths,
+    options,
+    createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')),
+    defaultNoticeSources(ports, update, () => resolveLayoutLocks(paths).mechanism, { updateSource: trackedUpdateSource }),
+  );
   const tasks = createBackgroundTasks();
   const autoMode: AutoModePort = {
     check: async (checkOptions, write) => autoModeCheck(await autoModeCheckPortsOf(ports, write, checkOptions.signal), checkOptions),
@@ -148,7 +177,21 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     outcome = result;
   };
   const readStart = (): Promise<TuiStart> => readTuiStart({ env: ports.env, home: paths.home, projectDir: ports.cwd, userFile: paths.settingsFile, signal: ports.interrupt, isTrusted: async () => (await backend.boot()).decision === 'trusted' });
-  const firstStart = await readStart();
+  let firstStart: TuiStart;
+  try {
+    firstStart = await readStart();
+  } catch (error) {
+    if (error instanceof SessionUpdatedError && adoption.kind === 'none' && ports.handover?.relaunch !== undefined) {
+      await backend.close();
+      try {
+        await ports.handover.relaunch();
+        return 0;
+      } catch {
+        throw error;
+      }
+    }
+    throw error;
+  }
   const start = firstStart.kind === 'loaded' ? firstStart : await repairedStart(ports, terminal, output.port, firstStart, readStart);
   if (start === undefined) {
     ports.stderr.write(`momonga: ${firstStart.kind === 'broken' ? firstStart.message : ''}\n`);
@@ -188,10 +231,28 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   });
   if (adoption.kind === 'record') startWithHandoverTerminal(layer, ports.handover?.started?.terminal, adoption.record.neg);
   else layer.start();
-  const moving = wireMove(ports, paths, terminal, layer, (error) => moveFailures.push(error));
+  const moving = wireMove(ports, paths, terminal, layer, update, (error) => moveFailures.push(error));
   const adopted: { adoption?: TuiAdoption } = adoption.kind === 'record' ? { adoption: { record: adoption.record, attached: () => ports.handover?.removeRecord(adoption.file) } } : {};
   const externalEditor = terminalExternalEditor(ports, layer, launchOnTerminal);
   const noColor = noColorAsked(ports.env);
+  let closed = false;
+  const stopWatch = update.ports.watch?.(() => {
+    if (!closed) moving.port.probe();
+  });
+  if (options.backgroundCheck !== undefined) {
+    void options.backgroundCheck.done
+      .then(async () => {
+        if (closed) return;
+        const foundNewer = await moving.probeNow();
+        if (closed || foundNewer || updateNoticeCheck === undefined) return;
+        await updateNoticeCheck;
+        if (closed) return;
+        const notice = await announceUpdate(update);
+        if (closed || notice === undefined) return;
+        moving.warn(`momonga: ${notice}`);
+      })
+      .catch((error: unknown) => moveFailures.push(error));
+  }
   try {
     await layer.startAnswered();
     const instance = render(
@@ -212,6 +273,8 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     );
     await instance.waitUntilExit();
   } finally {
+    closed = true;
+    stopWatch?.();
     earlyInput.stop();
     moving.detach();
     await layer.close();

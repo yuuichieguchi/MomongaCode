@@ -236,7 +236,6 @@ export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, re
   const { signal } = options;
   const target = await ports.fs.realpath(ports.self.execPath);
   const directory = path.dirname(target);
-  const daemonWasRunning = await ports.daemon.running();
   await inDirectory(directory, () => ports.fs.removeLeftovers(directory));
   const expected = await expectedChecksum(ports, update, release, directory, signal);
   const staged = await inDirectory(directory, async () => ports.fs.stage(directory, await ports.fs.modeOf(target)));
@@ -254,7 +253,8 @@ export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, re
   } catch (error) {
     return abandon(ports, staged, error);
   }
-  return { from: ports.version, to: release.version.text, target, restart: daemonWasRunning ? await startBesideRunningDaemon(ports, target, release.version.text, signal) : { kind: 'not_running' } };
+  const daemonRunning = await ports.daemon.running();
+  return { from: ports.version, to: release.version.text, target, restart: daemonRunning ? await startBesideRunningDaemon(ports, target, release.version.text, signal) : { kind: 'not_running' } };
 };
 
 const startBesideRunningDaemon = async (ports: UpdatePorts, target: string, to: string, signal: AbortSignal): Promise<DaemonRestart> => {

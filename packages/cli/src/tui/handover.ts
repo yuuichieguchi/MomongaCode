@@ -14,6 +14,7 @@ export type TuiSurface = {
   suspend(): Promise<void>;
   resume(): void;
   say(text: string): void;
+  warn?(text: string): void;
 };
 
 export type TuiMovePort = { attach(surface: TuiSurface): () => void; check(): void; probe(): void };

@@ -3,6 +3,8 @@ import type { EntryIo } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
+import { HANDOVER_FORMAT } from '../src/handover/record.ts';
+import type { HandoverStart } from '../src/handover/start.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { UPDATE_CHECK_COMMAND } from '../src/update/background.ts';
@@ -11,7 +13,7 @@ import { NEW_BINARY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions } from './update-harness.ts';
 import { NO_HELPER } from './no-helper.ts';
 
-const programFor = async (context: TestContext, options: HarnessOptions = {}) => {
+const programFor = async (context: TestContext, options: HarnessOptions = {}, handoverStarted?: HandoverStart) => {
   const harness = await setupUpdate(context, options);
   const completed: number[] = [];
   const stdout: string[] = [];
@@ -30,6 +32,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
     spawnDetached: harness.ports.spawnDetached,
     terminal: undefined,
     interrupt: new AbortController().signal,
+    ...(handoverStarted === undefined ? {} : { handover: { started: handoverStarted } }),
   } as unknown as CliPorts;
   const program = buildProgram({
     ports: cli,
@@ -113,6 +116,24 @@ describe('the background check around user commands', () => {
     await expect(run(program)).rejects.toThrow('the interactive session needs a terminal');
 
     expect(harness.stderr.join('')).toBe('');
+    expect(harness.state.value).toMatchObject({ announced: false });
+  });
+
+  it('skips spawning a background update check when started from a handover', async (context) => {
+    const started: HandoverStart = {
+      file: '/tmp/handover.json',
+      parsed: {
+        kind: 'record',
+        record: { format: HANDOVER_FORMAT, fromVersion: '1.0.0', toVersion: '2.0.0', kind: 'tui', session: 's1', lastSeq: {}, neg: 'unknown', hint: 'ctrl+j', size: { columns: 80, rows: 24 }, input: { text: '', cursor: 0, historyIndex: null, draft: '', pastes: [], pasteCount: 0 }, attachments: [], notes: [] },
+      },
+      terminal: undefined,
+    };
+    const { program, harness } = await programFor(context, { version: '2.0.0' }, started);
+    harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+
+    await expect(run(program)).rejects.toThrow('the interactive session needs a terminal');
+
+    expect(harness.spawned).toHaveLength(0);
     expect(harness.state.value).toMatchObject({ announced: false });
   });
 

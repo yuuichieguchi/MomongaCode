@@ -41,7 +41,7 @@ export type Control = {
   autoUpdates: boolean;
 };
 
-export type SpawnedCheck = { spec: DetachedSpawn; reject(error: Error): void };
+export type SpawnedCheck = { spec: DetachedSpawn; resolve(exit?: { code: number | null; signal: NodeJS.Signals | null }): void; reject(error: Error): void };
 
 export type UpdateHarness = {
   dir: string;
@@ -153,11 +153,13 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     daemon: { running: async () => control.daemonRunning, retiring: async () => control.retiring, readyBoundMs: async () => DAEMON_READY_BOUND_MS },
     autoUpdates: async () => control.autoUpdates,
     spawnDetached: (spec) => {
+      let resolveExit: (exit: { code: number | null; signal: NodeJS.Signals | null }) => void = () => undefined;
       let rejectExit: (error: Error) => void = () => undefined;
-      const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((_resolve, reject) => {
+      const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+        resolveExit = resolve;
         rejectExit = reject;
       });
-      spawned.push({ spec, reject: rejectExit });
+      spawned.push({ spec, resolve: (outcome = { code: 0, signal: null }) => resolveExit(outcome), reject: rejectExit });
       return { exit };
     },
     stderr: { write: (text) => void stderr.push(text) },

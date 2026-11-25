@@ -53,9 +53,16 @@ export const updateNoticeSource =
     return notice === undefined ? [] : [`momonga: ${notice}`];
   };
 
-export const defaultNoticeSources = (ports: Pick<CliPorts, 'env' | 'home' | 'interrupt'>, update: UpdateWiring, lock: ModelsHost['lock']): readonly NoticeSource[] => [
+export type NoticeSourcesOptions = { updateSource?: NoticeSource };
+
+export const defaultNoticeSources = (
+  ports: Pick<CliPorts, 'env' | 'home' | 'interrupt'>,
+  update: UpdateWiring,
+  lock: ModelsHost['lock'],
+  options: NoticeSourcesOptions = {},
+): readonly NoticeSource[] => [
   settingsWarningSource(ports),
-  updateNoticeSource(update),
+  options.updateSource ?? updateNoticeSource(update),
   skillWarningSource,
   agentWarningSource,
   mcpWarningSource,

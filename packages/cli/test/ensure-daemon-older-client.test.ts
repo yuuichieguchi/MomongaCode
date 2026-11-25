@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { fixedSocket, generationLayout } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
-import { DaemonStartError, ensureCurrentDaemon, ensureSessionDaemon, probeSupervisor, restartGeneration, restoreDaemon } from '../src/daemon/ensure-daemon.ts';
+import { DaemonStartError, SessionUpdatedError, ensureCurrentDaemon, ensureSessionDaemon, probeSupervisor, restartGeneration, restoreDaemon } from '../src/daemon/ensure-daemon.ts';
 import { endSessionWhenMovedAway, sessionSocketResolver } from '../src/daemon/generations.ts';
 import { recordingSpawn } from './fake-supervisor.ts';
 import { SELF, setupGenerations } from './generations-harness.ts';
@@ -70,6 +70,8 @@ describe('a session client older than the daemon, before the handover exists (20
     const failure = await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS }));
 
     expect(failure).toBeInstanceOf(DaemonStartError);
+    expect(failure).toBeInstanceOf(SessionUpdatedError);
+    expect((failure as SessionUpdatedError).installedVersion).toBe('1.2.4');
     expect((failure as Error).message).toBe(REOPEN);
     expect(spawned).toEqual([]);
     expect(serving.shutdowns).toBe(0);
@@ -82,6 +84,7 @@ describe('a session client older than the daemon, before the handover exists (20
     const failure = await failureOf(ensureSessionDaemon(ports, paths, { bounds: BOUNDS }));
 
     expect(failure).toBeInstanceOf(DaemonStartError);
+    expect(failure).not.toBeInstanceOf(SessionUpdatedError);
     expect((failure as Error).message).toBe(STILL_OLDER);
     expect(spawned).toEqual([]);
     expect(serving.shutdowns).toBe(0);
@@ -95,6 +98,7 @@ describe('a session client older than the daemon, before the handover exists (20
     const failure = await failureOf(ensureSessionDaemon(broken, paths, { bounds: BOUNDS }));
 
     expect(failure).toBeInstanceOf(DaemonStartError);
+    expect(failure).not.toBeInstanceOf(SessionUpdatedError);
     expect((failure as Error).message).toBe(UNKNOWN_INSTALLED);
   });
 

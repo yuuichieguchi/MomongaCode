@@ -8,7 +8,7 @@ import { handoverTarget, takeHandoverStart } from './start.ts';
 import type { HandoverStart } from './start.ts';
 import { installedNotNewerReason } from './texts.ts';
 
-export type HandoverHost = { args: readonly string[]; started: HandoverStart | undefined; mover: Mover; removeRecord(file: string): void };
+export type HandoverHost = { args: readonly string[]; started: HandoverStart | undefined; mover: Mover; removeRecord(file: string): void; relaunch?(): Promise<'relayed'> };
 
 export type RecordFiles = { read(file: string): string; write(file: string, text: string): void; remove(file: string): void; handOver(file: string): void };
 
@@ -27,5 +27,11 @@ export const createHandoverHost = ({ version, parties, self, argv, env, execArgv
   });
   const record = started?.parsed.kind === 'record' ? started.parsed.record : undefined;
   if (record !== undefined && orderVersions(record.fromVersion, version) !== 'older') mover.refuse(record.toVersion, installedNotNewerReason(version));
-  return { args, started, mover, removeRecord: files.remove };
+  const relaunch = (): Promise<'relayed'> =>
+    replaceProcess(
+      { file: self.execPath, args: [...(self.kind === 'script' ? [...execArgv, self.script] : []), ...args], env },
+      hostReplace,
+      { release: () => undefined, relayed: () => undefined },
+    );
+  return { args, started, mover, removeRecord: files.remove, relaunch };
 };
