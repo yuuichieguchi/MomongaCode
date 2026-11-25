@@ -229,8 +229,8 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     onArrival: input.arrived,
     onFailure: (error) => moveFailures.push(error),
   });
-  if (adoption.kind === 'record') startWithHandoverTerminal(layer, ports.handover?.started?.terminal, adoption.record.neg);
-  else layer.start();
+  const adoptedTerminal = adoption.kind === 'record' ? startWithHandoverTerminal(layer, ports.handover?.started?.terminal, adoption.record.neg) : undefined;
+  if (adoptedTerminal === undefined) layer.start();
   const moving = wireMove(ports, paths, terminal, layer, update, (error) => moveFailures.push(error));
   const adopted: { adoption?: TuiAdoption } = adoption.kind === 'record' ? { adoption: { record: adoption.record, attached: () => ports.handover?.removeRecord(adoption.file) } } : {};
   const externalEditor = terminalExternalEditor(ports, layer, launchOnTerminal);
@@ -269,7 +269,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
           onExit={onExit}
         />
       </TerminalFrame>,
-      { stdin: inkStdin.stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput), exitOnCtrlC: false, maxFps: MAX_FPS, incrementalRendering: true, onRender: () => input.framed() },
+      { stdin: inkStdin.stream, stdout: synchronizedFramesOf(terminal.stdout, () => layer.state().synchronizedOutput, { clearBeforeFirstFrame: adoptedTerminal === 'adopted' && layer.state().screen === 'fullscreen' }), exitOnCtrlC: false, maxFps: MAX_FPS, incrementalRendering: true, onRender: () => input.framed() },
     );
     await instance.waitUntilExit();
   } finally {

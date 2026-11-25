@@ -8,11 +8,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { SessionUpdatedError } from '../../src/daemon/ensure-daemon.ts';
 import type { Mover } from '../../src/handover/mover.ts';
+import { HANDOVER_FORMAT } from '../../src/handover/record.ts';
+import type { TuiRecord } from '../../src/handover/record.ts';
 import type { CliPorts, Terminal } from '../../src/ports.ts';
 import type { TuiBackend } from '../../src/tui/backend.ts';
 import type { NoticeSource } from '../../src/tui/notices.ts';
 import { runInteractive } from '../../src/tui/run-interactive.tsx';
 import type { ShellPort } from '../../src/tui/slash.ts';
+import { CLEAR_BEFORE_FIRST_FRAME } from '../../src/tui/terminal/synchronized.ts';
 import type { UpdateWiring } from '../../src/update/background.ts';
 import { fakeBackend } from '../fake-backend.ts';
 import { setupUpdate } from '../update-harness.ts';
@@ -268,6 +271,105 @@ describe('runInteractive background update handover wiring', () => {
       await Promise.race([unexpectedExit, vi.waitFor(() => expect(output()).toContain('checksum_mismatch'), { timeout: 5000 })]);
       expect(learned).toEqual([]);
       expect(harness.state.value).toMatchObject({ announced: true });
+
+      send('\u0004');
+      await vi.waitFor(() => expect(output()).toContain('again to exit'), { timeout: 5000 });
+      send('\u0004');
+      expect(await running).toBe(0);
+    } finally {
+      closeDescriptor();
+    }
+  });
+
+  const HANDOVER_SESSION_ID = 'aaaaaaaa11111111';
+
+  const handoverBackend = () =>
+    fakeBackend({
+      conversations: [{ session: { id: HANDOVER_SESSION_ID, createdAt: 1 }, firstPrompt: 'hi', runs: [] }],
+    });
+
+  const adoptedRecord = (screen: 'fullscreen' | 'scrollback'): TuiRecord => ({
+    format: HANDOVER_FORMAT,
+    fromVersion: '1.0.0',
+    toVersion: '2.0.0',
+    kind: 'tui',
+    session: HANDOVER_SESSION_ID,
+    lastSeq: {},
+    neg: 'plain',
+    hint: 'ctrl+j',
+    size: { columns: 100, rows: 30 },
+    ...(screen === 'fullscreen' ? { view: { key: null, rowOffset: 0, following: true }, toggles: { thoughts: {} } } : { printed: 0 }),
+    input: { text: '', cursor: 0, historyIndex: null },
+    attachments: [],
+    notes: [],
+  });
+
+  it('clears the adopted fullscreen alt-screen once before drawing the first handover frame', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home, process.platform, {});
+    await ensureMomongaDirs(paths);
+    const { terminal, send, output, closeDescriptor } = makeFakeTerminal(home);
+    const { wiring } = await makeUpdate(context, home, '2.0.0');
+    backendControl.next = handoverBackend;
+    const record = adoptedRecord('fullscreen');
+    const ports = makePorts(home, '2.0.0', {
+      args: [],
+      started: {
+        file: path.join(paths.run, 'handover', `${HANDOVER_SESSION_ID}.tui.json`),
+        parsed: { kind: 'record', record },
+        terminal: { screen: 'fullscreen', modes: ['alt-screen', 'bracketed-paste', 'kitty-keys'] },
+      },
+      mover: { attach: () => () => undefined, learned: async () => undefined, check: async () => undefined, refuse: () => undefined, standing: () => 'cannot-move' },
+      removeRecord: () => undefined,
+    });
+
+    const running = runInteractive(ports, paths, terminal, {}, wiring, makeShell());
+    const unexpectedExit = running.then((code) => {
+      throw new Error(`runInteractive exited early with code ${code}; output=${JSON.stringify(output())}`);
+    });
+    try {
+      await Promise.race([unexpectedExit, vi.waitFor(() => expect(output()).toContain('mode: manual'), { timeout: 5000 })]);
+      const drawn = output();
+      const clearAt = drawn.indexOf(CLEAR_BEFORE_FIRST_FRAME);
+      const bannerAt = drawn.indexOf('MomongaCode v2.0.0');
+      expect(clearAt).toBeGreaterThanOrEqual(0);
+      expect(bannerAt).toBeGreaterThan(clearAt);
+
+      send('\u0004');
+      await vi.waitFor(() => expect(output()).toContain('again to exit'), { timeout: 5000 });
+      send('\u0004');
+      expect(await running).toBe(0);
+    } finally {
+      closeDescriptor();
+    }
+  });
+
+  it('does not emit fullscreen clear when adopting a scrollback handover terminal', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home, process.platform, {});
+    await ensureMomongaDirs(paths);
+    const { terminal, send, output, closeDescriptor } = makeFakeTerminal(home);
+    const { wiring } = await makeUpdate(context, home, '2.0.0');
+    backendControl.next = handoverBackend;
+    const record = adoptedRecord('scrollback');
+    const ports = makePorts(home, '2.0.0', {
+      args: [],
+      started: {
+        file: path.join(paths.run, 'handover', `${HANDOVER_SESSION_ID}.tui.json`),
+        parsed: { kind: 'record', record },
+        terminal: { screen: 'scrollback', modes: ['bracketed-paste', 'kitty-keys'] },
+      },
+      mover: { attach: () => () => undefined, learned: async () => undefined, check: async () => undefined, refuse: () => undefined, standing: () => 'cannot-move' },
+      removeRecord: () => undefined,
+    });
+
+    const running = runInteractive(ports, paths, terminal, {}, wiring, makeShell());
+    const unexpectedExit = running.then((code) => {
+      throw new Error(`runInteractive exited early with code ${code}; output=${JSON.stringify(output())}`);
+    });
+    try {
+      await Promise.race([unexpectedExit, vi.waitFor(() => expect(output()).toContain('MomongaCode v2.0.0'), { timeout: 5000 })]);
+      expect(output()).not.toContain(CLEAR_BEFORE_FIRST_FRAME);
 
       send('\u0004');
       await vi.waitFor(() => expect(output()).toContain('again to exit'), { timeout: 5000 });

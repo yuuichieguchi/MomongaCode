@@ -1,11 +1,12 @@
 import { EventEmitter } from 'node:events';
-import { Text, render } from 'ink';
+import { Box, Text, render } from 'ink';
 import { describe, expect, it } from 'vitest';
 import { systemTiming } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
+import { createTerminalScreen } from '@momonga/testkit/terminal-screen';
 import { createScreenInput } from '../../src/tui/screen/input.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
-import { BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE, synchronizedFramesOf } from '../../src/tui/terminal/synchronized.ts';
+import { BEGIN_SYNCHRONIZED_UPDATE, CLEAR_BEFORE_FIRST_FRAME, END_SYNCHRONIZED_UPDATE, synchronizedFramesOf } from '../../src/tui/terminal/synchronized.ts';
 
 const fakeTty = () => {
   const writes: string[] = [];
@@ -91,5 +92,65 @@ describe('synchronized output follows the terminal answer to 2026 (2.3)', () => 
     expect(drawn.indexOf(END_SYNCHRONIZED_UPDATE)).toBeGreaterThan(drawn.indexOf('first'));
     instance.unmount();
     await layer.close();
+  });
+
+  it('clears the screen once immediately before the first non-sync frame write when clearBeforeFirstFrame is set', () => {
+    const { stream, writes } = fakeTty();
+    const wrapped = synchronizedFramesOf(stream as unknown as NodeJS.WriteStream, () => true, { clearBeforeFirstFrame: true });
+    wrapped.write(BEGIN_SYNCHRONIZED_UPDATE);
+    wrapped.write('first-frame');
+    wrapped.write(END_SYNCHRONIZED_UPDATE);
+    wrapped.write(BEGIN_SYNCHRONIZED_UPDATE);
+    wrapped.write('second-frame');
+    wrapped.write(END_SYNCHRONIZED_UPDATE);
+    expect(writes).toEqual([BEGIN_SYNCHRONIZED_UPDATE, `${CLEAR_BEFORE_FIRST_FRAME}first-frame`, END_SYNCHRONIZED_UPDATE, BEGIN_SYNCHRONIZED_UPDATE, 'second-frame', END_SYNCHRONIZED_UPDATE]);
+  });
+
+  it('still emits the one-time clear before the first frame when synchronized updates are suppressed', () => {
+    const { stream, writes } = fakeTty();
+    const wrapped = synchronizedFramesOf(stream as unknown as NodeJS.WriteStream, () => false, { clearBeforeFirstFrame: true });
+    wrapped.write(BEGIN_SYNCHRONIZED_UPDATE);
+    wrapped.write('first-frame');
+    wrapped.write(END_SYNCHRONIZED_UPDATE);
+    wrapped.write('second-frame');
+    expect(writes).toEqual([`${CLEAR_BEFORE_FIRST_FRAME}first-frame`, 'second-frame']);
+  });
+
+  it('leaves row 0 uncorrupted when Ink renders an adopted fullscreen frame after cursor was parked near bottom', async () => {
+    const columns = 80;
+    const rows = 24;
+    const screen = createTerminalScreen({ columns, rows });
+    try {
+      await screen.write(`\u001b[?1049h\u001b[21;1H╭${'─'.repeat(columns - 2)}╮\r\n│ > ${' '.repeat(columns - 5)}│\r\n╰${'─'.repeat(columns - 2)}╯\u001b[22;5H`);
+      const writes: string[] = [];
+      const stream = Object.assign(new EventEmitter(), {
+        isTTY: true,
+        columns,
+        rows,
+        write: (chunk: string | Uint8Array): boolean => {
+          writes.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+          return true;
+        },
+      });
+      const wrapped = synchronizedFramesOf(stream as unknown as NodeJS.WriteStream, () => true, { clearBeforeFirstFrame: true });
+      const instance = render(
+        <Box flexDirection="column" width={columns} height={rows}>
+          <Box borderStyle="round" width={columns}>
+            <Text>MomongaCode v2.0.0</Text>
+          </Box>
+          <Box flexGrow={1} />
+          <Text>mode: manual</Text>
+        </Box>,
+        { stdout: wrapped, interactive: true, patchConsole: false, incrementalRendering: true },
+      );
+      await waitFor(() => writes.join('').includes('MomongaCode v2.0.0'), { description: 'fullscreen box rendered' });
+      await screen.write(writes.join(''));
+      expect(screen.lineAt(0)).toBe(`╭${'─'.repeat(columns - 2)}╮`);
+      expect(screen.lineAt(1)).toContain('MomongaCode v2.0.0');
+      expect(screen.text().join('\n')).not.toContain(`╰${'─'.repeat(columns - 2)}╯\n│`);
+      instance.unmount();
+    } finally {
+      screen.dispose();
+    }
   });
 });
