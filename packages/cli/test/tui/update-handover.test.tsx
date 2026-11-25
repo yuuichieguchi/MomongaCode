@@ -7,6 +7,7 @@ import { withTempDir } from '@momonga/testkit';
 import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { SessionUpdatedError } from '../../src/daemon/ensure-daemon.ts';
+import { createMover } from '../../src/handover/mover.ts';
 import type { Mover } from '../../src/handover/mover.ts';
 import { HANDOVER_FORMAT } from '../../src/handover/record.ts';
 import type { TuiRecord } from '../../src/handover/record.ts';
@@ -370,6 +371,50 @@ describe('runInteractive background update handover wiring', () => {
     try {
       await Promise.race([unexpectedExit, vi.waitFor(() => expect(output()).toContain('MomongaCode v2.0.0'), { timeout: 5000 })]);
       expect(output()).not.toContain(CLEAR_BEFORE_FIRST_FRAME);
+
+      send('\u0004');
+      await vi.waitFor(() => expect(output()).toContain('again to exit'), { timeout: 5000 });
+      send('\u0004');
+      expect(await running).toBe(0);
+    } finally {
+      closeDescriptor();
+    }
+  });
+
+  it('does not include "Restarting into" in the TUI handover record notes or failure output', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home, process.platform, {});
+    await ensureMomongaDirs(paths);
+    const { terminal, send, output, closeDescriptor } = makeFakeTerminal(home);
+    const { harness, wiring } = await makeUpdate(context, home, '1.0.0');
+    const bg = Promise.withResolvers<void>();
+    const writtenNotes: unknown[] = [];
+    const mover = createMover({
+      version: '1.0.0',
+      parties: async () => ({ writer: 4242, reader: 4242, namespace: 'single' }),
+      write: (_file, text) => {
+        writtenNotes.push((JSON.parse(text) as { notes: unknown }).notes);
+      },
+      remove: () => undefined,
+      handOver: () => undefined,
+      target: (recordFile) => ({ file: '/opt/momonga', args: ['--handover', recordFile], env: {} }),
+      replace: () => Promise.reject(new Error('execve EACCES')),
+    });
+    backendControl.next = () => fakeBackend();
+    const ports = makePorts(home, '1.0.0', { args: [], started: undefined, mover, removeRecord: () => undefined });
+
+    const running = runInteractive(ports, paths, terminal, { backgroundCheck: { done: bg.promise } }, wiring, makeShell());
+    const unexpectedExit = running.then((code) => {
+      throw new Error(`runInteractive exited early with code ${code}; output=${JSON.stringify(output())}`);
+    });
+    try {
+      await Promise.race([unexpectedExit, vi.waitFor(() => expect(output()).toContain('mode: manual'), { timeout: 5000 })]);
+
+      harness.state.value = { checkedAt: 10, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+      bg.resolve();
+      await Promise.race([unexpectedExit, vi.waitFor(() => expect(output()).toContain('Could not restart into v2.0.0'), { timeout: 5000 })]);
+      expect(writtenNotes).toEqual([[]]);
+      expect(output()).not.toContain('Restarting into');
 
       send('\u0004');
       await vi.waitFor(() => expect(output()).toContain('again to exit'), { timeout: 5000 });

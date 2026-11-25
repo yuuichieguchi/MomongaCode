@@ -73,17 +73,18 @@ export const bannerRows = (banner: StartupBanner, columns: number): Row[] => {
     const token = lineToken(index, lines.length);
     return [{ text: row.text, ...(token === undefined ? {} : { token }) }];
   }));
+  const noticeCells: Cell[][] = notices.flatMap((notice) => wrapLine(`! ${notice}`, textWidth, { links: false }).map((row): Cell[] => [{ text: row.text, token: 'warning' }]));
+  const rightColumn: Cell[][] = [...text, ...noticeCells];
   const bodyCells = (index: number, figurePart: readonly ArtPart[] | undefined): Cell[] => [
     ...(art.length === 0 ? [] : [...padded(figurePart ?? [], ART_WIDTH), { text: ' '.repeat(ART_GAP) }]),
-    ...(text[index] ?? []),
+    ...(rightColumn[index] ?? []),
   ];
-  const noticeRows: Cell[][] = notices.length === 0 ? [] : [[], ...notices.flatMap((notice) => wrapLine(`! ${notice}`, inner, { links: false }).map((row): Cell[] => [{ text: row.text, token: 'warning' }]))];
   const edge = (text: string): Cell => ({ text, token: 'banner.border' });
   const framed = (cells: readonly Cell[]): Row => rowOf([edge('│'), { text: ' ' }, ...padded(cells, inner), { text: ' ' }, edge('│')]);
-  const bodyRows = Array.from({ length: Math.max(art.length, text.length) }, (_, index): Row => {
+  const bodyRows = Array.from({ length: Math.max(art.length, rightColumn.length) }, (_, index): Row => {
     const swing = art[index]?.swing;
     const rest = framed(bodyCells(index, art[index]?.rest));
     return swing === undefined ? rest : { ...rest, swing: framed(bodyCells(index, swing)) };
   });
-  return [rowOf([edge(`╭${'─'.repeat(inner + 2)}╮`)]), ...bodyRows, ...noticeRows.map(framed), rowOf([edge(`╰${'─'.repeat(inner + 2)}╯`)])];
+  return [rowOf([edge(`╭${'─'.repeat(inner + 2)}╮`)]), ...bodyRows, rowOf([edge(`╰${'─'.repeat(inner + 2)}╯`)])];
 };

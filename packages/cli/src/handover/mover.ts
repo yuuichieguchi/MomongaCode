@@ -22,6 +22,7 @@ export type MoveSurface = {
   release(): void;
   resume(): void;
   say(text: string): void;
+  announceRestart?(text: string): void;
 };
 
 export type MoverPorts = {
@@ -92,6 +93,8 @@ export const createMover = (ports: MoverPorts): Mover => {
       said(on, version, reasonOf(error));
       return;
     }
+    if (on.announceRestart !== undefined) on.announceRestart(restartingText(version));
+    else on.say(restartingText(version));
     try {
       await ports.replace(ports.target(file, on.terminal()), {
         release: () => on.release(),
@@ -120,7 +123,6 @@ export const createMover = (ports: MoverPorts): Mover => {
       on.resume();
       return;
     }
-    on.say(restartingText(version));
     await replaceWith(on, file, version, parties);
   };
 

@@ -182,6 +182,39 @@ export const startupCases = (forceColor: 'set' | 'cleared'): void => {
     app.unmount();
   });
 
+  it('places up to 3 notice lines in the right column directly below the folder without changing the 9-row box height', () => {
+    const notice = 'momonga: momonga was updated to 0.4.2 in the background';
+    const one = bannerRows({ config: config(), model: { kind: 'connected', name: 'scripted-model' }, cwd: '/Users/ada/p', notices: [notice], figure: true }, 100);
+    expect(one).toHaveLength(FIGURE.length + 2);
+    expect(one[4]?.text).toContain('~/p');
+    expect(one[5]?.text.slice(FIGURE_LEFT + ART_WIDTH + ART_GAP)).toContain(`! ${notice}`);
+    expect(one[5]?.spans.some(([from, to, token]) => token === 'warning' && one[5]!.text.slice(from, to).includes('updated to 0.4.2'))).toBe(true);
+
+    const three = bannerRows(
+      { config: config(), model: { kind: 'connected', name: 'scripted-model' }, cwd: '/Users/ada/p', notices: ['first warning', 'second warning', 'third warning'], figure: true },
+      100,
+    );
+    expect(three).toHaveLength(FIGURE.length + 2);
+    expect(three[5]?.text.slice(FIGURE_LEFT + ART_WIDTH + ART_GAP)).toContain('! first warning');
+    expect(three[6]?.text.slice(FIGURE_LEFT + ART_WIDTH + ART_GAP)).toContain('! second warning');
+    expect(three[7]?.text.slice(FIGURE_LEFT + ART_WIDTH + ART_GAP)).toContain('! third warning');
+    expect(three[7]?.swing?.text.slice(FIGURE_LEFT + ART_WIDTH + ART_GAP)).toContain('! third warning');
+
+    const four = bannerRows(
+      { config: config(), model: { kind: 'connected', name: 'scripted-model' }, cwd: '/Users/ada/p', notices: ['n1', 'n2', 'n3', 'n4'], figure: true },
+      100,
+    );
+    expect(four).toHaveLength(10);
+    expect(four[8]?.text.slice(FIGURE_LEFT, FIGURE_LEFT + ART_WIDTH).trim()).toBe('');
+    expect(four[8]?.text.slice(FIGURE_LEFT + ART_WIDTH + ART_GAP)).toContain('! n4');
+
+    const narrow = bannerRows({ config: config(), model: { kind: 'connected', name: 'scripted-model' }, cwd: '/Users/ada/p', notices: ['narrow notice'], figure: true }, 38);
+    expect(narrow).toHaveLength(7);
+    expect(narrow[4]?.text).toContain('~/p');
+    expect(narrow[5]?.text).toContain('! narrow notice');
+    expect(narrow[5]?.text.indexOf('! narrow notice')).toBe(2);
+  });
+
   it('is shown once at the top: after the first message it scrolls into the output and does not come back', async () => {
     const { app, backend } = await start({}, { startup: config() });
     await untilFrame(app, 'MomongaCode v1.2.3');

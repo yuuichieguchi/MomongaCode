@@ -14,7 +14,7 @@ const KEPT = { kind: 'run', runId: 'run-1' } as const;
 
 type Faults = { write?: Error; replace?: Error; quietAfterSuspend?: boolean };
 
-const setup = (faults: Faults = {}) => {
+const setup = (faults: Faults & { announceRestart?: (text: string) => void } = {}) => {
   const log: string[] = [];
   const written: { file: string; text: string }[] = [];
   const targets: ReplaceTarget[] = [];
@@ -72,12 +72,13 @@ const setup = (faults: Faults = {}) => {
       log.push('say');
       said.push(text);
     },
+    ...(faults.announceRestart === undefined ? {} : { announceRestart: faults.announceRestart }),
   };
   mover.attach(surface);
   return { mover, log, written, targets, said, state, asked };
 };
 
-const MOVE = ['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'release', 'write', 'hand over'];
+const MOVE = ['snapshot', 'suspend', 'snapshot', 'write', 'say', 'replace', 'release', 'write', 'hand over'];
 
 const settled = async (): Promise<void> => {
   for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
@@ -170,7 +171,7 @@ describe('a move that fails (16.4, M4)', () => {
   it('stays and says why when the record cannot be written, and the next check tries the same version again (red test 15)', async () => {
     const { mover, log, said } = setup({ write: new Error('ENOSPC: no space left on device') });
     await mover.learned('1.2.4', 'live');
-    expect(log).toEqual(['snapshot', 'suspend', 'say', 'snapshot', 'write', 'resume', 'say']);
+    expect(log).toEqual(['snapshot', 'suspend', 'snapshot', 'write', 'resume', 'say']);
     expect(said.at(-1)).toBe(handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'ENOSPC: no space left on device', kept: KEPT }));
     await mover.check();
     expect(log.filter((step) => step === 'write')).toHaveLength(2);
@@ -216,10 +217,23 @@ describe('a move that fails (16.4, M4)', () => {
   it('stays, removes the record, says why and makes one attempt when the exec fails (red test 16)', async () => {
     const { mover, log, said } = setup({ replace: new Error('execve EACCES') });
     await mover.learned('1.2.4', 'live');
-    expect(log).toEqual(['snapshot', 'suspend', 'say', 'snapshot', 'write', 'replace', 'remove', 'resume', 'say']);
+    expect(log).toEqual(['snapshot', 'suspend', 'snapshot', 'write', 'say', 'replace', 'remove', 'resume', 'say']);
     expect(said.at(-1)).toBe(handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'execve EACCES', kept: KEPT }));
     await mover.check();
     expect(log.filter((step) => step === 'replace')).toHaveLength(1);
+  });
+
+  it('uses announceRestart instead of say before replace when provided, keeping failure reporting on say', async () => {
+    const announced: string[] = [];
+    const { mover, said } = setup({ replace: new Error('execve EACCES'), announceRestart: (text) => announced.push(text) });
+    await mover.learned('1.2.4', 'live');
+    expect(announced).toEqual([restartingText('1.2.4')]);
+    expect(said).toEqual([handoverFailedText('cli', { toVersion: '1.2.4', fromVersion: '1.2.3', reason: 'execve EACCES', kept: KEPT })]);
+
+    const silent = setup({ announceRestart: () => undefined });
+    void silent.mover.learned('1.2.4', 'live');
+    await settled();
+    expect(silent.said).toEqual([]);
   });
 
   it('does not move while the record is larger than 1 MiB, says so once, and moves when it fits (red test 18)', async () => {

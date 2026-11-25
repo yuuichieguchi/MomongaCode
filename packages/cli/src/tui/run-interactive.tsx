@@ -112,6 +112,7 @@ const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, laye
       attached().resume();
     },
     say: (text) => attached().say(text),
+    announceRestart: () => undefined,
   });
   const checkForNewer = async (): Promise<boolean> => {
     const newer = (await newerCurrentVersion(ports, paths)) ?? (await installedNewerVersion(update));
