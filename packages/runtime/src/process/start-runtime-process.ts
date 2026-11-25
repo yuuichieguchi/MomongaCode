@@ -67,6 +67,7 @@ import type { DaemonCurrentFrame } from '@momonga/protocol';
 import { recomputeFactsOf, startFactsSweeper } from '../service/facts-sweeper.ts';
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
 import { createRunService } from '../service/service.ts';
+import { createSessionInspectorState } from '../service/session-inspector-state.ts';
 import { createReflector } from '../memory/reflection.ts';
 import { createMemoryJudge } from '../memory/judge.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
@@ -661,7 +662,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         owners: runtime.owners,
         onWarning,
       });
-      const memories = createMemoryPort({ platform, store, settings: composition.settings, evidenceRun: evidenceRunFor });
+      const memories = createMemoryPort({ platform, store, settings: composition.settings, evidenceRun: evidenceRunFor, clock });
       const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: () => sandboxes.current().ruleEnforcement });
       const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({
@@ -736,12 +737,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       onRetryFailure: report,
     };
     const mandateVerification = mandateRunVerification(verificationSources);
+    const inspectorState = createSessionInspectorState(clock);
     const runService = await step('service', () =>
       createRunService({
         ...(signal === undefined ? {} : { startSignal: signal }),
         store,
         clock,
         redactor,
+        inspectorState,
         home: canonicalHome,
         lock: kernelLock,
         version,
@@ -878,6 +881,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           random: Math.random,
           platform,
           timers,
+          inspectorState,
           defaults: RUNTIME_DEFAULTS.limits,
           home: canonicalHome,
           blobs: store.blobs,

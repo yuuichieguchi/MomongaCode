@@ -74,6 +74,7 @@ Daemon endpoints that perform user-authorized actions require a 128-bit random c
 **Routes requiring this capability:**
 
 - `POST /v1/sessions`, `PATCH /v1/sessions/:id`
+- `POST /v1/sessions/:id/inspector/context/exclude`, `POST /v1/sessions/:id/inspector/memory/control`
 - `POST /v1/approvals/:id`
 - `POST /v1/sessions/:id/user-shell`, `DELETE /v1/sessions/:id/user-shell`
 - `POST /v1/mcp/servers/:name/authorization`, `DELETE /v1/mcp/servers/:name/authorization`
@@ -81,7 +82,7 @@ Daemon endpoints that perform user-authorized actions require a 128-bit random c
 - `POST /v1/elicitations/:id`
 - `POST /v1/markers/:name/ignore`
 - `POST /v1/guidelines`, `POST /v1/guidelines/:version/rollback`
-- `POST /v1/memories`, `DELETE /v1/memories/:id`, `POST /v1/memories/:id/accept`, `POST /v1/memories/:id/reject`, `POST /v1/memories/:id/restore`, `POST /v1/memories/:id/promote`, `POST /v1/memory-judgements/shown`
+- `POST /v1/memories`, `PATCH /v1/memories/:id`, `DELETE /v1/memories/:id`, `POST /v1/memories/:id/accept`, `POST /v1/memories/:id/reject`, `POST /v1/memories/:id/restore`, `POST /v1/memories/:id/promote`, `POST /v1/memory-judgements/shown`
 - `POST /v1/rules`, `POST /v1/rules/:id/retire`, `POST /v1/policy/verify`
 - `PUT /v1/trust`, `DELETE /v1/trust`
 

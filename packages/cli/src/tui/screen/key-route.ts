@@ -1,12 +1,13 @@
 import type { KeyContext } from '../keys/table.ts';
 import type { Overlay } from '../picker.tsx';
 
-export type KeyRoute = 'trust' | 'tool-view' | 'overlay' | 'welcome' | 'prompt' | 'agents' | 'shell' | 'menu' | 'editor';
+export type KeyRoute = 'trust' | 'tool-view' | 'overlay' | 'inspector' | 'welcome' | 'prompt' | 'agents' | 'shell' | 'menu' | 'editor';
 
 export type KeyRouteFacts = {
   readonly trust: boolean;
   readonly toolView: boolean;
   readonly overlay: Overlay['kind'] | undefined;
+  readonly inspector?: boolean;
   readonly welcome: boolean;
   readonly prompt: 'decision' | 'fields' | undefined;
   readonly detail: boolean;
@@ -20,6 +21,7 @@ export const keyRouteOf = (facts: KeyRouteFacts): KeyRoute => {
   if (facts.trust) return 'trust';
   if (facts.toolView) return 'tool-view';
   if (facts.overlay !== undefined) return 'overlay';
+  if (facts.inspector) return 'inspector';
   if (facts.welcome) return 'welcome';
   if (facts.prompt !== undefined) return 'prompt';
   if (facts.agentsChosen) return 'agents';
@@ -48,6 +50,8 @@ export const chordContextsOf = (facts: KeyRouteFacts): readonly KeyContext[] => 
       return DETAIL;
     case 'overlay':
       return facts.overlay === 'pick' ? listContexts(facts) : facts.overlay === undefined ? NO_CONTEXT : OVERLAY_CONTEXTS[facts.overlay];
+    case 'inspector':
+      return ['inspector', 'global'];
     case 'welcome':
       return NO_CONTEXT;
     case 'prompt':

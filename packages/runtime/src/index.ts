@@ -69,6 +69,8 @@ export {
 } from './service/index.ts';
 export type {
   ApprovalSweeperOptions,
+  InspectorRouteDeps,
+  InspectorRouteStore,
   MemorySweeperOptions,
   RunAppDeps,
   RunNotifier,
@@ -78,7 +80,11 @@ export type {
   SearchSweeperOptions,
   ServiceTimers,
   SessionCreateSettings,
+  SessionInspectorOverrides,
+  SessionInspectorReadState,
+  SessionInspectorState,
 } from './service/index.ts';
+export { createSessionInspectorState, registerInspectorRoutes } from './service/index.ts';
 export { GATEWAY_UNAVAILABLE_CODE, GatewayRequestError, MODEL_NOT_FOUND_CODE, ModelUnlistedError, createGatewayClient, gatewayListingOf, gatewayModelIn, isGatewayNeverReached, isGenerationRetiredRefusal, isModelNotFound } from './gateway-client.ts';
 export type { GatewayChainMember, GatewayClient, GatewayClientOptions, GatewayListing, GatewayModel, GatewayRequestErrorFields, ListedChainMember, ListedGatewayModel } from './gateway-client.ts';
 export { createTracerPort, fixedTracers } from './tracer.ts';

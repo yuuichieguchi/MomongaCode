@@ -217,6 +217,14 @@ export const validateJsonBody = (status: number, body: unknown): void => {
     return;
   }
   if (typeof body !== 'object' || body === null) return;
+  if ('context' in body && 'usage' in body && 'diagnostics' in body) {
+    expectSchema('InspectorSnapshot', body);
+    return;
+  }
+  if ('trace' in body && 'session' in body === false && 'run' in body === false) {
+    expectSchema('InspectorMemorySearchResponse', body);
+    return;
+  }
   if ('skills' in body && 'warnings' in body) expectSchema('SkillsResponse', body);
   if ('agents' in body && 'warnings' in body) expectSchema('AgentsResponse', body);
   for (const [key, name] of Object.entries(VIEW_KEYS)) if (key in body) expectSchema(name, (body as Record<string, unknown>)[key]);

@@ -96,14 +96,14 @@ describe('memory api', () => {
     expect((await env.http('GET', `/v1/memories?project=${encodeURIComponent(gone)}`)).json).toEqual({ memories: [viewed(memory)], next: null });
   });
 
-  it('allows only reading, adding and deleting', async () => {
+  it('allows only reading, adding, editing and deleting', async () => {
     const env = await startService({ fakeTimers: true });
     const collection = await env.http('PUT', '/v1/memories', { body: {} });
     expect(collection.status).toBe(405);
     expect(collection.headers['allow']).toBe('GET, POST, HEAD');
     const item = await env.http('PUT', '/v1/memories/x', { body: {} });
     expect(item.status).toBe(405);
-    expect(item.headers['allow']).toBe('GET, DELETE, HEAD');
+    expect(item.headers['allow']).toBe('GET, PATCH, DELETE, HEAD');
   });
 });
 

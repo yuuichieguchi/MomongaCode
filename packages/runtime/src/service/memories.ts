@@ -1,7 +1,8 @@
 import type { Context } from 'hono';
-import { parseOutsideJson } from '@momonga/foundation';
-import { MEMORY_SCOPES, MEMORY_STATES, WORDS } from '@momonga/protocol';
-import type { AddMemoryRequest, ContextChargeView, MarkMemoryJudgementsShownRequest, MemoryJudgementResponse, MemoryJudgementsResponse, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
+import { defineProductSchema, parseOutsideJson, productErrorsText } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
+import { INSPECTOR_REQUEST_SCHEMAS, MEMORY_KINDS, MEMORY_SCOPES, MEMORY_STATES, WORDS } from '@momonga/protocol';
+import type { AddMemoryRequest, ContextChargeView, EditMemoryRequest, MarkMemoryJudgementsShownRequest, MemoryJudgementResponse, MemoryJudgementsResponse, MemoryKind, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, MemoryListCursor, RuntimeStore } from '@momonga/store';
 import { MemoryAddRefusal, prepareCommandMemory } from '../memory/add-memory.ts';
@@ -14,11 +15,14 @@ import { reflectionModelOf } from '../memory/reflection.ts';
 import type { RecordViews } from '../memory/views.ts';
 import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
+import type { SessionInspectorState } from './session-inspector-state.ts';
 import { canonicalProject } from './project-query.ts';
 import { JSON_MEDIA_TYPES, readJson, validateBody } from './request.ts';
 
 const json = (body: unknown, status: number): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+const validateEditMemory: ProductValidator<EditMemoryRequest> = defineProductSchema('inspector/EditMemoryRequest', INSPECTOR_REQUEST_SCHEMAS.EditMemoryRequest);
 
 const scopeOf = (raw: string | undefined): MemoryScope | undefined => {
   if (raw === undefined) return undefined;
@@ -60,6 +64,7 @@ export type MemoryRoutesDeps = {
   maxBodyBytes: number;
   closeSignal: AbortSignal;
   home: string;
+  inspectorState?: SessionInspectorState;
 };
 
 export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDeps): void => {
@@ -87,18 +92,30 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return json({ memories: await views.viewsOf(page.memories, boundOf(context)), next: page.next === null ? null : encodeCursor(page.next) }, 200);
   };
 
-  const changed = async (context: Context, result: MemoryChange<string, string>, done: string, requirement: string): Promise<Response> => {
+  const changed = async (
+    context: Context,
+    result: MemoryChange<string, string>,
+    done: string,
+    requirement: string,
+    lifecycleKind: 'accepted' | 'rejected' | 'restored',
+  ): Promise<Response> => {
     const id = context.req.param('id') ?? '';
     if (result.memory === undefined) throw notFound(`memory ${id} does not exist`);
     if (result.kind !== done) throw conflict('memory_state', `memory ${id} is ${result.memory.state}, not ${requirement}`);
+    deps.inspectorState?.recordGlobalLifecycle(
+      result.memory.project,
+      lifecycleKind,
+      result.memory.id,
+      result.memory.text.replace(/\s+/g, ' ').trim().slice(0, 100),
+    );
     return json({ memory: await views.viewOf(result.memory, boundOf(context)) }, 200);
   };
 
-  const acceptMemory: Handler = (context) => changed(context, memories.accept(context.req.param('id') ?? ''), 'accepted', 'a candidate');
+  const acceptMemory: Handler = (context) => changed(context, memories.accept(context.req.param('id') ?? ''), 'accepted', 'a candidate', 'accepted');
 
-  const rejectMemory: Handler = (context) => changed(context, memories.reject(context.req.param('id') ?? ''), 'rejected', 'a candidate');
+  const rejectMemory: Handler = (context) => changed(context, memories.reject(context.req.param('id') ?? ''), 'rejected', 'a candidate', 'rejected');
 
-  const restoreMemory: Handler = (context) => changed(context, memories.restore(context.req.param('id') ?? ''), 'restored', 'archived');
+  const restoreMemory: Handler = (context) => changed(context, memories.restore(context.req.param('id') ?? ''), 'restored', 'archived', 'restored');
 
   const promoteMemory: Handler = async (context) => {
     const memory = requireMemory(context);
@@ -126,7 +143,14 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
         platform: deps.platform,
         signal: boundOf(context),
       });
-      return json({ memory: await views.viewOf(memories.addByCommand(prepared), boundOf(context)) }, 201);
+      const added = memories.addByCommand(prepared);
+      deps.inspectorState?.recordGlobalLifecycle(
+        added.project,
+        'created',
+        added.id,
+        added.text.replace(/\s+/g, ' ').trim().slice(0, 100),
+      );
+      return json({ memory: await views.viewOf(added, boundOf(context)) }, 201);
     } catch (error) {
       if (error instanceof MemoryAddRefusal) throw invalidRequest(error.message, error.param);
       throw error;
@@ -141,9 +165,55 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return json({ memories: chain.map((view) => withValidity(deps.store, view)) }, 200);
   };
 
+  const editMemory: Handler = async (context) => {
+    const existing = requireMemory(context);
+    if (existing.retiredAt !== null || existing.state !== 'active') {
+      throw conflict('memory_state', `memory ${existing.id} cannot be edited (${existing.state})`);
+    }
+    const parsedEdit = validateEditMemory(await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    if (!parsedEdit.valid) throw invalidRequest(productErrorsText(parsedEdit.errors, 'body'));
+    const body = parsedEdit.value;
+    const scope: MemoryScope = existing.scope === 'project' ? 'project' : 'user';
+    const kind = MEMORY_KINDS.find((candidate): candidate is MemoryKind => candidate === existing.kind);
+    const request: AddMemoryRequest = {
+      scope,
+      ...(scope === 'project' && existing.project !== null ? { project: existing.project } : {}),
+      ...(kind === undefined ? {} : { kind }),
+      text: body.text,
+    };
+    try {
+      const prepared = await prepareCommandMemory(request, {
+        trusted: async (project) => (await trust.decisionAsked(project, context.req.raw.signal)).decision === 'trusted',
+        evidenceRun: deps.evidenceRun,
+        platform: deps.platform,
+        signal: boundOf(context),
+      });
+      const updated = memories.addByCommand(prepared);
+      memories.retire(existing.id);
+      deps.inspectorState?.recordGlobalLifecycle(
+        updated.project,
+        'updated',
+        updated.id,
+        updated.text.replace(/\s+/g, ' ').trim().slice(0, 100),
+        `Replaced ${existing.id}`,
+      );
+      return json({ memory: await views.viewOf(updated, boundOf(context)) }, 200);
+    } catch (error) {
+      if (error instanceof MemoryAddRefusal) throw invalidRequest(error.message, error.param);
+      throw error;
+    }
+  };
+
   const deleteMemory: Handler = (context) => {
     const id = context.req.param('id') ?? '';
-    if (memories.retire(id) === undefined) throw notFound(`memory ${id} does not exist`);
+    const result = memories.retire(id);
+    if (result === undefined) throw notFound(`memory ${id} does not exist`);
+    deps.inspectorState?.recordGlobalLifecycle(
+      result.memory.project,
+      'retired',
+      result.memory.id,
+      result.memory.text.replace(/\s+/g, ' ').trim().slice(0, 100),
+    );
     return new Response(null, { status: 204 });
   };
 
@@ -223,7 +293,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
   route('/v1/reflection', { GET: latestReflection });
   route('/v1/runs/:id/reflection', { GET: reflectionOfRun });
   route('/v1/memories', { GET: listMemories, POST: addMemory }, { person: ['POST'] });
-  route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory }, { person: ['DELETE'] });
+  route('/v1/memories/:id', { GET: getMemory, PATCH: editMemory, DELETE: deleteMemory }, { person: ['PATCH', 'DELETE'] });
   route('/v1/memories/:id/history', { GET: memoryHistory });
   route('/v1/memories/:id/accept', { POST: acceptMemory }, { person: ['POST'] });
   route('/v1/memories/:id/reject', { POST: rejectMemory }, { person: ['POST'] });

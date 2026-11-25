@@ -1,7 +1,7 @@
 import fs from 'node:fs';
-import { INBOX_FULL_CODE, INBOX_MAX_PENDING, inboxFullMessage, parseCanon, imageCapability } from '@momonga/protocol';
+import { INBOX_FULL_CODE, INBOX_MAX_PENDING, emptyInspectorSnapshot, inboxFullMessage, parseCanon, imageCapability } from '@momonga/protocol';
 import { SCRIPTED_MODEL, SCRIPTED_PROVIDER, createFakeClock, createFakeTimers, testKernelLock } from '@momonga/testkit';
-import type { Capabilities, CapabilityOverride, LocalServerDetection, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryJudgementView, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, InspectorContextExcludeRequest, InspectorMemoryControlRequest, InspectorMemoryRetrievalTrace, InspectorSnapshot, LocalServerDetection, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryJudgementView, MemoryView, PermissionMode, SkillView, InboxRowView, RunStatus } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
@@ -159,6 +159,9 @@ export type FakeBackendOptions = {
   markShownFailure?: Error;
   markShownHeld?: Promise<void>;
   sessionStreamHeld?: boolean;
+  inspectorSnapshot?: InspectorSnapshot;
+  onInspectorControl?: (snapshot: InspectorSnapshot, request: InspectorContextExcludeRequest | InspectorMemoryControlRequest) => InspectorSnapshot;
+  inspectorSearchTrace?: (query: string) => InspectorMemoryRetrievalTrace;
 };
 
 const OLLAMA_DEFAULT_TAG = 'latest';
@@ -714,6 +717,38 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (found === undefined) throw new Error(`memory ${id} does not exist`);
       return found;
     },
+    editMemory: async (id, text) => {
+      record(`memory-edit:${id}:${text}`);
+      const found = memories.find((memory) => memory.id === id);
+      if (found === undefined) throw new Error(`memory ${id} does not exist`);
+      const updated: MemoryView = { ...found, id: `${id}-edited`, text, keptAt: found.keptAt + 1 };
+      memories = [updated, ...memories.filter((memory) => memory.id !== id)];
+      return updated;
+    },
+    acceptMemory: async (id) => {
+      record(`memory-accept:${id}`);
+      const found = memories.find((memory) => memory.id === id);
+      if (found === undefined) throw new Error(`memory ${id} does not exist`);
+      const updated: MemoryView = { ...found, state: 'active' };
+      memories = memories.map((m) => (m.id === id ? updated : m));
+      return updated;
+    },
+    rejectMemory: async (id) => {
+      record(`memory-reject:${id}`);
+      const found = memories.find((memory) => memory.id === id);
+      if (found === undefined) throw new Error(`memory ${id} does not exist`);
+      const updated: MemoryView = { ...found, state: 'rejected' };
+      memories = memories.map((m) => (m.id === id ? updated : m));
+      return updated;
+    },
+    restoreMemory: async (id) => {
+      record(`memory-restore:${id}`);
+      const found = memories.find((memory) => memory.id === id);
+      if (found === undefined) throw new Error(`memory ${id} does not exist`);
+      const updated: MemoryView = { ...found, state: 'active' };
+      memories = memories.map((m) => (m.id === id ? updated : m));
+      return updated;
+    },
     deleteMemory: async (id) => {
       record(`memory-delete:${id}`);
       memories = memories.filter((memory) => memory.id !== id);
@@ -721,6 +756,115 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     memoryHistory: async (id) => {
       record(`memory-history:${id}`);
       return memories.filter((memory) => memory.id === id);
+    },
+    inspector: async () => {
+      record('inspector');
+      if (options.inspectorSnapshot !== undefined) {
+        return {
+          ...options.inspectorSnapshot,
+          memory: {
+            ...options.inspectorSnapshot.memory,
+            allMemories: options.inspectorSnapshot.memory.allMemories.length > 0 ? options.inspectorSnapshot.memory.allMemories : memories,
+          },
+        };
+      }
+      const empty = emptyInspectorSnapshot({
+        session: {
+          id: session.id,
+          cwd: session.cwd,
+          model: session.model,
+          provider: parseCanon(session.model)?.provider ?? SCRIPTED_PROVIDER,
+          permissionMode: session.permissionMode,
+          sandbox: 'seatbelt',
+          contextWindow: options.windows?.[session.model] ?? 128000,
+        },
+        now: 1,
+      });
+      return {
+        ...empty,
+        memory: { ...empty.memory, allMemories: memories },
+      };
+    },
+    inspectorExcludeContextItem: async (request) => {
+      record(`inspector-exclude:${request.callId}:${String(request.excluded)}`);
+      const current = options.inspectorSnapshot ?? emptyInspectorSnapshot({ session: { id: session.id, cwd: session.cwd, model: session.model }, now: 1 });
+      if (options.onInspectorControl !== undefined) {
+        return options.onInspectorControl(current, request);
+      }
+      const evicted = new Set(current.context.evictedCallIds);
+      if (request.excluded) evicted.add(request.callId);
+      else evicted.delete(request.callId);
+      const next: InspectorSnapshot = {
+        ...current,
+        context: {
+          ...current.context,
+          evictedCallIds: [...evicted],
+          items: current.context.items.map((item) => (item.callId === request.callId ? { ...item, evicted: request.excluded } : item)),
+        },
+      };
+      return next;
+    },
+    inspectorControlMemory: async (request) => {
+      record(`inspector-memory-control:${request.memoryId}:${request.action}`);
+      const current = options.inspectorSnapshot ?? emptyInspectorSnapshot({ session: { id: session.id, cwd: session.cwd, model: session.model }, now: 1 });
+      if (options.onInspectorControl !== undefined) {
+        return options.onInspectorControl(current, request);
+      }
+      const excluded = new Set(current.memory.sessionControls.excludedIds);
+      const pinned = new Set(current.memory.sessionControls.pinnedIds);
+      if (request.action === 'exclude') {
+        excluded.add(request.memoryId);
+        pinned.delete(request.memoryId);
+      } else if (request.action === 'include') {
+        excluded.delete(request.memoryId);
+      } else if (request.action === 'pin') {
+        pinned.add(request.memoryId);
+        excluded.delete(request.memoryId);
+      } else {
+        pinned.delete(request.memoryId);
+      }
+      return {
+        ...current,
+        memory: {
+          ...current.memory,
+          sessionControls: { excludedIds: [...excluded], pinnedIds: [...pinned] },
+          active: current.memory.active.map((m) =>
+            m.id === request.memoryId ? { ...m, excluded: excluded.has(m.id), pinned: pinned.has(m.id) } : m,
+          ),
+        },
+      };
+    },
+    inspectorSearchMemories: async (query) => {
+      record(`inspector-memory-search:${query}`);
+      if (options.inspectorSearchTrace !== undefined) return options.inspectorSearchTrace(query);
+      const matched = memories.filter((m) => m.text.toLowerCase().includes(query.toLowerCase()));
+      return {
+        query,
+        terms: query.trim() === '' ? [] : query.trim().split(/\s+/),
+        executedAt: 1,
+        latencyMs: 2,
+        budgetTokens: null,
+        usedTokens: matched.length * 10,
+        matchCapped: false,
+        touchedCap: null,
+        moreAvailable: false,
+        candidateCount: memories.length,
+        selectedCount: matched.length,
+        candidates: memories.map((m, i) => ({
+          id: m.id,
+          summary: m.text.slice(0, 80),
+          kind: String(m.kind),
+          status: m.status,
+          matched: matched.includes(m),
+          tier: matched.includes(m) ? 1 : 2,
+          rank: i + 1,
+          tokens: 10,
+          decision: matched.includes(m) ? 'included' : 'excluded',
+          reason: matched.includes(m) ? 'query_match' : 'no_term_match',
+          pinned: false,
+          sessionExcluded: false,
+        })),
+      };
     },
     rules: async () => rules,
     addRule: async (request) => {

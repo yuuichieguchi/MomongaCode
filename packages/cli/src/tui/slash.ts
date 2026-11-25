@@ -73,6 +73,7 @@ export type SlashContext = ModeAvailability & {
   refusedWhileRunning(): boolean;
   status(): readonly string[];
   readonly sessions: SessionsPort;
+  openInspector?(tab?: string): void;
 };
 
 export type SlashSubcommand = {

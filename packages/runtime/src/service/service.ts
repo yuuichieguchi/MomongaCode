@@ -32,6 +32,7 @@ import { startTerminalSweeper } from './terminal-sweeper.ts';
 import { systemTimers } from './timers.ts';
 import type { ServiceTimers } from './timers.ts';
 import type { ReportRouteDeps } from './report-routes.ts';
+import type { SessionInspectorState } from './session-inspector-state.ts';
 
 export { SWEEP_INTERVAL_MS };
 
@@ -63,6 +64,7 @@ export type RunServiceOptions = {
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session, signal: AbortSignal) => Promise<readonly PermissionRule[]>;
+  inspectorState?: SessionInspectorState;
   policyVerification: PolicyVerification;
   mandateVerification: MandateRunVerification;
   gatewayStanding: (signal: AbortSignal) => Promise<GatewayStanding>;
@@ -215,6 +217,8 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     ignorableMarkerDirectories: options.ignorableMarkerDirectories,
     files: options.files,
     onError: report,
+    redactor: options.redactor,
+    ...(options.inspectorState === undefined ? {} : { inspectorState: options.inspectorState }),
   });
   const listener = getRequestListener((request, env) => app.fetch(request, env));
   let openRequests = 0;

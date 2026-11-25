@@ -9,6 +9,7 @@ import type {
   CreateResponseBody,
   HeaderRole,
   HooksSettings,
+  InspectorMemoryRetrievalTrace,
   StreamEvent,
 } from '@momonga/protocol';
 import type { MemoryView, ModelQuote, PermissionMode, RuleVerdict, TargetAnswers } from '@momonga/protocol';
@@ -77,7 +78,14 @@ export type SkillsPort = {
 
 export type RecallCapacity = { capabilities: Capabilities; memoryShare?: number | undefined };
 
-export type RecallRequest = { query: string; capacity: RecallCapacity; pinnedIds?: readonly string[]; touchedCap?: number };
+export type RecallRequest = {
+  query: string;
+  capacity: RecallCapacity;
+  pinnedIds?: readonly string[];
+  excludeIds?: readonly string[];
+  prioritizeIds?: readonly string[];
+  touchedCap?: number;
+};
 
 export type MemorySet = {
   prepare(request: RecallRequest): Promise<void>;
@@ -85,6 +93,7 @@ export type MemorySet = {
   hasMore(): boolean;
   matchCap(): number | undefined;
   touchedCap(): number | undefined;
+  lastTrace?(): InspectorMemoryRetrievalTrace | undefined;
   tools: readonly AnyTool[];
 };
 
