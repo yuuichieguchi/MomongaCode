@@ -269,6 +269,12 @@ The first time you open an interactive session in a folder, MomongaCode asks whe
 
 [Slash commands](reference.md#slash-commands) in the reference lists every command with its arguments and subcommands. To view or edit model settings, open `/model` and choose `Model settings…`, or open `Models` inside `/config`.
 
+### Agent Inspector
+
+Run `/inspect` (or press `Ctrl+X i`) during an interactive session to open the live Agent Inspector without interrupting an active run. Switch between the `Overview`, `Context`, `Memory`, `Usage`, and `Execution` tabs with `Tab` / `Shift+Tab`, the Left and Right arrow keys, or `1`–`5`, and close with `Esc` or `q` to return to the session.
+
+![MomongaCode Agent Inspector overview showing model, status, context usage, cost, cache hit rate, completion conditions, and warnings](../assets/agent-inspector.png)
+
 ### Command line
 
 ```text

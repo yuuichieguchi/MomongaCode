@@ -368,4 +368,29 @@ describe('Agent Inspector TUI', () => {
     started.app.stdin.write(KEYS.escape);
     await untilFrame(started.app, READY);
   });
+
+  it('cycles Agent Inspector tabs with Left and Right arrow keys and shows arrow hints', async () => {
+    const started = await start({ inspectorSnapshot: richSnapshot() }, {}, WIDE);
+    await untilFrame(started.app, READY);
+
+    await type(started.app, '/inspect', '> /inspect');
+    started.app.stdin.write(KEYS.enter);
+    const initial = await untilFrame(started.app, '[1:Overview]');
+    expect(initial).toContain('[tab/left/right] Tab');
+
+    started.app.stdin.write(KEYS.right);
+    await untilFrame(started.app, '[2:Context]');
+    started.app.stdin.write(KEYS.right);
+    await untilFrame(started.app, '[3:Memory]');
+
+    started.app.stdin.write(KEYS.left);
+    await untilFrame(started.app, '[2:Context]');
+    started.app.stdin.write(KEYS.left);
+    await untilFrame(started.app, '[1:Overview]');
+    started.app.stdin.write(KEYS.left);
+    await untilFrame(started.app, '[5:Execution]');
+
+    started.app.stdin.write(KEYS.escape);
+    await untilFrame(started.app, READY);
+  });
 });

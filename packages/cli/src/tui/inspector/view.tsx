@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { escapeTerminalLine, INSPECTOR_TABS } from '@momonga/protocol';
 import type { InspectorDiagnostic, InspectorSnapshot, InspectorTab } from '@momonga/protocol';
+import { shownKey } from '../keys/table.ts';
 import type { KeyTable } from '../keys/table.ts';
 import { borderOf, styleOf } from '../screen/theme.ts';
 import {
@@ -41,9 +42,16 @@ const hintSegment = (keys: KeyTable, action: Parameters<KeyTable['keyHint']>[0],
   return hint === '' ? '' : `[${hint}] ${fallbackLabel}`;
 };
 
+const tabNavSegment = (keys: KeyTable): string => {
+  const next = keys.keysFor('inspector.tabNext').map(shownKey);
+  const prev = keys.keysFor('inspector.tabPrev').map(shownKey);
+  const parts = [next[0], prev[1], next[1]].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? '' : `[${parts.join('/')}] Tab`;
+};
+
 export const inspectorFooterHints = (keys: KeyTable, ui: InspectorUiState): string => {
   const base = [
-    hintSegment(keys, 'inspector.tabNext', 'Next tab'),
+    tabNavSegment(keys),
     hintSegment(keys, 'inspector.up', 'Move'),
     hintSegment(keys, 'inspector.subView', 'Section'),
   ];

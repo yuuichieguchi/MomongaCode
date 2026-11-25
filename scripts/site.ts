@@ -17,6 +17,33 @@ import type { Segment } from './site/sentence.ts';
 import { contentHash, escapeHtml, shownTitle } from './site/text.ts';
 
 const FOOTER_SECTIONS = ['Contributing', 'License', 'Disclaimer'] as const;
+const IMAGE_EXTENSIONS = new Set(['.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.avif']);
+
+type SiteAssets = {
+  files: ReadonlyMap<string, { key: string; bytes: Uint8Array }>;
+  urls: ReadonlyMap<string, string>;
+};
+
+const readSiteAssets = (root: string): SiteAssets => {
+  const dir = path.join(root, 'site/assets');
+  const names = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !entry.name.startsWith('.') && IMAGE_EXTENSIONS.has(path.posix.extname(entry.name).toLowerCase()))
+    .map((entry) => entry.name)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const files = new Map<string, { key: string; bytes: Uint8Array }>();
+  const urls = new Map<string, string>();
+  for (const name of names) {
+    const ext = path.posix.extname(name);
+    const base = name.slice(0, -ext.length);
+    const bytes = fs.readFileSync(path.join(dir, name));
+    const key = `assets/${base}.${contentHash(bytes)}${ext}`;
+    const sourceKey = `site/assets/${name}`;
+    files.set(sourceKey, { key, bytes });
+    urls.set(sourceKey, `/${key}`);
+  }
+  return { files, urls };
+};
 
 const readVersion = (root: string): string => {
   const parsed: unknown = JSON.parse(fs.readFileSync(path.join(root, 'packages/cli/package.json'), 'utf8'));
@@ -225,7 +252,8 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   const facts: SiteFacts = { root, repo: readEmbeddedReleaseRepo(root), version: readVersion(root) };
   const sources = await readSources(root);
   const groups = groupSources(sources);
-  const link = linkResolver(sources, facts);
+  const siteAssets = readSiteAssets(root);
+  const link = linkResolver(sources, facts, siteAssets.urls);
   const guide = sources.find((source) => source.spec.home === 'index.html');
   if (guide === undefined) throw new Error('no source is the landing page');
   const reference = sources.find((source) => source.spec.home === 'docs/reference/index.html');
@@ -248,8 +276,8 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   const css = hashed('site', 'css', `${themeCss()}\n${fs.readFileSync(path.join(root, 'site/styles/site.css'), 'utf8')}`);
   const js = hashed('site', 'js', await bundleClient(root));
   const index = hashed('search-index', 'json', JSON.stringify([...rendered.values()].flatMap((each) => each.records)));
-  const ogBytes = fs.readFileSync(path.join(root, 'site/assets/og.png'));
-  const og = { key: `assets/og.${contentHash(ogBytes)}.png`, bytes: ogBytes };
+  const og = siteAssets.files.get('site/assets/og.png');
+  if (og === undefined) throw new Error('site/assets/og.png is missing');
   const assets: Assets = { css: `/${css.key}`, js: `/${js.key}`, searchIndex: `/${index.key}`, ogImage: `/${og.key}` };
   const chrome: Chrome = { origin: SITE_ORIGIN, siteName: front.name, assets, repo: facts.repo, groups, footer };
 
@@ -302,7 +330,7 @@ export const buildSite = async (root: string): Promise<ReadonlyMap<string, Uint8
   text(css.key, css.content);
   text(js.key, js.content);
   text(index.key, index.content);
-  files.set(og.key, og.bytes);
+  for (const asset of siteAssets.files.values()) files.set(asset.key, asset.bytes);
   text('_headers', HEADERS(INSTALLERS.map((installer) => installer.file)));
   text('sitemap.xml', sitemap(listed));
   text('llms.txt', llms(front.name, front.description, groups));

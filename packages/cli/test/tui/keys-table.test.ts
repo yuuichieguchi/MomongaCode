@@ -137,4 +137,13 @@ describe('the key table', () => {
   it('lists the keys whose meaning the terminal decides', () => {
     expect(RESERVED_KEYS).toEqual(['ctrl+c', 'ctrl+d', 'ctrl+z', 'ctrl+m', 'ctrl+i', 'ctrl+[']);
   });
+
+  it.each<[KeyEvent, string]>([
+    [named('tab'), 'inspector.tabNext'],
+    [named('right'), 'inspector.tabNext'],
+    [named('tab', { shift: true }), 'inspector.tabPrev'],
+    [named('left'), 'inspector.tabPrev'],
+  ])('gives %j in inspector context the action %s', (event, action) => {
+    expect(DEFAULT_KEY_TABLE.actionOf(['inspector'], event)).toBe(action);
+  });
 });

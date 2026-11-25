@@ -994,6 +994,19 @@ describe('the website', () => {
     expect(new Set(pairs.map(([, background]) => background))).toEqual(new Set(['#0d1117', '#ffffff']));
     for (const [foreground, background] of pairs) expect(contrast(foreground as string, background as string), `${foreground} on ${background}`).toBeGreaterThanOrEqual(7);
   });
+
+  it('embeds site/assets images from markdown into docs pages with hashed filenames and rejects non-asset images', () => {
+    const html = text('docs/usage.html');
+    const assetKey = [...site.keys()].find((key) => /^assets\/agent-inspector\.[^/]+\.png$/.test(key));
+    expect(assetKey).toBeDefined();
+    expect(Buffer.from(site.get(assetKey!) ?? new Uint8Array()).equals(fs.readFileSync(path.join(repoRoot, 'site/assets/agent-inspector.png')))).toBe(true);
+    expect(html).toContain(`<figure class="screenshot-frame"><img class="screenshot" src="/${assetKey}"`);
+    expect(html).toContain('loading="lazy" decoding="async">');
+    const badDoc = readDocument('site/docs/guide.md', '![bad](../bad.png)\n');
+    expect(() => renderBlocks(badDoc, badDoc.blocks, () => '/docs/bad.png', 2, '/docs/usage')).toThrow(
+      'site/docs/guide.md: the image ../bad.png must resolve to a file in site/assets/',
+    );
+  });
 });
 
 describe('llmsLinkText', () => {

@@ -32,6 +32,7 @@ const resolve = linkResolver(
     splitSource(NOTES, readDocument(NOTES.file, NOTES_TEXT)),
   ],
   { root: "/nonexistent", repo: "owner/repo", version: "1.0.0" },
+  new Map([["site/assets/shot.png", "/assets/shot.abc123.png"]]),
 );
 
 describe("site link mapping", () => {
@@ -69,6 +70,12 @@ describe("site link mapping", () => {
       ),
     ).toThrow(
       'the address /docs/setup is made by two pages: the heading "1. Setup" of GUIDE.md and the heading "Setup" of GUIDE.md',
+    );
+  });
+
+  it("resolves site assets to their hashed /assets/ path", () => {
+    expect(resolve("site/docs/guide.md", "../assets/shot.png")).toBe(
+      "/assets/shot.abc123.png",
     );
   });
 });

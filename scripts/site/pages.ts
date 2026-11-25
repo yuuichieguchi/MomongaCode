@@ -204,6 +204,7 @@ export type SiteFacts = { root: string; repo: string; version: string };
 export const linkResolver = (
   sources: readonly SourceSet[],
   facts: SiteFacts,
+  assets: ReadonlyMap<string, string> = new Map(),
 ): LinkTarget => {
   const owners = new Map<
     string,
@@ -255,6 +256,8 @@ export const linkResolver = (
     }
     if (file.startsWith("../") || path.posix.isAbsolute(file))
       throw new Error(`${from}: the link ${href} leaves the repository`);
+    const assetUrl = anchor === undefined ? assets.get(file) : undefined;
+    if (assetUrl !== undefined) return assetUrl;
     if (!fs.existsSync(path.join(facts.root, file)))
       throw new Error(
         `${from}: the link ${href} names ${file}, which does not exist`,

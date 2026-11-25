@@ -53,6 +53,8 @@ export const plainText = (file: string, tokens: readonly Token[]): string =>
         case 'em':
         case 'del':
           return plainText(file, token.tokens);
+        case 'image':
+          return decodeEntities(token.text);
         default:
           throw new Error(`${file}: the inline token ${token.type} has no text in the site`);
       }
@@ -135,6 +137,20 @@ const COPIED_ICON =
 export const codeBlock = (code: string, language: string): string =>
   `<div class="code-block"><pre><code${language === '' ? '' : ` class="language-${escapeHtml(language)}"`}>${highlighted(code, language)}</code></pre><button type="button" class="copy" data-copy hidden data-ui>${COPY_ICON}${COPIED_ICON}<span class="sr-only">Copy</span></button><span class="sr-only" role="status" aria-live="polite" data-copy-status></span></div>`;
 
+const imageHtml = (state: RenderState, token: Tokens.Image, block: boolean): string => {
+  const href = decodeEntities(token.href);
+  const src = state.link(state.document.file, href);
+  if (!src.startsWith('/assets/')) throw new Error(`${state.document.file}: the image ${href} must resolve to a file in site/assets/`);
+  const alt = escapeHtml(decodeEntities(token.text));
+  const title = token.title !== null && token.title !== '' ? decodeEntities(token.title) : undefined;
+  if (block) {
+    const caption = title === undefined ? '' : `<figcaption>${escapeHtml(title)}</figcaption>`;
+    return `<figure class="screenshot-frame"><img class="screenshot" src="${escapeHtml(src)}" alt="${alt}" loading="lazy" decoding="async">${caption}</figure>`;
+  }
+  const titleAttr = title === undefined ? '' : ` title="${escapeHtml(title)}"`;
+  return `<img class="screenshot" src="${escapeHtml(src)}" alt="${alt}" loading="lazy" decoding="async"${titleAttr}>`;
+};
+
 const inline = (state: RenderState, tokens: readonly Token[]): string =>
   tokens
     .map((each) => {
@@ -156,6 +172,8 @@ const inline = (state: RenderState, tokens: readonly Token[]): string =>
           return '<br>';
         case 'link':
           return `<a href="${escapeHtml(state.link(state.document.file, token.autolink === true ? token.href : decodeEntities(token.href)))}">${inline(state, token.tokens)}</a>`;
+        case 'image':
+          return imageHtml(state, token, false);
         default:
           throw new Error(`${state.document.file}: the inline token ${token.type} is not built into the site`);
       }
@@ -204,9 +222,14 @@ const blocksHtml = (state: RenderState, tokens: readonly Token[], tight: boolean
           if (level === 2) state.toc.push({ id, title });
           return `<h${level} id="${escapeHtml(id)}">${shownTitle(inline(state, token.tokens))}</h${level}>`;
         }
-        case 'paragraph':
+        case 'paragraph': {
           addText(state, plainText(state.document.file, token.tokens));
+          const meaningful = token.tokens.filter((child) => !(child.type === 'text' && child.text.trim() === ''));
+          if (!tight && meaningful.length === 1 && meaningful[0]?.type === 'image') {
+            return imageHtml(state, meaningful[0] as Tokens.Image, true);
+          }
           return tight ? inline(state, token.tokens) : `<p>${inline(state, token.tokens)}</p>`;
+        }
         case 'text':
           addText(state, token.tokens === undefined ? decodeEntities(token.text) : plainText(state.document.file, token.tokens));
           return token.tokens === undefined ? escapeHtml(decodeEntities(token.text)) : inline(state, token.tokens);
