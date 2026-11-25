@@ -3,6 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { startMcpHttpFixture } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
+import { ART_WIDTH } from '../packages/cli/src/tui/figure.ts';
+import { ART_GAP } from '../packages/cli/src/tui/startup.tsx';
 import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, SECRETS_FILE_NAME, runCli } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
@@ -31,7 +33,10 @@ const leave = async (pty: PtySession): Promise<void> => {
 
 const DRAFT_SECOND_ROW = /^│ {3} *│$/;
 
-const wrappedText = (phrase: string): RegExp => new RegExp(phrase.split(' ').map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s│]+'));
+const BANNER_GUTTER = ART_WIDTH + ART_GAP + 1;
+const BANNER_WRAP = `(?: +| *│ *\\n│(?: |[^\\n]{${BANNER_GUTTER}}))`;
+
+const wrappedText = (phrase: string): RegExp => new RegExp(phrase.split(' ').map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join(BANNER_WRAP));
 
 describe('momonga secret set through a pty', () => {
   it(titleOf('cli-secret'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
