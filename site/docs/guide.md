@@ -425,7 +425,7 @@ Example configuration:
 - Secret paths (`~/.ssh`, `~/.aws`, `~/.netrc`, MomongaCode's home directory, and the OS key store) remain denied to reads and writes in every mode, including `bypassPermissions`. See [the threat model](threat-model.md) for the complete list.
 - Approval prompts display the full command (or all MCP/operation arguments) safely escaped against terminal redraw sequences, with the model's own explanation clearly labeled as the model's claim. Any change to arguments or description triggers a fresh prompt. In `/config`, removing a rule or extra folder asks for confirmation and shows which settings file owns it.
 - Adding or changing a hook group, mandate file, `.mcp.json` server, or custom agent inside a trusted folder stays inactive until you approve it (`momonga trust` lists pending items).
-- With `"sandbox": "none"`, OS filesystem and network bounds are inactive, so `Bash` allow rules no longer skip approval: `Bash` prompts before every command (or defers to the classifier in `auto` mode).
+- With `"sandbox": "none"`, OS filesystem and network bounds are inactive, so `Bash` allow rules no longer skip approval: `Bash` prompts you before every command in every mode—hooks and the `auto` classifier never approve it.
 
 See [the threat model](threat-model.md) for all accepted risks and security boundaries.
 

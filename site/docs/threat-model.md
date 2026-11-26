@@ -21,7 +21,7 @@ Only write a `Bash(...)` allow rule for programs whose full flag set you trust. 
 
 A `Bash(...)` deny rule also matches command text literally, so it cannot stop an allowed command from launching another program via a flag.
 
-With `"sandbox": "none"`, workspace and network restrictions are off, so `Bash(...)` allow rules no longer skip approval: `Bash` asks before every command (or defers to the classifier in `auto` mode). On platforms with an OS sandbox, MomongaCode's own home directory still remains off-limits (see [Processes the product starts](#processes-the-product-starts)).
+With `"sandbox": "none"`, workspace and network restrictions are off, so `Bash(...)` allow rules no longer skip approval: `Bash` asks you before every command in every mode—hooks and the `auto` classifier never approve it. On platforms with an OS sandbox, MomongaCode's own home directory still remains off-limits (see [Processes the product starts](#processes-the-product-starts)).
 
 ## Settings this document quotes
 

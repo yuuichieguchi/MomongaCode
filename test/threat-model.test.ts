@@ -124,4 +124,12 @@ describe('docs/threat-model.md states only what the product does', () => {
       expect(settings).toContain(name);
     }
   });
+
+  it('states that unsandboxed Bash prompts you in every mode and is never approved by hooks or the auto classifier', () => {
+    const guide = read('site/docs/guide.md');
+    for (const content of [doc, guide]) {
+      expect(content).not.toContain('defers to the classifier');
+      expect(content).toContain('hooks and the `auto` classifier never approve it');
+    }
+  });
 });
